@@ -8,7 +8,7 @@ use axum::{
     Router,
 };
 use borsh::{BorshDeserialize, BorshSerialize};
-use sdk::{BlobIndex, BlobTransaction, ContractName, TxId};
+use sdk::{BlobIndex, BlobTransaction, ContractName, TxContext, TxId};
 use utoipa::openapi::OpenApi;
 
 pub use axum;
@@ -42,7 +42,12 @@ where
         store: ContractHandlerStore<Self>,
     ) -> impl std::future::Future<Output = (Router<()>, OpenApi)> + std::marker::Send;
 
-    fn handle(tx: &BlobTransaction, index: BlobIndex, state: Self) -> Result<Self>;
+    fn handle(
+        tx: &BlobTransaction,
+        index: BlobIndex,
+        state: Self,
+        tx_context: TxContext,
+    ) -> Result<Self>;
 }
 
 // Make our own error that wraps `anyhow::Error`.

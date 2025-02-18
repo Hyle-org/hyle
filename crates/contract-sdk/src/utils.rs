@@ -8,7 +8,7 @@ use core::result::Result;
 
 use hyle_model::{
     flatten_blobs, Blob, BlobIndex, ContractInput, Digestable, DropEndOfReader, HyleOutput,
-    StructuredBlob,
+    StateDigest, StructuredBlob,
 };
 
 pub fn parse_blob<Parameters>(blobs: &[Blob], index: &BlobIndex) -> Option<Parameters>
@@ -43,22 +43,24 @@ where
         }
     };
 
-    let parsed_blob: StructuredBlob<Parameters> = StructuredBlob::try_from(blob.clone())
-        .unwrap_or_else(|e| {
-            panic!("Failed to decode blob: {:?}", e);
-        });
+    let parsed_blob: StructuredBlob<Parameters> = match StructuredBlob::try_from(blob.clone()) {
+        Ok(v) => v,
+        Err(_) => {
+            return None;
+        }
+    };
     Some(parsed_blob)
 }
 
 pub fn as_hyle_output<State: Digestable + BorshDeserialize>(
-    initial_state: State,
+    initial_state_digest: StateDigest,
     contract_input: ContractInput,
     res: &mut crate::RunResult<State>,
 ) -> HyleOutput {
     match res {
         Ok(res) => HyleOutput {
             version: 1,
-            initial_state: initial_state.as_digest(),
+            initial_state: initial_state_digest,
             next_state: res.1.as_digest(),
             identity: contract_input.identity,
             index: contract_input.index,
@@ -69,7 +71,7 @@ pub fn as_hyle_output<State: Digestable + BorshDeserialize>(
             registered_contracts: core::mem::take(&mut res.2),
             program_outputs: core::mem::take(&mut res.0).into_bytes(),
         },
-        Err(message) => fail(contract_input, initial_state, message),
+        Err(message) => fail(contract_input, initial_state_digest, message),
     }
 }
 

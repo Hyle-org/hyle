@@ -3,28 +3,38 @@ use client_sdk::contract_states;
 use client_sdk::helpers::test::TestProver;
 use client_sdk::tcp_client::NodeTcpClient;
 use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutorBuilder};
-use hydentity::Hydentity;
+use hydentity::{HydentityContract, HydentityState};
+use hyle_contract_sdk::caller::ExecutionContext;
 use hyle_contract_sdk::erc20::ERC20;
 use hyle_contract_sdk::BlobTransaction;
+use hyle_contract_sdk::Identity;
+use hyle_contract_sdk::{
+    erc20::ERC20Action, guest, identity_provider::IdentityAction, ContractInput, ContractName,
+    HyleContract, HyleOutput,
+};
 use hyle_contract_sdk::{Blob, BlobData, ContractAction, RegisterContractAction};
-use hyle_contract_sdk::{ContractName, Identity};
 use hyle_contract_sdk::{Digestable, TcpServerNetMessage};
 use hyllar::client::transfer;
-use hyllar::{HyllarToken, HyllarTokenContract};
+use hyllar::{HyllarContract, HyllarState};
 use tokio::task::JoinSet;
 use tracing::info;
+
 contract_states!(
     #[derive(Debug, Clone)]
     pub struct States {
-        pub hydentity: Hydentity,
-        pub hyllar_test: HyllarToken,
+        pub hydentity: (HydentityContract, HydentityState, IdentityAction),
+        pub hyllar_test: (HyllarContract, HyllarState, ERC20Action),
     }
 );
 
-pub fn setup_hyllar(users: u32) -> Result<HyllarTokenContract> {
-    let hyllar_token = HyllarToken::new(0, "faucet.hyllar_test".into());
-    let mut hyllar_contract =
-        HyllarTokenContract::init(hyllar_token.clone(), "faucet.hyllar_test".into());
+pub fn setup_hyllar(users: u32) -> Result<HyllarContract> {
+    let hyllar_token = HyllarState::new(0, "faucet.hyllar_test".into());
+    let exec_ctx = ExecutionContext {
+        caller: "faucet.hyllar_test".into(),
+        contract_name: ContractName("hyllar_test".into()),
+        ..ExecutionContext::default()
+    };
+    let mut hyllar_contract = HyllarContract::init(hyllar_token.clone(), exec_ctx);
 
     // Create an entry for each users
     for n in 0..users {

@@ -30,12 +30,6 @@ pub fn register_hyle_contract(
     Ok(())
 }
 
-pub trait ClientSdkExecutor {
-    fn execute(
-        &self,
-        contract_input: &ContractInput,
-    ) -> Result<(Box<dyn std::any::Any>, HyleOutput)>;
-}
 pub trait ClientSdkProver {
     fn prove(
         &self,

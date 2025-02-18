@@ -25,7 +25,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
-use staking::state::Staking;
+use staking::state::StakingState;
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
     fmt::Display,
@@ -50,7 +50,7 @@ pub mod storage_memory;
 pub mod verifiers;
 
 #[derive(Debug, Clone)]
-pub struct QueryNewCut(pub Staking);
+pub struct QueryNewCut(pub StakingState);
 
 #[derive(Debug, Default, Clone, BorshSerialize, BorshDeserialize)]
 pub struct KnownContracts(pub HashMap<ContractName, (Verifier, ProgramId)>);
@@ -101,7 +101,7 @@ pub struct MempoolStore {
     last_ccp: Option<CommittedConsensusProposal>,
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
     buc_build_start_height: Option<u64>,
-    staking: Staking,
+    staking: StakingState,
     #[borsh(
         serialize_with = "arc_rwlock_borsh::serialize",
         deserialize_with = "arc_rwlock_borsh::deserialize"
@@ -1292,7 +1292,7 @@ pub mod test {
             self.mempool.crypto.sign(data)
         }
 
-        pub fn gen_cut(&mut self, staking: &Staking) -> Cut {
+        pub fn gen_cut(&mut self, staking: &StakingState) -> Cut {
             self.mempool
                 .handle_querynewcut(&mut QueryNewCut(staking.clone()))
                 .unwrap()

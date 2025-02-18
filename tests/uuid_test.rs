@@ -5,18 +5,20 @@ use client_sdk::{
     transaction_builder::{ProvableBlobTx, TxExecutorBuilder},
 };
 use fixtures::ctx::{E2EContract, E2ECtx};
-use hydentity::{client::register_identity, Hydentity};
+
+use hydentity::{client::register_identity, HydentityContract, HydentityState};
 use hyle::mempool::verifiers::verify_proof;
 use hyle_contract_sdk::{
-    BlobTransaction, ContractName, Digestable, Hashed, ProgramId, StateDigest, Verifier,
+    guest, identity_provider::IdentityAction, BlobTransaction, ContractInput, ContractName,
+    Digestable, Hashed, HyleOutput, ProgramId, StateDigest, Verifier,
 };
 use hyle_contracts::{HYDENTITY_ELF, UUID_TLD_ELF, UUID_TLD_ID};
-use uuid_tld::{RegisterUuidContract, UuidTldState};
+use uuid_tld::{UuidTldAction, UuidTldContract, UuidTldState};
 
 contract_states!(
     struct States {
-        uuid: UuidTldState,
-        hydentity: Hydentity,
+        uuid: (UuidTldContract, UuidTldState, UuidTldAction),
+        hydentity: (HydentityContract, HydentityState, IdentityAction),
     }
 );
 
@@ -64,7 +66,7 @@ async fn test_uuid_registration() {
 
     tx.add_action(
         "uuid".into(),
-        RegisterUuidContract {
+        UuidTldAction {
             verifier: "test".into(),
             program_id: ProgramId(vec![]),
             state_digest: StateDigest(vec![0, 1, 2, 3]),

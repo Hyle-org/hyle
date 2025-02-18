@@ -26,7 +26,7 @@ use role_follower::{FollowerRole, FollowerState};
 use role_leader::{LeaderRole, LeaderState};
 use role_timeout::{TimeoutRole, TimeoutRoleState, TimeoutState};
 use serde::{Deserialize, Serialize};
-use staking::state::{Staking, MIN_STAKE};
+use staking::state::{StakingState, MIN_STAKE};
 use std::ops::Deref;
 use std::ops::DerefMut;
 use std::time::Duration;
@@ -55,7 +55,7 @@ pub enum ConsensusCommand {
 
 #[derive(Debug, Clone, Deserialize, Serialize, BorshSerialize, BorshDeserialize)]
 pub struct CommittedConsensusProposal {
-    pub staking: Staking,
+    pub staking: StakingState,
     pub consensus_proposal: ConsensusProposal,
     pub certificate: QuorumCertificate,
 }
@@ -89,7 +89,7 @@ receiver(GenesisEvent),
 receiver(NodeStateEvent),
 receiver(SignedByValidator<ConsensusNetMessage>),
 receiver(Query<QueryConsensusInfo, ConsensusInfo>),
-receiver(Query<QueryConsensusStakingState, Staking>),
+receiver(Query<QueryConsensusStakingState, StakingState>),
 }
 }
 
@@ -98,7 +98,7 @@ receiver(Query<QueryConsensusStakingState, Staking>),
 pub struct BFTRoundState {
     consensus_proposal: ConsensusProposal,
     last_cut: Cut,
-    staking: Staking,
+    staking: StakingState,
 
     leader: LeaderState,
     follower: FollowerState,
@@ -949,7 +949,7 @@ impl Consensus {
                 let validators = self.bft_round_state.staking.bonded().clone();
                 Ok(ConsensusInfo { slot, view, round_leader, validators })
             }
-            command_response<QueryConsensusStakingState, Staking> _ => {
+            command_response<QueryConsensusStakingState, StakingState> _ => {
                 Ok(self.bft_round_state.staking.clone())
             }
             _ = timeout_ticker.tick() => {
@@ -1120,7 +1120,7 @@ pub mod test {
             self.consensus.crypto.validator_pubkey().clone()
         }
 
-        pub fn staking(&self) -> Staking {
+        pub fn staking(&self) -> StakingState {
             self.consensus.bft_round_state.staking.clone()
         }
 

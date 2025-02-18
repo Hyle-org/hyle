@@ -11,28 +11,33 @@ use anyhow::Result;
 mod e2e_amm {
     use amm::{
         client::{new_pair, swap},
-        AmmState,
+        AmmAction, AmmContract, AmmState,
     };
+
     use client_sdk::{
         contract_states,
         helpers::risc0::Risc0Prover,
         transaction_builder::{ProvableBlobTx, TxExecutorBuilder},
     };
-    use fixtures::{
-        contracts::{AmmContract, HyllarContract},
-        ctx::E2EContract,
-        proofs::generate_recursive_proof,
-    };
+    use fixtures::{ctx::E2EContract, proofs::generate_recursive_proof};
     use hydentity::{
         client::{register_identity, verify_identity},
-        Hydentity,
+        HydentityContract, HydentityState,
     };
-    use hyle_contract_sdk::{erc20::ERC20, ContractName};
+    use hyle_contract_sdk::{
+        caller::ExecutionContext,
+        erc20::{ERC20Action, ERC20},
+        guest,
+        identity_provider::IdentityAction,
+        ContractInput, ContractName, HyleContract, HyleOutput,
+    };
     use hyle_contracts::{AMM_ELF, HYDENTITY_ELF, HYLLAR_ELF};
     use hyllar::{
         client::{approve, transfer},
-        HyllarToken,
+        HyllarContract, HyllarState,
     };
+
+    use crate::fixtures::contracts::{AmmTestContract, HyllarTestContract};
 
     use super::*;
 
@@ -44,8 +49,13 @@ mod e2e_amm {
         expected_allowance: u128,
     ) -> Result<()> {
         let contract_hyllar = ctx.get_contract(contract_name).await?;
-        let state: hyllar::HyllarToken = contract_hyllar.state.try_into()?;
-        let state = hyllar::HyllarTokenContract::init(state, "caller".into());
+        let state: hyllar::HyllarState = contract_hyllar.state.try_into()?;
+        let exec_ctx = ExecutionContext {
+            caller: "caller".into(),
+            contract_name: ContractName::from(contract_name),
+            ..ExecutionContext::default()
+        };
+        let state = HyllarContract::init(state, exec_ctx);
 
         assert_eq!(
             state
@@ -62,8 +72,13 @@ mod e2e_amm {
         balances: &[(&str, u128)],
     ) -> Result<()> {
         let contract_hyllar = ctx.get_contract(contract_name).await?;
-        let state: hyllar::HyllarToken = contract_hyllar.state.try_into()?;
-        let state = hyllar::HyllarTokenContract::init(state, "caller".into());
+        let state: hyllar::HyllarState = contract_hyllar.state.try_into()?;
+        let exec_ctx = ExecutionContext {
+            caller: "caller".into(),
+            contract_name: ContractName::from(contract_name),
+            ..ExecutionContext::default()
+        };
+        let state = hyllar::HyllarContract::init(state, exec_ctx);
         for (account, expected) in balances {
             assert_eq!(
                 state.balance_of(account).expect("Account not found"),
@@ -77,10 +92,10 @@ mod e2e_amm {
 
     contract_states!(
         struct States {
-            hydentity: Hydentity,
-            hyllar: HyllarToken,
-            hyllar2: HyllarToken,
-            amm: AmmState,
+            hydentity: (HydentityContract, HydentityState, IdentityAction),
+            hyllar: (HyllarContract, HyllarState, ERC20Action),
+            hyllar2: (HyllarContract, HyllarState, ERC20Action),
+            amm: (AmmContract, AmmState, AmmAction),
         }
     );
 
@@ -107,7 +122,7 @@ mod e2e_amm {
         let mut executor = TxExecutorBuilder::new(States {
             hydentity: ctx.get_contract("hydentity").await?.state.try_into()?,
             hyllar: ctx.get_contract("hyllar").await?.state.try_into()?,
-            hyllar2: HyllarContract::state_digest().try_into()?,
+            hyllar2: HyllarTestContract::state_digest().try_into()?,
             amm: AmmState::default(),
         })
         // Replace prover binaries for non-reproducible mode.
@@ -117,12 +132,22 @@ mod e2e_amm {
         .with_prover("amm".into(), Risc0Prover::new(AMM_ELF))
         .build();
 
-        let state = hyllar::HyllarTokenContract::init(executor.hyllar.clone(), "caller".into());
+        let exec_ctx = ExecutionContext {
+            caller: "caller".into(),
+            contract_name: "hyllar".into(),
+            ..ExecutionContext::default()
+        };
+        let state = hyllar::HyllarContract::init(executor.hyllar.clone(), exec_ctx);
         let hyllar_initial_total_amount: u128 = state
             .balance_of("faucet.hydentity")
             .expect("faucet identity not found");
 
-        let state = hyllar::HyllarTokenContract::init(executor.hyllar2.clone(), "caller".into());
+        let exec_ctx = ExecutionContext {
+            caller: "caller".into(),
+            contract_name: "hyllar2".into(),
+            ..ExecutionContext::default()
+        };
+        let state = hyllar::HyllarContract::init(executor.hyllar2.clone(), exec_ctx);
         let hyllar2_initial_total_amount: u128 = state
             .balance_of("faucet.hydentity")
             .expect("faucet identity not found");
@@ -132,7 +157,7 @@ mod e2e_amm {
         ///////////////////// hyllar2 contract registration /////////////////
         info!("➡️  Registring hyllar2 contract");
         const HYLLAR2_CONTRACT_NAME: &str = "hyllar2";
-        ctx.register_contract::<HyllarContract>("hyle.hyle".into(), HYLLAR2_CONTRACT_NAME)
+        ctx.register_contract::<HyllarTestContract>("hyle.hyle".into(), HYLLAR2_CONTRACT_NAME)
             .await?;
         /////////////////////////////////////////////////////////////////////
 
@@ -181,8 +206,14 @@ mod e2e_amm {
         ctx.wait_height(5).await?;
 
         let contract_hyllar = ctx.get_contract("hyllar").await?;
-        let state: hyllar::HyllarToken = contract_hyllar.state.try_into()?;
-        let state = hyllar::HyllarTokenContract::init(state, "caller".into());
+        let state: hyllar::HyllarState = contract_hyllar.state.try_into()?;
+
+        let exec_ctx = ExecutionContext {
+            caller: "caller".into(),
+            contract_name: "hyllar".into(),
+            ..ExecutionContext::default()
+        };
+        let state = hyllar::HyllarContract::init(state, exec_ctx);
         assert_eq!(
             state
                 .balance_of("bob.hydentity")
@@ -241,7 +272,7 @@ mod e2e_amm {
         ///////////////////// amm contract registration /////////////////////
         info!("➡️  Registring amm contract");
         const AMM_CONTRACT_NAME: &str = "amm";
-        ctx.register_contract::<AmmContract>("hyle.hyle".into(), AMM_CONTRACT_NAME)
+        ctx.register_contract::<AmmTestContract>("hyle.hyle".into(), AMM_CONTRACT_NAME)
             .await?;
         /////////////////////////////////////////////////////////////////////
 

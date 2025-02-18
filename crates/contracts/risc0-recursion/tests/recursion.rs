@@ -2,22 +2,21 @@ use client_sdk::{
     contract_states,
     transaction_builder::{ProvableBlobTx, TxExecutorBuilder},
 };
-use hydentity::{client::register_identity, Hydentity};
+use hydentity::{client::register_identity, HydentityContract, HydentityState};
 use risc0_recursion::ProofInput;
-use sdk::{ContractName, HyleOutput};
+use sdk::{guest, identity_provider::IdentityAction, ContractInput, ContractName, HyleOutput};
 
 contract_states!(
     struct States {
-        hydentity: Hydentity,
+        hydentity: (HydentityContract, HydentityState, IdentityAction),
     }
 );
-
 #[test_log::test(tokio::test)]
 async fn test_recursion() {
     std::env::set_var("RISC0_DEV_MODE", "1");
 
     let mut executor = TxExecutorBuilder::new(States {
-        hydentity: Hydentity::new(),
+        hydentity: HydentityState::default(),
     })
     .build();
 

@@ -1,6 +1,7 @@
 use anyhow::Error;
 use clap::{Parser, Subcommand};
-use hydentity::Hydentity;
+use hydentity::HydentityState;
+use hyle_contract_sdk::HyleContract;
 use hyle_loadtest::{
     generate, generate_blobs_txs, generate_proof_txs, load_blob_txs, load_proof_txs, send,
     send_blob_txs, send_massive_blob, send_proof_txs, setup, setup_hyllar, States,
@@ -72,7 +73,7 @@ async fn main() -> Result<(), Error> {
 
     let states = States {
         hyllar_test: setup_hyllar(users)?.state(),
-        hydentity: Hydentity::default(),
+        hydentity: HydentityState::default(),
     };
 
     match args.command {

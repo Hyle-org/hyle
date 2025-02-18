@@ -42,6 +42,15 @@ impl Block {
             .context(format!("No parent dp hash found for tx {}", tx_hash))?
             .clone())
     }
+
+    pub fn get_context(&self) -> TxContext {
+        TxContext {
+            block_hash: self.hash.clone(),
+            block_height: self.block_height,
+            timestamp: self.block_timestamp as u128,
+            chain_id: HYLE_TESTNET_CHAIN_ID, // TODO: make it configurable
+        }
+    }
 }
 
 impl Ord for Block {

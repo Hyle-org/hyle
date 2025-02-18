@@ -5,9 +5,9 @@ use hyle_contract_sdk::Verifier;
 
 use super::ctx::E2EContract;
 
-pub struct ERC20Contract {}
+pub struct ERC20TestContract {}
 
-impl E2EContract for ERC20Contract {
+impl E2EContract for ERC20TestContract {
     fn verifier() -> Verifier {
         "risc0".into()
     }
@@ -26,9 +26,9 @@ impl E2EContract for ERC20Contract {
     }
 }
 
-pub struct HydentityContract {}
+pub struct HydentityTestContract {}
 
-impl E2EContract for HydentityContract {
+impl E2EContract for HydentityTestContract {
     fn verifier() -> Verifier {
         "risc0".into()
     }
@@ -38,13 +38,13 @@ impl E2EContract for HydentityContract {
     }
 
     fn state_digest() -> StateDigest {
-        hydentity::Hydentity::default().as_digest()
+        hydentity::HydentityState::default().as_digest()
     }
 }
 
-pub struct HyllarContract {}
+pub struct HyllarTestContract {}
 
-impl E2EContract for HyllarContract {
+impl E2EContract for HyllarTestContract {
     fn verifier() -> Verifier {
         "risc0".into()
     }
@@ -54,13 +54,13 @@ impl E2EContract for HyllarContract {
     }
 
     fn state_digest() -> StateDigest {
-        hyllar::HyllarToken::new(1_000_000_000, "faucet.hydentity".to_string()).as_digest()
+        hyllar::HyllarState::new(1_000_000_000, "faucet.hydentity".to_string()).as_digest()
     }
 }
 
-pub struct AmmContract {}
+pub struct AmmTestContract {}
 
-impl E2EContract for AmmContract {
+impl E2EContract for AmmTestContract {
     fn verifier() -> Verifier {
         "risc0".into()
     }

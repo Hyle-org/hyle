@@ -11,6 +11,7 @@ pub mod guest;
 pub mod identity_provider;
 pub mod utils;
 
+use caller::ExecutionContext;
 // re-export hyle-model
 pub use hyle_model::*;
 
@@ -44,6 +45,18 @@ macro_rules! info {
 }
 
 pub type RunResult<T> = Result<(String, T, Vec<RegisterContractEffect>), String>;
+
+pub trait HyleContract<State, Action> {
+    fn execute_action(
+        &mut self,
+        action: Action,
+        contract_input: &ContractInput,
+    ) -> RunResult<State>
+    where
+        Self: Sized;
+    fn init(state: State, execution_ctx: ExecutionContext) -> Self;
+    fn state(self) -> State;
+}
 
 pub const fn to_u8_array(val: &[u32; 8]) -> [u8; 32] {
     [

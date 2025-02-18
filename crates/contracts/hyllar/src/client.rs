@@ -1,12 +1,10 @@
-use std::any::Any;
-
 use client_sdk::{
-    helpers::{risc0::Risc0Prover, ClientSdkExecutor},
+    helpers::risc0::Risc0Prover,
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
-use sdk::{erc20::ERC20Action, utils::as_hyle_output, ContractName, HyleOutput};
+use sdk::{erc20::ERC20Action, ContractName};
 
-use crate::{execute, HyllarToken};
+use crate::HyllarState;
 
 pub mod metadata {
     pub const HYLLAR_ELF: &[u8] = include_bytes!("../hyllar.img");
@@ -14,37 +12,13 @@ pub mod metadata {
 }
 use metadata::*;
 
-pub struct HyllarPseudoExecutor {}
-impl ClientSdkExecutor for HyllarPseudoExecutor {
-    fn execute(
-        &self,
-        contract_input: &sdk::ContractInput,
-    ) -> anyhow::Result<(Box<dyn Any>, HyleOutput)> {
-        let initial_state: HyllarToken = borsh::from_slice(contract_input.state.as_slice())?;
-        let mut res = execute(
-            &mut String::new(),
-            initial_state.clone(),
-            contract_input.clone(),
-        );
-        let output = as_hyle_output(initial_state, contract_input.clone(), &mut res);
-        match res {
-            Ok(res) => Ok((Box::new(res.1.clone()), output)),
-            Err(e) => Err(anyhow::anyhow!(e)),
-        }
-    }
-}
-
-impl HyllarToken {
+impl HyllarState {
     pub fn setup_builder<S: StateUpdater>(
         &self,
         contract_name: ContractName,
         builder: &mut TxExecutorBuilder<S>,
     ) {
-        builder.init_with(
-            contract_name,
-            HyllarPseudoExecutor {},
-            Risc0Prover::new(HYLLAR_ELF),
-        );
+        builder.init_with(contract_name, Risc0Prover::new(HYLLAR_ELF));
     }
 }
 

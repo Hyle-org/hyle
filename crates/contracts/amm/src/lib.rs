@@ -6,7 +6,7 @@ use sdk::caller::{CalleeBlobs, CallerCallee, CheckCalleeBlobs, ExecutionContext,
 use sdk::erc20::{ERC20BlobChecker, ERC20};
 use sdk::{erc20::ERC20Action, Identity};
 use sdk::{
-    Blob, BlobIndex, ContractAction, ContractInput, Digestable, DropEndOfReader, RunResult,
+    Blob, BlobIndex, ContractAction, ContractInput, HyleContract, Digestable, RunResult,
     StateDigest,
 };
 use sdk::{BlobData, ContractName, StructuredBlobData};
@@ -53,7 +53,6 @@ impl Hash for UnorderedTokenPair {
 
 pub struct AmmContract {
     pub exec_ctx: ExecutionContext,
-    contract_name: ContractName,
     state: AmmState,
 }
 
@@ -98,23 +97,34 @@ impl AmmState {
     }
 }
 
-impl AmmContract {
-    pub fn new(exec_ctx: ExecutionContext, contract_name: ContractName, state: AmmState) -> Self {
-        AmmContract {
-            exec_ctx,
-            contract_name,
-            state,
+impl HyleContract<AmmState, AmmAction> for AmmContract {
+    fn execute_action(&mut self, action: AmmAction, _: &ContractInput) -> RunResult<AmmState>
+    where
+        Self: Sized,
+    {
+        let output = match action {
+            AmmAction::Swap {
+                pair,
+                amounts: (from_amount, to_amount),
+            } => self.verify_swap(pair, from_amount, to_amount),
+            AmmAction::NewPair { pair, amounts } => self.create_new_pair(pair, amounts),
+        };
+        match output {
+            Err(e) => Err(e),
+            Ok(output) => Ok((output, self.state.clone(), vec![])),
         }
     }
 
-    pub fn state(self) -> AmmState {
+    fn init(state: AmmState, exec_ctx: ExecutionContext) -> Self {
+        AmmContract { state, exec_ctx }
+    }
+
+    fn state(self) -> AmmState {
         self.state
     }
+}
 
-    pub fn contract_name(self) -> ContractName {
-        self.contract_name
-    }
-
+impl AmmContract {
     pub fn create_new_pair(
         &mut self,
         pair: (String, String),
@@ -130,7 +140,7 @@ impl AmmContract {
             &ContractName(pair.0.clone()),
             ERC20Action::TransferFrom {
                 sender: self.caller().0.clone(),
-                recipient: self.contract_name.0.clone(),
+                recipient: self.exec_ctx.contract_name.0.clone(),
                 amount: amounts.0,
             },
         )?;
@@ -138,7 +148,7 @@ impl AmmContract {
         // Sugared version using traits
         ERC20BlobChecker::new(&ContractName(pair.1.clone()), &self).transfer_from(
             &self.caller().0,
-            &self.contract_name.0,
+            &self.exec_ctx.contract_name.0,
             amounts.1,
         )?;
 
@@ -171,7 +181,7 @@ impl AmmContract {
             &ContractName(pair.0.clone()),
             ERC20Action::TransferFrom {
                 sender: self.caller().0.clone(),
-                recipient: self.contract_name.0.clone(),
+                recipient: self.exec_ctx.contract_name.0.clone(),
                 amount: from_amount,
             },
         )?;
@@ -270,49 +280,6 @@ impl ContractAction for AmmAction {
     }
 }
 
-pub fn execute(amm_initial_state: AmmState, contract_input: ContractInput) -> RunResult<AmmState> {
-    let (input, parsed_blob, caller) =
-        match sdk::guest::init_with_caller::<AmmAction>(contract_input) {
-            Ok(res) => res,
-            Err(err) => {
-                panic!("Amm contract initialization failed {}", err);
-            }
-        };
-
-    // TODO: refactor this into ExecutionContext
-    let mut callees_blobs = Vec::new();
-    for blob in input.blobs.clone().into_iter() {
-        if let Ok(structured_blob) = blob.data.clone().try_into() {
-            let structured_blob: StructuredBlobData<DropEndOfReader> = structured_blob; // for type inference
-            if structured_blob.caller == Some(input.index) {
-                callees_blobs.push(blob);
-            }
-        };
-    }
-
-    let execution_ctx = ExecutionContext {
-        callees_blobs: callees_blobs.into(),
-        caller,
-    };
-
-    let mut amm_contract =
-        AmmContract::new(execution_ctx, parsed_blob.contract_name, amm_initial_state);
-
-    let amm_action = parsed_blob.data.parameters;
-
-    let res = match amm_action {
-        AmmAction::Swap {
-            pair,
-            amounts: (from_amount, to_amount),
-        } => amm_contract.verify_swap(pair, from_amount, to_amount),
-        AmmAction::NewPair { pair, amounts } => amm_contract.create_new_pair(pair, amounts),
-    };
-
-    assert!(amm_contract.callee_blobs().is_empty());
-
-    res.map(|po| (po, amm_contract.state, vec![]))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -362,8 +329,9 @@ mod tests {
         let exec_ctx = ExecutionContext {
             callees_blobs: callees_blobs.into(),
             caller: Identity::new("test"),
+            contract_name: ContractName("amm".to_string()),
         };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
+        let mut contract = AmmContract::init(state, exec_ctx);
 
         let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
         assert!(result.is_ok());
@@ -391,8 +359,9 @@ mod tests {
         let exec_ctx = ExecutionContext {
             callees_blobs: callees_blobs.into(),
             caller: Identity::new("test"),
+            contract_name: ContractName("amm".to_string()),
         };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
+        let mut contract = AmmContract::init(state, exec_ctx);
 
         let result = contract.verify_swap(("token2".to_string(), "token1".to_string()), 50, 10);
 
@@ -424,8 +393,9 @@ mod tests {
         let exec_ctx = ExecutionContext {
             callees_blobs: callees_blobs.into(),
             caller: Identity::new("test"),
+            contract_name: ContractName("amm".to_string()),
         };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
+        let mut contract = AmmContract::init(state, exec_ctx);
 
         let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 500, 980);
         assert!(result.is_ok());
@@ -451,8 +421,9 @@ mod tests {
         let exec_ctx = ExecutionContext {
             callees_blobs: callees_blobs.into(),
             caller: Identity::new("test"),
+            contract_name: ContractName("amm".to_string()),
         };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
+        let mut contract = AmmContract::init(state, exec_ctx);
 
         let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
         assert!(result.is_err());
@@ -474,8 +445,9 @@ mod tests {
         let exec_ctx = ExecutionContext {
             callees_blobs: callees_blobs.into(),
             caller: Identity::new("test"),
+            contract_name: ContractName("amm".to_string()),
         };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
+        let mut contract = AmmContract::init(state, exec_ctx);
 
         let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
         assert!(result.is_err());
@@ -497,8 +469,9 @@ mod tests {
         let exec_ctx = ExecutionContext {
             callees_blobs: callees_blobs.into(),
             caller: Identity::new("test"),
+            contract_name: ContractName("amm".to_string()),
         };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
+        let mut contract = AmmContract::init(state, exec_ctx);
 
         let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
         assert!(result.is_err());
@@ -520,8 +493,9 @@ mod tests {
         let exec_ctx = ExecutionContext {
             callees_blobs: callees_blobs.into(),
             caller: Identity::new("test"),
+            contract_name: ContractName("amm".to_string()),
         };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
+        let mut contract = AmmContract::init(state, exec_ctx);
 
         let result = contract.verify_swap(
             ("token1".to_string(), "rubbish".to_string()), // Invalid pair
@@ -547,8 +521,9 @@ mod tests {
         let exec_ctx = ExecutionContext {
             callees_blobs: callees_blobs.into(),
             caller: Identity::new("test"),
+            contract_name: ContractName("amm".to_string()),
         };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
+        let mut contract = AmmContract::init(state, exec_ctx);
 
         let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
         assert!(result.is_err());
@@ -567,8 +542,9 @@ mod tests {
         let exec_ctx = ExecutionContext {
             callees_blobs: callees_blobs.into(),
             caller: Identity::new("test"),
+            contract_name: ContractName("amm".to_string()),
         };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
+        let mut contract = AmmContract::init(state, exec_ctx);
 
         let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
         assert!(result.is_err());
@@ -590,8 +566,9 @@ mod tests {
         let exec_ctx = ExecutionContext {
             callees_blobs: callees_blobs.into(),
             caller: Identity::new("test"),
+            contract_name: ContractName("amm".to_string()),
         };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
+        let mut contract = AmmContract::init(state, exec_ctx);
 
         let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 0, 50);
         assert!(result.is_err());
@@ -615,9 +592,10 @@ mod tests {
         let exec_ctx = ExecutionContext {
             callees_blobs: callees_blobs.into(),
             caller: Identity::new("test"),
+            contract_name: ContractName("amm".to_string()),
         };
 
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
+        let mut contract = AmmContract::init(state, exec_ctx);
         let result =
             contract.create_new_pair(("token1".to_string(), "token2".to_string()), (20, 50));
         assert_eq!(contract.callee_blobs().len(), 0);
@@ -648,8 +626,9 @@ mod tests {
         let exec_ctx = ExecutionContext {
             callees_blobs: callees_blobs.into(),
             caller: Identity::new("test"),
+            contract_name: ContractName("amm".to_string()),
         };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
+        let mut contract = AmmContract::init(state, exec_ctx);
 
         let result =
             contract.create_new_pair(("token1".to_string(), "token2".to_string()), (20, 50));
@@ -671,8 +650,9 @@ mod tests {
         let exec_ctx = ExecutionContext {
             callees_blobs: callees_blobs.into(),
             caller: Identity::new("test"),
+            contract_name: ContractName("amm".to_string()),
         };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
+        let mut contract = AmmContract::init(state, exec_ctx);
 
         let result =
             contract.create_new_pair(("token1".to_string(), "token2".to_string()), (20, 50));
@@ -694,8 +674,9 @@ mod tests {
         let exec_ctx = ExecutionContext {
             callees_blobs: callees_blobs.into(),
             caller: Identity::new("test"),
+            contract_name: ContractName("amm".to_string()),
         };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
+        let mut contract = AmmContract::init(state, exec_ctx);
 
         let result =
             contract.create_new_pair(("token1".to_string(), "token2".to_string()), (20, 50));
@@ -717,8 +698,9 @@ mod tests {
         let exec_ctx = ExecutionContext {
             callees_blobs: callees_blobs.into(),
             caller: Identity::new("test"),
+            contract_name: ContractName("amm".to_string()),
         };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
+        let mut contract = AmmContract::init(state, exec_ctx);
 
         let result = contract.create_new_pair(
             ("token1".to_string(), "token1".to_string()), // same tokens
@@ -739,8 +721,9 @@ mod tests {
         let exec_ctx = ExecutionContext {
             callees_blobs: callees_blobs.into(),
             caller: Identity::new("test"),
+            contract_name: ContractName("amm".to_string()),
         };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
+        let mut contract = AmmContract::init(state, exec_ctx);
 
         let result =
             contract.create_new_pair(("token1".to_string(), "token2".to_string()), (20, 50));

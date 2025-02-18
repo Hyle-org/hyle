@@ -12,6 +12,7 @@ use hyle_model::{Blob, ContractName, Identity, StructuredBlob};
 pub struct ExecutionContext {
     pub callees_blobs: RefCell<Vec<Blob>>,
     pub caller: Identity,
+    pub contract_name: ContractName,
 }
 
 // Used to hide the implementation of the callees blobs.

@@ -1,19 +1,15 @@
-use std::any::Any;
-
 use client_sdk::{
-    helpers::{risc0::Risc0Prover, ClientSdkExecutor},
+    helpers::risc0::Risc0Prover,
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
 use sdk::{
     api::{APIFees, APIFeesBalance, APIStaking},
-    utils::as_hyle_output,
-    ContractName, HyleOutput, StakingAction, ValidatorPublicKey,
+    ContractName, StakingAction, ValidatorPublicKey,
 };
 
 use crate::{
-    execute,
     fees::{Fees, ValidatorFeeState},
-    state::Staking,
+    state::StakingState,
 };
 
 pub mod metadata {
@@ -22,38 +18,18 @@ pub mod metadata {
 }
 use metadata::*;
 
-struct StakingPseudoExecutor {}
-impl ClientSdkExecutor for StakingPseudoExecutor {
-    fn execute(
-        &self,
-        contract_input: &sdk::ContractInput,
-    ) -> anyhow::Result<(Box<dyn Any>, HyleOutput)> {
-        let initial_state: Staking = borsh::from_slice(contract_input.state.as_slice())?;
-        let mut res = execute(initial_state.clone(), contract_input.clone());
-        let output = as_hyle_output(initial_state, contract_input.clone(), &mut res);
-        match res {
-            Ok(res) => Ok((Box::new(res.1.clone()), output)),
-            Err(e) => Err(anyhow::anyhow!(e)),
-        }
-    }
-}
-
-impl Staking {
+impl StakingState {
     pub fn setup_builder<S: StateUpdater>(
         &self,
         contract_name: ContractName,
         builder: &mut TxExecutorBuilder<S>,
     ) {
-        builder.init_with(
-            contract_name,
-            StakingPseudoExecutor {},
-            Risc0Prover::new(STAKING_ELF),
-        );
+        builder.init_with(contract_name, Risc0Prover::new(STAKING_ELF));
     }
 }
 
-impl From<Staking> for APIStaking {
-    fn from(val: Staking) -> Self {
+impl From<StakingState> for APIStaking {
+    fn from(val: StakingState) -> Self {
         APIStaking {
             stakes: val.stakes,
             rewarded: val.rewarded,
@@ -85,9 +61,9 @@ impl From<Fees> for APIFees {
     }
 }
 
-impl From<APIStaking> for Staking {
+impl From<APIStaking> for StakingState {
     fn from(val: APIStaking) -> Self {
-        Staking {
+        StakingState {
             stakes: val.stakes,
             rewarded: val.rewarded,
             bonded: val.bonded,
@@ -138,7 +114,7 @@ pub fn deposit_for_fees(
     Ok(())
 }
 
-impl Staking {
+impl StakingState {
     pub fn to_bytes(&self) -> Vec<u8> {
         borsh::to_vec(self).expect("Failed to encode Balances")
     }

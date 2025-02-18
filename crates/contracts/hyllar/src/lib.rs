@@ -1,13 +1,13 @@
 use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use sdk::erc20::ERC20Action;
+use sdk::erc20::ERC20;
+use sdk::ContractInput;
 use sdk::{
-    caller::{CalleeBlobs, CallerCallee, MutCalleeBlobs},
-    erc20::ERC20,
-    Digestable, Identity,
+    caller::{CalleeBlobs, CallerCallee, ExecutionContext, MutCalleeBlobs},
+    erc20::ERC20Action,
+    HyleContract, Digestable, Identity, RunResult,
 };
-use sdk::{ContractInput, RunResult};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -21,7 +21,7 @@ pub mod indexer;
 /// Struct representing the Hyllar token.
 #[serde_as]
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone)]
-pub struct HyllarToken {
+pub struct HyllarState {
     total_supply: u128,
     balances: BTreeMap<String, u128>, // Balances for each account
     #[serde_as(as = "Vec<(_, _)>")]
@@ -29,12 +29,12 @@ pub struct HyllarToken {
 }
 
 #[derive(Debug)]
-pub struct HyllarTokenContract {
-    state: HyllarToken,
-    caller: Identity,
+pub struct HyllarContract {
+    exec_ctx: ExecutionContext,
+    state: HyllarState,
 }
 
-impl HyllarToken {
+impl HyllarState {
     /// Creates a new Hyllar token with the specified initial supply.
     ///
     /// # Arguments
@@ -47,7 +47,7 @@ impl HyllarToken {
     pub fn new(initial_supply: u128, faucet_id: String) -> Self {
         let mut balances = BTreeMap::new();
         balances.insert(faucet_id, initial_supply); // Assign initial supply to faucet
-        HyllarToken {
+        HyllarState {
             total_supply: initial_supply,
             balances,
             allowances: BTreeMap::new(),
@@ -59,28 +59,41 @@ impl HyllarToken {
     }
 }
 
-impl HyllarTokenContract {
-    pub fn init(state: HyllarToken, caller: Identity) -> HyllarTokenContract {
-        HyllarTokenContract { state, caller }
+impl HyleContract<HyllarState, ERC20Action> for HyllarContract {
+    fn execute_action(&mut self, action: ERC20Action, _: &ContractInput) -> RunResult<HyllarState>
+    where
+        Self: Sized,
+    {
+        let output = self.execute_token_action(action);
+
+        match output {
+            Err(e) => Err(e),
+            Ok(output) => Ok((output, self.state.clone(), vec![])),
+        }
     }
-    pub fn state(self) -> HyllarToken {
+
+    fn init(state: HyllarState, exec_ctx: ExecutionContext) -> Self {
+        HyllarContract { state, exec_ctx }
+    }
+
+    fn state(self) -> HyllarState {
         self.state
     }
 }
 
-impl CallerCallee for HyllarTokenContract {
+impl CallerCallee for HyllarContract {
     fn caller(&self) -> &Identity {
-        &self.caller
+        &self.exec_ctx.caller
     }
-    fn callee_blobs(&self) -> CalleeBlobs<'static> {
-        unimplemented!()
+    fn callee_blobs(&self) -> CalleeBlobs {
+        CalleeBlobs(self.exec_ctx.callees_blobs.borrow())
     }
-    fn mut_callee_blobs(&self) -> MutCalleeBlobs<'static> {
-        unimplemented!()
+    fn mut_callee_blobs(&self) -> MutCalleeBlobs {
+        MutCalleeBlobs(self.exec_ctx.callees_blobs.borrow_mut())
     }
 }
 
-impl ERC20 for HyllarTokenContract {
+impl ERC20 for HyllarContract {
     fn total_supply(&self) -> Result<u128, String> {
         Ok(self.state.total_supply)
     }
@@ -161,46 +174,23 @@ impl ERC20 for HyllarTokenContract {
     }
 }
 
-impl Digestable for HyllarToken {
+impl Digestable for HyllarState {
     fn as_digest(&self) -> sdk::StateDigest {
         sdk::StateDigest(self.to_bytes())
     }
 }
-impl Digestable for HyllarTokenContract {
+impl Digestable for HyllarContract {
     fn as_digest(&self) -> sdk::StateDigest {
         sdk::StateDigest(self.state.to_bytes())
     }
 }
 
-impl TryFrom<sdk::StateDigest> for HyllarToken {
+impl TryFrom<sdk::StateDigest> for HyllarState {
     type Error = anyhow::Error;
 
     fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
         borsh::from_slice(&state.0).map_err(|_| anyhow::anyhow!("Could not decode hyllar state"))
     }
-}
-
-pub fn execute(
-    stdout: &mut impl std::fmt::Write,
-    state: HyllarToken,
-    contract_input: ContractInput,
-) -> RunResult<HyllarToken> {
-    let (_, parsed_blob, caller) = match sdk::guest::init_with_caller::<ERC20Action>(contract_input)
-    {
-        Ok(res) => res,
-        Err(err) => {
-            panic!("Hyllar contract initialization failed {}", err);
-        }
-    };
-
-    let _ = stdout.write_str("Init token contract");
-    let mut contract = HyllarTokenContract::init(state, caller);
-
-    let _ = stdout.write_str("execute action");
-    let res = contract.execute_action(parsed_blob.data.parameters)?;
-    let state = contract.state();
-
-    Ok((res, state, vec![]))
 }
 
 #[cfg(test)]
@@ -211,7 +201,7 @@ mod tests {
     #[test]
     fn test_new_hyllar_token() {
         let initial_supply = 1000;
-        let token = HyllarToken::new(initial_supply, "faucet".to_string());
+        let token = HyllarState::new(initial_supply, "faucet".to_string());
 
         assert_eq!(token.total_supply, initial_supply);
         assert_eq!(
@@ -224,8 +214,12 @@ mod tests {
     #[test]
     fn test_total_supply() {
         let initial_supply = 1000;
-        let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let contract = HyllarTokenContract::init(token, Identity::new("caller"));
+        let token = HyllarState::new(initial_supply, "faucet".to_string());
+        let exec_ctx = ExecutionContext {
+            caller: Identity::new("caller"),
+            ..ExecutionContext::default()
+        };
+        let contract = HyllarContract::init(token, exec_ctx);
 
         assert_eq!(contract.total_supply().unwrap(), initial_supply);
     }
@@ -233,8 +227,12 @@ mod tests {
     #[test]
     fn test_balance_of() {
         let initial_supply = 1000;
-        let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let contract = HyllarTokenContract::init(token, Identity::new("caller"));
+        let token = HyllarState::new(initial_supply, "faucet".to_string());
+        let exec_ctx = ExecutionContext {
+            caller: Identity::new("caller"),
+            ..ExecutionContext::default()
+        };
+        let contract = HyllarContract::init(token, exec_ctx);
 
         assert_eq!(contract.balance_of("faucet").unwrap(), initial_supply);
         assert_eq!(
@@ -246,8 +244,12 @@ mod tests {
     #[test]
     fn test_transfer() {
         let initial_supply = 1000;
-        let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let mut contract = HyllarTokenContract::init(token, Identity::new("faucet"));
+        let token = HyllarState::new(initial_supply, "faucet".to_string());
+        let exec_ctx = ExecutionContext {
+            caller: Identity::new("faucet"),
+            ..ExecutionContext::default()
+        };
+        let mut contract = HyllarContract::init(token, exec_ctx);
 
         assert!(contract.transfer("recipient", 500).is_ok());
         assert_eq!(contract.balance_of("faucet").unwrap(), 500);
@@ -259,8 +261,12 @@ mod tests {
     #[test]
     fn test_approve_and_allowance() {
         let initial_supply = 1000;
-        let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let mut contract = HyllarTokenContract::init(token, Identity::new("owner"));
+        let token = HyllarState::new(initial_supply, "faucet".to_string());
+        let exec_ctx = ExecutionContext {
+            caller: Identity::new("owner"),
+            ..ExecutionContext::default()
+        };
+        let mut contract = HyllarContract::init(token, exec_ctx);
 
         assert!(contract.approve("spender", 300).is_ok());
         assert_eq!(contract.allowance("owner", "spender").unwrap(), 300);
@@ -270,11 +276,19 @@ mod tests {
     #[test]
     fn test_transfer_from() {
         let initial_supply = 1000;
-        let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let mut contract = HyllarTokenContract::init(token, Identity::new("faucet"));
+        let token = HyllarState::new(initial_supply, "faucet".to_string());
+        let exec_ctx = ExecutionContext {
+            caller: Identity::new("faucet"),
+            ..ExecutionContext::default()
+        };
+        let mut contract = HyllarContract::init(token, exec_ctx);
 
         assert!(contract.approve("spender", 300).is_ok());
-        let mut contract = HyllarTokenContract::init(contract.state(), Identity::new("spender"));
+        let exec_ctx = ExecutionContext {
+            caller: Identity::new("spender"),
+            ..ExecutionContext::default()
+        };
+        let mut contract = HyllarContract::init(contract.state(), exec_ctx);
 
         assert!(contract.transfer_from("faucet", "recipient", 200).is_ok());
         assert_eq!(contract.balance_of("faucet").unwrap(), 800);
@@ -293,8 +307,12 @@ mod tests {
     #[test]
     fn test_transfer_from_unallowed() {
         let initial_supply = 1000;
-        let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let mut contract = HyllarTokenContract::init(token, Identity::new("spender"));
+        let token = HyllarState::new(initial_supply, "faucet".to_string());
+        let exec_ctx = ExecutionContext {
+            caller: Identity::new("spender"),
+            ..ExecutionContext::default()
+        };
+        let mut contract = HyllarContract::init(token, exec_ctx);
 
         assert_eq!(
             contract
@@ -308,14 +326,22 @@ mod tests {
     #[test]
     fn test_transfer_from_insufficient_balance() {
         let initial_supply = 1000;
-        let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let mut contract = HyllarTokenContract::init(token, Identity::new("faucet"));
+        let token = HyllarState::new(initial_supply, "faucet".to_string());
+        let exec_ctx = ExecutionContext {
+            caller: Identity::new("faucet"),
+            ..ExecutionContext::default()
+        };
+        let mut contract = HyllarContract::init(token, exec_ctx);
 
         // Approve an allowance for the spender
         assert!(contract.approve("spender", 5000).is_ok());
 
         // Attempt to transfer more than the sender's balance
-        let mut contract = HyllarTokenContract::init(contract.state(), Identity::new("spender"));
+        let exec_ctx = ExecutionContext {
+            caller: Identity::new("spender"),
+            ..ExecutionContext::default()
+        };
+        let mut contract = HyllarContract::init(contract.state(), exec_ctx);
         let result = contract.transfer_from("faucet", "recipient", 1100);
 
         assert!(result.is_err());
@@ -328,7 +354,7 @@ mod tests {
     #[test]
     fn test_as_digest() {
         let initial_supply = 1000;
-        let token = HyllarToken::new(initial_supply, "faucet".to_string());
+        let token = HyllarState::new(initial_supply, "faucet".to_string());
         let digest = token.as_digest();
 
         let encoded = borsh::to_vec(&token).expect("Failed to encode Balances");
@@ -338,16 +364,16 @@ mod tests {
     #[test]
     fn test_try_from_state_digest() {
         let initial_supply = 1000;
-        let token = HyllarToken::new(initial_supply, "faucet".to_string());
+        let token = HyllarState::new(initial_supply, "faucet".to_string());
         let digest = token.as_digest();
 
-        let decoded_token: HyllarToken =
-            HyllarToken::try_from(digest.clone()).expect("Failed to decode state digest");
+        let decoded_token: HyllarState =
+            HyllarState::try_from(digest.clone()).expect("Failed to decode state digest");
         assert_eq!(decoded_token.total_supply, token.total_supply);
         assert_eq!(decoded_token.balances, token.balances);
 
         let invalid_digest = sdk::StateDigest(vec![0, 1, 2, 3]);
-        let result = HyllarToken::try_from(invalid_digest);
+        let result = HyllarState::try_from(invalid_digest);
         assert!(result.is_err());
     }
 }

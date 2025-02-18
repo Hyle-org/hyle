@@ -17,8 +17,8 @@ use crate::*;
 use client_sdk::contract_indexer::axum;
 use client_sdk::contract_indexer::utoipa;
 
-impl ContractHandler for HyllarToken {
-    async fn api(store: ContractHandlerStore<HyllarToken>) -> (Router<()>, OpenApi) {
+impl ContractHandler for HyllarState {
+    async fn api(store: ContractHandlerStore<HyllarState>) -> (Router<()>, OpenApi) {
         let (router, api) = OpenApiRouter::default()
             .routes(routes!(get_state))
             .routes(routes!(get_balance))
@@ -28,29 +28,32 @@ impl ContractHandler for HyllarToken {
         (router.with_state(store), api)
     }
 
-    fn handle(tx: &BlobTransaction, index: BlobIndex, state: HyllarToken) -> Result<HyllarToken> {
+    fn handle(
+        tx: &BlobTransaction,
+        index: BlobIndex,
+        state: HyllarState,
+        tx_context: TxContext,
+    ) -> Result<HyllarState> {
         let Blob {
             contract_name,
-            data,
+            data: _,
         } = tx.blobs.get(index.0).context("Failed to get blob")?;
 
-        let data: StructuredBlobData<ERC20Action> = data.clone().try_into()?;
+        let serialized_state = borsh::to_vec(&state)?;
+        let contract_input = ContractInput {
+            state: serialized_state,
+            identity: tx.identity.clone(),
+            index,
+            blobs: tx.blobs.clone(),
+            tx_hash: tx.hashed(),
+            tx_ctx: Some(tx_context),
+            private_input: vec![],
+        };
 
-        let caller = data
-            .caller
-            .and_then(|idx| {
-                tx.blobs
-                    .get(idx.0)
-                    .map(|b| Identity(b.contract_name.0.clone()))
-            })
-            .unwrap_or(tx.identity.clone());
-
-        let mut contract = HyllarTokenContract::init(state, caller);
-        let res = contract
-            .execute_action(data.parameters)
-            .map_err(|e| anyhow::anyhow!(e))?;
-        info!("🚀 Executed {contract_name}: {res:?}");
-        Ok(contract.state())
+        let (state, hyle_output) =
+            guest::execute::<HyllarContract, HyllarState, ERC20Action>(&contract_input);
+        info!("🚀 Executed {contract_name}: {hyle_output:?}");
+        Ok(state)
     }
 }
 
@@ -90,7 +93,7 @@ struct BalanceResponse {
 )]
 pub async fn get_balance(
     Path(account): Path<Identity>,
-    State(state): State<ContractHandlerStore<HyllarToken>>,
+    State(state): State<ContractHandlerStore<HyllarState>>,
 ) -> Result<impl IntoResponse, AppError> {
     let store = state.read().await;
     let state = store.state.clone().ok_or(AppError(
@@ -98,7 +101,12 @@ pub async fn get_balance(
         anyhow!("Contract '{}' not found", store.contract_name),
     ))?;
 
-    let c = HyllarTokenContract::init(state, account.clone());
+    let exec_ctx = ExecutionContext {
+        caller: account.clone(),
+        contract_name: store.contract_name.clone(),
+        ..ExecutionContext::default()
+    };
+    let c = HyllarContract::init(state, exec_ctx);
     c.balance_of(&account.0)
         .map(|balance| BalanceResponse {
             account: account.0,
@@ -129,7 +137,7 @@ struct AllowanceResponse {
 )]
 pub async fn get_allowance(
     Path((account, spender)): Path<(Identity, Identity)>,
-    State(state): State<ContractHandlerStore<HyllarToken>>,
+    State(state): State<ContractHandlerStore<HyllarState>>,
 ) -> Result<impl IntoResponse, AppError> {
     let store = state.read().await;
     let state = store.state.clone().ok_or(AppError(
@@ -137,7 +145,12 @@ pub async fn get_allowance(
         anyhow!("Contract '{}' not found", store.contract_name),
     ))?;
 
-    let c = HyllarTokenContract::init(state, account.clone());
+    let exec_ctx = ExecutionContext {
+        caller: account.clone(),
+        contract_name: store.contract_name.clone(),
+        ..ExecutionContext::default()
+    };
+    let c = HyllarContract::init(state, exec_ctx);
     c.allowance(&account.0, &spender.0)
         .map(|allowance| AllowanceResponse {
             account: account.0,

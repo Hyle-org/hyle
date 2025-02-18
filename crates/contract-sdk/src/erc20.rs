@@ -85,7 +85,7 @@ pub trait ERC20 {
     ///
     /// * `action` - The action to execute, represented as an ERC20Action enum.
     /// * `private_input` - A string representing the private input for the action.
-    fn execute_action(&mut self, action: ERC20Action) -> Result<String, String> {
+    fn execute_token_action(&mut self, action: ERC20Action) -> Result<String, String> {
         match action {
             ERC20Action::TotalSupply => self
                 .total_supply()
@@ -240,7 +240,7 @@ mod tests {
         mock.expect_total_supply().returning(|| Ok(1000));
 
         let action = ERC20Action::TotalSupply;
-        let result = mock.execute_action(action);
+        let result = mock.execute_token_action(action);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Total Supply: 1000");
@@ -256,7 +256,7 @@ mod tests {
         let action = ERC20Action::BalanceOf {
             account: "account1".to_string(),
         };
-        let result = mock.execute_action(action);
+        let result = mock.execute_token_action(action);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Balance of account1: 500");
@@ -273,7 +273,7 @@ mod tests {
             recipient: "recipient1".to_string(),
             amount: 200,
         };
-        let result = mock.execute_action(action);
+        let result = mock.execute_token_action(action);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Transferred 200 to recipient1");
@@ -295,7 +295,7 @@ mod tests {
             recipient: "recipient1".to_string(),
             amount: 300,
         };
-        let result = mock.execute_action(action);
+        let result = mock.execute_token_action(action);
 
         assert!(result.is_ok());
         assert_eq!(
@@ -315,7 +315,7 @@ mod tests {
             spender: "spender1".to_string(),
             amount: 400,
         };
-        let result = mock.execute_action(action);
+        let result = mock.execute_token_action(action);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Approved 400 for spender1");
@@ -332,7 +332,7 @@ mod tests {
             owner: "owner1".to_string(),
             spender: "spender1".to_string(),
         };
-        let result = mock.execute_action(action);
+        let result = mock.execute_token_action(action);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Allowance of spender1 by owner1: 500");

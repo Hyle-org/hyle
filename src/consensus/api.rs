@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use axum::{debug_handler, extract::State, http::StatusCode, response::IntoResponse, Json, Router};
 use client_sdk::contract_indexer::AppError;
 use hyle_model::api::APIStaking;
-use staking::state::Staking;
+use staking::state::StakingState;
 use tracing::error;
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -21,7 +21,7 @@ use super::{QueryConsensusInfo, QueryConsensusStakingState};
 bus_client! {
 struct RestBusClient {
     sender(Query<QueryConsensusInfo, ConsensusInfo>),
-    sender(Query<QueryConsensusStakingState, Staking>),
+    sender(Query<QueryConsensusStakingState, StakingState>),
 }
 }
 
@@ -112,7 +112,7 @@ impl Clone for RouterState {
                     &self.bus,
                 )
                 .clone(),
-                Pick::<tokio::sync::broadcast::Sender<Query<QueryConsensusStakingState, Staking>>>::get(
+                Pick::<tokio::sync::broadcast::Sender<Query<QueryConsensusStakingState, StakingState>>>::get(
                     &self.bus,
                 )
                 .clone(),

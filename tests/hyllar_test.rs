@@ -14,18 +14,24 @@ mod e2e_hyllar {
     };
     use hydentity::{
         client::{register_identity, verify_identity},
-        Hydentity,
+        HydentityContract, HydentityState,
     };
-    use hyle_contract_sdk::{erc20::ERC20, ContractName};
+    use hyle_contract_sdk::{
+        caller::ExecutionContext,
+        erc20::{ERC20Action, ERC20},
+        guest,
+        identity_provider::IdentityAction,
+        ContractInput, ContractName, HyleContract, HyleOutput,
+    };
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF};
-    use hyllar::{client::transfer, HyllarToken};
+    use hyllar::{client::transfer, HyllarContract, HyllarState};
 
     use super::*;
 
     contract_states!(
         struct States {
-            hydentity: Hydentity,
-            hyllar: HyllarToken,
+            hydentity: (HydentityContract, HydentityState, IdentityAction),
+            hyllar: (HyllarContract, HyllarState, ERC20Action),
         }
     );
 
@@ -33,9 +39,9 @@ mod e2e_hyllar {
         info!("➡️  Setting up the executor with the initial state");
 
         let contract = ctx.get_contract("hydentity").await?;
-        let hydentity: hydentity::Hydentity = contract.state.try_into()?;
+        let hydentity: hydentity::HydentityState = contract.state.try_into()?;
         let contract = ctx.get_contract("hyllar").await?;
-        let hyllar: HyllarToken = contract.state.try_into()?;
+        let hyllar: HyllarState = contract.state.try_into()?;
         let mut executor = TxExecutorBuilder::new(States { hydentity, hyllar })
             // Replace prover binaries for non-reproducible mode.
             .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
@@ -90,8 +96,13 @@ mod e2e_hyllar {
         ctx.wait_height(5).await?;
 
         let contract = ctx.get_contract("hyllar").await?;
-        let state: hyllar::HyllarToken = contract.state.try_into()?;
-        let state = hyllar::HyllarTokenContract::init(state, "caller".into());
+        let state: hyllar::HyllarState = contract.state.try_into()?;
+        let exec_ctx = ExecutionContext {
+            caller: "caller".into(),
+            contract_name: ContractName::from("hyllar"),
+            ..ExecutionContext::default()
+        };
+        let state = hyllar::HyllarContract::init(state, exec_ctx);
         assert_eq!(
             state
                 .balance_of("bob.hydentity")

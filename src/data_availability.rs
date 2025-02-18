@@ -449,7 +449,7 @@ pub mod tests {
         },
         utils::{conf::Conf, integration_test::find_available_port},
     };
-    use staking::state::Staking;
+    use staking::state::StakingState;
     use tokio::sync::mpsc::{channel, Sender};
 
     use super::codec::codec_data_availability;
@@ -628,7 +628,7 @@ pub mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
         let mut ccp = CommittedConsensusProposal {
-            staking: Staking::default(),
+            staking: StakingState::default(),
             consensus_proposal: ConsensusProposal::default(),
             certificate: AggregateSignature {
                 signature: crate::model::Signature("signature".into()),
@@ -732,7 +732,7 @@ pub mod tests {
 
         // Add a few blocks (via bus to avoid mutex)
         let mut ccp = CommittedConsensusProposal {
-            staking: Staking::default(),
+            staking: StakingState::default(),
             consensus_proposal: ConsensusProposal::default(),
             certificate: AggregateSignature::default(),
         };
@@ -768,7 +768,7 @@ pub mod tests {
 
         // Add a few blocks (via bus to avoid mutex)
         let mut ccp = CommittedConsensusProposal {
-            staking: Staking::default(),
+            staking: StakingState::default(),
             consensus_proposal: ConsensusProposal::default(),
             certificate: AggregateSignature::default(),
         };

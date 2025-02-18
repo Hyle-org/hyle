@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Result};
 use axum::Router;
 use axum_otel_metrics::HttpMetricsLayerBuilder;
 use clap::Parser;
-use hydentity::Hydentity;
+use hydentity::HydentityState;
 use hyle::{
     bus::{metrics::BusMetrics, SharedMessageBus},
     indexer::{
@@ -18,7 +18,7 @@ use hyle::{
         modules::ModulesHandler,
     },
 };
-use hyllar::HyllarToken;
+use hyllar::HyllarState;
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
@@ -121,19 +121,19 @@ async fn main() -> Result<()> {
     });
 
     handler
-        .build_module::<ContractStateIndexer<HyllarToken>>(ContractStateIndexerCtx {
+        .build_module::<ContractStateIndexer<HyllarState>>(ContractStateIndexerCtx {
             contract_name: "hyllar".into(),
             common: ctx.clone(),
         })
         .await?;
     handler
-        .build_module::<ContractStateIndexer<HyllarToken>>(ContractStateIndexerCtx {
+        .build_module::<ContractStateIndexer<HyllarState>>(ContractStateIndexerCtx {
             contract_name: "hyllar2".into(),
             common: ctx.clone(),
         })
         .await?;
     handler
-        .build_module::<ContractStateIndexer<Hydentity>>(ContractStateIndexerCtx {
+        .build_module::<ContractStateIndexer<HydentityState>>(ContractStateIndexerCtx {
             contract_name: "hydentity".into(),
             common: ctx.clone(),
         })
