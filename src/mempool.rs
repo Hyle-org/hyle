@@ -178,6 +178,11 @@ pub enum MempoolStatusEvent {
         data_proposal_hash: DataProposalHash,
         txs_metadatas: Vec<TransactionMetadata>,
     },
+    DataProposalPoda {
+        data_proposal_hash: DataProposalHash,
+        txs_metadatas: Vec<TransactionMetadata>,
+        signatures: Vec<ValidatorPublicKey>,
+    },
 }
 impl BusMessage for MempoolStatusEvent {}
 
@@ -827,6 +832,14 @@ impl Mempool {
             || old_voting_power < 2 * f && new_voting_power >= 2 * f
             || new_voting_power == 3 * f + 1
         {
+            let txs_metadatas = self.lanes.tx_metadatas(&data_proposal_hash)?;
+
+            self.bus.send(MempoolStatusEvent::DataProposalPoda {
+                data_proposal_hash: data_proposal_hash.clone(),
+                txs_metadatas,
+                signatures: validators.clone(),
+            })?;
+
             self.broadcast_net_message(MempoolNetMessage::PoDAUpdate(
                 data_proposal_hash,
                 signatures,
@@ -1485,6 +1498,30 @@ pub mod test {
         pub fn pop_data_proposal(&mut self) -> (DataProposal, DataProposalHash, LaneBytesSize) {
             let pub_key = self.validator_pubkey().clone();
             self.pop_validator_data_proposal(&pub_key)
+        }
+        pub fn peek_data_proposal(&mut self) -> (DataProposal, DataProposalHash, LaneBytesSize) {
+            let pub_key = self.validator_pubkey().clone();
+            self.peek_validator_data_proposal(&pub_key)
+        }
+
+        pub fn peek_validator_data_proposal(
+            &mut self,
+            validator: &ValidatorPublicKey,
+        ) -> (DataProposal, DataProposalHash, LaneBytesSize) {
+            // Get the latest lane entry
+            let latest_data_proposal_hash = self.current_hash(validator).unwrap();
+            let latest_lane_entry = self
+                .mempool
+                .lanes
+                .get_by_hash(validator, &latest_data_proposal_hash)
+                .unwrap()
+                .unwrap();
+
+            (
+                latest_lane_entry.data_proposal.clone(),
+                latest_data_proposal_hash,
+                latest_lane_entry.cumul_size,
+            )
         }
 
         pub fn pop_validator_data_proposal(

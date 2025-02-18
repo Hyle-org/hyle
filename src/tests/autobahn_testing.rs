@@ -339,10 +339,41 @@ async fn autobahn_basic_flow() {
     node1.mempool_ctx.submit_tx(&register_tx);
     node1.mempool_ctx.submit_tx(&register_tx_2);
 
+    assert_chanmsg_matches!(
+        node1.mempool_ctx.mempool_status_event_receiver,
+        MempoolStatusEvent::WaitingDissemination { parent_data_proposal_hash, tx } => {
+            assert_eq!(parent_data_proposal_hash, DataProposalHash(node1.mempool_ctx.validator_pubkey().to_string()));
+            assert_eq!(tx, register_tx);
+        }
+    );
+
+    assert_chanmsg_matches!(
+        node1.mempool_ctx.mempool_status_event_receiver,
+        MempoolStatusEvent::WaitingDissemination { parent_data_proposal_hash, tx } => {
+            assert_eq!(parent_data_proposal_hash, DataProposalHash(node1.mempool_ctx.validator_pubkey().to_string()));
+            assert_eq!(tx, register_tx_2);
+        }
+    );
+
     node1
         .mempool_ctx
         .make_data_proposal_with_pending_txs()
         .expect("Should create data proposal");
+
+    assert_chanmsg_matches!(
+        node1.mempool_ctx.mempool_status_event_receiver,
+        MempoolStatusEvent::DataProposalCreated { data_proposal_hash, txs_metadatas } => {
+
+            // First txs refer to a genesis data proposal that has a hash corresponding to validator pubkey
+            let genesis_dp_hash = hex::encode(node1.mempool_ctx.validator_pubkey().clone().0);
+            for t in txs_metadatas.iter() {
+                assert_eq!(genesis_dp_hash, t.id.0.0);
+            }
+
+            assert_eq!(data_proposal_hash, node1.mempool_ctx.peek_data_proposal().0.hashed());
+            assert_eq!(txs_metadatas.len(), node1.mempool_ctx.peek_data_proposal().0.txs.len());
+        }
+    );
 
     broadcast! {
         description: "Disseminate Tx",
@@ -368,6 +399,42 @@ async fn autobahn_basic_flow() {
         from: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx], to: node1.mempool_ctx,
         message_matches: MempoolNetMessage::DataVote(_, _)
     };
+
+    assert_chanmsg_matches!(
+        node1.mempool_ctx.mempool_status_event_receiver,
+        MempoolStatusEvent::DataProposalPoda { data_proposal_hash, txs_metadatas, signatures } => {
+
+            // First txs refer to a genesis data proposal that has a hash corresponding to validator pubkey
+            let genesis_dp_hash = hex::encode(node1.mempool_ctx.validator_pubkey().clone().0);
+            for t in txs_metadatas.iter() {
+                assert_eq!(genesis_dp_hash, t.id.0.0);
+            }
+
+            assert!(signatures.contains(node1.mempool_ctx.validator_pubkey()));
+            assert!(signatures.contains(node2.mempool_ctx.validator_pubkey()));
+
+            assert_eq!(data_proposal_hash, node1.mempool_ctx.peek_data_proposal().0.hashed());
+            assert_eq!(txs_metadatas.len(), node1.mempool_ctx.peek_data_proposal().0.txs.len());
+        }
+    );
+    assert_chanmsg_matches!(
+        node1.mempool_ctx.mempool_status_event_receiver,
+        MempoolStatusEvent::DataProposalPoda { data_proposal_hash, txs_metadatas, signatures } => {
+
+            // First txs refer to a genesis data proposal that has a hash corresponding to validator pubkey
+            let genesis_dp_hash = hex::encode(node1.mempool_ctx.validator_pubkey().clone().0);
+            for t in txs_metadatas.iter() {
+                assert_eq!(genesis_dp_hash, t.id.0.0);
+            }
+
+            assert!(signatures.contains(node1.mempool_ctx.validator_pubkey()));
+            assert!(signatures.contains(node2.mempool_ctx.validator_pubkey()));
+            assert!(signatures.contains(node3.mempool_ctx.validator_pubkey()));
+
+            assert_eq!(data_proposal_hash, node1.mempool_ctx.peek_data_proposal().0.hashed());
+            assert_eq!(txs_metadatas.len(), node1.mempool_ctx.peek_data_proposal().0.txs.len());
+        }
+    );
 
     let data_proposal_hash_node1 = node1
         .mempool_ctx

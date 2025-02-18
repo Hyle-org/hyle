@@ -86,6 +86,7 @@ pub enum TransactionTypeDb {
 pub enum TransactionStatusDb {
     WaitingDissemination,
     DataProposalCreated,
+    DataProposalPoda,
     Success,
     Failure,
     Sequenced,
