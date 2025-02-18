@@ -178,8 +178,7 @@ impl NodeState {
                                         .or_default()
                                         .push(TransactionStateEvent::Error(err));
                                     None
-
-                                                                    }
+                                }
                             }})
                             .collect::<BTreeSet<_>>();
                     // Then try to settle transactions when we can.
@@ -511,12 +510,13 @@ impl NodeState {
         let known_contract_state = current_contracts
             .get(contract_name)
             .unwrap_or(contracts.get(contract_name).unwrap());
+
+        blob_proof_output_indices.push(0);
+
         // Super special case - the hyle contract has "synthetic proofs".
         // We need to check the current state of 'current_contracts' to check validity,
         // so we really can't do this before we've settled the earlier blobs.
         if contract_name.0 == "hyle" {
-            // Have to push something here or the rest of the logic breaks
-            blob_proof_output_indices.push(0);
             return match Self::handle_blob_for_hyle_tld(
                 contracts,
                 &current_contracts,
@@ -542,8 +542,13 @@ impl NodeState {
                 }
             };
         }
+
         // Regular case: go through each proof for this blob. If they settle, carry on recursively.
         for (i, proof_metadata) in current_blob.possible_proofs.iter().enumerate() {
+            #[allow(clippy::unwrap_used, reason = "pushed above so last must exist")]
+            let blob_index = blob_proof_output_indices.last_mut().unwrap();
+            *blob_index = i;
+
             if !Self::validate_proof_metadata(proof_metadata, known_contract_state) {
                 // Not a valid proof, log it and try the next one.
                 let msg = format!(
@@ -577,7 +582,6 @@ impl NodeState {
                     verifier: known_contract_state.verifier.clone(),
                 },
             );
-            blob_proof_output_indices.push(i);
             match Self::settle_blobs_recursively(
                 contracts,
                 us,
@@ -745,31 +749,9 @@ impl NodeState {
         })
     }
 
-    // Assumes verify_hyle_output was already called
-    fn validate_proof_metadata(
-        proof_metadata: &(ProgramId, HyleOutput),
-        contract: &Contract,
-    ) -> bool {
-        if proof_metadata.1.registered_contracts.iter().any(|effect| {
-            validate_contract_registration_metadata(
-                &contract.name,
-                &effect.contract_name,
-                &effect.verifier,
-                &effect.program_id,
-                &effect.state_digest,
-            )
-            .is_err()
-        }) {
-            return false;
-        }
-
-        if validate_state_digest_size(&proof_metadata.1.next_state).is_err() {
-            return false;
-        }
-
-        proof_metadata.1.initial_state == contract.state && proof_metadata.0 == contract.program_id
-    }
-
+    // Called when processing a verified proof TX - checks the proof is potentially valid for settlement.
+    // This is an "internally coherent" check - you can't rely on any node_state data as
+    // the state might be different when settling.
     fn verify_hyle_output(
         unsettled_tx: &UnsettledBlobTransaction,
         hyle_output: &HyleOutput,
@@ -813,6 +795,32 @@ impl NodeState {
         }
 
         Ok(())
+    }
+
+    // Called when trying to actually settle a blob TX - asserts a proof validly settles a blob.
+    // verify_hyle_output has already been called at this point.
+    fn validate_proof_metadata(
+        proof_metadata: &(ProgramId, HyleOutput),
+        contract: &Contract,
+    ) -> bool {
+        if proof_metadata.1.registered_contracts.iter().any(|effect| {
+            validate_contract_registration_metadata(
+                &contract.name,
+                &effect.contract_name,
+                &effect.verifier,
+                &effect.program_id,
+                &effect.state_digest,
+            )
+            .is_err()
+        }) {
+            return false;
+        }
+
+        if validate_state_digest_size(&proof_metadata.1.next_state).is_err() {
+            return false;
+        }
+
+        proof_metadata.1.initial_state == contract.state && proof_metadata.0 == contract.program_id
     }
 
     /// Clear timeouts for transactions that have timed out.
@@ -1347,11 +1355,24 @@ pub mod test {
             &blob_tx_hash,
         );
 
-        let _ = handle_verify_proof_transaction(&mut state, &first_proof_tx);
-        let _ = handle_verify_proof_transaction(&mut state, &second_proof_tx_b);
-        let _ = handle_verify_proof_transaction(&mut state, &second_proof_tx_c);
-        handle_verify_proof_transaction(&mut state, &third_proof_tx).unwrap();
+        let block = state.handle_signed_block(&craft_signed_block(
+            4,
+            vec![
+                first_proof_tx.into(),
+                second_proof_tx_b.into(),
+                second_proof_tx_c.into(),
+                third_proof_tx.into(),
+            ],
+        ));
 
+        assert_eq!(
+            block
+                .verified_blobs
+                .iter()
+                .map(|(_, _, idx)| idx.unwrap())
+                .collect::<Vec<_>>(),
+            vec![0, 1, 0]
+        );
         // Check that we did settled with the last state
         assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![5]);
     }
