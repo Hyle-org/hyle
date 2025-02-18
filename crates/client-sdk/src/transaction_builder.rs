@@ -1,6 +1,6 @@
 use std::{
     any::Any,
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     future::Future,
     ops::{Deref, DerefMut},
     sync::{Arc, OnceLock},
@@ -213,19 +213,45 @@ impl<S: StateUpdater> TxExecutor<S> {
         iter.into_iter().map(move |tx| self.process(tx))
     }
 
+    /// Executes the transaction and updates the state of the associated contracts.
+    ///
+    /// This function processes a given `ProvableBlobTx` by iterating over its runners,
+    /// building the contract input, executing the contract, and updating the state
+    /// accordingly. If the execution fails, it returns an error with the program output.
+    ///
+    /// # Arguments
+    ///
+    /// * `tx` - The transaction to be processed.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing a `ProofTxBuilder` if successful, or an error if the execution fails.
     pub fn process(&mut self, mut tx: ProvableBlobTx) -> Result<ProofTxBuilder> {
         let mut outputs = vec![];
+        let mut old_states = HashMap::new();
+
         for runner in tx.runners.iter_mut() {
             let state = self.states.get(&runner.contract_name)?;
+            old_states.insert(runner.contract_name.clone(), state.clone());
 
             runner.build_contract_input(tx.tx_context.clone(), tx.blobs.clone(), state);
 
             tracing::info!("Checking transition for {}...", runner.contract_name);
-            let (mut state, out) = self
+            let (mut state, out) = match self
                 .executors
                 .get(&runner.contract_name)
                 .unwrap()
-                .execute(runner.contract_input.get().unwrap())?;
+                .execute(runner.contract_input.get().unwrap())
+            {
+                Ok(result) => result,
+                Err(e) => {
+                    // Revert all state changes
+                    for (contract_name, state) in old_states.iter_mut() {
+                        self.states.update(contract_name, &mut *state)?;
+                    }
+                    bail!("Execution failed for {}: {}", runner.contract_name, e);
+                }
+            };
 
             if !out.success {
                 let program_error = std::str::from_utf8(&out.program_outputs).unwrap();
