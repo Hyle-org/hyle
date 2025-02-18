@@ -124,7 +124,7 @@ mod tests {
 
     use crate::model::{BlobsHash, UnsettledBlobMetadata};
     use hyle_contract_sdk::{Blob, BlobData, Identity};
-    use hyle_model::{TxContext, TxHash};
+    use hyle_model::{DataProposalHash, TxContext, TxHash};
 
     use super::*;
 
@@ -132,6 +132,7 @@ mod tests {
         UnsettledBlobTransaction {
             identity: Identity::new("toto"),
             hash: TxHash::new(hash),
+            parent_dp_hash: DataProposalHash::default(),
             blobs_hash: BlobsHash::new("blobs_hash"),
             blobs: vec![UnsettledBlobMetadata {
                 blob: Blob {
