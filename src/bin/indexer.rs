@@ -92,14 +92,19 @@ async fn main() -> Result<()> {
     info!("Starting indexer with config: {:?}", &config);
 
     // Init global metrics meter we expose as an endpoint
-    let metrics_layer = HttpMetricsLayerBuilder::new()
-        .with_service_name(config.id.clone())
-        .with_metric_reader(
+    let provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
+        .with_reader(
             opentelemetry_prometheus::exporter()
                 .with_registry(prometheus::default_registry().clone())
                 .build()
                 .context("starting prometheus exporter")?,
         )
+        .build();
+
+    opentelemetry::global::set_meter_provider(provider.clone());
+
+    let metrics_layer = HttpMetricsLayerBuilder::new()
+        .with_provider(provider)
         .build();
 
     let bus = SharedMessageBus::new(BusMetrics::global(config.id.clone()));
