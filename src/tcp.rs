@@ -15,7 +15,7 @@ use tokio::{
 use tokio_util::codec::{Decoder, Encoder, Framed, LengthDelimitedCodec};
 
 use anyhow::{anyhow, bail, Context, Result};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::utils::logger::LogMe;
 
@@ -98,7 +98,7 @@ where
 }
 
 #[derive(Debug)]
-pub struct TcpConnectionPool<Codec, In: Clone, Out: Clone>
+pub struct TcpConnectionPool<Codec, In: Clone, Out: Clone + std::fmt::Debug>
 where
     Codec: Decoder<Item = In> + Encoder<Out> + Default,
 {
@@ -152,8 +152,6 @@ where
     ) -> Result<()> {
         let (ping_sender, mut ping_receiver) = tokio::sync::mpsc::channel(100);
         loop {
-            // ;)
-            info!("Loop iter");
             if false {
                 break;
             }
@@ -180,6 +178,7 @@ where
     async fn send(&mut self, msg: TcpCommand<Out>) -> Result<()> {
         match msg {
             TcpCommand::Broadcast(data) => {
+                debug!("Broadcasting data {:?} to all", data);
                 let mut to_remove = Vec::new();
                 for (peer_id, peer) in self.peers.iter_mut() {
                     let last_ping = peer.last_ping;
@@ -208,10 +207,12 @@ where
             }
             TcpCommand::Send(to, data) => {
                 // Retry on error
+                debug!("Sending data {:?} to {}", data, to);
                 let peer_stream = self
                     .peers
                     .get_mut(&to)
                     .context(format!("Getting peer {} to send a message", &to))?;
+
                 peer_stream
                     .sender
                     .send(TcpMessage::Data(*data))
@@ -240,8 +241,7 @@ where
             .name("peer-stream-abort")
             .spawn(async move {
                 while let Some(msg) = receiver.next().await {
-                    info!("Received message {:?}", &msg);
-                    dbg!(&msg);
+                    debug!("Received message {:?}", &msg);
                     match msg {
                         Ok(TcpMessage::Ping) => {
                             _ = ping_sender.send(cloned_peer_ip.clone()).await;
@@ -280,7 +280,7 @@ where
 struct PeerStream<Codec, In, Out>
 where
     In: Clone,
-    Out: Clone,
+    Out: Clone + std::fmt::Debug,
     Codec: Decoder<Item = In> + Encoder<Out> + Default,
 {
     /// Last timestamp we received a ping from the peer.
@@ -295,11 +295,11 @@ pub struct TcpClient<ClientCodec, In, Out>
 where
     ClientCodec: Decoder<Item = Out> + Encoder<In> + Default,
     In: Clone,
-    Out: Clone,
+    Out: Clone + std::fmt::Debug,
 {
     id: String,
     sender: SplitSink<Framed<TcpStream, TcpMessageCodec<ClientCodec>>, TcpMessage<In>>,
-    pub receiver: SplitStream<Framed<TcpStream, TcpMessageCodec<ClientCodec>>>,
+    receiver: SplitStream<Framed<TcpStream, TcpMessageCodec<ClientCodec>>>,
 }
 
 impl<ClientCodec, In, Out> TcpClient<ClientCodec, In, Out>
@@ -307,7 +307,7 @@ where
     ClientCodec: Decoder<Item = Out> + Encoder<In> + Default + Send + 'static,
     <ClientCodec as Decoder>::Error: std::fmt::Debug + Send,
     <ClientCodec as Encoder<In>>::Error: std::fmt::Debug + Send,
-    Out: BorshDeserialize + Clone + Send + 'static,
+    Out: BorshDeserialize + std::fmt::Debug + Clone + Send + 'static,
     In: BorshSerialize + Clone + Send + 'static,
 {
     pub async fn connect(id: String, target: &String) -> Result<TcpClient<ClientCodec, In, Out>> {
@@ -353,6 +353,35 @@ where
     pub async fn ping(&mut self) -> Result<()> {
         self.sender.send(TcpMessage::<In>::Ping).await?;
 
+        Ok(())
+    }
+
+    pub async fn recv(&mut self) -> Option<Out> {
+        loop {
+            match self.receiver.next().await {
+                Some(Ok(TcpMessage::Data(data))) => {
+                    // Interesting message
+                    trace!("Some interesting data for client {}", self.id);
+                    return Some(data);
+                }
+                None => {
+                    // End of stream
+                    warn!("End of stream for client {}", self.id);
+                    return None;
+                }
+                Some(Err(e)) => {
+                    warn!("Error while streaming data from peer: {:#}", e);
+                    return None;
+                }
+                Some(Ok(TcpMessage::Ping)) => {
+                    trace!("Ping received for client {}", self.id);
+                }
+            }
+        }
+    }
+
+    pub async fn close(mut self) -> Result<()> {
+        self.sender.close().await?;
         Ok(())
     }
 }

@@ -22,7 +22,7 @@ use crate::{
     model::*,
     module_handle_messages,
     p2p::network::{OutboundMessage, PeerEvent},
-    tcp::{TcpCommand, TcpConnectionPool, TcpEvent, TcpMessage},
+    tcp::{TcpCommand, TcpConnectionPool, TcpEvent},
     utils::{
         conf::SharedConf,
         logger::LogMe,
@@ -32,7 +32,6 @@ use crate::{
 use anyhow::{bail, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::str;
-use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use tokio::sync::mpsc::Sender;
@@ -169,6 +168,8 @@ impl DataAvailability {
             }
 
             Some(request) = pool_receiver.recv() => {
+                info!("Received message from the connection pool");
+
                 let TcpEvent{ dest, data } = request;
                 _ = self.start_streaming_to_peer(data.0, catchup_sender.clone(), &dest).await;
             }
@@ -179,8 +180,8 @@ impl DataAvailability {
             Some((mut block_hashes, peer_ip)) = catchup_receiver.recv() => {
                 let hash = block_hashes.pop();
 
-                trace!("📡  Sending block {:?} to peer {}", &hash, &peer_ip);
                 if let Some(hash) = hash {
+                    debug!("📡  Sending block {} to peer {}", &hash, &peer_ip);
                     if let Ok(Some(signed_block)) = self.blocks.get(&hash)
                     {
                         // Errors will be handled when sending new blocks, ignore here.
@@ -413,30 +414,22 @@ impl DataAvailability {
         };
         self.catchup_task = Some(tokio::spawn(async move {
             loop {
-                match stream.receiver.next().await {
+                match stream.recv().await {
                     None => {
-                        warn!("End of stream");
                         break;
                     }
-                    Some(Err(e)) => {
-                        warn!("Error while streaming data from peer: {:#}", e);
-                        break;
-                    }
-                    Some(Ok(streamed_block)) => {
-                        if let TcpMessage::Data(DataAvailabilityServerEvent::SignedBlock(block)) =
-                            streamed_block
-                        {
-                            info!(
-                                "📦 Received block (height {}) from stream",
-                                block.consensus_proposal.slot
-                            );
-                            // TODO: we should wait if the stream is full.
-                            if let Err(e) = sender.send(block).await {
-                                tracing::error!("Error while sending block over channel: {:#}", e);
-                                break;
-                            }
+                    Some(DataAvailabilityServerEvent::SignedBlock(block)) => {
+                        info!(
+                            "📦 Received block (height {}) from stream",
+                            block.consensus_proposal.slot
+                        );
+                        // TODO: we should wait if the stream is full.
+                        if let Err(e) = sender.send(block).await {
+                            tracing::error!("Error while sending block over channel: {:#}", e);
+                            break;
                         }
                     }
+                    Some(_) => {}
                 }
             }
         }));
@@ -448,9 +441,11 @@ impl DataAvailability {
 pub mod tests {
     #![allow(clippy::indexing_slicing)]
 
-    use crate::data_availability::codec::DataAvailabilityServerEvent;
+    use crate::data_availability::codec::{
+        DataAvailabilityServerEvent, DataAvailabilityServerRequest,
+    };
     use crate::model::ValidatorPublicKey;
-    use crate::tcp::TcpCommand;
+    use crate::tcp::{TcpClient, TcpCommand};
     use crate::{
         bus::BusClientSender,
         consensus::CommittedConsensusProposal,
@@ -462,12 +457,10 @@ pub mod tests {
         },
         utils::{conf::Conf, integration_test::find_available_port},
     };
-    use futures::{SinkExt, StreamExt};
     use staking::state::Staking;
-    use tokio::io::AsyncWriteExt;
     use tokio::sync::mpsc::{channel, Sender};
-    use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
+    use super::codec::DataAvailabilityClientCodec;
     use super::module_bus_client;
     use super::Blocks;
     use anyhow::Result;
@@ -581,7 +574,6 @@ pub mod tests {
         let tmpdir = tempfile::tempdir().unwrap().into_path();
         let blocks = Blocks::new(&tmpdir).unwrap();
 
-        let (sender, _) = channel(1);
         let global_bus = crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
         );
@@ -608,31 +600,32 @@ pub mod tests {
             block.consensus_proposal.slot = i;
         }
         blocks.reverse();
-        for block in blocks {
-            da.handle_signed_block(block, sender.clone()).await.unwrap();
-        }
 
+        // Start Da and its client
         tokio::spawn(async move {
             da.start().await.unwrap();
         });
 
+        let mut client = TcpClient::<
+            DataAvailabilityClientCodec,
+            DataAvailabilityServerRequest,
+            DataAvailabilityServerEvent,
+        >::connect("client_id".to_string(), &config.da_address)
+        .await
+        .unwrap();
+
+        // Feed Da with blocks, should stream them to the client
+        for block in blocks {
+            block_sender
+                .send(MempoolBlockEvent::BuiltSignedBlock(block))
+                .unwrap();
+        }
+
         // wait until it's up
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-        let mut stream = tokio::net::TcpStream::connect(config.da_address.clone())
-            .await
-            .unwrap();
-
-        // TODO: figure out why writing doesn't work with da_stream.
-        stream.write_u32(8).await.unwrap();
-        stream.write_u64(0).await.unwrap();
-
-        let mut da_stream = Framed::new(stream, LengthDelimitedCodec::new());
-
         let mut heights_received = vec![];
-        while let Some(Ok(cmd)) = da_stream.next().await {
-            let bytes = cmd;
-            let event: DataAvailabilityServerEvent = borsh::from_slice(&bytes).unwrap();
+        while let Some(event) = client.recv().await {
             if let DataAvailabilityServerEvent::SignedBlock(block) = event {
                 heights_received.push(block.height().0);
             }
@@ -642,7 +635,8 @@ pub mod tests {
         }
         assert_eq!(heights_received, (0..14).collect::<Vec<u64>>());
 
-        da_stream.close().await.unwrap();
+        client.close().await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
         let mut ccp = CommittedConsensusProposal {
             staking: Staking::default(),
@@ -667,20 +661,21 @@ pub mod tests {
 
         // End of the first stream
 
-        let mut stream = tokio::net::TcpStream::connect(config.da_address.clone())
+        let mut client = TcpClient::<
+            DataAvailabilityClientCodec,
+            DataAvailabilityServerRequest,
+            DataAvailabilityServerEvent,
+        >::connect("client_id".to_string(), &config.da_address)
+        .await
+        .unwrap();
+
+        client
+            .send(DataAvailabilityServerRequest(BlockHeight(0)))
             .await
             .unwrap();
 
-        // TODO: figure out why writing doesn't work with da_stream.
-        stream.write_u32(8).await.unwrap();
-        stream.write_u64(0).await.unwrap();
-
-        let mut da_stream = Framed::new(stream, LengthDelimitedCodec::new());
-
         let mut heights_received = vec![];
-        while let Some(Ok(cmd)) = da_stream.next().await {
-            let bytes = cmd;
-            let event: DataAvailabilityServerEvent = borsh::from_slice(&bytes).unwrap();
+        while let Some(event) = client.recv().await {
             if let DataAvailabilityServerEvent::SignedBlock(block) = event {
                 heights_received.push(block.height().0);
             }

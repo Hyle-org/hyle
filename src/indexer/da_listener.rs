@@ -3,8 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{bail, Error, Result};
-use futures::StreamExt;
+use anyhow::{bail, Result};
 use hyle_model::Hashed;
 use tracing::{debug, info};
 
@@ -16,7 +15,7 @@ use crate::{
     model::{BlockHeight, CommonRunContext},
     module_handle_messages,
     node_state::{module::NodeStateEvent, NodeState},
-    tcp::{TcpClient, TcpMessage},
+    tcp::TcpClient,
     utils::{
         conf::SharedConf,
         logger::LogMe,
@@ -103,17 +102,14 @@ impl Module for DAListener {
 }
 
 impl DAListener {
-    pub async fn start(&mut self) -> Result<(), Error> {
+    pub async fn start(&mut self) -> Result<()> {
         module_handle_messages! {
             on_bus self.bus,
-            frame = self.listener.receiver.next() => {
-                if let Some(Ok(TcpMessage::Data(streamed_signed_block))) = frame {
-                    _ = self.processing_next_frame(streamed_signed_block).await.log_error("Consuming da stream");
-                } else if frame.is_none() {
+            frame = self.listener.recv() => {
+                let Some(streamed_signed_block) = frame else {
                     bail!("DA stream closed");
-                } else if let Some(Err(e)) = frame {
-                    bail!("Error while reading DA stream: {}", e);
-                }
+                };
+                _ = self.processing_next_frame(streamed_signed_block).await.log_error("Consuming da stream")?;
             }
         };
         let _ = Self::save_on_disk::<NodeState>(
