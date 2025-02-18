@@ -93,7 +93,7 @@ tracing = "0.1"
 anymap = { version = "0.12.1" }
 assertables = { version = "9.5.0" }
 axum = { version = "0.8.1", features = ["ws", "macros"] }
-axum-otel-metrics = { version = "0.9.1" }
+axum-otel-metrics = { version = "0.10.0" }
 bytes = { version = "1.10.0" }
 clap = { version = "4.5.29", features = ["derive"] }
 config = { version = "=0.15.0", default-features = false, features = ["ron"] }
@@ -101,8 +101,9 @@ futures = { version = "0.3.31" }
 hyle-contracts = { path = "./crates/contracts", package = "hyle-contracts" }
 indexmap = { version = "2.7.1", features = ["serde"] }
 # opentelemetry and axum-otel-metrics must be updated together (so that there is only one opentelemetry version)
-opentelemetry = { version = "0.27" }
-opentelemetry-prometheus = { version = "0.27.0" }
+opentelemetry = { version = "0.28" }
+opentelemetry-prometheus = { version = "0.28.0" }
+opentelemetry_sdk = "0.28.0"
 paste = { version = "1.0.15" }
 prometheus = { version = "0.13.4" }
 quote = { version = "1.0.38" }
