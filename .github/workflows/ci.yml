@@ -88,8 +88,8 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: lcov.info
           fail_ci_if_error: true
-  no_default_features:
-    name: Build with no default features
+  features_flags:
+    name: Build with different feature flags
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -107,6 +107,8 @@ jobs:
         run: cargo build -p hyle-model --no-default-features
       - name: Build
         run: cargo build --no-default-features
+      - name: Build with sp1
+        run: cargo build --no-default-features -F sp1
   unused_dependencies:
     name: Check unused dependencies
     if: github.event.pull_request.draft == false

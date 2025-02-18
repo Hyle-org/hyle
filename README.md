@@ -31,16 +31,34 @@ To launch a single-node devnet (consensus disabled) for building and debugging s
 
 ```bash
 cargo build
-HYLE_RUN_INDEXER=false cargo run --bin node
+HYLE_RUN_INDEXER=false cargo run
+```
+
+Note: if you need sp1 verifier, enable the feature: `sp1`
+```sh 
+cargo run -F sp1
 ```
 
 #### Run with Indexer
 
-To enable the indexer, ensure you have a running PostgreSQL server:
+To run the indexer, you can use the `--pg` node argument:
+```sh
+cargo run -- --pg
+```
+
+It will start a postgres server for you, and will close it (with all its data) whenever you stop the node. 
+This is usefull during development.
+
+If you want data persistance, you can run the PostgreSQL server:
 
 ```bash
 # Start PostgreSQL with default configuration:
 docker run -d --rm --name pg_hyle -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres
+```
+
+and then in the `hyle` root:
+```sh
+cargo run
 ```
 
 ### Configuration

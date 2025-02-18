@@ -6,6 +6,8 @@ use std::io::Read;
 use anyhow::{bail, Context, Error};
 use hyle_model::{HyleOutput, ProgramId};
 use rand::Rng;
+
+#[cfg(feature = "sp1")]
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1VerifyingKey};
 
 mod noir_utils;
@@ -104,6 +106,7 @@ pub fn noir_proof_verifier(proof: &[u8], image_id: &[u8]) -> Result<Vec<HyleOutp
 
 /// The following environment variables are used to configure the prover:
 /// - `SP1_PROVER`: The type of prover to use. Must be one of `mock`, `local`, `cuda`, or `network`.
+#[cfg(feature = "sp1")]
 pub fn sp1_proof_verifier(
     proof_bin: &[u8],
     verification_key: &[u8],
@@ -138,6 +141,7 @@ pub fn validate_risc0_program_id(program_id: &ProgramId) -> Result<(), Error> {
     Ok(())
 }
 
+#[cfg(feature = "sp1")]
 pub fn validate_sp1_program_id(program_id: &ProgramId) -> Result<(), Error> {
     serde_json::from_slice::<SP1VerifyingKey>(program_id.0.as_slice())
         .map_err(|e| anyhow::anyhow!("Invalid SP1 image ID: {}", e))?;
