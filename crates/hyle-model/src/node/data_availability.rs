@@ -118,10 +118,11 @@ impl Hashed<HyleOutputHash> for HyleOutput {
         hasher.update(self.index.0.to_le_bytes());
         hasher.update(&self.blobs);
         hasher.update([self.success as u8]);
-        hasher.update(self.registered_contracts.len().to_le_bytes());
-        self.registered_contracts
-            .iter()
-            .for_each(|c| hasher.update(contract::Hashed::hashed(c).0));
+        hasher.update(self.onchain_effects.len().to_le_bytes());
+        self.onchain_effects.iter().for_each(|c| match c {
+            OnchainEffect::RegisterContract(c) => hasher.update(contract::Hashed::hashed(c).0),
+            OnchainEffect::DeleteContract(cn) => hasher.update(cn.0.as_bytes()),
+        });
         hasher.update(&self.program_outputs);
         HyleOutputHash(hasher.finalize().to_vec())
     }

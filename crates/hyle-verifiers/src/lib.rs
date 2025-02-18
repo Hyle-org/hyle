@@ -225,7 +225,7 @@ mod tests {
                         success: true,
                         tx_hash: TxHash::default(), // TODO
                         tx_ctx: None,
-                        registered_contracts: vec![],
+                        onchain_effects: vec![],
                         program_outputs: vec![]
                     }]
                 );

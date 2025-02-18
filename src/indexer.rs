@@ -922,7 +922,7 @@ mod test {
                         index: blob_index,
                         blobs,
                         success: true,
-                        registered_contracts: vec![],
+                        onchain_effects: vec![],
                         program_outputs: vec![],
                     },
                 }],
