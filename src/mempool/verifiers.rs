@@ -177,7 +177,7 @@ pub fn validate_program_id(verifier: &Verifier, program_id: &ProgramId) -> Resul
     match verifier.0.as_str() {
         "risc0" => validate_risc0_program_id(program_id),
         #[cfg(feature = "sp1")]
-        "sp1" => validate_sp1_program_id(program_id),
+        "sp1" => hyle_verifiers::validate_sp1_program_id(program_id),
         _ => Ok(()),
     }
 }
