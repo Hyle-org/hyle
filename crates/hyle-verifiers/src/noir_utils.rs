@@ -33,7 +33,7 @@ pub fn parse_noir_output(vector: &mut Vec<String>) -> Result<HyleOutput, Error> 
         index: BlobIndex(index as usize),
         blobs,
         success,
-        registered_contracts: vec![],
+        onchain_effects: vec![],
         program_outputs: vec![],
     })
 }

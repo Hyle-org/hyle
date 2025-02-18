@@ -13,6 +13,7 @@ use hyle_contract_sdk::{
     StateDigest, Verifier,
 };
 use hyle_contracts::{HYDENTITY_ELF, UUID_TLD_ELF, UUID_TLD_ID};
+use hyle_model::OnchainEffect;
 use uuid_tld::{UuidTld, UuidTldAction};
 
 contract_states!(
@@ -111,14 +112,10 @@ async fn test_uuid_registration() {
 
     let contract = loop {
         if let Ok(c) = ctx
-            .get_contract(
-                &expected_output
-                    .registered_contracts
-                    .first()
-                    .unwrap()
-                    .contract_name
-                    .0,
-            )
+            .get_contract(match expected_output.onchain_effects.first() {
+                Some(OnchainEffect::RegisterContract(e)) => &e.contract_name.0,
+                _ => panic!("Expected RegisterContractEffect"),
+            })
             .await
         {
             break c;

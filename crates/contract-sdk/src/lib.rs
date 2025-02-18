@@ -44,7 +44,7 @@ macro_rules! info {
     }
 }
 
-pub type RunResult = Result<(String, ExecutionContext, Vec<RegisterContractEffect>), String>;
+pub type RunResult = Result<(String, ExecutionContext, Vec<OnchainEffect>), String>;
 
 pub trait HyleContract {
     fn execute(&mut self, contract_input: &ContractInput) -> RunResult;

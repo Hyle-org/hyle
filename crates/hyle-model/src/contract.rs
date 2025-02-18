@@ -317,6 +317,17 @@ pub struct Verifier(pub String);
 pub struct ProgramId(pub Vec<u8>);
 
 #[derive(
+    Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize,
+)]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
+/// Enum for various side-effects blobs can have on the chain.
+/// This is implemented as an enum for easier forward compatibility.
+pub enum OnchainEffect {
+    RegisterContract(RegisterContractEffect),
+    DeleteContract(ContractName),
+}
+
+#[derive(
     Default,
     Serialize,
     Deserialize,
@@ -342,7 +353,7 @@ pub struct HyleOutput {
     // Optional - if empty, these won't be checked, but also can't be used inside the program.
     pub tx_ctx: Option<TxContext>,
 
-    pub registered_contracts: Vec<RegisterContractEffect>,
+    pub onchain_effects: Vec<OnchainEffect>,
 
     pub program_outputs: Vec<u8>,
 }
@@ -507,6 +518,7 @@ impl Add<BlockHeight> for BlockHeight {
 #[derive(
     Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize,
 )]
+/// Used as a blob action to register a contract in the 'hyle' TLD.
 pub struct RegisterContractAction {
     pub verifier: Verifier,
     pub program_id: ProgramId,
@@ -530,6 +542,32 @@ impl Hashed<TxHash> for RegisterContractAction {
 }
 
 impl ContractAction for RegisterContractAction {
+    fn as_blob(
+        &self,
+        contract_name: ContractName,
+        caller: Option<BlobIndex>,
+        callees: Option<Vec<BlobIndex>>,
+    ) -> Blob {
+        Blob {
+            contract_name,
+            data: BlobData::from(StructuredBlobData {
+                caller,
+                callees,
+                parameters: self.clone(),
+            }),
+        }
+    }
+}
+
+#[derive(
+    Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize,
+)]
+/// Used as a blob action to delete a contract in the 'hyle' TLD.
+pub struct DeleteContractAction {
+    pub contract_name: ContractName,
+}
+
+impl ContractAction for DeleteContractAction {
     fn as_blob(
         &self,
         contract_name: ContractName,

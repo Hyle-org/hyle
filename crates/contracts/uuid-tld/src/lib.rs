@@ -5,8 +5,8 @@ use rand::Rng;
 use rand_seeder::SipHasher;
 use sdk::{
     info, utils::parse_raw_contract_input, Blob, BlobData, BlobIndex, ContractAction,
-    ContractInput, ContractName, Digestable, HyleContract, ProgramId, RegisterContractEffect,
-    RunResult, StateDigest, Verifier,
+    ContractInput, ContractName, Digestable, HyleContract, OnchainEffect, ProgramId,
+    RegisterContractEffect, RunResult, StateDigest, Verifier,
 };
 use uuid::Uuid;
 
@@ -57,7 +57,7 @@ impl HyleContract for UuidTld {
         Ok((
             format!("registered {}", id.clone()),
             exec_ctx,
-            vec![RegisterContractEffect {
+            vec![OnchainEffect::RegisterContract(RegisterContractEffect {
                 contract_name: format!(
                     "{}.{}",
                     id, contract_input.blobs[contract_input.index.0].contract_name.0
@@ -66,7 +66,7 @@ impl HyleContract for UuidTld {
                 verifier: action.verifier,
                 program_id: action.program_id,
                 state_digest: action.state_digest,
-            }],
+            })],
         ))
     }
 }
@@ -158,10 +158,11 @@ mod test {
 
         let contract_input = make_contract_input(action.clone(), borsh::to_vec(&state).unwrap());
 
-        let (_, _, registered_contracts) = state.execute(&contract_input).unwrap();
+        let (_, _, onchain_effects) = state.execute(&contract_input).unwrap();
 
-        let effect: &RegisterContractEffect = registered_contracts.first().unwrap();
-
+        let OnchainEffect::RegisterContract(effect) = onchain_effects.first().unwrap() else {
+            panic!("Expected RegisterContract effect");
+        };
         assert_eq!(
             effect.contract_name.0,
             "7de07efe-e91d-45f7-a5d2-0b813c1d3e10.uuid"
@@ -169,9 +170,11 @@ mod test {
 
         let contract_input = make_contract_input(action.clone(), borsh::to_vec(&state).unwrap());
 
-        let (_, _, registered_contracts) = state.execute(&contract_input).unwrap();
+        let (_, _, onchain_effects) = state.execute(&contract_input).unwrap();
 
-        let effect = registered_contracts.first().unwrap();
+        let OnchainEffect::RegisterContract(effect) = onchain_effects.first().unwrap() else {
+            panic!("Expected RegisterContract effect");
+        };
 
         assert_eq!(
             effect.contract_name.0,

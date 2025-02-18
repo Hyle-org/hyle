@@ -169,7 +169,7 @@ pub mod test {
             success: true,
             tx_hash: contract_input.tx_hash.clone(),
             tx_ctx: None,
-            registered_contracts: vec![],
+            onchain_effects: vec![],
             program_outputs: vec![],
         };
         Ok(hyle_output)
