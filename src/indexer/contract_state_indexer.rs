@@ -1,9 +1,10 @@
 use anyhow::{anyhow, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_contract_sdk::{BlobIndex, ContractName};
-use hyle_model::{RegisterContractEffect, TxId};
+use client_sdk::contract_indexer::{ContractHandler, Store};
+use hyle_contract_sdk::{BlobIndex, ContractName, TxId};
+use hyle_model::RegisterContractEffect;
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, ops::Deref, path::PathBuf, sync::Arc};
+use std::{ops::Deref, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::debug;
 
@@ -15,30 +16,13 @@ use crate::{
     utils::{conf::Conf, logger::LogMe, modules::Module},
 };
 
-use super::{contract_handlers::ContractHandler, indexer_bus_client::IndexerBusClient};
+use super::indexer_bus_client::IndexerBusClient;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ProverEvent {
     NewTx(Transaction),
 }
 impl BusMessage for ProverEvent {}
-
-#[derive(BorshSerialize, BorshDeserialize)]
-pub struct Store<State> {
-    pub state: Option<State>,
-    pub contract_name: ContractName,
-    pub unsettled_blobs: BTreeMap<TxId, BlobTransaction>,
-}
-
-impl<State> Default for Store<State> {
-    fn default() -> Self {
-        Store {
-            state: None,
-            contract_name: Default::default(),
-            unsettled_blobs: BTreeMap::new(),
-        }
-    }
-}
 
 pub struct ContractStateIndexer<State> {
     bus: IndexerBusClient,

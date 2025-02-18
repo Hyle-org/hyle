@@ -30,8 +30,14 @@ tokio = { version = "1.42.0", optional = true }
 tokio-util = { version = "0.7.13", optional = true }
 futures = { version = "0.3.31", optional = true }
 
+# Indexer feature, these are re-exported
+axum = { version = "0.8.1", optional = true }
+utoipa = { version = "5.3.1", optional = true }
+utoipa-axum = { version = "0.2.0", optional = true }
+
 [features]
 rest = ["dep:reqwest"]
 tcp = ["dep:reqwest", "dep:tokio", "dep:tokio-util", "dep:futures"]
+indexer = ["dep:utoipa", "dep:axum", "dep:utoipa-axum", "dep:tokio"]
 risc0 = ["dep:risc0-zkvm", "dep:bonsai-runner"]
 sp1 = ["dep:sp1-sdk", "dep:bincode"]

@@ -7,7 +7,7 @@ use axum::{
     extract::{DefaultBodyLimit, State},
     http::Request,
     middleware::Next,
-    response::{IntoResponse, Response},
+    response::IntoResponse,
     routing::get,
     Json,
 };
@@ -15,7 +15,6 @@ use axum_otel_metrics::HttpMetricsLayer;
 use hyle_model::api::*;
 use hyle_model::*;
 use prometheus::{Encoder, TextEncoder};
-use reqwest::StatusCode;
 use tokio::time::Instant;
 use tracing::info;
 use utoipa::OpenApi;
@@ -24,6 +23,7 @@ use utoipa_swagger_ui::SwaggerUi;
 use crate::utils::modules::Module;
 use crate::{bus::SharedMessageBus, module_handle_messages, utils::modules::module_bus_client};
 
+pub use client_sdk::contract_indexer::AppError;
 pub use client_sdk::rest_client as client;
 
 module_bus_client! {
@@ -160,26 +160,5 @@ impl Clone for RouterState {
         Self {
             info: self.info.clone(),
         }
-    }
-}
-
-// Make our own error that wraps `anyhow::Error`.
-pub struct AppError(pub StatusCode, pub anyhow::Error);
-
-// Tell axum how to convert `AppError` into a response.
-impl IntoResponse for AppError {
-    fn into_response(self) -> Response {
-        (self.0, format!("{}", self.1)).into_response()
-    }
-}
-
-// This enables using `?` on functions that return `Result<_, anyhow::Error>` to turn them into
-// `Result<_, AppError>`. That way you don't need to do that manually.
-impl<E> From<E> for AppError
-where
-    E: Into<anyhow::Error>,
-{
-    fn from(err: E) -> Self {
-        Self(StatusCode::INTERNAL_SERVER_ERROR, err.into())
     }
 }

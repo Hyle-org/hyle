@@ -14,7 +14,7 @@ pub mod metadata {
 }
 use metadata::*;
 
-struct HyllarPseudoExecutor {}
+pub struct HyllarPseudoExecutor {}
 impl ClientSdkExecutor for HyllarPseudoExecutor {
     fn execute(
         &self,
