@@ -109,7 +109,7 @@ impl DAListener {
                 let Some(streamed_signed_block) = frame else {
                     bail!("DA stream closed");
                 };
-                _ = self.processing_next_frame(streamed_signed_block).await.log_error("Consuming da stream")?;
+                self.processing_next_frame(streamed_signed_block).await.log_error("Consuming da stream")?;
             }
         };
         let _ = Self::save_on_disk::<NodeState>(

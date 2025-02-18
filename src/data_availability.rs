@@ -234,7 +234,7 @@ impl DataAvailability {
         evt: MempoolStatusEvent,
         pool_sender: Sender<TcpCommand<DataAvailabilityServerEvent>>,
     ) -> Result<()> {
-        _ = pool_sender
+        pool_sender
             .send(TcpCommand::Broadcast(Box::new(
                 DataAvailabilityServerEvent::MempoolStatusEvent(evt),
             )))
@@ -371,7 +371,7 @@ impl DataAvailability {
         &mut self,
         start_height: BlockHeight,
         catchup_sender: tokio::sync::mpsc::Sender<(Vec<ConsensusProposalHash>, String)>,
-        peer_ip: &String,
+        peer_ip: &str,
     ) -> Result<()> {
         // Finally, stream past blocks as required.
         // We'll create a copy of the range so we don't stream everything.
@@ -392,7 +392,7 @@ impl DataAvailability {
         processed_block_hashes.reverse();
 
         catchup_sender
-            .send((processed_block_hashes, peer_ip.clone()))
+            .send((processed_block_hashes, peer_ip.to_string()))
             .await?;
 
         Ok(())

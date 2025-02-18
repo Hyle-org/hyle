@@ -71,7 +71,7 @@ where
         };
 
         let msg: TcpMessage<Decodable> =
-            borsh::from_slice(&mut &src_ldc[..]).context("Decode TcpServerMessage wrapper type")?;
+            borsh::from_slice(&src_ldc[..]).context("Decode TcpServerMessage wrapper type")?;
 
         Ok(Some(msg))
     }
