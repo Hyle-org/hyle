@@ -1,21 +1,22 @@
 //! State required for participation in consensus by the node.
 
-use crate::model::contract_registration::validate_state_digest_size;
+use crate::model::contract_registration::has_item_for_all_parents;
 use crate::model::verifiers::NativeVerifiers;
 use crate::model::*;
 use crate::{
     mempool::verifiers, model::contract_registration::validate_contract_registration_metadata,
 };
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{bail, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_contract_sdk::{utils::parse_structured_blob, BlobIndex, HyleOutput, TxHash};
 use ordered_tx_map::OrderedTxMap;
+use std::collections::HashSet;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     sync::Arc,
 };
 use timeouts::Timeouts;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
 
 mod api;
 pub mod module;
@@ -177,8 +178,7 @@ impl NodeState {
                                         .or_default()
                                         .push(TransactionStateEvent::Error(err));
                                     None
-
-                                                                    }
+                                }
                             }})
                             .collect::<BTreeSet<_>>();
                     // Then try to settle transactions when we can.
@@ -325,26 +325,30 @@ impl NodeState {
             bail!("BlobTx {} not found", &blob_tx_hash);
         };
 
-        // TODO: add diverse verifications ? (without the inital state checks!).
-        // TODO: success to false is valid outcome and can be settled.
-        Self::verify_hyle_output(unsettled_tx, &blob_proof_data.hyle_output)
-            .context("Invalid HyleOutput")?;
-
-        let Some(blob) = unsettled_tx
-            .blobs
-            .get_mut(blob_proof_data.hyle_output.index.0)
-        else {
+        let Some(blob) = unsettled_tx.blobs.get(blob_proof_data.hyle_output.index.0) else {
             bail!(
                 "blob at index {} not found in blob TX {}",
                 blob_proof_data.hyle_output.index.0,
                 &blob_tx_hash
             );
         };
+        let contract_name = blob.blob.contract_name.clone();
+
+        Self::verify_hyle_output(unsettled_tx, &contract_name, &blob_proof_data.hyle_output)?;
+
+        // Borrow a second time, mutably
+        #[allow(clippy::unwrap_used, reason = "Guaranteed to exist by the above")]
+        let blob = unsettled_tx
+            .blobs
+            .get_mut(blob_proof_data.hyle_output.index.0)
+            .unwrap();
 
         // If we arrived here, HyleOutput provided is OK and can now be saved
         debug!(
-            "Saving a hyle_output for BlobTx {} index {}",
-            blob_proof_data.hyle_output.tx_hash.0, blob_proof_data.hyle_output.index
+            "Saving a hyle_output for BlobTx {} index {} ({})",
+            blob_proof_data.hyle_output.tx_hash.0,
+            blob_proof_data.hyle_output.index,
+            should_settle_tx
         );
         tx_events
             .entry(blob_tx_hash.clone())
@@ -367,10 +371,7 @@ impl NodeState {
             blob_index: blob_proof_data.hyle_output.index,
             blob_proof_output_index: blob.possible_proofs.len() - 1,
             #[allow(clippy::indexing_slicing, reason = "Guaranteed to exist by the above")]
-            contract_name: unsettled_tx.blobs[blob_proof_data.hyle_output.index.0]
-                .blob
-                .contract_name
-                .clone(),
+            contract_name,
             hyle_output: blob_proof_data.hyle_output.clone(),
         });
 
@@ -452,19 +453,18 @@ impl NodeState {
 
         let updated_contracts = BTreeMap::new();
 
-        let (updated_contracts, blob_proof_output_indices, success) =
-            match Self::settle_blobs_recursively(
+        let Some((updated_contracts, blob_proof_output_indices, success)) =
+            Self::settle_blobs_recursively(
                 &self.contracts,
                 updated_contracts,
+                &unsettled_tx.blobs,
                 unsettled_tx.blobs.iter(),
                 vec![],
                 events,
-            ) {
-                Some(res) => res,
-                None => {
-                    bail!("Tx: {} is not ready to settle.", unsettled_tx.hash);
-                }
-            };
+            )
+        else {
+            bail!("Tx: {} is not ready to settle.", unsettled_tx.hash);
+        };
 
         // We are OK to settle now.
 
@@ -485,13 +485,18 @@ impl NodeState {
     fn settle_blobs_recursively<'a>(
         contracts: &HashMap<ContractName, Contract>,
         current_contracts: BTreeMap<ContractName, Contract>,
+        unsettled_blobs: &'a [UnsettledBlobMetadata],
         mut blob_iter: impl Iterator<Item = &'a UnsettledBlobMetadata> + Clone,
         mut blob_proof_output_indices: Vec<usize>,
         events: &mut Vec<TransactionStateEvent>,
     ) -> Option<(BTreeMap<ContractName, Contract>, Vec<usize>, bool)> {
-        // Recursion end-case: we succesfully settled all prior blobs, so success.
+        // Recursion end-case: we succesfully settled all prior blobs.
         let Some(current_blob) = blob_iter.next() else {
-            return Some((current_contracts, blob_proof_output_indices, true));
+            // This logic is hard to write inline, so we'll just run it at the end here
+            if Self::validate_contract_registrations(unsettled_blobs, &blob_proof_output_indices) {
+                return Some((current_contracts, blob_proof_output_indices, true));
+            }
+            return None;
         };
 
         let contract_name = &current_blob.blob.contract_name;
@@ -502,13 +507,15 @@ impl NodeState {
         let known_contract_state = current_contracts
             .get(contract_name)
             .unwrap_or(contracts.get(contract_name).unwrap());
+
+        blob_proof_output_indices.push(0);
+
         // Super special case - the hyle contract has "synthetic proofs".
         // We need to check the current state of 'current_contracts' to check validity,
         // so we really can't do this before we've settled the earlier blobs.
         if contract_name.0 == "hyle" {
-            // Have to push something here or the rest of the logic breaks
-            blob_proof_output_indices.push(0);
             return match Self::handle_blob_for_hyle_tld(
+                unsettled_blobs,
                 contracts,
                 &current_contracts,
                 &current_blob.blob,
@@ -519,6 +526,7 @@ impl NodeState {
                     Self::settle_blobs_recursively(
                         contracts,
                         us,
+                        unsettled_blobs,
                         blob_iter.clone(),
                         blob_proof_output_indices.clone(),
                         events,
@@ -529,12 +537,16 @@ impl NodeState {
                     let msg = format!("Could not settle blob proof output for 'hyle': {:?}", err);
                     debug!("{msg}");
                     events.push(TransactionStateEvent::SettleEvent(msg));
-                    Some((current_contracts, blob_proof_output_indices, false))
+                    Some((current_contracts, blob_proof_output_indices.clone(), false))
                 }
             };
         }
         // Regular case: go through each proof for this blob. If they settle, carry on recursively.
         for (i, proof_metadata) in current_blob.possible_proofs.iter().enumerate() {
+            #[allow(clippy::unwrap_used, reason = "pushed above so last must exist")]
+            let blob_index = blob_proof_output_indices.last_mut().unwrap();
+            *blob_index = i;
+
             if !Self::validate_proof_metadata(proof_metadata, known_contract_state) {
                 // Not a valid proof, log it and try the next one.
                 let msg = format!(
@@ -568,10 +580,10 @@ impl NodeState {
                     verifier: known_contract_state.verifier.clone(),
                 },
             );
-            blob_proof_output_indices.push(i);
             match Self::settle_blobs_recursively(
                 contracts,
                 us,
+                unsettled_blobs,
                 blob_iter.clone(),
                 blob_proof_output_indices.clone(),
                 events,
@@ -639,6 +651,8 @@ impl NodeState {
             block_under_construction.failed_txs.push(bth);
         } else {
             // Take note of staking and contract registration
+            // Because registrations are handled on all parents use a set to deduplicate
+            let mut registrations = BTreeSet::new();
             for (i, mut blob_metadata) in settled_tx.blobs.into_iter().enumerate() {
                 #[allow(clippy::indexing_slicing, reason = "all exist by construction")]
                 let settled_proof = blob_metadata
@@ -646,10 +660,7 @@ impl NodeState {
                     .remove(blob_proof_output_indices[i]);
 
                 for rce in settled_proof.1.registered_contracts {
-                    self.handle_register_contract_effect(&rce);
-                    block_under_construction
-                        .registered_contracts
-                        .push((bth.clone(), rce));
+                    registrations.insert(rce);
                 }
 
                 let blob = blob_metadata.blob;
@@ -665,6 +676,13 @@ impl NodeState {
                         error!("Failed to parse StakingAction");
                     }
                 }
+            }
+
+            for rce in registrations {
+                self.handle_register_contract_effect(&rce);
+                block_under_construction
+                    .registered_contracts
+                    .push((bth.clone(), rce));
             }
 
             // Keep track of settled txs
@@ -694,6 +712,7 @@ impl NodeState {
     }
 
     fn handle_blob_for_hyle_tld(
+        unsettled_blobs: &[UnsettledBlobMetadata],
         contracts: &HashMap<ContractName, Contract>,
         current_contracts: &BTreeMap<ContractName, Contract>,
         current_blob: &Blob,
@@ -704,7 +723,7 @@ impl NodeState {
             bail!("Blob is  not a RegisterContractAction");
         };
 
-        // Check name, it's either a direct subdomain or a TLD
+        // Check name, it's either a subdomain or a TLD
         validate_contract_registration_metadata(
             &"hyle".into(),
             &reg.parameters.contract_name,
@@ -723,6 +742,21 @@ impl NodeState {
             );
         }
 
+        // Check there are blobs for all parents
+        // If not this can never be settled so we fail.
+        if !has_item_for_all_parents(
+            unsettled_blobs
+                .iter()
+                .map(|b| &b.blob.contract_name)
+                .collect(),
+            &reg.parameters.contract_name,
+        ) {
+            bail!(
+                "Contract {} is not a direct subdomain and does not have blobs for all parents",
+                reg.parameters.contract_name.0
+            );
+        }
+
         Ok(Contract {
             name: reg.parameters.contract_name.clone(),
             program_id: reg.parameters.program_id.clone(),
@@ -731,33 +765,10 @@ impl NodeState {
         })
     }
 
-    // Assumes verify_hyle_output was already called
-    fn validate_proof_metadata(
-        proof_metadata: &(ProgramId, HyleOutput),
-        contract: &Contract,
-    ) -> bool {
-        if proof_metadata.1.registered_contracts.iter().any(|effect| {
-            validate_contract_registration_metadata(
-                &contract.name,
-                &effect.contract_name,
-                &effect.verifier,
-                &effect.program_id,
-                &effect.state_digest,
-            )
-            .is_err()
-        }) {
-            return false;
-        }
-
-        if validate_state_digest_size(&proof_metadata.1.next_state).is_err() {
-            return false;
-        }
-
-        proof_metadata.1.initial_state == contract.state && proof_metadata.0 == contract.program_id
-    }
-
+    // Called when processing a verified proof TX - checks the proof is potentially valid for settlement.
     fn verify_hyle_output(
         unsettled_tx: &UnsettledBlobTransaction,
+        contract_name: &ContractName,
         hyle_output: &HyleOutput,
     ) -> Result<(), Error> {
         // Identity verification
@@ -788,6 +799,20 @@ impl NodeState {
             }
         }
 
+        // If there are contract registrations, check them
+        if hyle_output.registered_contracts.iter().any(|effect| {
+            validate_contract_registration_metadata(
+                contract_name,
+                &effect.contract_name,
+                &effect.verifier,
+                &effect.program_id,
+                &effect.state_digest,
+            )
+            .is_err()
+        }) {
+            bail!("Proof contains invalid contract registration metadata");
+        }
+
         // blob_hash verification
         let extracted_blobs_hash = BlobsHash::from_concatenated(&hyle_output.blobs);
         if extracted_blobs_hash != unsettled_tx.blobs_hash {
@@ -799,6 +824,46 @@ impl NodeState {
         }
 
         Ok(())
+    }
+
+    // Called when trying to settle a blob TX - asserts a proof validly settles a blob.
+    // Assumes verify_hyle_output was already called.
+    fn validate_proof_metadata(
+        proof_metadata: &(ProgramId, HyleOutput),
+        contract: &Contract,
+    ) -> bool {
+        proof_metadata.1.initial_state == contract.state && proof_metadata.0 == contract.program_id
+    }
+
+    fn validate_contract_registrations(
+        blobs: &[UnsettledBlobMetadata],
+        settle_indices: &[usize],
+    ) -> bool {
+        // For any RegisterContractEffect, we need identical ones for all parent domains up to the TLD.
+        let mut registrations = HashMap::<&RegisterContractEffect, HashSet<_>>::new();
+
+        for (blob, i) in blobs.iter().zip(settle_indices.iter()) {
+            #[allow(clippy::unwrap_used, reason = "all blobs are validated to exist above")]
+            let proof = blob.possible_proofs.get(*i).unwrap();
+            for rce in &proof.1.registered_contracts {
+                registrations
+                    .entry(rce)
+                    .or_default()
+                    .insert(&blob.blob.contract_name);
+            }
+        }
+
+        // Now check that we have all parents in the chain - or it's an upgrade or a new TLD
+        for (rce, parents) in registrations.into_iter() {
+            if rce.contract_name.0.contains(".")
+                && (parents.len() != 1 || !parents.contains(&&rce.contract_name))
+                && !has_item_for_all_parents(parents, &rce.contract_name)
+            {
+                return false;
+            }
+        }
+
+        true
     }
 
     /// Clear timeouts for transactions that have timed out.

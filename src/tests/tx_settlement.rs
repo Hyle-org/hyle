@@ -58,7 +58,7 @@ async fn test_full_settlement_flow() -> Result<()> {
     let client = NodeApiHttpClient::new(format!("http://{rest_client}/")).unwrap();
     hyle_node.wait_for_rest_api(&client).await?;
 
-    info!("➡️  Registering contracts c1 & c2.hyle");
+    info!("➡️  Registering contracts c1, c2.hyle & c3.c2.hyle");
 
     let b1 = make_register_blob_action("c1".into(), StateDigest(vec![1, 2, 3]));
     client.send_tx_blob(&b1).await.unwrap();
@@ -71,6 +71,45 @@ async fn test_full_settlement_flow() -> Result<()> {
         })
         .await
         .unwrap();
+
+    info!("➡️  Registering contract c3.c2.hyle");
+    let tx = BlobTransaction::new(
+        "test.c2.hyle",
+        vec![
+            RegisterContractAction {
+                verifier: "test".into(),
+                program_id: ProgramId(vec![1, 1, 1]),
+                state_digest: StateDigest(vec![8, 8, 8]),
+                contract_name: "c3.c2.hyle".into(),
+            }
+            .as_blob("c2.hyle".into(), None, None),
+            RegisterContractAction {
+                verifier: "test".into(),
+                program_id: ProgramId(vec![1, 1, 1]),
+                state_digest: StateDigest(vec![8, 8, 8]),
+                contract_name: "c3.c2.hyle".into(),
+            }
+            .as_blob("hyle".into(), None, None),
+        ],
+    );
+    client.send_tx_blob(&tx).await.unwrap();
+
+    info!("➡️  Sending proof for c3.c2.hyle registration");
+    let mut hyle_output =
+        make_hyle_output_with_state(tx.clone(), BlobIndex(0), &[7, 7, 7], &[3, 2, 1]);
+    hyle_output
+        .registered_contracts
+        .push(RegisterContractEffect {
+            verifier: "test".into(),
+            program_id: ProgramId(vec![1, 1, 1]),
+            state_digest: StateDigest(vec![8, 8, 8]),
+            contract_name: "c3.c2.hyle".into(),
+        });
+    let proof_registration_1 = ProofTransaction {
+        contract_name: "c2.hyle".into(),
+        proof: ProofData(borsh::to_vec(&vec![hyle_output.clone()]).unwrap()),
+    };
+    client.send_tx_proof(&proof_registration_1).await.unwrap();
 
     info!("➡️  Sending blobs for c1 & c2.hyle");
     let tx = BlobTransaction::new(
@@ -107,7 +146,7 @@ async fn test_full_settlement_flow() -> Result<()> {
             borsh::to_vec(&vec![make_hyle_output_with_state(
                 tx.clone(),
                 BlobIndex(1),
-                &[7, 7, 7],
+                &[3, 2, 1],
                 &[8, 8, 8],
             )])
             .unwrap(),
