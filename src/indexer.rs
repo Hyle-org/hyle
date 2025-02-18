@@ -372,7 +372,7 @@ impl Indexer {
                 query_builder.push(" ON CONFLICT(tx_hash, parent_dp_hash) DO UPDATE SET ");
 
                 query_builder.push("transaction_status=");
-                query_builder.push_bind(TransactionStatusDb::DataProposalCreated);
+                query_builder.push_bind(TransactionStatusDb::DataProposalPoda);
                 query_builder
                     .push(" WHERE transactions.transaction_status IN ('waiting_dissemination', 'data_proposal_created')");
 
@@ -1232,6 +1232,47 @@ mod test {
             &server,
             proof_tx_1_wd.hashed(),
             TransactionStatusDb::DataProposalCreated,
+        )
+        .await;
+
+        let data_proposal_poda_event = MempoolStatusEvent::DataProposalPoda {
+            signatures: vec![],
+            data_proposal_hash: data_proposal.hashed(),
+            txs_metadatas: vec![
+                register_tx_1_wd.metadata(parent_data_proposal_hash.clone()),
+                register_tx_2_wd.metadata(parent_data_proposal_hash.clone()),
+                blob_transaction_wd.metadata(parent_data_proposal_hash.clone()),
+                proof_tx_1_wd.metadata(parent_data_proposal_hash.clone()),
+            ],
+        };
+
+        indexer
+            .handle_mempool_status_event(data_proposal_poda_event.clone())
+            .await
+            .expect("MempoolStatusEvent");
+
+        assert_tx_status(
+            &server,
+            register_tx_1_wd.hashed(),
+            TransactionStatusDb::DataProposalPoda,
+        )
+        .await;
+        assert_tx_status(
+            &server,
+            register_tx_2_wd.hashed(),
+            TransactionStatusDb::DataProposalPoda,
+        )
+        .await;
+        assert_tx_status(
+            &server,
+            blob_transaction_wd.hashed(),
+            TransactionStatusDb::DataProposalPoda,
+        )
+        .await;
+        assert_tx_status(
+            &server,
+            proof_tx_1_wd.hashed(),
+            TransactionStatusDb::DataProposalPoda,
         )
         .await;
 
