@@ -4,11 +4,9 @@ use std::{
 };
 
 use anyhow::{bail, Error, Result};
-use futures::{SinkExt, StreamExt};
+use futures::StreamExt;
 use hyle_model::Hashed;
-use tokio::net::TcpStream;
-use tokio_util::codec::Framed;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::{
     bus::BusClientSender,
@@ -18,6 +16,7 @@ use crate::{
     model::{BlockHeight, CommonRunContext},
     module_handle_messages,
     node_state::{module::NodeStateEvent, NodeState},
+    tcp::{TcpClient, TcpMessage},
     utils::{
         conf::SharedConf,
         logger::LogMe,
@@ -40,20 +39,27 @@ pub struct DAListener {
     listener: RawDAListener,
 }
 
+type DaClient = TcpClient<
+    DataAvailabilityClientCodec,
+    DataAvailabilityServerRequest,
+    DataAvailabilityServerEvent,
+>;
+
 /// Implementation of the bit that actually listens to the data availability stream
 pub struct RawDAListener {
-    da_stream: Framed<TcpStream, DataAvailabilityClientCodec>,
+    client: DaClient,
+    // da_stcream: Framed<TcpStream, DataAvailabilityClientCodec>,
 }
 
 impl Deref for RawDAListener {
-    type Target = Framed<TcpStream, DataAvailabilityClientCodec>;
+    type Target = DaClient;
     fn deref(&self) -> &Self::Target {
-        &self.da_stream
+        &self.client
     }
 }
 impl DerefMut for RawDAListener {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.da_stream
+        &mut self.client
     }
 }
 
@@ -100,8 +106,8 @@ impl DAListener {
     pub async fn start(&mut self) -> Result<(), Error> {
         module_handle_messages! {
             on_bus self.bus,
-            frame = self.listener.next() => {
-                if let Some(Ok(streamed_signed_block)) = frame {
+            frame = self.listener.receiver.next() => {
+                if let Some(Ok(TcpMessage::Data(streamed_signed_block))) = frame {
                     _ = self.processing_next_frame(streamed_signed_block).await.log_error("Consuming da stream");
                 } else if frame.is_none() {
                     bail!("DA stream closed");
@@ -143,53 +149,9 @@ impl DAListener {
 
 impl RawDAListener {
     pub async fn new(target: &str, height: BlockHeight) -> Result<Self> {
-        let da_stream = Self::connect_to(target, height).await?;
-        Ok(RawDAListener { da_stream })
-    }
-
-    async fn ping(&mut self) -> Result<()> {
-        self.da_stream
-            .send(DataAvailabilityServerRequest::Ping)
-            .await
-    }
-
-    async fn connect_to(
-        target: &str,
-        height: BlockHeight,
-    ) -> Result<Framed<TcpStream, DataAvailabilityClientCodec>> {
-        info!(
-            "Connecting to node for data availability stream on {}",
-            &target
-        );
-        let timeout = std::time::Duration::from_secs(10);
-        let start = std::time::Instant::now();
-
-        let stream = loop {
-            debug!("Trying to connect to {}", target);
-            match TcpStream::connect(&target).await {
-                Ok(stream) => break stream,
-                Err(e) => {
-                    if start.elapsed() >= timeout {
-                        bail!("Failed to connect to {}: {}. Timeout reached.", target, e);
-                    }
-                    warn!(
-                        "Failed to connect to {}: {}. Retrying in 1 second...",
-                        target, e
-                    );
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                }
-            }
-        };
-        let addr = stream.local_addr()?;
-        let mut da_stream = Framed::new(stream, DataAvailabilityClientCodec::default());
-        info!(
-            "Connected to data stream to {} on {}. Starting stream from height {}",
-            &target, addr, height
-        );
-        // Send the start height
-        da_stream
-            .send(DataAvailabilityServerRequest::BlockHeight(height))
-            .await?;
-        Ok(da_stream)
+        let mut client =
+            TcpClient::connect("raw_da_listener".to_string(), &target.to_string()).await?;
+        client.send(DataAvailabilityServerRequest(height)).await?;
+        Ok(RawDAListener { client })
     }
 }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use bytes::{BufMut, BytesMut};
+use bytes::BytesMut;
 use futures::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
@@ -12,47 +12,43 @@ use tokio::{
     sync::mpsc::{Receiver, Sender},
     task::JoinHandle,
 };
-use tokio_util::codec::{Decoder, Encoder, Framed};
+use tokio_util::codec::{Decoder, Encoder, Framed, LengthDelimitedCodec};
 
-use anyhow::{anyhow, Context, Result};
-use tracing::{debug, error, info};
+use anyhow::{anyhow, bail, Context, Result};
+use tracing::{debug, error, info, warn};
 
-use crate::{
-    data_availability::codec::{
-        DataAvailabilityClientCodec, DataAvailabilityServerCodec, DataAvailabilityServerEvent,
-        DataAvailabilityServerRequest,
-    },
-    utils::logger::LogMe,
-};
+use crate::utils::logger::LogMe;
 
-#[derive(Debug, Clone, BorshDeserialize, BorshSerialize)]
+#[derive(Debug, Clone, BorshDeserialize, BorshSerialize, PartialEq)]
 pub enum TcpMessage<Data: Clone> {
     Ping,
     Data(Data),
 }
 
 #[derive(Debug, Clone, BorshDeserialize, BorshSerialize)]
-pub enum TcpOutgoingMessage<Data: Clone> {
-    Broadcast(Data),
-    Send(String, Data),
+pub enum TcpCommand<Data: Clone> {
+    Broadcast(Box<Data>),
+    Send(String, Box<Data>),
 }
 
 #[derive(Debug, Clone, BorshDeserialize, BorshSerialize)]
-pub struct TcpIncomingMessage<Data: Clone> {
-    dest: String,
-    data: Data,
+pub struct TcpEvent<Data: Clone> {
+    pub dest: String,
+    pub data: Box<Data>,
 }
 
 // A Generic Codec to unwrap/wrap with TcpMessage<T>
 #[derive(Debug)]
 pub struct TcpMessageCodec<T> {
     _marker: std::marker::PhantomData<T>,
+    ldc: LengthDelimitedCodec,
 }
 
 impl<T> Default for TcpMessageCodec<T> {
     fn default() -> Self {
         Self {
             _marker: std::marker::PhantomData,
+            ldc: LengthDelimitedCodec::default(),
         }
     }
 }
@@ -70,10 +66,13 @@ where
             return Ok(None);
         }
 
-        let msg: TcpMessage<Decodable> =
-            borsh::from_slice(&mut &src[..]).context("Decode TcpServerMessage wrapper type")?;
+        let Some(src_ldc) = self.ldc.decode(src)? else {
+            return Ok(None);
+        };
 
-        src.clear();
+        let msg: TcpMessage<Decodable> =
+            borsh::from_slice(&mut &src_ldc[..]).context("Decode TcpServerMessage wrapper type")?;
+
         Ok(Some(msg))
     }
 }
@@ -92,11 +91,13 @@ where
     ) -> Result<(), Self::Error> {
         let serialized = borsh::to_vec(&item).context("Encoding to vec")?;
 
-        dst.put_slice(serialized.as_slice());
+        self.ldc.encode(serialized.into(), dst)?;
+
         Ok(())
     }
 }
 
+#[derive(Debug)]
 pub struct TcpConnectionPool<Codec, In: Clone, Out: Clone>
 where
     Codec: Decoder<Item = In> + Encoder<Out> + Default,
@@ -127,16 +128,14 @@ where
 
     pub async fn run_in_background(
         mut self,
-    ) -> Result<(
-        Sender<Box<TcpOutgoingMessage<Out>>>,
-        Receiver<Box<TcpIncomingMessage<In>>>,
-    )> {
+    ) -> Result<(Sender<TcpCommand<Out>>, Receiver<TcpEvent<In>>)> {
         let (out_sender, out_receiver) = tokio::sync::mpsc::channel(100);
         let (in_sender, in_receiver) = tokio::sync::mpsc::channel(100);
 
         tokio::task::Builder::new()
             .name("tcp-connection-pool-loop")
             .spawn(async move {
+                info!("Starting run loop in background");
                 _ = self
                     .run(out_receiver, in_sender)
                     .await
@@ -148,12 +147,13 @@ where
 
     async fn run(
         &mut self,
-        mut pool_recv: Receiver<Box<TcpOutgoingMessage<Out>>>,
-        pool_sender: Sender<Box<TcpIncomingMessage<In>>>,
+        mut pool_recv: Receiver<TcpCommand<Out>>,
+        pool_sender: Sender<TcpEvent<In>>,
     ) -> Result<()> {
         let (ping_sender, mut ping_receiver) = tokio::sync::mpsc::channel(100);
         loop {
             // ;)
+            info!("Loop iter");
             if false {
                 break;
             }
@@ -177,9 +177,9 @@ where
         Ok(())
     }
 
-    async fn send(&mut self, msg: Box<TcpOutgoingMessage<Out>>) -> Result<()> {
-        match *msg {
-            TcpOutgoingMessage::Broadcast(data) => {
+    async fn send(&mut self, msg: TcpCommand<Out>) -> Result<()> {
+        match msg {
+            TcpCommand::Broadcast(data) => {
                 let mut to_remove = Vec::new();
                 for (peer_id, peer) in self.peers.iter_mut() {
                     let last_ping = peer.last_ping;
@@ -188,8 +188,8 @@ where
                         peer.abort.abort();
                         to_remove.push(peer_id.clone());
                     } else {
-                        debug!("streaming event {:?} to peer {}", &data, &peer_id);
-                        match peer.sender.send(TcpMessage::Data(data.clone())).await {
+                        debug!("streaming event to peer {}", &peer_id);
+                        match peer.sender.send(TcpMessage::Data((*data).clone())).await {
                             Ok(_) => {}
                             Err(e) => {
                                 debug!(
@@ -206,7 +206,7 @@ where
                     self.peers.remove(&peer_id);
                 }
             }
-            TcpOutgoingMessage::Send(to, data) => {
+            TcpCommand::Send(to, data) => {
                 // Retry on error
                 let peer_stream = self
                     .peers
@@ -214,7 +214,7 @@ where
                     .context(format!("Getting peer {} to send a message", &to))?;
                 peer_stream
                     .sender
-                    .send(TcpMessage::Data(data))
+                    .send(TcpMessage::Data(*data))
                     .await
                     .map_err(|_| anyhow!("Sending message to peer {}", &to))?;
             }
@@ -226,7 +226,7 @@ where
     fn setup_peer(
         &mut self,
         ping_sender: Sender<String>,
-        sender_received_messages: Sender<Box<TcpIncomingMessage<In>>>,
+        sender_received_messages: Sender<TcpEvent<In>>,
         tcp_stream: TcpStream,
         peer_ip: &String,
     ) -> Result<()> {
@@ -239,23 +239,21 @@ where
         let abort = tokio::task::Builder::new()
             .name("peer-stream-abort")
             .spawn(async move {
-                info!("Starting receiving messages");
                 while let Some(msg) = receiver.next().await {
                     info!("Received message {:?}", &msg);
+                    dbg!(&msg);
                     match msg {
-                        Ok(message) => match message {
-                            TcpMessage::Ping => {
-                                _ = ping_sender.send(cloned_peer_ip.clone()).await;
-                            }
-                            TcpMessage::Data(data) => {
-                                _ = sender_received_messages
-                                    .send(Box::new(TcpIncomingMessage {
-                                        dest: cloned_peer_ip.clone(),
-                                        data,
-                                    }))
-                                    .await;
-                            }
-                        },
+                        Ok(TcpMessage::Ping) => {
+                            _ = ping_sender.send(cloned_peer_ip.clone()).await;
+                        }
+                        Ok(TcpMessage::Data(data)) => {
+                            _ = sender_received_messages
+                                .send(TcpEvent {
+                                    dest: cloned_peer_ip.clone(),
+                                    data: Box::new(data),
+                                })
+                                .await;
+                        }
                         Err(_) => {
                             error!("Decoding message in peer event loop");
                         }
@@ -293,7 +291,7 @@ where
     abort: JoinHandle<()>,
 }
 
-struct TcpClient<ClientCodec, In, Out>
+pub struct TcpClient<ClientCodec, In, Out>
 where
     ClientCodec: Decoder<Item = Out> + Encoder<In> + Default,
     In: Clone,
@@ -301,7 +299,7 @@ where
 {
     id: String,
     sender: SplitSink<Framed<TcpStream, TcpMessageCodec<ClientCodec>>, TcpMessage<In>>,
-    receiver: SplitStream<Framed<TcpStream, TcpMessageCodec<ClientCodec>>>,
+    pub receiver: SplitStream<Framed<TcpStream, TcpMessageCodec<ClientCodec>>>,
 }
 
 impl<ClientCodec, In, Out> TcpClient<ClientCodec, In, Out>
@@ -312,8 +310,31 @@ where
     Out: BorshDeserialize + Clone + Send + 'static,
     In: BorshSerialize + Clone + Send + 'static,
 {
-    pub async fn connect(id: String, addr: &String) -> Result<TcpClient<ClientCodec, In, Out>> {
-        let tcp_stream = TcpStream::connect(addr).await?;
+    pub async fn connect(id: String, target: &String) -> Result<TcpClient<ClientCodec, In, Out>> {
+        let timeout = std::time::Duration::from_secs(10);
+        let start = std::time::Instant::now();
+        let tcp_stream = loop {
+            debug!("Trying to connect to {}", target);
+            match TcpStream::connect(&target).await {
+                Ok(stream) => break stream,
+                Err(e) => {
+                    if start.elapsed() >= timeout {
+                        bail!("Failed to connect to {}: {}. Timeout reached.", target, e);
+                    }
+                    warn!(
+                        "Failed to connect to {}: {}. Retrying in 1 second...",
+                        target, e
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                }
+            }
+        };
+        let addr = tcp_stream.local_addr()?;
+        info!(
+            "Client {} connected to data stream to {} on {}.",
+            id, &target, addr
+        );
+
         let (sender, receiver) =
             Framed::new(tcp_stream, TcpMessageCodec::<ClientCodec>::default()).split();
 
@@ -325,39 +346,112 @@ where
     }
 
     pub async fn send(&mut self, msg: In) -> Result<()> {
-        self.sender.send(TcpMessage::Data(msg)).await?;
+        self.sender.send(TcpMessage::<In>::Data(msg)).await?;
 
         Ok(())
     }
     pub async fn ping(&mut self) -> Result<()> {
-        self.sender.send(TcpMessage::Ping).await?;
+        self.sender.send(TcpMessage::<In>::Ping).await?;
 
         Ok(())
     }
 }
 
-#[tokio::test]
-async fn tcp_test() -> Result<()> {
-    let test: TcpConnectionPool<
-        DataAvailabilityServerCodec,
-        DataAvailabilityServerRequest,
-        DataAvailabilityServerEvent,
-    > = TcpConnectionPool::listen("0.0.0.0:2345".to_string()).await?;
+macro_rules! implem_tcp_codec {
+    ($codec:ident, decode: $in:ty, encode: $out:ty) => {
+        impl tokio_util::codec::Encoder<$out> for $codec {
+            type Error = anyhow::Error;
 
-    let (sender, mut receiver) = test.run_in_background().await?;
+            fn encode(
+                &mut self,
+                event: $out,
+                dst: &mut bytes::BytesMut,
+            ) -> Result<(), Self::Error> {
+                let bytes: Vec<u8> = borsh::to_vec(&event)?;
+                dst.put_slice(bytes.as_slice());
+                Ok(())
+            }
+        }
 
-    let mut client: TcpClient<
-        DataAvailabilityClientCodec,
-        DataAvailabilityServerRequest,
-        DataAvailabilityServerEvent,
-    > = TcpClient::connect("me".to_string(), &"0.0.0.0:2345".to_string()).await?;
+        impl tokio_util::codec::Decoder for $codec {
+            type Item = $in;
+            type Error = anyhow::Error;
 
-    let _ = client.ping().await?;
-    let _ = client.send(DataAvailabilityServerRequest::Ping).await?;
+            fn decode(
+                &mut self,
+                src: &mut bytes::BytesMut,
+            ) -> Result<Option<Self::Item>, Self::Error> {
+                Ok(Some(
+                    borsh::from_slice(&src).context(format!("Decoding bytes with borsh",))?,
+                ))
+            }
+        }
+    };
+}
 
-    let d = receiver.try_recv().unwrap().data;
+pub(crate) use implem_tcp_codec;
 
-    assert_eq!(DataAvailabilityServerRequest::Ping, d);
+#[cfg(test)]
+pub mod tests {
+    use std::time::Duration;
 
-    Ok(())
+    use crate::{
+        data_availability::codec::{
+            DataAvailabilityClientCodec, DataAvailabilityServerCodec, DataAvailabilityServerEvent,
+            DataAvailabilityServerRequest,
+        },
+        tcp::{TcpClient, TcpCommand, TcpConnectionPool, TcpMessage},
+    };
+
+    use anyhow::Result;
+    use futures::TryStreamExt;
+    use hyle_model::{BlockHeight, SignedBlock};
+
+    #[test_log::test(tokio::test)]
+    async fn tcp_test() -> Result<()> {
+        let test: TcpConnectionPool<
+            DataAvailabilityServerCodec,
+            DataAvailabilityServerRequest,
+            DataAvailabilityServerEvent,
+        > = TcpConnectionPool::listen("0.0.0.0:2345".to_string()).await?;
+
+        let (sender, mut receiver) = test.run_in_background().await?;
+
+        let mut client: TcpClient<
+            DataAvailabilityClientCodec,
+            DataAvailabilityServerRequest,
+            DataAvailabilityServerEvent,
+        > = TcpClient::connect("me".to_string(), &"0.0.0.0:2345".to_string()).await?;
+
+        // Ping
+        let _ = client.ping().await?;
+
+        // Send data to server
+        let _ = client
+            .send(DataAvailabilityServerRequest(BlockHeight(2)))
+            .await?;
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        let d = receiver.try_recv().unwrap().data;
+
+        assert_eq!(DataAvailabilityServerRequest(BlockHeight(2)), *d);
+        assert!(receiver.try_recv().is_err());
+
+        // From server to client
+        _ = sender
+            .send(TcpCommand::Broadcast(Box::new(
+                DataAvailabilityServerEvent::SignedBlock(SignedBlock::default()),
+            )))
+            .await;
+
+        assert_eq!(
+            client.receiver.try_next().await.unwrap().unwrap(),
+            TcpMessage::Data(DataAvailabilityServerEvent::SignedBlock(
+                SignedBlock::default()
+            ))
+        );
+
+        Ok(())
+    }
 }
