@@ -11,8 +11,8 @@ risc0_zkvm::guest::entry!(main);
 
 fn main() {
     let env = Risc0Env {};
-    let (staking_initial_state, contract_input) = env.read::<Staking>();
+    let (initial_state, contract_input) = env.read::<Staking>();
 
-    let res = execute(staking_initial_state.clone(), contract_input.clone());
-    commit(env, staking_initial_state, contract_input, res);
+    let res = execute(initial_state.clone(), contract_input.clone());
+    commit(env, initial_state, contract_input, res);
 }

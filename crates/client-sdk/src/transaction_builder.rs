@@ -215,7 +215,7 @@ impl<S: StateUpdater> TxExecutor<S> {
 
     /// Executes the transaction and updates the state of the associated contracts.
     ///
-    /// This function processes a given `ProvableBlobTx` by iterating over its runners,
+    /// This function processes a given `ProvableBlobTx` by iterating over each blob,
     /// building the contract input, executing the contract, and updating the state
     /// accordingly. If the execution fails, it returns an error with the program output.
     ///

@@ -13,12 +13,8 @@ fn main() {
     let env = Risc0Env {};
     let mut logs = String::new();
     env.log(&logs);
-    let (hyllar_initial_state, contract_input) = env.read::<HyllarToken>();
+    let (initial_state, contract_input) = env.read::<HyllarToken>();
 
-    let res = execute(
-        &mut logs,
-        hyllar_initial_state.clone(),
-        contract_input.clone(),
-    );
-    commit(env, hyllar_initial_state, contract_input, res);
+    let res = execute(&mut logs, initial_state.clone(), contract_input.clone());
+    commit(env, initial_state, contract_input, res);
 }

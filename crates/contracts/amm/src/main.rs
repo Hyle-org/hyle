@@ -10,8 +10,8 @@ risc0_zkvm::guest::entry!(main);
 
 fn main() {
     let env = Risc0Env {};
-    let (amm_initial_state, contract_input) = env.read::<AmmState>();
+    let (initial_state, contract_input) = env.read::<AmmState>();
 
-    let res = execute(amm_initial_state.clone(), contract_input.clone());
-    commit(env, amm_initial_state, contract_input, res);
+    let res = execute(initial_state.clone(), contract_input.clone());
+    commit(env, initial_state, contract_input, res);
 }
