@@ -11,7 +11,7 @@ use crate::{
 pub trait GuestEnv {
     fn log(&self, message: &str);
     fn commit(&self, output: &HyleOutput);
-    fn read<T: BorshDeserialize + 'static>(&self) -> T;
+    fn read<State: BorshDeserialize + 'static>(&self) -> (State, ContractInput);
 }
 
 pub struct Risc0Env;
@@ -26,11 +26,13 @@ impl GuestEnv for Risc0Env {
         risc0_zkvm::guest::env::commit(output);
     }
 
-    fn read<T: BorshDeserialize>(&self) -> T {
+    fn read<State: BorshDeserialize>(&self) -> (State, ContractInput) {
         let len: usize = risc0_zkvm::guest::env::read();
         let mut slice = vec![0u8; len];
         risc0_zkvm::guest::env::read_slice(&mut slice);
-        borsh::from_slice(&slice).unwrap()
+        let contract_input: ContractInput = borsh::from_slice(&slice).unwrap();
+        let state: State = borsh::from_slice(&contract_input.state).unwrap();
+        (state, contract_input)
     }
 }
 
@@ -49,9 +51,11 @@ impl GuestEnv for SP1Env {
         sp1_zkvm::io::commit_slice(&vec);
     }
 
-    fn read<T: BorshDeserialize>(&self) -> T {
+    fn read<State: BorshDeserialize>(&self) -> (State, ContractInput) {
         let vec = sp1_zkvm::io::read_vec();
-        borsh::from_slice(&vec).unwrap()
+        let contract_input: ContractInput = borsh::from_slice(&slice).unwrap();
+        let state: State = borsh::from_slice(&contract_input.state).unwrap();
+        (state, contract_input)
     }
 }
 
@@ -108,10 +112,11 @@ where
 
 pub fn commit<State>(
     env: impl GuestEnv,
+    initial_state: State,
     contract_input: ContractInput,
     mut res: crate::RunResult<State>,
 ) where
     State: Digestable + BorshDeserialize,
 {
-    env.commit(&as_hyle_output(contract_input, &mut res));
+    env.commit(&as_hyle_output(initial_state, contract_input, &mut res));
 }

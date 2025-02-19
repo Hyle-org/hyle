@@ -92,8 +92,7 @@ fn register_contract(
     Ok((id, state))
 }
 
-pub fn execute(contract_input: ContractInput) -> RunResult<UuidTldState> {
-    let state = UuidTldState::deserialize(&contract_input.state).expect("Failed to decode state");
+pub fn execute(state: UuidTldState, contract_input: ContractInput) -> RunResult<UuidTldState> {
     let (input, parsed_blob) = sdk::guest::init_raw::<RegisterUuidContract>(contract_input);
 
     let parsed_blob = match parsed_blob {
@@ -165,7 +164,7 @@ mod test {
         let state = UuidTldState::default();
         let contract_input = make_contract_input(action.clone(), borsh::to_vec(&state).unwrap());
 
-        let (_, state, registered_contracts) = execute(contract_input).unwrap();
+        let (_, state, registered_contracts) = execute(state, contract_input).unwrap();
 
         let effect: &RegisterContractEffect = registered_contracts.first().unwrap();
 
@@ -176,7 +175,7 @@ mod test {
 
         let contract_input = make_contract_input(action.clone(), borsh::to_vec(&state).unwrap());
 
-        let (_, _, registered_contracts) = execute(contract_input).unwrap();
+        let (_, _, registered_contracts) = execute(state, contract_input).unwrap();
 
         let effect = registered_contracts.first().unwrap();
 

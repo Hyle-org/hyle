@@ -4,9 +4,8 @@
 extern crate alloc;
 
 use alloc::string::String;
-use hyllar::execute;
+use hyllar::{execute, HyllarToken};
 use sdk::guest::{commit, GuestEnv, Risc0Env};
-use sdk::ContractInput;
 
 risc0_zkvm::guest::entry!(main);
 
@@ -14,8 +13,12 @@ fn main() {
     let env = Risc0Env {};
     let mut logs = String::new();
     env.log(&logs);
-    let contract_input: ContractInput = env.read();
+    let (hyllar_initial_state, contract_input) = env.read::<HyllarToken>();
 
-    let res = execute(&mut logs, contract_input.clone());
-    commit(env, contract_input, res);
+    let res = execute(
+        &mut logs,
+        hyllar_initial_state.clone(),
+        contract_input.clone(),
+    );
+    commit(env, hyllar_initial_state, contract_input, res);
 }

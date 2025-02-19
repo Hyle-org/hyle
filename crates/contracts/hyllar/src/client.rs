@@ -20,8 +20,13 @@ impl ClientSdkExecutor for HyllarPseudoExecutor {
         &self,
         contract_input: &sdk::ContractInput,
     ) -> anyhow::Result<(Box<dyn Any>, HyleOutput)> {
-        let mut res = execute(&mut String::new(), contract_input.clone());
-        let output = as_hyle_output(contract_input.clone(), &mut res);
+        let initial_state: HyllarToken = borsh::from_slice(contract_input.state.as_slice())?;
+        let mut res = execute(
+            &mut String::new(),
+            initial_state.clone(),
+            contract_input.clone(),
+        );
+        let output = as_hyle_output(initial_state, contract_input.clone(), &mut res);
         match res {
             Ok(res) => Ok((Box::new(res.1.clone()), output)),
             Err(e) => Err(anyhow::anyhow!(e)),

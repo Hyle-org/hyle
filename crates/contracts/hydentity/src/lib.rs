@@ -121,9 +121,7 @@ impl TryFrom<sdk::StateDigest> for Hydentity {
 use core::str::from_utf8;
 use sdk::identity_provider::IdentityAction;
 
-pub fn execute(contract_input: ContractInput) -> RunResult<Hydentity> {
-    let mut state: Hydentity =
-        borsh::from_slice(&contract_input.state).expect("Failed to decode state");
+pub fn execute(mut state: Hydentity, contract_input: ContractInput) -> RunResult<Hydentity> {
     let (input, parsed_blob) = sdk::guest::init_raw::<IdentityAction>(contract_input);
 
     let parsed_blob = match parsed_blob {

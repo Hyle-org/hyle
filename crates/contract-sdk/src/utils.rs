@@ -51,11 +51,10 @@ where
 }
 
 pub fn as_hyle_output<State: Digestable + BorshDeserialize>(
+    initial_state: State,
     contract_input: ContractInput,
     res: &mut crate::RunResult<State>,
 ) -> HyleOutput {
-    let initial_state: State =
-        borsh::from_slice(&contract_input.state).expect("Failed to decode state");
     match res {
         Ok(res) => HyleOutput {
             version: 1,

@@ -3,16 +3,15 @@
 
 extern crate alloc;
 
-use hydentity::execute;
+use hydentity::{execute, Hydentity};
 use sdk::guest::{commit, GuestEnv, Risc0Env};
-use sdk::ContractInput;
 
 risc0_zkvm::guest::entry!(main);
 
 fn main() {
     let env = Risc0Env {};
-    let contract_input: ContractInput = env.read();
+    let (hydentity_initial_state, contract_input) = env.read::<Hydentity>();
 
-    let res = execute(contract_input.clone());
-    commit(env, contract_input, res);
+    let res = execute(hydentity_initial_state.clone(), contract_input.clone());
+    commit(env, hydentity_initial_state, contract_input, res);
 }

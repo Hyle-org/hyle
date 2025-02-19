@@ -182,10 +182,9 @@ impl TryFrom<sdk::StateDigest> for HyllarToken {
 
 pub fn execute(
     stdout: &mut impl std::fmt::Write,
+    state: HyllarToken,
     contract_input: ContractInput,
 ) -> RunResult<HyllarToken> {
-    let state: HyllarToken =
-        borsh::from_slice(&contract_input.state).expect("Failed to decode state");
     let (_, parsed_blob, caller) = match sdk::guest::init_with_caller::<ERC20Action>(contract_input)
     {
         Ok(res) => res,

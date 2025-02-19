@@ -270,10 +270,7 @@ impl ContractAction for AmmAction {
     }
 }
 
-pub fn execute(contract_input: ContractInput) -> RunResult<AmmState> {
-    let amm_initial_state: AmmState =
-        borsh::from_slice(&contract_input.state).expect("Failed to decode state");
-
+pub fn execute(amm_initial_state: AmmState, contract_input: ContractInput) -> RunResult<AmmState> {
     let (input, parsed_blob, caller) =
         match sdk::guest::init_with_caller::<AmmAction>(contract_input) {
             Ok(res) => res,

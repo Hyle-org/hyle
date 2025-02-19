@@ -99,9 +99,7 @@ impl StakingContract {
     }
 }
 
-pub fn execute(contract_input: ContractInput) -> RunResult<Staking> {
-    let state: Staking = borsh::from_slice(&contract_input.state).expect("Failed to decode state");
-
+pub fn execute(state: Staking, contract_input: ContractInput) -> RunResult<Staking> {
     let (input, parsed_blob, caller) =
         match sdk::guest::init_with_caller::<StakingAction>(contract_input) {
             Ok(res) => res,
