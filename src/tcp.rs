@@ -98,23 +98,23 @@ where
 }
 
 #[derive(Debug)]
-pub struct TcpConnectionPool<Codec, In: Clone, Out: Clone + std::fmt::Debug>
+pub struct TcpConnectionPool<Codec, Req: Clone, Res: Clone + std::fmt::Debug>
 where
-    Codec: Decoder<Item = In> + Encoder<Out> + Default,
+    Codec: Decoder<Item = Req> + Encoder<Res> + Default,
 {
     new_peer_listener: tokio::net::TcpListener,
-    peers: HashMap<String, PeerStream<Codec, In, Out>>,
+    peers: HashMap<String, PeerStream<Codec, Req, Res>>,
 }
 
-impl<Codec, In, Out> TcpConnectionPool<Codec, In, Out>
+impl<Codec, Req, Res> TcpConnectionPool<Codec, Req, Res>
 where
-    Codec: Decoder<Item = In> + Encoder<Out> + Default + Send + 'static,
+    Codec: Decoder<Item = Req> + Encoder<Res> + Default + Send + 'static,
     <Codec as Decoder>::Error: std::fmt::Debug + Send,
-    <Codec as Encoder<Out>>::Error: std::fmt::Debug + Send,
-    In: BorshDeserialize + Clone + Send + 'static + std::fmt::Debug,
-    Out: BorshSerialize + Clone + Send + 'static + std::fmt::Debug,
+    <Codec as Encoder<Res>>::Error: std::fmt::Debug + Send,
+    Req: BorshDeserialize + Clone + Send + 'static + std::fmt::Debug,
+    Res: BorshSerialize + Clone + Send + 'static + std::fmt::Debug,
 {
-    pub async fn listen(addr: String) -> Result<TcpConnectionPool<Codec, In, Out>> {
+    pub async fn listen(addr: String) -> Result<TcpConnectionPool<Codec, Req, Res>> {
         let new_peer_listener = TcpListener::bind(&addr).await?;
         info!(
             "📡  Starting TcpServerConnection Pool, listening for stream requests on {}",
@@ -128,7 +128,7 @@ where
 
     pub async fn run_in_background(
         mut self,
-    ) -> Result<(Sender<TcpCommand<Out>>, Receiver<TcpEvent<In>>)> {
+    ) -> Result<(Sender<TcpCommand<Res>>, Receiver<TcpEvent<Req>>)> {
         let (out_sender, out_receiver) = tokio::sync::mpsc::channel(100);
         let (in_sender, in_receiver) = tokio::sync::mpsc::channel(100);
 
@@ -147,14 +147,11 @@ where
 
     async fn run(
         &mut self,
-        mut pool_recv: Receiver<TcpCommand<Out>>,
-        pool_sender: Sender<TcpEvent<In>>,
+        mut pool_recv: Receiver<TcpCommand<Res>>,
+        pool_sender: Sender<TcpEvent<Req>>,
     ) -> Result<()> {
         let (ping_sender, mut ping_receiver) = tokio::sync::mpsc::channel(100);
         loop {
-            if false {
-                break;
-            }
             tokio::select! {
                 Ok((stream, addr)) = self.new_peer_listener.accept() => {
                     _  = self.setup_peer(ping_sender.clone(), pool_sender.clone(), stream, &addr.ip().to_string());
@@ -171,11 +168,9 @@ where
                 }
             }
         }
-
-        Ok(())
     }
 
-    async fn send(&mut self, msg: TcpCommand<Out>) -> Result<()> {
+    async fn send(&mut self, msg: TcpCommand<Res>) -> Result<()> {
         match msg {
             TcpCommand::Broadcast(data) => {
                 debug!("Broadcasting data {:?} to all", data);
@@ -227,7 +222,7 @@ where
     fn setup_peer(
         &mut self,
         ping_sender: Sender<String>,
-        sender_received_messages: Sender<TcpEvent<In>>,
+        sender_received_messages: Sender<TcpEvent<Req>>,
         tcp_stream: TcpStream,
         peer_ip: &String,
     ) -> Result<()> {
@@ -291,26 +286,26 @@ where
     abort: JoinHandle<()>,
 }
 
-pub struct TcpClient<ClientCodec, In, Out>
+pub struct TcpClient<ClientCodec, Req, Res>
 where
-    ClientCodec: Decoder<Item = Out> + Encoder<In> + Default,
-    In: Clone,
-    Out: Clone + std::fmt::Debug,
+    ClientCodec: Decoder<Item = Res> + Encoder<Req> + Default,
+    Req: Clone,
+    Res: Clone + std::fmt::Debug,
 {
     id: String,
-    sender: SplitSink<Framed<TcpStream, TcpMessageCodec<ClientCodec>>, TcpMessage<In>>,
+    sender: SplitSink<Framed<TcpStream, TcpMessageCodec<ClientCodec>>, TcpMessage<Req>>,
     receiver: SplitStream<Framed<TcpStream, TcpMessageCodec<ClientCodec>>>,
 }
 
-impl<ClientCodec, In, Out> TcpClient<ClientCodec, In, Out>
+impl<ClientCodec, Req, Res> TcpClient<ClientCodec, Req, Res>
 where
-    ClientCodec: Decoder<Item = Out> + Encoder<In> + Default + Send + 'static,
+    ClientCodec: Decoder<Item = Res> + Encoder<Req> + Default + Send + 'static,
     <ClientCodec as Decoder>::Error: std::fmt::Debug + Send,
-    <ClientCodec as Encoder<In>>::Error: std::fmt::Debug + Send,
-    Out: BorshDeserialize + std::fmt::Debug + Clone + Send + 'static,
-    In: BorshSerialize + Clone + Send + 'static,
+    <ClientCodec as Encoder<Req>>::Error: std::fmt::Debug + Send,
+    Res: BorshDeserialize + std::fmt::Debug + Clone + Send + 'static,
+    Req: BorshSerialize + Clone + Send + 'static,
 {
-    pub async fn connect(id: String, target: &String) -> Result<TcpClient<ClientCodec, In, Out>> {
+    pub async fn connect(id: String, target: &String) -> Result<TcpClient<ClientCodec, Req, Res>> {
         let timeout = std::time::Duration::from_secs(10);
         let start = std::time::Instant::now();
         let tcp_stream = loop {
@@ -345,18 +340,18 @@ where
         })
     }
 
-    pub async fn send(&mut self, msg: In) -> Result<()> {
-        self.sender.send(TcpMessage::<In>::Data(msg)).await?;
+    pub async fn send(&mut self, msg: Req) -> Result<()> {
+        self.sender.send(TcpMessage::<Req>::Data(msg)).await?;
 
         Ok(())
     }
     pub async fn ping(&mut self) -> Result<()> {
-        self.sender.send(TcpMessage::<In>::Ping).await?;
+        self.sender.send(TcpMessage::<Req>::Ping).await?;
 
         Ok(())
     }
 
-    pub async fn recv(&mut self) -> Option<Out> {
+    pub async fn recv(&mut self) -> Option<Res> {
         loop {
             match self.receiver.next().await {
                 Some(Ok(TcpMessage::Data(data))) => {
