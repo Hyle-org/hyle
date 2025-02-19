@@ -1096,6 +1096,7 @@ name = "client-sdk"
 version = "0.11.0"
 dependencies = [
  "anyhow",
+ "axum 0.8.1",
  "bincode",
  "bonsai-runner",
  "borsh",
@@ -1109,6 +1110,8 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "utoipa",
+ "utoipa-axum",
 ]
 
 [[package]]

@@ -67,6 +67,7 @@ staking = { path = "./crates/contracts/staking", default-features = false, featu
 client-sdk = { path = "./crates/client-sdk", default-features = false, features = [
     "rest",
     "tcp",
+    "indexer"
 ] }
 hyle-model = { path = "./crates/hyle-model", default-features = false, features = [
     "full",
@@ -77,6 +78,7 @@ hyllar = { path = "./crates/contracts/hyllar", features = ["client"] }
 risc0-recursion = { path = "./crates/contracts/risc0-recursion" }
 
 hyle-verifiers = { path = "crates/hyle-verifiers" }
+
 
 anyhow = "1.0.95"
 borsh = { version = "1.5.5", features = ["rc"] }

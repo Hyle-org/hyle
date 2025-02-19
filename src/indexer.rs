@@ -1,7 +1,6 @@
 //! Index system for historical data.
 
 mod api;
-pub mod contract_handlers;
 pub mod contract_state_indexer;
 pub mod da_listener;
 

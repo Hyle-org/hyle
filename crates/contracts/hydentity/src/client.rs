@@ -1,5 +1,4 @@
-use std::any::Any;
-
+use crate::{execute, Hydentity};
 use client_sdk::{
     helpers::{risc0::Risc0Prover, ClientSdkExecutor},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
@@ -7,8 +6,7 @@ use client_sdk::{
 use sdk::{
     identity_provider::IdentityAction, utils::as_hyle_output, ContractName, Digestable, HyleOutput,
 };
-
-use crate::{execute, Hydentity};
+use std::any::Any;
 
 pub mod metadata {
     pub const HYDENTITY_ELF: &[u8] = include_bytes!("../hydentity.img");

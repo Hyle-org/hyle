@@ -1,66 +1,24 @@
-use std::sync::Arc;
-
-use super::contract_state_indexer::Store;
-use crate::model::BlobTransaction;
-use crate::rest::AppError;
 use anyhow::{anyhow, Context, Result};
-use axum::extract::Path;
-use axum::Router;
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
-use hydentity::{AccountInfo, Hydentity};
-use hyle_contract_sdk::identity_provider::{self, IdentityAction, IdentityVerification};
-use hyle_contract_sdk::{
-    erc20::{self, ERC20Action, ERC20},
-    Blob, BlobIndex, Identity, StructuredBlobData,
+use client_sdk::contract_indexer::{
+    axum::{
+        extract::{Path, State},
+        http::StatusCode,
+        response::IntoResponse,
+        Json, Router,
+    },
+    utoipa::{openapi::OpenApi, ToSchema},
+    utoipa_axum::{router::OpenApiRouter, routes},
+    AppError, ContractHandler, ContractHandlerStore,
 };
-use hyllar::{HyllarToken, HyllarTokenContract};
+use sdk::*;
 use serde::Serialize;
-use tokio::sync::RwLock;
-use tracing::info;
-use utoipa::openapi::OpenApi;
-use utoipa::ToSchema;
-use utoipa_axum::router::OpenApiRouter;
-use utoipa_axum::routes;
 
-pub trait ContractHandler
-where
-    Self: Sized,
-{
-    fn api(
-        store: Arc<RwLock<Store<Self>>>,
-    ) -> impl std::future::Future<Output = (Router<()>, OpenApi)> + std::marker::Send;
-
-    fn handle(tx: &BlobTransaction, index: BlobIndex, state: Self) -> Result<Self>;
-}
-
-impl ContractHandler for Hydentity {
-    async fn api(store: Arc<RwLock<Store<Self>>>) -> (Router<()>, OpenApi) {
-        let (router, api) = OpenApiRouter::default()
-            .routes(routes!(get_state))
-            .routes(routes!(get_nonce))
-            .split_for_parts();
-
-        (router.with_state(store), api)
-    }
-
-    fn handle(tx: &BlobTransaction, index: BlobIndex, state: Self) -> Result<Self> {
-        let Blob {
-            data,
-            contract_name,
-        } = tx.blobs.get(index.0).context("Failed to get blob")?;
-
-        let action: IdentityAction =
-            borsh::from_slice(data.0.as_slice()).context("Failed to decode payload")?;
-
-        let res =
-            identity_provider::execute_action(state, action, "").map_err(|e| anyhow::anyhow!(e))?;
-        info!("🚀 Executed {contract_name}: {res:?}");
-        Ok(res.1)
-    }
-}
+use crate::*;
+use client_sdk::contract_indexer::axum;
+use client_sdk::contract_indexer::utoipa;
 
 impl ContractHandler for HyllarToken {
-    async fn api(store: Arc<RwLock<Store<HyllarToken>>>) -> (Router<()>, OpenApi) {
+    async fn api(store: ContractHandlerStore<HyllarToken>) -> (Router<()>, OpenApi) {
         let (router, api) = OpenApiRouter::default()
             .routes(routes!(get_state))
             .routes(routes!(get_balance))
@@ -104,56 +62,13 @@ impl ContractHandler for HyllarToken {
     )
 )]
 pub async fn get_state<S: Serialize + Clone + 'static>(
-    State(state): State<Arc<RwLock<Store<S>>>>,
+    State(state): State<ContractHandlerStore<S>>,
 ) -> Result<impl IntoResponse, AppError> {
     let store = state.read().await;
     store.state.clone().map(Json).ok_or(AppError(
         StatusCode::NOT_FOUND,
         anyhow!("No state found for contract '{}'", store.contract_name),
     ))
-}
-
-#[derive(Serialize, ToSchema)]
-struct NonceResponse {
-    account: String,
-    nonce: u32,
-}
-
-#[utoipa::path(
-    get,
-    path = "/nonce/{account}",
-    params(
-        ("account" = String, Path, description = "Account")
-    ),
-    tag = "Contract",
-    responses(
-        (status = OK, description = "Get nonce of account", body = NonceResponse)
-    )
-)]
-pub async fn get_nonce(
-    Path(account): Path<Identity>,
-    State(state): State<Arc<RwLock<Store<Hydentity>>>>,
-) -> Result<impl IntoResponse, AppError> {
-    let store = state.read().await;
-    let state = store.state.clone().ok_or(AppError(
-        StatusCode::NOT_FOUND,
-        anyhow!("Contract '{}' not found", store.contract_name),
-    ))?;
-
-    let info = state
-        .get_identity_info(&account.0)
-        .map_err(|err| AppError(StatusCode::NOT_FOUND, anyhow::anyhow!(err)))?;
-    let state: AccountInfo = serde_json::from_str(&info).map_err(|_| {
-        AppError(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            anyhow::anyhow!("Failed to parse identity info"),
-        )
-    })?;
-
-    Ok(Json(NonceResponse {
-        account: account.0,
-        nonce: state.nonce,
-    }))
 }
 
 #[derive(Serialize, ToSchema)]
@@ -174,7 +89,7 @@ struct BalanceResponse {
 )]
 pub async fn get_balance(
     Path(account): Path<Identity>,
-    State(state): State<Arc<RwLock<Store<HyllarToken>>>>,
+    State(state): State<ContractHandlerStore<HyllarToken>>,
 ) -> Result<impl IntoResponse, AppError> {
     let store = state.read().await;
     let state = store.state.clone().ok_or(AppError(
@@ -213,7 +128,7 @@ struct AllowanceResponse {
 )]
 pub async fn get_allowance(
     Path((account, spender)): Path<(Identity, Identity)>,
-    State(state): State<Arc<RwLock<Store<HyllarToken>>>>,
+    State(state): State<ContractHandlerStore<HyllarToken>>,
 ) -> Result<impl IntoResponse, AppError> {
     let store = state.read().await;
     let state = store.state.clone().ok_or(AppError(

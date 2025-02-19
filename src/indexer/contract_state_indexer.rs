@@ -1,9 +1,10 @@
 use anyhow::{anyhow, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_contract_sdk::{BlobIndex, ContractName};
-use hyle_model::{RegisterContractEffect, TxId};
+use client_sdk::contract_indexer::{ContractHandler, ContractStateStore};
+use hyle_contract_sdk::{BlobIndex, ContractName, TxId};
+use hyle_model::RegisterContractEffect;
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, ops::Deref, path::PathBuf, sync::Arc};
+use std::{ops::Deref, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::debug;
 
@@ -15,7 +16,7 @@ use crate::{
     utils::{conf::Conf, logger::LogMe, modules::Module},
 };
 
-use super::{contract_handlers::ContractHandler, indexer_bus_client::IndexerBusClient};
+use super::indexer_bus_client::IndexerBusClient;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ProverEvent {
@@ -23,26 +24,9 @@ pub enum ProverEvent {
 }
 impl BusMessage for ProverEvent {}
 
-#[derive(BorshSerialize, BorshDeserialize)]
-pub struct Store<State> {
-    pub state: Option<State>,
-    pub contract_name: ContractName,
-    pub unsettled_blobs: BTreeMap<TxId, BlobTransaction>,
-}
-
-impl<State> Default for Store<State> {
-    fn default() -> Self {
-        Store {
-            state: None,
-            contract_name: Default::default(),
-            unsettled_blobs: BTreeMap::new(),
-        }
-    }
-}
-
 pub struct ContractStateIndexer<State> {
     bus: IndexerBusClient,
-    store: Arc<RwLock<Store<State>>>,
+    store: Arc<RwLock<ContractStateStore<State>>>,
     contract_name: ContractName,
     file: PathBuf,
     #[allow(dead_code)]
@@ -77,7 +61,8 @@ where
             .data_directory
             .join(format!("state_indexer_{}.bin", ctx.contract_name).as_str());
 
-        let mut store = Self::load_from_disk_or_default::<Store<State>>(file.as_path());
+        let mut store =
+            Self::load_from_disk_or_default::<ContractStateStore<State>>(file.as_path());
         store.contract_name = ctx.contract_name.clone();
         let store = Arc::new(RwLock::new(store));
 
@@ -146,9 +131,10 @@ where
             }
         };
 
-        if let Err(e) =
-            Self::save_on_disk::<Store<State>>(self.file.as_path(), self.store.read().await.deref())
-        {
+        if let Err(e) = Self::save_on_disk::<ContractStateStore<State>>(
+            self.file.as_path(),
+            self.store.read().await.deref(),
+        ) {
             tracing::warn!(cn = %self.contract_name, "Failed to save contract state indexer on disk: {}", e);
         }
         Ok(())
@@ -279,7 +265,7 @@ mod tests {
             Ok(state)
         }
 
-        async fn api(_store: Arc<RwLock<Store<Self>>>) -> (axum::Router<()>, OpenApi) {
+        async fn api(_store: Arc<RwLock<ContractStateStore<Self>>>) -> (axum::Router<()>, OpenApi) {
             (axum::Router::new(), OpenApi::default())
         }
     }

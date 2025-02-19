@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use axum::{debug_handler, extract::State, http::StatusCode, response::IntoResponse, Json, Router};
+use client_sdk::contract_indexer::AppError;
 use hyle_model::api::APIStaking;
 use staking::state::Staking;
 use tracing::error;
@@ -13,7 +14,6 @@ use crate::{
         metrics::BusMetrics,
     },
     model::{CommonRunContext, ConsensusInfo},
-    rest::AppError,
 };
 
 use super::{QueryConsensusInfo, QueryConsensusStakingState};

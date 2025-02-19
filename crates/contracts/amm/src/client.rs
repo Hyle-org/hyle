@@ -14,7 +14,7 @@ pub mod metadata {
 }
 use metadata::*;
 
-struct AmmPseudoExecutor {}
+pub struct AmmPseudoExecutor {}
 impl ClientSdkExecutor for AmmPseudoExecutor {
     fn execute(
         &self,

@@ -15,6 +15,8 @@ extern crate alloc;
 
 #[cfg(feature = "client")]
 pub mod client;
+#[cfg(feature = "client")]
+pub mod indexer;
 
 /// Struct representing the Hyllar token.
 #[serde_as]
