@@ -10,12 +10,11 @@ use tracing::{debug, info};
 use crate::{
     bus::BusClientSender,
     data_availability::codec::{
-        DataAvailabilityClientCodec, DataAvailabilityServerEvent, DataAvailabilityServerRequest,
+        codec_data_availability, DataAvailabilityServerEvent, DataAvailabilityServerRequest,
     },
     model::{BlockHeight, CommonRunContext},
     module_handle_messages,
     node_state::{module::NodeStateEvent, NodeState},
-    tcp::TcpClient,
     utils::{
         conf::SharedConf,
         logger::LogMe,
@@ -38,20 +37,13 @@ pub struct DAListener {
     listener: RawDAListener,
 }
 
-type DaClient = TcpClient<
-    DataAvailabilityClientCodec,
-    DataAvailabilityServerRequest,
-    DataAvailabilityServerEvent,
->;
-
 /// Implementation of the bit that actually listens to the data availability stream
 pub struct RawDAListener {
-    client: DaClient,
-    // da_stcream: Framed<TcpStream, DataAvailabilityClientCodec>,
+    client: codec_data_availability::Client,
 }
 
 impl Deref for RawDAListener {
-    type Target = DaClient;
+    type Target = codec_data_availability::Client;
     fn deref(&self) -> &Self::Target {
         &self.client
     }
@@ -146,7 +138,8 @@ impl DAListener {
 impl RawDAListener {
     pub async fn new(target: &str, height: BlockHeight) -> Result<Self> {
         let mut client =
-            TcpClient::connect("raw_da_listener".to_string(), &target.to_string()).await?;
+            codec_data_availability::connect("raw_da_listener".to_string(), target.to_string())
+                .await?;
         client.send(DataAvailabilityServerRequest(height)).await?;
         Ok(RawDAListener { client })
     }

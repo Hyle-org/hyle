@@ -1,16 +1,10 @@
-use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
-use bytes::BufMut;
 
 use crate::{
     mempool::MempoolStatusEvent,
     model::{BlockHeight, SignedBlock},
-    tcp::implem_tcp_codec,
+    tcp::tcp_client_server,
 };
-
-// Server Side
-#[derive(Debug, Default)]
-pub struct DataAvailabilityServerCodec;
 
 #[derive(BorshDeserialize, BorshSerialize, Clone, Debug, PartialEq, Eq)]
 pub struct DataAvailabilityServerRequest(pub BlockHeight);
@@ -21,21 +15,10 @@ pub enum DataAvailabilityServerEvent {
     MempoolStatusEvent(MempoolStatusEvent),
 }
 
-implem_tcp_codec! {
-    DataAvailabilityServerCodec,
-    decode: DataAvailabilityServerRequest,
-    encode: DataAvailabilityServerEvent
-}
-
-// Client Side
-
-#[derive(Default)]
-pub struct DataAvailabilityClientCodec;
-
-implem_tcp_codec! {
-    DataAvailabilityClientCodec,
-    decode: DataAvailabilityServerEvent,
-    encode: DataAvailabilityServerRequest
+tcp_client_server! {
+    pub DataAvailability,
+    request: DataAvailabilityServerRequest,
+    response: DataAvailabilityServerEvent
 }
 
 #[cfg(test)]
@@ -43,19 +26,16 @@ mod test {
     use bytes::BytesMut;
     use tokio_util::codec::{Decoder, Encoder};
 
-    use crate::data_availability::codec::DataAvailabilityServerEvent;
-    use crate::model::{AggregateSignature, ConsensusProposal};
-    use crate::{
-        data_availability::codec::{
-            DataAvailabilityClientCodec, DataAvailabilityServerCodec, DataAvailabilityServerRequest,
-        },
-        model::{BlockHeight, SignedBlock},
+    use crate::data_availability::codec::{
+        codec_data_availability, DataAvailabilityServerEvent, DataAvailabilityServerRequest,
     };
+    use crate::model::{AggregateSignature, ConsensusProposal};
+    use crate::model::{BlockHeight, SignedBlock};
 
     #[tokio::test]
     async fn test_block_streaming() {
-        let mut server_codec = DataAvailabilityServerCodec::default();
-        let mut client_codec = DataAvailabilityClientCodec::default();
+        let mut server_codec = codec_data_availability::ServerCodec::default();
+        let mut client_codec = codec_data_availability::ClientCodec::default();
         let mut buffer = BytesMut::new();
 
         let block = DataAvailabilityServerEvent::SignedBlock(SignedBlock {
@@ -75,8 +55,8 @@ mod test {
 
     #[tokio::test]
     async fn test_da_request_block_height() {
-        let mut server_codec = DataAvailabilityServerCodec::default(); // Votre implémentation du codec
-        let mut client_codec = DataAvailabilityClientCodec::default(); // Votre implémentation du codec
+        let mut server_codec = codec_data_availability::ServerCodec::default();
+        let mut client_codec = codec_data_availability::ClientCodec::default();
         let mut buffer = BytesMut::new();
 
         let block_height = DataAvailabilityServerRequest(BlockHeight(1));

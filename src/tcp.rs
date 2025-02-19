@@ -98,7 +98,7 @@ where
 }
 
 #[derive(Debug)]
-pub struct TcpConnectionPool<Codec, Req: Clone, Res: Clone + std::fmt::Debug>
+pub struct TcpServer<Codec, Req: Clone, Res: Clone + std::fmt::Debug>
 where
     Codec: Decoder<Item = Req> + Encoder<Res> + Default,
 {
@@ -106,7 +106,7 @@ where
     peers: HashMap<String, PeerStream<Codec, Req, Res>>,
 }
 
-impl<Codec, Req, Res> TcpConnectionPool<Codec, Req, Res>
+impl<Codec, Req, Res> TcpServer<Codec, Req, Res>
 where
     Codec: Decoder<Item = Req> + Encoder<Res> + Default + Send + 'static,
     <Codec as Decoder>::Error: std::fmt::Debug + Send,
@@ -114,13 +114,13 @@ where
     Req: BorshDeserialize + Clone + Send + 'static + std::fmt::Debug,
     Res: BorshSerialize + Clone + Send + 'static + std::fmt::Debug,
 {
-    pub async fn listen(addr: String) -> Result<TcpConnectionPool<Codec, Req, Res>> {
+    pub async fn listen(addr: String) -> Result<TcpServer<Codec, Req, Res>> {
         let new_peer_listener = TcpListener::bind(&addr).await?;
         info!(
             "📡  Starting TcpServerConnection Pool, listening for stream requests on {}",
             addr
         );
-        Ok(TcpConnectionPool {
+        Ok(TcpServer {
             new_peer_listener,
             peers: HashMap::new(),
         })
@@ -305,7 +305,7 @@ where
     Res: BorshDeserialize + std::fmt::Debug + Clone + Send + 'static,
     Req: BorshSerialize + Clone + Send + 'static,
 {
-    pub async fn connect(id: String, target: &String) -> Result<TcpClient<ClientCodec, Req, Res>> {
+    pub async fn connect(id: String, target: String) -> Result<TcpClient<ClientCodec, Req, Res>> {
         let timeout = std::time::Duration::from_secs(10);
         let start = std::time::Instant::now();
         let tcp_stream = loop {
@@ -383,6 +383,9 @@ where
 
 macro_rules! implem_tcp_codec {
     ($codec:ident, decode: $in:ty, encode: $out:ty) => {
+        #[derive(Default, Debug)]
+        pub struct $codec;
+
         impl tokio_util::codec::Encoder<$out> for $codec {
             type Error = anyhow::Error;
 
@@ -392,7 +395,7 @@ macro_rules! implem_tcp_codec {
                 dst: &mut bytes::BytesMut,
             ) -> Result<(), Self::Error> {
                 let bytes: Vec<u8> = borsh::to_vec(&event)?;
-                dst.put_slice(bytes.as_slice());
+                bytes::BufMut::put_slice(dst, bytes.as_slice());
                 Ok(())
             }
         }
@@ -413,39 +416,69 @@ macro_rules! implem_tcp_codec {
     };
 }
 
+macro_rules! tcp_client_server {
+    ($vis:vis $name:ident, request: $req:ty, response: $res:ty) => {
+        paste::paste! {
+        $vis mod [< codec_ $name:snake >] {
+            #![allow(unused)]
+            use super::*;
+            use anyhow::{Context, Result};
+            crate::tcp::implem_tcp_codec!{
+                ClientCodec,
+                decode: $res,
+                encode: $req
+            }
+            crate::tcp::implem_tcp_codec!{
+                ServerCodec,
+                decode: $req,
+                encode: $res
+            }
+
+
+            pub type Client = crate::tcp::TcpClient<ClientCodec, $req, $res>;
+            pub type Server = crate::tcp::TcpServer<ServerCodec, $req, $res>;
+
+            pub async fn listen(addr: String) -> Result<Server> {
+                crate::tcp::TcpServer::<ServerCodec, $req, $res>::listen(addr).await
+            }
+            pub async fn connect(id: String, addr: String) -> Result<Client> {
+                crate::tcp::TcpClient::<ClientCodec, $req, $res>::connect(id, addr).await
+            }
+        }
+        }
+    };
+}
+
 pub(crate) use implem_tcp_codec;
+pub(crate) use tcp_client_server;
 
 #[cfg(test)]
 pub mod tests {
     use std::time::Duration;
 
     use crate::{
-        data_availability::codec::{
-            DataAvailabilityClientCodec, DataAvailabilityServerCodec, DataAvailabilityServerEvent,
-            DataAvailabilityServerRequest,
-        },
-        tcp::{TcpClient, TcpCommand, TcpConnectionPool, TcpMessage},
+        data_availability::codec::{DataAvailabilityServerEvent, DataAvailabilityServerRequest},
+        tcp::{TcpCommand, TcpMessage},
     };
 
     use anyhow::Result;
     use futures::TryStreamExt;
     use hyle_model::{BlockHeight, SignedBlock};
 
+    tcp_client_server! {
+        DataAvailability,
+        request: crate::data_availability::codec::DataAvailabilityServerRequest,
+        response: crate::data_availability::codec::DataAvailabilityServerEvent
+    }
+
     #[test_log::test(tokio::test)]
     async fn tcp_test() -> Result<()> {
-        let test: TcpConnectionPool<
-            DataAvailabilityServerCodec,
-            DataAvailabilityServerRequest,
-            DataAvailabilityServerEvent,
-        > = TcpConnectionPool::listen("0.0.0.0:2345".to_string()).await?;
+        let test = codec_data_availability::listen("0.0.0.0:2345".to_string()).await?;
 
         let (sender, mut receiver) = test.run_in_background().await?;
 
-        let mut client: TcpClient<
-            DataAvailabilityClientCodec,
-            DataAvailabilityServerRequest,
-            DataAvailabilityServerEvent,
-        > = TcpClient::connect("me".to_string(), &"0.0.0.0:2345".to_string()).await?;
+        let mut client =
+            codec_data_availability::connect("me".to_string(), "0.0.0.0:2345".to_string()).await?;
 
         // Ping
         let _ = client.ping().await?;

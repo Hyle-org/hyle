@@ -9,9 +9,7 @@ mod blocks_memory;
 use blocks_fjall::Blocks;
 //use blocks_memory::Blocks;
 
-use codec::{
-    DataAvailabilityServerCodec, DataAvailabilityServerEvent, DataAvailabilityServerRequest,
-};
+use codec::{codec_data_availability, DataAvailabilityServerEvent};
 
 use crate::{
     bus::{BusClientSender, BusMessage},
@@ -22,7 +20,7 @@ use crate::{
     model::*,
     module_handle_messages,
     p2p::network::{OutboundMessage, PeerEvent},
-    tcp::{TcpCommand, TcpConnectionPool, TcpEvent},
+    tcp::{TcpCommand, TcpEvent},
     utils::{
         conf::SharedConf,
         logger::LogMe,
@@ -100,11 +98,7 @@ impl Module for DataAvailability {
 
 impl DataAvailability {
     pub async fn start(&mut self) -> Result<()> {
-        let pool: TcpConnectionPool<
-            DataAvailabilityServerCodec,
-            DataAvailabilityServerRequest,
-            DataAvailabilityServerEvent,
-        > = TcpConnectionPool::listen(self.config.da_address.clone()).await?;
+        let pool = codec_data_availability::listen(self.config.da_address.clone()).await?;
 
         info!(
             "📡  Starting DataAvailability module, listening for stream requests on {}",
@@ -445,7 +439,7 @@ pub mod tests {
         DataAvailabilityServerEvent, DataAvailabilityServerRequest,
     };
     use crate::model::ValidatorPublicKey;
-    use crate::tcp::{TcpClient, TcpCommand};
+    use crate::tcp::TcpCommand;
     use crate::{
         bus::BusClientSender,
         consensus::CommittedConsensusProposal,
@@ -460,7 +454,7 @@ pub mod tests {
     use staking::state::Staking;
     use tokio::sync::mpsc::{channel, Sender};
 
-    use super::codec::DataAvailabilityClientCodec;
+    use super::codec::codec_data_availability;
     use super::module_bus_client;
     use super::Blocks;
     use anyhow::Result;
@@ -606,13 +600,10 @@ pub mod tests {
             da.start().await.unwrap();
         });
 
-        let mut client = TcpClient::<
-            DataAvailabilityClientCodec,
-            DataAvailabilityServerRequest,
-            DataAvailabilityServerEvent,
-        >::connect("client_id".to_string(), &config.da_address)
-        .await
-        .unwrap();
+        let mut client =
+            codec_data_availability::connect("client_id".to_string(), config.da_address.clone())
+                .await
+                .unwrap();
 
         // Feed Da with blocks, should stream them to the client
         for block in blocks {
@@ -661,13 +652,10 @@ pub mod tests {
 
         // End of the first stream
 
-        let mut client = TcpClient::<
-            DataAvailabilityClientCodec,
-            DataAvailabilityServerRequest,
-            DataAvailabilityServerEvent,
-        >::connect("client_id".to_string(), &config.da_address)
-        .await
-        .unwrap();
+        let mut client =
+            codec_data_availability::connect("client_id".to_string(), config.da_address)
+                .await
+                .unwrap();
 
         client
             .send(DataAvailabilityServerRequest(BlockHeight(0)))
