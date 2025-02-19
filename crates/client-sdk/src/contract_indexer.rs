@@ -1,6 +1,7 @@
 use anyhow::Result;
 use reqwest::StatusCode;
 use std::{collections::BTreeMap, sync::Arc};
+use tokio::sync::RwLock;
 
 use axum::{
     response::{IntoResponse, Response},
@@ -11,20 +12,21 @@ use sdk::{BlobIndex, BlobTransaction, ContractName, TxId};
 use utoipa::openapi::OpenApi;
 
 pub use axum;
-pub use tokio::sync::RwLock;
 pub use utoipa;
 pub use utoipa_axum;
 
 #[derive(BorshSerialize, BorshDeserialize)]
-pub struct Store<State> {
+pub struct ContractStateStore<State> {
     pub state: Option<State>,
     pub contract_name: ContractName,
     pub unsettled_blobs: BTreeMap<TxId, BlobTransaction>,
 }
 
-impl<State> Default for Store<State> {
+pub type ContractHandlerStore<T> = Arc<RwLock<ContractStateStore<T>>>;
+
+impl<State> Default for ContractStateStore<State> {
     fn default() -> Self {
-        Store {
+        ContractStateStore {
             state: None,
             contract_name: Default::default(),
             unsettled_blobs: BTreeMap::new(),
@@ -37,7 +39,7 @@ where
     Self: Sized,
 {
     fn api(
-        store: Arc<RwLock<Store<Self>>>,
+        store: ContractHandlerStore<Self>,
     ) -> impl std::future::Future<Output = (Router<()>, OpenApi)> + std::marker::Send;
 
     fn handle(tx: &BlobTransaction, index: BlobIndex, state: Self) -> Result<Self>;

@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use anyhow::{anyhow, Context, Result};
 use client_sdk::contract_indexer::{
     axum::{
@@ -10,7 +8,7 @@ use client_sdk::contract_indexer::{
     },
     utoipa::{openapi::OpenApi, ToSchema},
     utoipa_axum::{router::OpenApiRouter, routes},
-    AppError, ContractHandler, RwLock, Store,
+    AppError, ContractHandler, ContractHandlerStore,
 };
 use sdk::*;
 use serde::Serialize;
@@ -20,7 +18,7 @@ use client_sdk::contract_indexer::axum;
 use client_sdk::contract_indexer::utoipa;
 
 impl ContractHandler for HyllarToken {
-    async fn api(store: Arc<RwLock<Store<HyllarToken>>>) -> (Router<()>, OpenApi) {
+    async fn api(store: ContractHandlerStore<HyllarToken>) -> (Router<()>, OpenApi) {
         let (router, api) = OpenApiRouter::default()
             .routes(routes!(get_state))
             .routes(routes!(get_balance))
@@ -64,7 +62,7 @@ impl ContractHandler for HyllarToken {
     )
 )]
 pub async fn get_state<S: Serialize + Clone + 'static>(
-    State(state): State<Arc<RwLock<Store<S>>>>,
+    State(state): State<ContractHandlerStore<S>>,
 ) -> Result<impl IntoResponse, AppError> {
     let store = state.read().await;
     store.state.clone().map(Json).ok_or(AppError(
@@ -91,7 +89,7 @@ struct BalanceResponse {
 )]
 pub async fn get_balance(
     Path(account): Path<Identity>,
-    State(state): State<Arc<RwLock<Store<HyllarToken>>>>,
+    State(state): State<ContractHandlerStore<HyllarToken>>,
 ) -> Result<impl IntoResponse, AppError> {
     let store = state.read().await;
     let state = store.state.clone().ok_or(AppError(
@@ -130,7 +128,7 @@ struct AllowanceResponse {
 )]
 pub async fn get_allowance(
     Path((account, spender)): Path<(Identity, Identity)>,
-    State(state): State<Arc<RwLock<Store<HyllarToken>>>>,
+    State(state): State<ContractHandlerStore<HyllarToken>>,
 ) -> Result<impl IntoResponse, AppError> {
     let store = state.read().await;
     let state = store.state.clone().ok_or(AppError(

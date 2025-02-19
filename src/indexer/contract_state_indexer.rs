@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use client_sdk::contract_indexer::{ContractHandler, Store};
+use client_sdk::contract_indexer::{ContractHandler, ContractStateStore};
 use hyle_contract_sdk::{BlobIndex, ContractName, TxId};
 use hyle_model::RegisterContractEffect;
 use serde::{Deserialize, Serialize};
@@ -26,7 +26,7 @@ impl BusMessage for ProverEvent {}
 
 pub struct ContractStateIndexer<State> {
     bus: IndexerBusClient,
-    store: Arc<RwLock<Store<State>>>,
+    store: Arc<RwLock<ContractStateStore<State>>>,
     contract_name: ContractName,
     file: PathBuf,
     #[allow(dead_code)]
@@ -61,7 +61,8 @@ where
             .data_directory
             .join(format!("state_indexer_{}.bin", ctx.contract_name).as_str());
 
-        let mut store = Self::load_from_disk_or_default::<Store<State>>(file.as_path());
+        let mut store =
+            Self::load_from_disk_or_default::<ContractStateStore<State>>(file.as_path());
         store.contract_name = ctx.contract_name.clone();
         let store = Arc::new(RwLock::new(store));
 
@@ -130,9 +131,10 @@ where
             }
         };
 
-        if let Err(e) =
-            Self::save_on_disk::<Store<State>>(self.file.as_path(), self.store.read().await.deref())
-        {
+        if let Err(e) = Self::save_on_disk::<ContractStateStore<State>>(
+            self.file.as_path(),
+            self.store.read().await.deref(),
+        ) {
             tracing::warn!(cn = %self.contract_name, "Failed to save contract state indexer on disk: {}", e);
         }
         Ok(())
@@ -263,7 +265,7 @@ mod tests {
             Ok(state)
         }
 
-        async fn api(_store: Arc<RwLock<Store<Self>>>) -> (axum::Router<()>, OpenApi) {
+        async fn api(_store: Arc<RwLock<ContractStateStore<Self>>>) -> (axum::Router<()>, OpenApi) {
             (axum::Router::new(), OpenApi::default())
         }
     }

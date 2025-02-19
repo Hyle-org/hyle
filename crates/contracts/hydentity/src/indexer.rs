@@ -4,7 +4,7 @@ use client_sdk::contract_indexer::{
     axum::Router,
     utoipa::openapi::OpenApi,
     utoipa_axum::{router::OpenApiRouter, routes},
-    ContractHandler, RwLock, Store,
+    ContractHandler, ContractHandlerStore,
 };
 use client_sdk::contract_indexer::{
     axum::{
@@ -22,16 +22,10 @@ use sdk::{
     Blob, BlobIndex, BlobTransaction, Identity,
 };
 use serde::Serialize;
-use std::sync::Arc;
-
-pub mod metadata {
-    pub const HYDENTITY_ELF: &[u8] = include_bytes!("../hydentity.img");
-    pub const PROGRAM_ID: [u8; 32] = sdk::str_to_u8(include_str!("../hydentity.txt"));
-}
 
 use client_sdk::contract_indexer::axum;
 impl ContractHandler for Hydentity {
-    async fn api(store: Arc<RwLock<Store<Self>>>) -> (Router<()>, OpenApi) {
+    async fn api(store: ContractHandlerStore<Self>) -> (Router<()>, OpenApi) {
         let (router, api) = OpenApiRouter::default()
             .routes(routes!(get_state))
             .routes(routes!(get_nonce))
@@ -65,7 +59,7 @@ impl ContractHandler for Hydentity {
     )
 )]
 pub async fn get_state(
-    State(state): State<Arc<RwLock<Store<Hydentity>>>>,
+    State(state): State<ContractHandlerStore<Hydentity>>,
 ) -> Result<impl IntoResponse, AppError> {
     let store = state.read().await;
     store.state.clone().map(Json).ok_or(AppError(
@@ -93,7 +87,7 @@ struct NonceResponse {
 )]
 pub async fn get_nonce(
     Path(account): Path<Identity>,
-    State(state): State<Arc<RwLock<Store<Hydentity>>>>,
+    State(state): State<ContractHandlerStore<Hydentity>>,
 ) -> Result<impl IntoResponse, AppError> {
     let store = state.read().await;
     let state = store.state.clone().ok_or(AppError(
