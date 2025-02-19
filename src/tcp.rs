@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{any::Any, collections::HashMap};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytes::BytesMut;
@@ -25,12 +25,14 @@ pub enum TcpMessage<Data: Clone> {
     Data(Data),
 }
 
+// TODO: Add ConnectPeer, RemovePeer ?
 #[derive(Debug, Clone, BorshDeserialize, BorshSerialize)]
 pub enum TcpCommand<Data: Clone> {
     Broadcast(Box<Data>),
     Send(String, Box<Data>),
 }
 
+// TODO: when useful, we can add NewPeer event, PeerDisconnected ...
 #[derive(Debug, Clone, BorshDeserialize, BorshSerialize)]
 pub struct TcpEvent<Data: Clone> {
     pub dest: String,
@@ -201,7 +203,7 @@ where
                 }
             }
             TcpCommand::Send(to, data) => {
-                // Retry on error
+                // FIXME: Retry on error ?
                 debug!("Sending data {:?} to {}", data, to);
                 let peer_stream = self
                     .peers
@@ -224,6 +226,7 @@ where
         ping_sender: Sender<String>,
         sender_received_messages: Sender<TcpEvent<Req>>,
         tcp_stream: TcpStream,
+        // FIXME: Use something safer to identify a peer. For now its ok to use its ip
         peer_ip: &String,
     ) -> Result<()> {
         let (sender, mut receiver) =
@@ -256,7 +259,7 @@ where
                 }
             })?;
 
-        // Then store data so we can send new blocks as they come.
+        // Store peer in the list.
         self.peers.insert(
             peer_ip.to_string(),
             PeerStream {
@@ -268,9 +271,11 @@ where
 
         Ok(())
     }
+
+    // TODO: clean method to stop everything
 }
 
-/// A peer we are streaming blocks to
+/// A peer we can send data to
 #[derive(Debug)]
 struct PeerStream<Codec, In, Out>
 where
@@ -280,7 +285,7 @@ where
 {
     /// Last timestamp we received a ping from the peer.
     last_ping: u64,
-    /// Sender to stream blocks to the peer
+    /// Sender to stream data to the peer
     sender: SplitSink<Framed<TcpStream, TcpMessageCodec<Codec>>, TcpMessage<Out>>,
     /// Handle to abort the receiving side of the stream
     abort: JoinHandle<()>,
@@ -340,8 +345,10 @@ where
         })
     }
 
-    pub async fn send(&mut self, msg: Req) -> Result<()> {
-        self.sender.send(TcpMessage::<Req>::Data(msg)).await?;
+    pub async fn send<T: Into<Req>>(&mut self, msg: T) -> Result<()> {
+        self.sender
+            .send(TcpMessage::<Req>::Data(msg.into()))
+            .await?;
 
         Ok(())
     }
@@ -356,7 +363,7 @@ where
             match self.receiver.next().await {
                 Some(Ok(TcpMessage::Data(data))) => {
                     // Interesting message
-                    trace!("Some interesting data for client {}", self.id);
+                    trace!("Some data for client {}", self.id);
                     return Some(data);
                 }
                 None => {
@@ -415,6 +422,7 @@ macro_rules! implem_tcp_codec {
         }
     };
 }
+pub(super) use implem_tcp_codec;
 
 macro_rules! tcp_client_server {
     ($vis:vis $name:ident, request: $req:ty, response: $res:ty) => {
@@ -449,7 +457,6 @@ macro_rules! tcp_client_server {
     };
 }
 
-pub(crate) use implem_tcp_codec;
 pub(crate) use tcp_client_server;
 
 #[cfg(test)]
