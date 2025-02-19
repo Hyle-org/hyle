@@ -34,7 +34,7 @@ impl ContractHandler for Hydentity {
         (router.with_state(store), api)
     }
 
-    fn handle(tx: &BlobTransaction, index: BlobIndex, state: Self) -> Result<Self> {
+    fn handle(tx: &BlobTransaction, index: BlobIndex, mut state: Self) -> Result<Self> {
         let Blob {
             data,
             contract_name,
@@ -43,10 +43,11 @@ impl ContractHandler for Hydentity {
         let action: IdentityAction =
             borsh::from_slice(data.0.as_slice()).context("Failed to decode payload")?;
 
-        let res = sdk::identity_provider::execute_action(state, action, "")
+        let res = state
+            .execute_action(action, "")
             .map_err(|e| anyhow::anyhow!(e))?;
         info!("🚀 Executed {contract_name}: {res:?}");
-        Ok(res.1)
+        Ok(state)
     }
 }
 

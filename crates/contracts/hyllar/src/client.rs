@@ -4,7 +4,7 @@ use client_sdk::{
     helpers::{risc0::Risc0Prover, ClientSdkExecutor},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
-use sdk::{erc20::ERC20Action, utils::as_hyle_output, ContractName, Digestable, HyleOutput};
+use sdk::{erc20::ERC20Action, utils::as_hyle_output, ContractName, HyleOutput};
 
 use crate::{execute, HyllarToken};
 
@@ -20,10 +20,15 @@ impl ClientSdkExecutor for HyllarPseudoExecutor {
         &self,
         contract_input: &sdk::ContractInput,
     ) -> anyhow::Result<(Box<dyn Any>, HyleOutput)> {
-        let mut res = execute(&mut String::new(), contract_input.clone());
-        let output = as_hyle_output(contract_input.clone(), &mut res);
+        let initial_state: HyllarToken = borsh::from_slice(contract_input.state.as_slice())?;
+        let mut res = execute(
+            &mut String::new(),
+            initial_state.clone(),
+            contract_input.clone(),
+        );
+        let output = as_hyle_output(initial_state, contract_input.clone(), &mut res);
         match res {
-            Ok(res) => Ok((Box::new(res.1.state.clone()), output)),
+            Ok(res) => Ok((Box::new(res.1.clone()), output)),
             Err(e) => Err(anyhow::anyhow!(e)),
         }
     }
@@ -37,7 +42,6 @@ impl HyllarToken {
     ) {
         builder.init_with(
             contract_name,
-            self.as_digest(),
             HyllarPseudoExecutor {},
             Risc0Prover::new(HYLLAR_ELF),
         );
@@ -53,6 +57,7 @@ pub fn transfer(
     builder.add_action(
         contract_name,
         ERC20Action::Transfer { recipient, amount },
+        None,
         None,
         None,
     )?;
@@ -75,6 +80,7 @@ pub fn transfer_from(
         },
         None,
         None,
+        None,
     )?;
     Ok(())
 }
@@ -88,6 +94,7 @@ pub fn approve(
     builder.add_action(
         contract_name,
         ERC20Action::Approve { spender, amount },
+        None,
         None,
         None,
     )?;

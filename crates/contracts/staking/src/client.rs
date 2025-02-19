@@ -7,7 +7,7 @@ use client_sdk::{
 use sdk::{
     api::{APIFees, APIFeesBalance, APIStaking},
     utils::as_hyle_output,
-    ContractName, Digestable, HyleOutput, StakingAction, ValidatorPublicKey,
+    ContractName, HyleOutput, StakingAction, ValidatorPublicKey,
 };
 
 use crate::{
@@ -28,8 +28,9 @@ impl ClientSdkExecutor for StakingPseudoExecutor {
         &self,
         contract_input: &sdk::ContractInput,
     ) -> anyhow::Result<(Box<dyn Any>, HyleOutput)> {
-        let mut res = execute(contract_input.clone());
-        let output = as_hyle_output(contract_input.clone(), &mut res);
+        let initial_state: Staking = borsh::from_slice(contract_input.state.as_slice())?;
+        let mut res = execute(initial_state.clone(), contract_input.clone());
+        let output = as_hyle_output(initial_state, contract_input.clone(), &mut res);
         match res {
             Ok(res) => Ok((Box::new(res.1.clone()), output)),
             Err(e) => Err(anyhow::anyhow!(e)),
@@ -45,7 +46,6 @@ impl Staking {
     ) {
         builder.init_with(
             contract_name,
-            self.as_digest(),
             StakingPseudoExecutor {},
             Risc0Prover::new(STAKING_ELF),
         );
@@ -125,17 +125,16 @@ pub fn deposit_for_fees(
     holder: ValidatorPublicKey,
     amount: u128,
 ) -> anyhow::Result<()> {
-    builder
-        .add_action(
-            contract_name,
-            StakingAction::DepositForFees {
-                holder: holder.clone(),
-                amount,
-            },
-            None,
-            None,
-        )?
-        .with_private_input(|state: &Staking| -> anyhow::Result<Vec<u8>> { Ok(state.to_bytes()) });
+    builder.add_action(
+        contract_name,
+        StakingAction::DepositForFees {
+            holder: holder.clone(),
+            amount,
+        },
+        None,
+        None,
+        None,
+    )?;
     Ok(())
 }
 
@@ -150,9 +149,13 @@ pub fn stake(
     contract_name: ContractName,
     amount: u128,
 ) -> anyhow::Result<()> {
-    builder
-        .add_action(contract_name, StakingAction::Stake { amount }, None, None)?
-        .with_private_input(|state: &Staking| -> anyhow::Result<Vec<u8>> { Ok(state.to_bytes()) });
+    builder.add_action(
+        contract_name,
+        StakingAction::Stake { amount },
+        None,
+        None,
+        None,
+    )?;
     Ok(())
 }
 
@@ -161,15 +164,14 @@ pub fn delegate(
     contract_name: ContractName,
     validator: ValidatorPublicKey,
 ) -> anyhow::Result<()> {
-    builder
-        .add_action(
-            contract_name,
-            StakingAction::Delegate {
-                validator: validator.clone(),
-            },
-            None,
-            None,
-        )?
-        .with_private_input(|state: &Staking| -> anyhow::Result<Vec<u8>> { Ok(state.to_bytes()) });
+    builder.add_action(
+        contract_name,
+        StakingAction::Delegate {
+            validator: validator.clone(),
+        },
+        None,
+        None,
+        None,
+    )?;
     Ok(())
 }

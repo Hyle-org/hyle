@@ -23,7 +23,7 @@ It allows you to only depends on crate `contract-sdk` in your contract's code.
 The inputs of the zkVM should be of type ContractInput defined in
 ```rust
 pub struct ContractInput {
-    pub initial_state: StateDigest,
+    pub state: Vec<u8>,
     pub identity: Identity,
     pub tx_hash: TxHash,
     pub private_blob: BlobData,

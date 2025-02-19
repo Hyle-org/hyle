@@ -45,11 +45,12 @@ impl ContractHandler for HyllarToken {
             })
             .unwrap_or(tx.identity.clone());
 
-        let contract = HyllarTokenContract::init(state, caller);
-        let res =
-            erc20::execute_action(contract, data.parameters).map_err(|e| anyhow::anyhow!(e))?;
+        let mut contract = HyllarTokenContract::init(state, caller);
+        let res = contract
+            .execute_action(data.parameters)
+            .map_err(|e| anyhow::anyhow!(e))?;
         info!("🚀 Executed {contract_name}: {res:?}");
-        Ok(res.1.state())
+        Ok(contract.state())
     }
 }
 

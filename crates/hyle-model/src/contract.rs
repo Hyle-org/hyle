@@ -43,7 +43,7 @@ pub trait Digestable {
 
 #[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
 pub struct ContractInput {
-    pub initial_state: StateDigest,
+    pub state: Vec<u8>,
     pub identity: Identity,
     pub index: BlobIndex,
     pub blobs: Vec<Blob>,

@@ -50,25 +50,26 @@ where
     Some(parsed_blob)
 }
 
-pub fn as_hyle_output<T: Digestable>(
-    input: ContractInput,
-    res: &mut crate::RunResult<T>,
+pub fn as_hyle_output<State: Digestable + BorshDeserialize>(
+    initial_state: State,
+    contract_input: ContractInput,
+    res: &mut crate::RunResult<State>,
 ) -> HyleOutput {
     match res {
         Ok(res) => HyleOutput {
             version: 1,
-            initial_state: input.initial_state,
+            initial_state: initial_state.as_digest(),
             next_state: res.1.as_digest(),
-            identity: input.identity,
-            index: input.index,
-            blobs: flatten_blobs(&input.blobs),
+            identity: contract_input.identity,
+            index: contract_input.index,
+            blobs: flatten_blobs(&contract_input.blobs),
             success: true,
-            tx_hash: input.tx_hash,
-            tx_ctx: input.tx_ctx,
+            tx_hash: contract_input.tx_hash,
+            tx_ctx: contract_input.tx_ctx,
             registered_contracts: core::mem::take(&mut res.2),
             program_outputs: core::mem::take(&mut res.0).into_bytes(),
         },
-        Err(message) => fail(input, message),
+        Err(message) => fail(contract_input, initial_state, message),
     }
 }
 

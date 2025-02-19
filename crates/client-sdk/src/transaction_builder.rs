@@ -1,6 +1,6 @@
 use std::{
     any::Any,
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     future::Future,
     ops::{Deref, DerefMut},
     sync::{Arc, OnceLock},
@@ -9,7 +9,7 @@ use std::{
 use anyhow::{bail, Result};
 use sdk::{
     Blob, BlobIndex, BlobTransaction, ContractAction, ContractInput, ContractName, Hashed,
-    HyleOutput, Identity, ProofTransaction, StateDigest, TxContext,
+    HyleOutput, Identity, ProofTransaction, TxContext,
 };
 
 use crate::helpers::{ClientSdkExecutor, ClientSdkProver};
@@ -31,11 +31,11 @@ impl ProvableBlobTx {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn add_action<CF: ContractAction>(
         &mut self,
         contract_name: ContractName,
         action: CF,
+        private_input: Option<Vec<u8>>,
         caller: Option<BlobIndex>,
         callees: Option<Vec<BlobIndex>>,
     ) -> Result<&'_ mut ContractRunner> {
@@ -43,6 +43,7 @@ impl ProvableBlobTx {
             contract_name.clone(),
             self.identity.clone(),
             BlobIndex(self.blobs.len()),
+            private_input,
         )?;
         self.runners.push(runner);
         self.blobs
@@ -117,13 +118,12 @@ where
 {
     fn setup(&self, ctx: &mut TxExecutorBuilder<Self>);
     fn update(&mut self, contract_name: &ContractName, new_state: &mut dyn Any) -> Result<()>;
-    fn get(&self, contract_name: &ContractName) -> Result<Box<dyn Any>>;
+    fn get(&self, contract_name: &ContractName) -> Result<Vec<u8>>;
 }
 
 #[derive(Default)]
 pub struct TxExecutor<S: StateUpdater> {
-    full_states: S,
-    on_chain_states: BTreeMap<ContractName, StateDigest>,
+    states: S,
     executors: BTreeMap<ContractName, Box<dyn ClientSdkExecutor + Sync + Send>>,
     provers: BTreeMap<ContractName, Arc<dyn ClientSdkProver + Sync + Send>>,
 }
@@ -132,18 +132,17 @@ impl<S: StateUpdater> Deref for TxExecutor<S> {
     type Target = S;
 
     fn deref(&self) -> &Self::Target {
-        &self.full_states
+        &self.states
     }
 }
 impl<S: StateUpdater> DerefMut for TxExecutor<S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.full_states
+        &mut self.states
     }
 }
 
 pub struct TxExecutorBuilder<S> {
     full_states: Option<S>,
-    on_chain_states: BTreeMap<ContractName, StateDigest>,
     executors: BTreeMap<ContractName, Box<dyn ClientSdkExecutor + Sync + Send>>,
     provers: BTreeMap<ContractName, Arc<dyn ClientSdkProver + Sync + Send>>,
 }
@@ -152,7 +151,6 @@ impl<S: StateUpdater> TxExecutorBuilder<S> {
     pub fn new(full_states: S) -> Self {
         let mut ret = Self {
             full_states: None,
-            on_chain_states: BTreeMap::new(),
             executors: BTreeMap::new(),
             provers: BTreeMap::new(),
         };
@@ -164,8 +162,7 @@ impl<S: StateUpdater> TxExecutorBuilder<S> {
     pub fn build(self) -> TxExecutor<S> {
         TxExecutor {
             // Safe to unwrap because we set it in the constructor
-            full_states: self.full_states.unwrap(),
-            on_chain_states: self.on_chain_states,
+            states: self.full_states.unwrap(),
             executors: self.executors,
             provers: self.provers,
         }
@@ -174,24 +171,15 @@ impl<S: StateUpdater> TxExecutorBuilder<S> {
     pub fn init_with(
         &mut self,
         contract_name: ContractName,
-        state: StateDigest,
         executor: impl ClientSdkExecutor + Sync + Send + 'static,
         prover: impl ClientSdkProver + Sync + Send + 'static,
     ) -> &mut Self {
-        self.on_chain_states
-            .entry(contract_name.clone())
-            .or_insert(state);
         self.executors
             .entry(contract_name.clone())
             .or_insert(Box::new(executor));
         self.provers
             .entry(contract_name)
             .or_insert(Arc::new(prover));
-        self
-    }
-
-    pub fn with_onchain_state(mut self, contract_name: ContractName, state: StateDigest) -> Self {
-        self.on_chain_states.insert(contract_name, state);
         self
     }
 
@@ -225,43 +213,52 @@ impl<S: StateUpdater> TxExecutor<S> {
         iter.into_iter().map(move |tx| self.process(tx))
     }
 
+    /// Executes the transaction and updates the state of the associated contracts.
+    ///
+    /// This function processes a given `ProvableBlobTx` by iterating over each blob,
+    /// building the contract input, executing the contract, and updating the state
+    /// accordingly. If the execution fails, it returns an error with the program output.
+    ///
+    /// # Arguments
+    ///
+    /// * `tx` - The transaction to be processed.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing a `ProofTxBuilder` if successful, or an error if the execution fails.
     pub fn process(&mut self, mut tx: ProvableBlobTx) -> Result<ProofTxBuilder> {
         let mut outputs = vec![];
+        let mut old_states = HashMap::new();
+
         for runner in tx.runners.iter_mut() {
-            let on_chain_state = self
-                .on_chain_states
-                .get(&runner.contract_name)
-                .cloned()
-                .ok_or(anyhow::anyhow!("State not found"))?;
-            let full_state = self.full_states.get(&runner.contract_name)?;
+            let state = self.states.get(&runner.contract_name)?;
+            old_states.insert(runner.contract_name.clone(), state.clone());
 
-            let private_input = runner.private_input(&full_state)?;
-
-            runner.build_input(
-                tx.tx_context.clone(),
-                tx.blobs.clone(),
-                private_input,
-                on_chain_state.clone(),
-            );
+            runner.build_contract_input(tx.tx_context.clone(), tx.blobs.clone(), state);
 
             tracing::info!("Checking transition for {}...", runner.contract_name);
-            let (mut full_state, out) = self
+            let (mut state, out) = match self
                 .executors
                 .get(&runner.contract_name)
                 .unwrap()
-                .execute(runner.contract_input.get().unwrap())?;
+                .execute(runner.contract_input.get().unwrap())
+            {
+                Ok(result) => result,
+                Err(e) => {
+                    // Revert all state changes
+                    for (contract_name, state) in old_states.iter_mut() {
+                        self.states.update(contract_name, &mut *state)?;
+                    }
+                    bail!("Execution failed for {}: {}", runner.contract_name, e);
+                }
+            };
 
             if !out.success {
                 let program_error = std::str::from_utf8(&out.program_outputs).unwrap();
                 bail!("Execution failed ! Program output: {}", program_error);
             }
 
-            self.on_chain_states
-                .entry(runner.contract_name.clone())
-                .and_modify(|v| *v = out.next_state.clone());
-
-            self.full_states
-                .update(&runner.contract_name, &mut *full_state)?;
+            self.states.update(&runner.contract_name, &mut *state)?;
 
             outputs.push((runner.contract_name.clone(), out));
         }
@@ -276,63 +273,47 @@ impl<S: StateUpdater> TxExecutor<S> {
     }
 }
 
-#[allow(clippy::type_complexity)]
+#[derive(Debug)]
 pub struct ContractRunner {
     pub contract_name: ContractName,
     identity: Identity,
     index: BlobIndex,
+    private_input: Option<Vec<u8>>,
     contract_input: OnceLock<ContractInput>,
-    private_input_cb: Option<Box<dyn Fn(&Box<dyn Any>) -> Result<Vec<u8>> + Send + Sync>>,
 }
 
 impl ContractRunner {
-    fn new(contract_name: ContractName, identity: Identity, index: BlobIndex) -> Result<Self> {
+    fn new(
+        contract_name: ContractName,
+        identity: Identity,
+        index: BlobIndex,
+        private_input: Option<Vec<u8>>,
+    ) -> Result<Self> {
         Ok(Self {
             contract_name,
             identity,
             index,
+            private_input,
             contract_input: OnceLock::new(),
-            private_input_cb: None,
         })
     }
 
-    pub fn with_private_input<T: Any, F>(&mut self, f: F) -> &mut Self
-    where
-        F: Fn(&T) -> Result<Vec<u8>> + Send + Sync + 'static,
-    {
-        self.private_input_cb = Some(Box::new(move |a: &Box<dyn Any>| {
-            let a = a
-                .downcast_ref::<T>()
-                .expect("cannot cast full state to private input callback type");
-            f(a)
-        }));
-        self
-    }
-
-    fn private_input(&self, state: &Box<dyn Any>) -> Result<Vec<u8>> {
-        self.private_input_cb
-            .as_ref()
-            .map(|cb| cb(state))
-            .map_or(Ok(Default::default()), |v| v)
-    }
-
-    fn build_input(
+    fn build_contract_input(
         &mut self,
         tx_context: Option<TxContext>,
         blobs: Vec<Blob>,
-        private_input: Vec<u8>,
-        initial_state: StateDigest,
+        state: Vec<u8>,
     ) {
         let tx_hash = BlobTransaction::new(self.identity.clone(), blobs.clone()).hashed();
 
         self.contract_input.get_or_init(|| ContractInput {
-            initial_state,
+            state,
             identity: self.identity.clone(),
             index: self.index,
             blobs,
             tx_hash,
             tx_ctx: tx_context,
-            private_input,
+            private_input: self.private_input.clone().unwrap_or_default(),
         });
     }
 }
@@ -371,9 +352,9 @@ macro_rules! contract_states {
                 Ok(())
             }
 
-            fn get(&self, contract_name: &ContractName) -> anyhow::Result<Box<dyn std::any::Any>> {
+            fn get(&self, contract_name: &ContractName) -> anyhow::Result<Vec<u8>> {
                 match contract_name.0.as_str() {
-                    $(stringify!($contract_name) => Ok(Box::new(self.$contract_name.clone())),)*
+                    $(stringify!($contract_name) => Ok(borsh::to_vec(&self.$contract_name).map_err(|e| anyhow::anyhow!(e))?),)*
                     _ => anyhow::bail!("Unknown contract name: {contract_name}"),
                 }
             }

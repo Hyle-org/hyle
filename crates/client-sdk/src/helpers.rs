@@ -25,6 +25,7 @@ pub fn register_hyle_contract(
         },
         None,
         None,
+        None,
     )?;
     Ok(())
 }
@@ -44,6 +45,8 @@ pub trait ClientSdkProver {
 
 #[cfg(feature = "risc0")]
 pub mod risc0 {
+    use sdk::ContractInput;
+
     use super::*;
 
     pub struct Risc0Prover<'a> {
@@ -165,11 +168,11 @@ pub mod test {
 
     pub fn execute(contract_input: &ContractInput) -> Result<HyleOutput> {
         // FIXME: this is a hack to make the test pass.
-        let next_state = contract_input.initial_state.clone();
+        let initial_state = StateDigest(contract_input.state.clone());
         let hyle_output = HyleOutput {
             version: 1,
-            initial_state: contract_input.initial_state.clone(),
-            next_state,
+            initial_state: initial_state.clone(),
+            next_state: initial_state,
             identity: contract_input.identity.clone(),
             index: contract_input.index,
             blobs: flatten_blobs(&contract_input.blobs),
