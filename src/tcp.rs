@@ -1,4 +1,4 @@
-use std::{any::Any, collections::HashMap};
+use std::collections::HashMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytes::BytesMut;
@@ -488,10 +488,10 @@ pub mod tests {
             codec_data_availability::connect("me".to_string(), "0.0.0.0:2345".to_string()).await?;
 
         // Ping
-        let _ = client.ping().await?;
+        client.ping().await?;
 
         // Send data to server
-        let _ = client
+        client
             .send(DataAvailabilityServerRequest(BlockHeight(2)))
             .await?;
 

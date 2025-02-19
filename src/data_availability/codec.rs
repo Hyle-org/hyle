@@ -34,8 +34,8 @@ mod test {
 
     #[tokio::test]
     async fn test_block_streaming() {
-        let mut server_codec = codec_data_availability::ServerCodec::default();
-        let mut client_codec = codec_data_availability::ClientCodec::default();
+        let mut server_codec = codec_data_availability::ServerCodec;
+        let mut client_codec = codec_data_availability::ClientCodec;
         let mut buffer = BytesMut::new();
 
         let block = DataAvailabilityServerEvent::SignedBlock(SignedBlock {
@@ -55,8 +55,8 @@ mod test {
 
     #[tokio::test]
     async fn test_da_request_block_height() {
-        let mut server_codec = codec_data_availability::ServerCodec::default();
-        let mut client_codec = codec_data_availability::ClientCodec::default();
+        let mut server_codec = codec_data_availability::ServerCodec;
+        let mut client_codec = codec_data_availability::ClientCodec;
         let mut buffer = BytesMut::new();
 
         let block_height = DataAvailabilityServerRequest(BlockHeight(1));
