@@ -12,6 +12,8 @@ pub fn handle_blob_for_hyle_tld(
     contract_changes: &mut BTreeMap<ContractName, SideEffect>,
     current_blob: &Blob,
 ) -> Result<()> {
+    // TODO: check the identity of the caller here.
+
     // TODO: support unstructured blobs as well ?
     if let Ok(reg) =
         StructuredBlobData::<RegisterContractAction>::try_from(current_blob.data.clone())
@@ -65,7 +67,10 @@ fn handle_delete_blob(
     contract_changes: &mut BTreeMap<ContractName, SideEffect>,
     delete: &DeleteContractAction,
 ) -> Result<()> {
-    validate_contract_name_registration(&"hyle".into(), &delete.contract_name)?;
+    // For now, Hylé is allowed to delete all contracts but itself
+    if delete.contract_name.0 == "hyle" {
+        bail!("Cannot delete Hylé contract");
+    }
 
     // Check it's registered
     if contracts.contains_key(&delete.contract_name)

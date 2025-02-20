@@ -120,6 +120,7 @@ impl NodeState {
                 .collect(),
             timed_out_txs: vec![], // Added below as it needs the block
             registered_contracts: vec![],
+            deleted_contracts: vec![],
             updated_states: BTreeMap::new(),
             transactions_events: BTreeMap::new(),
             dp_hashes: BTreeMap::new(),
@@ -287,28 +288,7 @@ impl NodeState {
                         possible_proofs: vec![(verifier.into(), hyle_output)],
                     };
                 } else if blob.contract_name.0 == "hyle" {
-                    // Special case for 'hyle' - we generate a fake proof like for native verifiers
-                    // but this proof will need to be checked at settling time as it's stateful.
-                    if let Ok(reg) =
-                        StructuredBlobData::<RegisterContractAction>::try_from(blob.data.clone())
-                    {
-                        let synthetic_output = HyleOutput {
-                            success: true,
-                            onchain_effects: vec![OnchainEffect::RegisterContract(
-                                RegisterContractEffect {
-                                    contract_name: reg.parameters.contract_name,
-                                    verifier: reg.parameters.verifier,
-                                    program_id: reg.parameters.program_id,
-                                    state_digest: reg.parameters.state_digest,
-                                },
-                            )],
-                            ..HyleOutput::default()
-                        };
-                        return UnsettledBlobMetadata {
-                            blob: blob.clone(),
-                            possible_proofs: vec![(ProgramId(vec![]), synthetic_output)],
-                        };
-                    }
+                    // 'hyle' is a special case -> See settlement logic.
                 } else {
                     should_try_and_settle = false;
                 }
@@ -713,25 +693,27 @@ impl NodeState {
         }
 
         // Update contract states
-        for (effector_contract_name, side_effect) in contracts_changes.into_iter() {
+        for (_, side_effect) in contracts_changes.into_iter() {
             match side_effect {
                 SideEffect::Delete(contract_name) => {
                     debug!("✏️ Delete {} contract", contract_name);
                     self.contracts.remove(&contract_name);
 
-                    todo!("put it in block_under_contsruction");
+                    block_under_construction
+                        .deleted_contracts
+                        .push((bth.clone(), contract_name));
                 }
                 SideEffect::Register(contract) => {
                     let has_contract = self.contracts.contains_key(&contract.name);
                     if has_contract {
                         debug!(
-                            "📝 Register '{}' (via '{}'), contract state: {:?}",
-                            &contract.name, effector_contract_name, contract.state
+                            "✍️  Modify '{}', contract state: {:?}",
+                            &contract.name, contract.state
                         );
                     } else {
                         debug!(
-                            "✍️ Modify '{}' (via '{}') contract state: {:?}",
-                            &contract.name, effector_contract_name, contract.state
+                            "📝 Register '{}', contract state: {:?}",
+                            &contract.name, contract.state
                         );
                     }
                     self.contracts
@@ -764,8 +746,8 @@ impl NodeState {
                         continue;
                     }
                     debug!(
-                        "✍️ Update {} via {} contract state: {:?}",
-                        &contract.name, effector_contract_name, contract.state
+                        "✍️ Update {} contract state: {:?}",
+                        &contract.name, contract.state
                     );
                     self.contracts.get_mut(&contract.name).unwrap().state = contract.state.clone();
 
@@ -1862,9 +1844,15 @@ pub mod test {
     mod contract_registration {
         use std::collections::HashSet;
 
+        use utoipa::openapi::info;
+
         use super::*;
 
-        pub fn make_tx(sender: Identity, tld: ContractName, name: ContractName) -> BlobTransaction {
+        pub fn make_register_tx(
+            sender: Identity,
+            tld: ContractName,
+            name: ContractName,
+        ) -> BlobTransaction {
             BlobTransaction::new(
                 sender,
                 vec![RegisterContractAction {
@@ -1881,9 +1869,9 @@ pub mod test {
         async fn test_register_contract_simple_hyle() {
             let mut state = new_node_state().await;
 
-            let register_c1 = make_tx("hyle.hyle".into(), "hyle".into(), "c1".into());
-            let register_c2 = make_tx("hyle.hyle".into(), "hyle".into(), "c2.hyle".into());
-            let register_c3 = make_tx("hyle.hyle".into(), "hyle".into(), "c3".into());
+            let register_c1 = make_register_tx("hyle.hyle".into(), "hyle".into(), "c1".into());
+            let register_c2 = make_register_tx("hyle.hyle".into(), "hyle".into(), "c2.hyle".into());
+            let register_c3 = make_register_tx("hyle.hyle".into(), "hyle".into(), "c3".into());
 
             let block_1 = craft_signed_block(1, vec![register_c1.clone().into()]);
             state.handle_signed_block(&block_1);
@@ -1914,10 +1902,12 @@ pub mod test {
         async fn test_register_contract_failure() {
             let mut state = new_node_state().await;
 
-            let register_1 = make_tx("hyle.hyle".into(), "hyle".into(), "c1.hyle.lol".into());
-            let register_2 = make_tx("other.hyle".into(), "hyle".into(), "c2.hyle.hyle".into());
-            let register_3 = make_tx("hyle.hyle".into(), "hyle".into(), "c3.other".into());
-            let register_4 = make_tx("hyle.hyle".into(), "hyle".into(), ".hyle".into());
+            let register_1 =
+                make_register_tx("hyle.hyle".into(), "hyle".into(), "c1.hyle.lol".into());
+            let register_2 =
+                make_register_tx("other.hyle".into(), "hyle".into(), "c2.hyle.hyle".into());
+            let register_3 = make_register_tx("hyle.hyle".into(), "hyle".into(), "c3.other".into());
+            let register_4 = make_register_tx("hyle.hyle".into(), "hyle".into(), ".hyle".into());
             let register_5 = BlobTransaction::new(
                 "hyle.hyle",
                 vec![Blob {
@@ -1925,7 +1915,8 @@ pub mod test {
                     data: BlobData(vec![0, 1, 2, 3]),
                 }],
             );
-            let register_good = make_tx("hyle.hyle".into(), "hyle".into(), "c1.hyle".into());
+            let register_good =
+                make_register_tx("hyle.hyle".into(), "hyle".into(), "c1.hyle".into());
 
             let signed_block = craft_signed_block(
                 1,
@@ -1958,7 +1949,7 @@ pub mod test {
         #[test_log::test(tokio::test)]
         async fn test_register_contract_composition() {
             let mut state = new_node_state().await;
-            let register = make_tx("hyle.hyle".into(), "hyle".into(), "hydentity".into());
+            let register = make_register_tx("hyle.hyle".into(), "hyle".into(), "hydentity".into());
             let block =
                 state.handle_signed_block(&craft_signed_block(1, vec![register.clone().into()]));
 
@@ -2068,6 +2059,226 @@ pub mod test {
             for (tx_hash, _) in block.transactions_events.iter() {
                 assert!(dp_hashes.contains(tx_hash));
             }
+        }
+
+        pub fn make_delete_tx(
+            sender: Identity,
+            tld: ContractName,
+            contract_name: ContractName,
+        ) -> BlobTransaction {
+            BlobTransaction::new(
+                sender,
+                vec![DeleteContractAction { contract_name }.as_blob(tld, None, None)],
+            )
+        }
+
+        #[test_log::test(tokio::test)]
+        async fn test_register_contract_and_delete_hyle() {
+            let mut state = new_node_state().await;
+
+            let register_c1 = make_register_tx("hyle.hyle".into(), "hyle".into(), "c1".into());
+            let register_c2 = make_register_tx("hyle.hyle".into(), "hyle".into(), "c2.hyle".into());
+            // This technically doesn't matter as it's actually the proof that does the work
+            let register_sub_c2 = make_register_tx(
+                "toto.c2.hyle".into(),
+                "c2.hyle".into(),
+                "sub.c2.hyle".into(),
+            );
+
+            let mut output = make_hyle_output(register_sub_c2.clone(), BlobIndex(0));
+            output
+                .onchain_effects
+                .push(OnchainEffect::RegisterContract(RegisterContractEffect {
+                    verifier: "test".into(),
+                    program_id: ProgramId(vec![1]),
+                    state_digest: StateDigest(vec![0, 1, 2, 3]),
+                    contract_name: "sub.c2.hyle".into(),
+                }));
+            let sub_c2_proof = new_proof_tx(&"c2.hyle".into(), &output, &register_sub_c2.hashed());
+
+            let block = state.handle_signed_block(&craft_signed_block(
+                1,
+                vec![
+                    register_c1.into(),
+                    register_c2.into(),
+                    register_sub_c2.into(),
+                    sub_c2_proof.into(),
+                ],
+            ));
+            assert_eq!(
+                block
+                    .registered_contracts
+                    .iter()
+                    .map(|(_, rce)| rce.contract_name.0.clone())
+                    .collect::<Vec<_>>(),
+                vec!["c1", "c2.hyle", "sub.c2.hyle"]
+            );
+            assert_eq!(state.contracts.len(), 4);
+
+            // Now delete them.
+            let self_delete_tx = make_delete_tx("c1.c1".into(), "c1".into(), "c1".into());
+            let delete_sub_tx = make_delete_tx(
+                "toto.c2.hyle".into(),
+                "c2.hyle".into(),
+                "sub.c2.hyle".into(),
+            );
+            let delete_tx = make_delete_tx("hyle.hyle".into(), "hyle".into(), "c2.hyle".into());
+
+            let mut output = make_hyle_output(self_delete_tx.clone(), BlobIndex(0));
+            output
+                .onchain_effects
+                .push(OnchainEffect::DeleteContract("c1".into()));
+            let delete_self_proof =
+                new_proof_tx(&"c1.hyle".into(), &output, &self_delete_tx.hashed());
+
+            let mut output =
+                make_hyle_output_with_state(delete_sub_tx.clone(), BlobIndex(0), &[4, 5, 6], &[1]);
+            output
+                .onchain_effects
+                .push(OnchainEffect::DeleteContract("sub.c2.hyle".into()));
+            let delete_sub_proof =
+                new_proof_tx(&"c2.hyle".into(), &output, &delete_sub_tx.hashed());
+
+            let block = state.handle_signed_block(&craft_signed_block(
+                2,
+                vec![
+                    self_delete_tx.into(),
+                    delete_sub_tx.into(),
+                    delete_self_proof.into(),
+                    delete_sub_proof.into(),
+                    delete_tx.into(),
+                ],
+            ));
+
+            assert_eq!(
+                block
+                    .deleted_contracts
+                    .iter()
+                    .map(|(_, dce)| dce.0.clone())
+                    .collect::<Vec<_>>(),
+                vec!["c1", "sub.c2.hyle", "c2.hyle"]
+            );
+            assert_eq!(state.contracts.len(), 1);
+        }
+
+        #[test_log::test(tokio::test)]
+        async fn test_hyle_sub_delete() {
+            let mut state = new_node_state().await;
+
+            let register_c2 = make_register_tx("hyle.hyle".into(), "hyle".into(), "c2.hyle".into());
+            // This technically doesn't matter as it's actually the proof that does the work
+            let register_sub_c2 = make_register_tx(
+                "toto.c2.hyle".into(),
+                "c2.hyle".into(),
+                "sub.c2.hyle".into(),
+            );
+
+            let mut output = make_hyle_output(register_sub_c2.clone(), BlobIndex(0));
+            output
+                .onchain_effects
+                .push(OnchainEffect::RegisterContract(RegisterContractEffect {
+                    verifier: "test".into(),
+                    program_id: ProgramId(vec![1]),
+                    state_digest: StateDigest(vec![0, 1, 2, 3]),
+                    contract_name: "sub.c2.hyle".into(),
+                }));
+            let sub_c2_proof = new_proof_tx(&"c2.hyle".into(), &output, &register_sub_c2.hashed());
+
+            state.handle_signed_block(&craft_signed_block(
+                1,
+                vec![
+                    register_c2.into(),
+                    register_sub_c2.into(),
+                    sub_c2_proof.into(),
+                ],
+            ));
+            assert_eq!(state.contracts.len(), 3);
+
+            // Now delete the intermediate contract first, then delete the sub-contract via hyle
+            let delete_tx = make_delete_tx("hyle.hyle".into(), "hyle".into(), "c2.hyle".into());
+            let delete_sub_tx =
+                make_delete_tx("hyle.hyle".into(), "hyle".into(), "sub.c2.hyle".into());
+
+            let block = state.handle_signed_block(&craft_signed_block(
+                2,
+                vec![delete_tx.into(), delete_sub_tx.into()],
+            ));
+
+            assert_eq!(
+                block
+                    .deleted_contracts
+                    .iter()
+                    .map(|(_, dce)| dce.0.clone())
+                    .collect::<Vec<_>>(),
+                vec!["c2.hyle", "sub.c2.hyle"]
+            );
+            assert_eq!(state.contracts.len(), 1);
+        }
+
+        #[test_log::test(tokio::test)]
+        async fn test_register_update_delete_combinations_hyle() {
+            let register_tx = make_register_tx("hyle.hyle".into(), "hyle".into(), "c.hyle".into());
+            let delete_tx = make_delete_tx("hyle.hyle".into(), "hyle".into(), "c.hyle".into());
+            let delete_self_tx =
+                make_delete_tx("hyle.c.hyle".into(), "c.hyle".into(), "c.hyle".into());
+            let update_tx =
+                make_register_tx("test.c.hyle".into(), "c.hyle".into(), "c.hyle".into());
+
+            let proof_update = new_proof_tx(
+                &"c.hyle".into(),
+                &make_hyle_output(update_tx.clone(), BlobIndex(0)),
+                &update_tx.hashed(),
+            );
+
+            let mut output =
+                make_hyle_output_with_state(delete_self_tx.clone(), BlobIndex(0), &[4, 5, 6], &[1]);
+            output
+                .onchain_effects
+                .push(OnchainEffect::DeleteContract("c.hyle".into()));
+            let proof_delete = new_proof_tx(&"c.hyle".into(), &output, &delete_self_tx.hashed());
+
+            async fn test_combination(
+                proofs: Option<&[&VerifiedProofTransaction]>,
+                txs: &[&BlobTransaction],
+                expected_ct: usize,
+                expected_txs: usize,
+            ) {
+                let mut state = new_node_state().await;
+                let mut txs = txs
+                    .iter()
+                    .map(|tx| (*tx).clone().into())
+                    .collect::<Vec<_>>();
+                if let Some(proofs) = proofs {
+                    txs.extend(proofs.iter().map(|p| (*p).clone().into()));
+                }
+                let block = state.handle_signed_block(&craft_signed_block(1, txs));
+
+                assert_eq!(state.contracts.len(), expected_ct);
+                assert_eq!(block.successful_txs.len(), expected_txs);
+                info!("done");
+            }
+
+            // Test all combinations
+            test_combination(None, &[&register_tx], 2, 1).await;
+            test_combination(None, &[&delete_tx], 1, 0).await;
+            test_combination(None, &[&register_tx, &delete_tx], 1, 2).await;
+            test_combination(Some(&[&proof_update]), &[&register_tx, &update_tx], 2, 2).await;
+            // TODO: This actually deletes right away before update is settled, as it isn't blocked.
+            // This is arguably a bug and should be fixed.
+            test_combination(
+                Some(&[&proof_update]),
+                &[&register_tx, &update_tx, &delete_tx],
+                1,
+                2,
+            )
+            .await;
+            test_combination(
+                Some(&[&proof_update, &proof_delete]),
+                &[&register_tx, &update_tx, &delete_self_tx],
+                1,
+                3,
+            )
+            .await;
         }
     }
 }
