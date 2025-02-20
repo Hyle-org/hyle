@@ -1,7 +1,7 @@
 use sdk::{
     caller::{CalleeBlobs, CallerCallee, CheckCalleeBlobs, ExecutionContext, MutCalleeBlobs},
     erc20::ERC20Action,
-    ContractInput, HyleContract, Identity, RunResult, StakingAction,
+    ContractInput, ContractName, HyleContract, Identity, RunResult, StakingAction,
 };
 use state::StakingState;
 
@@ -36,15 +36,20 @@ impl HyleContract<StakingState, StakingAction> for StakingContract {
     fn execute_action(
         &mut self,
         action: StakingAction,
-        _: &ContractInput,
+        contract_input: &ContractInput,
     ) -> RunResult<StakingState> {
+        // FIXME: hardcoded contract names
+        let staking_contract_name = ContractName("staking".to_string());
+        let token_contract_name = ContractName("hyllar".to_string());
+
         let output = match action {
             StakingAction::Stake { amount } => {
                 // Check that a blob for the transfer exists
                 self.is_in_callee_blobs(
-                    &"staking".into(),
-                    ERC20Action::Transfer {
-                        recipient: "staking".to_string(),
+                    &token_contract_name,
+                    ERC20Action::TransferFrom {
+                        sender: contract_input.identity.0.clone(),
+                        recipient: staking_contract_name.0,
                         amount,
                     },
                 )?;
@@ -57,9 +62,11 @@ impl HyleContract<StakingState, StakingAction> for StakingContract {
             StakingAction::DepositForFees { holder, amount } => {
                 // Check that a blob for the transfer exists
                 self.is_in_callee_blobs(
-                    &"staking".into(),
-                    ERC20Action::Transfer {
-                        recipient: "staking".to_string(),
+                    // FIXME: hardedcoded contract name for the token accepted in the staking contract
+                    &token_contract_name,
+                    ERC20Action::TransferFrom {
+                        sender: contract_input.identity.0.clone(),
+                        recipient: staking_contract_name.0,
                         amount,
                     },
                 )?;

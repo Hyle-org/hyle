@@ -4,7 +4,8 @@ use client_sdk::{
 };
 use sdk::{
     api::{APIFees, APIFeesBalance, APIStaking},
-    ContractName, StakingAction, ValidatorPublicKey,
+    erc20::ERC20Action,
+    BlobIndex, ContractName, StakingAction, ValidatorPublicKey,
 };
 
 use crate::{
@@ -97,18 +98,32 @@ impl From<APIFees> for Fees {
 
 pub fn deposit_for_fees(
     builder: &mut ProvableBlobTx,
-    contract_name: ContractName,
     holder: ValidatorPublicKey,
     amount: u128,
 ) -> anyhow::Result<()> {
+    // FIXME: hardcoded contract names
+    let staking_contract_name = ContractName("staking".to_string());
+    let token_contract_name = ContractName("hyllar".to_string());
+    let idx = builder.blobs.len();
     builder.add_action(
-        contract_name,
+        staking_contract_name.clone(),
         StakingAction::DepositForFees {
             holder: holder.clone(),
             amount,
         },
         None,
         None,
+        Some(vec![BlobIndex(idx + 1)]),
+    )?;
+    builder.add_action(
+        token_contract_name,
+        ERC20Action::TransferFrom {
+            sender: builder.identity.0.clone(),
+            recipient: staking_contract_name.0,
+            amount,
+        },
+        None,
+        Some(BlobIndex(idx)),
         None,
     )?;
     Ok(())
@@ -120,28 +135,37 @@ impl StakingState {
     }
 }
 
-pub fn stake(
-    builder: &mut ProvableBlobTx,
-    contract_name: ContractName,
-    amount: u128,
-) -> anyhow::Result<()> {
+pub fn stake(builder: &mut ProvableBlobTx, amount: u128) -> anyhow::Result<()> {
+    // FIXME: hardcoded contract names
+    let staking_contract_name = ContractName("staking".to_string());
+    let token_contract_name = ContractName("hyllar".to_string());
+    let idx = builder.blobs.len();
     builder.add_action(
-        contract_name,
+        staking_contract_name.clone(),
         StakingAction::Stake { amount },
         None,
         None,
+        Some(vec![BlobIndex(idx + 1)]),
+    )?;
+    builder.add_action(
+        token_contract_name,
+        ERC20Action::TransferFrom {
+            sender: builder.identity.0.clone(),
+            recipient: staking_contract_name.0,
+            amount,
+        },
+        None,
+        Some(BlobIndex(idx)),
         None,
     )?;
     Ok(())
 }
 
-pub fn delegate(
-    builder: &mut ProvableBlobTx,
-    contract_name: ContractName,
-    validator: ValidatorPublicKey,
-) -> anyhow::Result<()> {
+pub fn delegate(builder: &mut ProvableBlobTx, validator: ValidatorPublicKey) -> anyhow::Result<()> {
+    // FIXME: hardcoded contract names
+    let staking_contract_name = ContractName("staking".to_string());
     builder.add_action(
-        contract_name,
+        staking_contract_name,
         StakingAction::Delegate {
             validator: validator.clone(),
         },

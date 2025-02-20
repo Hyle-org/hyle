@@ -6,7 +6,7 @@ use sdk::ContractInput;
 use sdk::{
     caller::{CalleeBlobs, CallerCallee, ExecutionContext, MutCalleeBlobs},
     erc20::ERC20Action,
-    HyleContract, Digestable, Identity, RunResult,
+    Digestable, HyleContract, Identity, RunResult,
 };
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;

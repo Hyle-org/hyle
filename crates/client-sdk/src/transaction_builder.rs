@@ -217,9 +217,14 @@ impl<S: StateUpdater> TxExecutor<S> {
         let mut outputs = vec![];
         let mut old_states = HashMap::new();
 
+        // Keep track of all state involved in the transaction
+        for blob in tx.blobs.iter() {
+            let state = self.states.get(&blob.contract_name)?;
+            old_states.insert(blob.contract_name.clone(), state.clone());
+        }
+
         for runner in tx.runners.iter_mut() {
             let state = self.states.get(&runner.contract_name)?;
-            old_states.insert(runner.contract_name.clone(), state.clone());
 
             runner.build_contract_input(tx.tx_context.clone(), tx.blobs.clone(), state);
 

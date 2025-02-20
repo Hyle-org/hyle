@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use sdk::identity_provider::IdentityAction;
 use sdk::{
-    caller::ExecutionContext, identity_provider::IdentityVerification, HyleContract, Digestable,
+    caller::ExecutionContext, identity_provider::IdentityVerification, Digestable, HyleContract,
     RunResult,
 };
 use sha2::{Digest, Sha256};

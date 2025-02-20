@@ -40,7 +40,6 @@ impl ContractAction for UuidTldAction {
         }
     }
 }
-
 pub struct UuidTldContract {
     pub exec_ctx: ExecutionContext,
     state: UuidTldState,

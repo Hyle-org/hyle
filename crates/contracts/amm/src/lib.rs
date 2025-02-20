@@ -6,7 +6,7 @@ use sdk::caller::{CalleeBlobs, CallerCallee, CheckCalleeBlobs, ExecutionContext,
 use sdk::erc20::{ERC20BlobChecker, ERC20};
 use sdk::{erc20::ERC20Action, Identity};
 use sdk::{
-    Blob, BlobIndex, ContractAction, ContractInput, HyleContract, Digestable, RunResult,
+    Blob, BlobIndex, ContractAction, ContractInput, Digestable, HyleContract, RunResult,
     StateDigest,
 };
 use sdk::{BlobData, ContractName, StructuredBlobData};
@@ -50,7 +50,6 @@ impl Hash for UnorderedTokenPair {
         self.b.hash(state);
     }
 }
-
 pub struct AmmContract {
     pub exec_ctx: ExecutionContext,
     state: AmmState,

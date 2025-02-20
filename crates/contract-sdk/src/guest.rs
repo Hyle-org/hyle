@@ -146,10 +146,8 @@ where
 
     let mut res: RunResult<State> = contract.execute_action(action, contract_input);
 
-    assert!(contract.callee_blobs().is_empty());
+    let output = as_hyle_output::<State>(initial_state_digest, contract_input.clone(), &mut res);
 
     let state = contract.state();
-
-    let output = as_hyle_output::<State>(initial_state_digest, contract_input.clone(), &mut res);
     (state, output)
 }
