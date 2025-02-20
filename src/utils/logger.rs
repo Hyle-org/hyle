@@ -25,7 +25,12 @@ impl<T, Error: Into<anyhow::Error> + Display + Send + Sync + 'static> LogMe<T>
             Err(e) => {
                 let ae: anyhow::Error = e.into();
                 let ae = ae.context(context_msg);
-                warn!("{:#}", ae);
+                warn!(
+                  target: module_path!(),
+                  error = %ae,
+                  "{:#}",
+                  ae
+                );
                 Err(ae)
             }
             Ok(t) => Ok(t),
@@ -37,7 +42,12 @@ impl<T, Error: Into<anyhow::Error> + Display + Send + Sync + 'static> LogMe<T>
             Err(e) => {
                 let ae: anyhow::Error = e.into();
                 let ae = ae.context(context_msg);
-                error!("{:#}", ae);
+                error!(
+                  target: module_path!(),
+                  error = %ae,
+                  "{:#}",
+                  ae
+                );
                 Err(ae)
             }
             Ok(t) => Ok(t),
