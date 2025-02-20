@@ -15,24 +15,18 @@ use client_sdk::{
 };
 use hydentity::{
     client::{register_identity, verify_identity},
-    HydentityContract, HydentityState,
+    Hydentity,
 };
-use hyle_contract_sdk::{
-    erc20::ERC20Action,
-    guest,
-    identity_provider::{IdentityAction, IdentityVerification},
-    Identity, StateDigest,
-};
+use hyle_contract_sdk::{guest, identity_provider::IdentityVerification, Identity, StateDigest};
 use hyle_contract_sdk::{ContractName, Digestable, ProgramId};
 use hyllar::{
     client::{approve, transfer},
-    HyllarContract, HyllarState,
+    Hyllar,
 };
 use serde::{Deserialize, Serialize};
 use staking::{
     client::{delegate, deposit_for_fees, stake},
-    state::StakingState,
-    StakingContract,
+    state::Staking,
 };
 use tracing::{debug, error, info};
 use verifiers::NativeVerifiers;
@@ -80,9 +74,9 @@ impl Module for Genesis {
 contract_states!(
     #[derive(Debug, Clone)]
     pub struct States {
-        pub hyllar: (HyllarContract, HyllarState, ERC20Action),
-        pub hydentity: (HydentityContract, HydentityState, IdentityAction),
-        pub staking: (StakingContract, StakingState, StakingAction),
+        pub hyllar: Hyllar,
+        pub hydentity: Hydentity,
+        pub staking: Staking,
     }
 );
 
@@ -376,15 +370,15 @@ impl Genesis {
         let hyllar_program_id = hyle_contracts::HYLLAR_ID.to_vec();
         let hydentity_program_id = hyle_contracts::HYDENTITY_ID.to_vec();
 
-        let mut hydentity_state = hydentity::HydentityState::default();
+        let mut hydentity_state = hydentity::Hydentity::default();
         hydentity_state
             .register_identity("faucet.hydentity", "password")
             .expect("faucet must register");
 
-        let staking_state = staking::state::StakingState::new();
+        let staking_state = staking::state::Staking::new();
 
         let ctx = TxExecutorBuilder::new(States {
-            hyllar: hyllar::HyllarState::new(100_000_000_000, "faucet.hydentity".to_string()),
+            hyllar: hyllar::Hyllar::new(100_000_000_000, "faucet.hydentity".to_string()),
             hydentity: hydentity_state,
             staking: staking_state,
         })

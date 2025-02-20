@@ -1,4 +1,4 @@
-use crate::{AccountInfo, HydentityContract, HydentityState};
+use crate::{AccountInfo, Hydentity};
 use anyhow::{anyhow, Context, Result};
 use client_sdk::contract_indexer::{
     axum::Router,
@@ -17,15 +17,13 @@ use client_sdk::contract_indexer::{
     AppError,
 };
 use sdk::{
-    guest,
-    identity_provider::{IdentityAction, IdentityVerification},
-    tracing::info,
-    Blob, BlobIndex, BlobTransaction, ContractInput, Hashed, Identity, TxContext,
+    guest, identity_provider::IdentityVerification, tracing, Blob, BlobIndex, BlobTransaction,
+    ContractInput, Hashed, Identity, TxContext,
 };
 use serde::Serialize;
 
 use client_sdk::contract_indexer::axum;
-impl ContractHandler for HydentityState {
+impl ContractHandler for Hydentity {
     async fn api(store: ContractHandlerStore<Self>) -> (Router<()>, OpenApi) {
         let (router, api) = OpenApiRouter::default()
             .routes(routes!(get_state))
@@ -57,9 +55,8 @@ impl ContractHandler for HydentityState {
             private_input: vec![],
         };
 
-        let (state, hyle_output) =
-            guest::execute::<HydentityContract, HydentityState, IdentityAction>(&contract_input);
-        info!("🚀 Executed {contract_name}: {hyle_output:?}");
+        let (state, hyle_output) = guest::execute::<Hydentity>(&contract_input);
+        tracing::info!("🚀 Executed {contract_name}: {hyle_output:?}");
         Ok(state)
     }
 }
@@ -73,7 +70,7 @@ impl ContractHandler for HydentityState {
     )
 )]
 pub async fn get_state(
-    State(state): State<ContractHandlerStore<HydentityState>>,
+    State(state): State<ContractHandlerStore<Hydentity>>,
 ) -> Result<impl IntoResponse, AppError> {
     let store = state.read().await;
     store.state.clone().map(Json).ok_or(AppError(
@@ -101,7 +98,7 @@ struct NonceResponse {
 )]
 pub async fn get_nonce(
     Path(account): Path<Identity>,
-    State(state): State<ContractHandlerStore<HydentityState>>,
+    State(state): State<ContractHandlerStore<Hydentity>>,
 ) -> Result<impl IntoResponse, AppError> {
     let store = state.read().await;
     let state = store.state.clone().ok_or(AppError(

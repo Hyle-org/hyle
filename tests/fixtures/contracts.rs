@@ -38,7 +38,7 @@ impl E2EContract for HydentityTestContract {
     }
 
     fn state_digest() -> StateDigest {
-        hydentity::HydentityState::default().as_digest()
+        hydentity::Hydentity::default().as_digest()
     }
 }
 
@@ -54,7 +54,7 @@ impl E2EContract for HyllarTestContract {
     }
 
     fn state_digest() -> StateDigest {
-        hyllar::HyllarState::new(1_000_000_000, "faucet.hydentity".to_string()).as_digest()
+        hyllar::Hyllar::new(1_000_000_000, "faucet.hydentity".to_string()).as_digest()
     }
 }
 
@@ -70,6 +70,6 @@ impl E2EContract for AmmTestContract {
     }
 
     fn state_digest() -> StateDigest {
-        amm::AmmState::default().as_digest()
+        amm::Amm::default().as_digest()
     }
 }

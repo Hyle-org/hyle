@@ -10,7 +10,7 @@ use sdk::{
 
 use crate::{
     fees::{Fees, ValidatorFeeState},
-    state::StakingState,
+    state::Staking,
 };
 
 pub mod metadata {
@@ -19,7 +19,7 @@ pub mod metadata {
 }
 use metadata::*;
 
-impl StakingState {
+impl Staking {
     pub fn setup_builder<S: StateUpdater>(
         &self,
         contract_name: ContractName,
@@ -29,8 +29,8 @@ impl StakingState {
     }
 }
 
-impl From<StakingState> for APIStaking {
-    fn from(val: StakingState) -> Self {
+impl From<Staking> for APIStaking {
+    fn from(val: Staking) -> Self {
         APIStaking {
             stakes: val.stakes,
             rewarded: val.rewarded,
@@ -62,9 +62,9 @@ impl From<Fees> for APIFees {
     }
 }
 
-impl From<APIStaking> for StakingState {
+impl From<APIStaking> for Staking {
     fn from(val: APIStaking) -> Self {
-        StakingState {
+        Staking {
             stakes: val.stakes,
             rewarded: val.rewarded,
             bonded: val.bonded,
@@ -118,7 +118,7 @@ pub fn deposit_for_fees(
     builder.add_action(
         token_contract_name,
         ERC20Action::TransferFrom {
-            sender: builder.identity.0.clone(),
+            owner: builder.identity.0.clone(),
             recipient: staking_contract_name.0,
             amount,
         },
@@ -129,7 +129,7 @@ pub fn deposit_for_fees(
     Ok(())
 }
 
-impl StakingState {
+impl Staking {
     pub fn to_bytes(&self) -> Vec<u8> {
         borsh::to_vec(self).expect("Failed to encode Balances")
     }
@@ -150,7 +150,7 @@ pub fn stake(builder: &mut ProvableBlobTx, amount: u128) -> anyhow::Result<()> {
     builder.add_action(
         token_contract_name,
         ERC20Action::TransferFrom {
-            sender: builder.identity.0.clone(),
+            owner: builder.identity.0.clone(),
             recipient: staking_contract_name.0,
             amount,
         },

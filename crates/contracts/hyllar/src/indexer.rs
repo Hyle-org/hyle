@@ -17,8 +17,8 @@ use crate::*;
 use client_sdk::contract_indexer::axum;
 use client_sdk::contract_indexer::utoipa;
 
-impl ContractHandler for HyllarState {
-    async fn api(store: ContractHandlerStore<HyllarState>) -> (Router<()>, OpenApi) {
+impl ContractHandler for Hyllar {
+    async fn api(store: ContractHandlerStore<Hyllar>) -> (Router<()>, OpenApi) {
         let (router, api) = OpenApiRouter::default()
             .routes(routes!(get_state))
             .routes(routes!(get_balance))
@@ -31,9 +31,9 @@ impl ContractHandler for HyllarState {
     fn handle(
         tx: &BlobTransaction,
         index: BlobIndex,
-        state: HyllarState,
+        state: Hyllar,
         tx_context: TxContext,
-    ) -> Result<HyllarState> {
+    ) -> Result<Hyllar> {
         let Blob {
             contract_name,
             data: _,
@@ -50,8 +50,7 @@ impl ContractHandler for HyllarState {
             private_input: vec![],
         };
 
-        let (state, hyle_output) =
-            guest::execute::<HyllarContract, HyllarState, ERC20Action>(&contract_input);
+        let (state, hyle_output) = guest::execute::<Hyllar>(&contract_input);
         info!("🚀 Executed {contract_name}: {hyle_output:?}");
         Ok(state)
     }
@@ -93,7 +92,7 @@ struct BalanceResponse {
 )]
 pub async fn get_balance(
     Path(account): Path<Identity>,
-    State(state): State<ContractHandlerStore<HyllarState>>,
+    State(state): State<ContractHandlerStore<Hyllar>>,
 ) -> Result<impl IntoResponse, AppError> {
     let store = state.read().await;
     let state = store.state.clone().ok_or(AppError(
@@ -101,13 +100,8 @@ pub async fn get_balance(
         anyhow!("Contract '{}' not found", store.contract_name),
     ))?;
 
-    let exec_ctx = ExecutionContext {
-        caller: account.clone(),
-        contract_name: store.contract_name.clone(),
-        ..ExecutionContext::default()
-    };
-    let c = HyllarContract::init(state, exec_ctx);
-    c.balance_of(&account.0)
+    state
+        .balance_of(&account.0)
         .map(|balance| BalanceResponse {
             account: account.0,
             balance,
@@ -137,7 +131,7 @@ struct AllowanceResponse {
 )]
 pub async fn get_allowance(
     Path((account, spender)): Path<(Identity, Identity)>,
-    State(state): State<ContractHandlerStore<HyllarState>>,
+    State(state): State<ContractHandlerStore<Hyllar>>,
 ) -> Result<impl IntoResponse, AppError> {
     let store = state.read().await;
     let state = store.state.clone().ok_or(AppError(
@@ -145,13 +139,8 @@ pub async fn get_allowance(
         anyhow!("Contract '{}' not found", store.contract_name),
     ))?;
 
-    let exec_ctx = ExecutionContext {
-        caller: account.clone(),
-        contract_name: store.contract_name.clone(),
-        ..ExecutionContext::default()
-    };
-    let c = HyllarContract::init(state, exec_ctx);
-    c.allowance(&account.0, &spender.0)
+    state
+        .allowance(&account.0, &spender.0)
         .map(|allowance| AllowanceResponse {
             account: account.0,
             spender: spender.0,

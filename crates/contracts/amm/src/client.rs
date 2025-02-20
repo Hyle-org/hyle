@@ -4,7 +4,7 @@ use client_sdk::{
 };
 use sdk::{erc20::ERC20Action, BlobIndex, ContractName};
 
-use crate::{AmmAction, AmmState};
+use crate::{Amm, AmmAction};
 
 pub mod metadata {
     pub const AMM_ELF: &[u8] = include_bytes!("../amm.img");
@@ -12,7 +12,7 @@ pub mod metadata {
 }
 use metadata::*;
 
-impl AmmState {
+impl Amm {
     pub fn setup_builder<S: StateUpdater>(
         &self,
         contract_name: ContractName,
@@ -42,7 +42,7 @@ pub fn new_pair(
     builder.add_action(
         pair.0,
         ERC20Action::TransferFrom {
-            sender: builder.identity.0.clone(),
+            owner: builder.identity.0.clone(),
             recipient: contract_name.to_string(),
             amount: amounts.0,
         },
@@ -53,7 +53,7 @@ pub fn new_pair(
     builder.add_action(
         pair.1,
         ERC20Action::TransferFrom {
-            sender: builder.identity.0.clone(),
+            owner: builder.identity.0.clone(),
             recipient: contract_name.to_string(),
             amount: amounts.1,
         },
@@ -85,7 +85,7 @@ pub fn swap(
     builder.add_action(
         pair.0,
         ERC20Action::TransferFrom {
-            sender: builder.identity.0.clone(),
+            owner: builder.identity.0.clone(),
             recipient: contract_name.to_string(),
             amount: amounts.0,
         },

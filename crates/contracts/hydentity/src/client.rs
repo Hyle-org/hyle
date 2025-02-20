@@ -4,7 +4,7 @@ use client_sdk::{
 };
 use sdk::{identity_provider::IdentityAction, ContractName};
 
-use crate::HydentityState;
+use crate::Hydentity;
 
 pub mod metadata {
     pub const HYDENTITY_ELF: &[u8] = include_bytes!("../hydentity.img");
@@ -12,7 +12,7 @@ pub mod metadata {
 }
 use metadata::*;
 
-impl HydentityState {
+impl Hydentity {
     pub fn setup_builder<S: StateUpdater>(
         &self,
         contract_name: ContractName,
@@ -25,7 +25,7 @@ impl HydentityState {
 pub fn verify_identity(
     builder: &mut ProvableBlobTx,
     contract_name: ContractName,
-    state: &HydentityState,
+    state: &Hydentity,
     password: String,
 ) -> anyhow::Result<()> {
     let nonce = state

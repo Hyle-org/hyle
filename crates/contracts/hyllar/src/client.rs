@@ -4,7 +4,7 @@ use client_sdk::{
 };
 use sdk::{erc20::ERC20Action, ContractName};
 
-use crate::HyllarState;
+use crate::Hyllar;
 
 pub mod metadata {
     pub const HYLLAR_ELF: &[u8] = include_bytes!("../hyllar.img");
@@ -12,7 +12,7 @@ pub mod metadata {
 }
 use metadata::*;
 
-impl HyllarState {
+impl Hyllar {
     pub fn setup_builder<S: StateUpdater>(
         &self,
         contract_name: ContractName,
@@ -48,7 +48,7 @@ pub fn transfer_from(
     builder.add_action(
         contract_name,
         ERC20Action::TransferFrom {
-            sender,
+            owner: sender,
             recipient,
             amount,
         },

@@ -313,7 +313,7 @@ impl ContractRunner {
 /// Must have ContractName, StateDigest, Digestable and anyhow in scope.
 #[macro_export]
 macro_rules! contract_states {
-    ($(#[$meta:meta])* $vis:vis struct $name:ident { $($mvis:vis $contract_name:ident: ($contract_type:ty, $contract_state:ty, $action_type:ty),)* }) => {
+    ($(#[$meta:meta])* $vis:vis struct $name:ident { $($mvis:vis $contract_name:ident: $contract_state:ty,)* }) => {
         $(#[$meta])*
         $vis struct $name {
             $($mvis $contract_name: $contract_state,
@@ -352,7 +352,7 @@ macro_rules! contract_states {
             fn execute(&self, contract_name: &ContractName, contract_input: &ContractInput) -> anyhow::Result<(Box<dyn std::any::Any>, HyleOutput)> {
                 match contract_name.0.as_str() {
                     $(stringify!($contract_name) => {
-                        let (state, output) = guest::execute::<$contract_type, $contract_state, $action_type>(contract_input);
+                        let (state, output) = guest::execute::<$contract_state>(contract_input);
                         Ok((Box::new(state) as Box<dyn std::any::Any>, output))
                     })*
                     _ => anyhow::bail!("Unknown contract name: {contract_name}"),

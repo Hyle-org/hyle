@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 use crate::fees::Fees;
 
 #[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq)]
-pub struct StakingState {
+pub struct Staking {
     pub(crate) stakes: BTreeMap<Identity, u128>,
     pub(crate) delegations: BTreeMap<ValidatorPublicKey, Vec<Identity>>,
     /// When a validator distribute rewards, it is added in this list to
@@ -29,9 +29,9 @@ pub struct StakingState {
 /// Minimal stake necessary to be part of consensus
 pub const MIN_STAKE: u128 = 32;
 
-impl StakingState {
+impl Staking {
     pub fn new() -> Self {
-        StakingState {
+        Staking {
             stakes: BTreeMap::new(),
             delegations: BTreeMap::new(),
             rewarded: BTreeMap::new(),
@@ -154,13 +154,13 @@ impl StakingState {
     }
 }
 
-impl Default for StakingState {
+impl Default for Staking {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Digestable for StakingState {
+impl Digestable for Staking {
     /// On-chain state is a hash of parts of the state that are altered only
     /// by BlobTransactions
     /// Other parts of the states (handled by consensus) are not part of on-chain state

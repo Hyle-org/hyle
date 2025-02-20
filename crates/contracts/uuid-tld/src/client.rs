@@ -1,4 +1,4 @@
-use crate::UuidTldState;
+use crate::UuidTld;
 use client_sdk::{
     helpers::risc0::Risc0Prover,
     transaction_builder::{StateUpdater, TxExecutorBuilder},
@@ -10,7 +10,7 @@ pub mod metadata {
     pub const PROGRAM_ID: [u8; 32] = sdk::str_to_u8(include_str!("../uuid-tld.txt"));
 }
 
-impl UuidTldState {
+impl UuidTld {
     pub fn setup_builder<S: StateUpdater>(
         &self,
         contract_name: ContractName,

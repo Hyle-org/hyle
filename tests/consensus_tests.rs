@@ -10,16 +10,16 @@ mod e2e_consensus {
     use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutorBuilder};
     use fixtures::test_helpers::send_transaction;
     use hydentity::client::{register_identity, verify_identity};
-    use hydentity::HydentityState;
+    use hydentity::Hydentity;
     use hyle::{genesis::States, utils::logger::LogMe};
     use hyle_contract_sdk::Digestable;
     use hyle_contract_sdk::Identity;
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF, STAKING_ELF};
     use hyle_model::StateDigest;
     use hyllar::client::{approve, transfer};
-    use hyllar::HyllarState;
+    use hyllar::Hyllar;
     use staking::client::{delegate, stake};
-    use staking::state::StakingState;
+    use staking::state::Staking;
     use tracing::info;
 
     use super::*;
@@ -50,13 +50,13 @@ mod e2e_consensus {
 
         assert!(node_info.pubkey.is_some());
 
-        let hyllar: HyllarState = ctx
+        let hyllar: Hyllar = ctx
             .indexer_client()
             .fetch_current_state(&"hyllar".into())
             .await
             .log_error("fetch state failed")
             .unwrap();
-        let hydentity: HydentityState = ctx
+        let hydentity: Hydentity = ctx
             .indexer_client()
             .fetch_current_state(&"hydentity".into())
             .await
@@ -67,7 +67,7 @@ mod e2e_consensus {
             .fetch_current_state(&"staking".into())
             .await?;
 
-        let staking: StakingState = ctx
+        let staking: Staking = ctx
             .client()
             .get_consensus_staking_state()
             .await
@@ -138,7 +138,6 @@ mod e2e_consensus {
 
             delegate(&mut transaction, node_info.pubkey.clone().unwrap())?;
 
-            tracing::error!("transaction: {:#?}", transaction);
             let tx_hash = send_transaction(ctx.client(), transaction, &mut tx_ctx).await;
             tracing::warn!("staking TX Hash: {:?}", tx_hash);
         }

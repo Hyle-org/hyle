@@ -14,7 +14,7 @@ use crate::utils::modules::module_bus_client;
 use crate::{model::SharedRunContext, utils::modules::Module};
 use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
-use staking::state::StakingState;
+use staking::state::Staking;
 use tracing::{debug, warn};
 
 module_bus_client! {
@@ -29,7 +29,7 @@ struct SingleNodeConsensusBusClient {
 
 #[derive(BorshSerialize, BorshDeserialize, Default)]
 struct SingleNodeConsensusStore {
-    staking: StakingState,
+    staking: Staking,
     has_done_genesis: bool,
     last_consensus_proposal_hash: ConsensusProposalHash,
     last_slot: u64,
@@ -198,7 +198,7 @@ impl SingleNodeConsensus {
 
         _ = self.bus.send(ConsensusEvent::CommitConsensusProposal(
             CommittedConsensusProposal {
-                staking: StakingState::default(),
+                staking: Staking::default(),
                 consensus_proposal,
                 certificate: certificate.signature,
             },

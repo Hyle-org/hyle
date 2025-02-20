@@ -4,7 +4,7 @@ use client_sdk::rest_client::NodeApiHttpClient;
 use client_sdk::transaction_builder::ProvableBlobTx;
 use client_sdk::transaction_builder::TxExecutor;
 use client_sdk::transaction_builder::TxExecutorBuilder;
-use hydentity::{HydentityContract, HydentityState};
+use hydentity::Hydentity;
 use sdk::identity_provider::IdentityAction;
 use sdk::Hashed;
 use sdk::{guest, ContractInput, ContractName, HyleOutput};
@@ -32,17 +32,16 @@ enum Commands {
         nonce: u32,
     },
 }
-
 contract_states!(
     #[derive(Debug, Clone)]
     pub struct States {
-        pub hydentity: (HydentityContract, HydentityState, IdentityAction),
+        pub hydentity: Hydentity,
     }
 );
 
 async fn build_ctx(client: &NodeApiHttpClient) -> TxExecutor<States> {
     // Fetch the initial state from the node
-    let initial_state: HydentityState = client
+    let initial_state: Hydentity = client
         .get_contract(&"hydentity".into())
         .await
         .unwrap()

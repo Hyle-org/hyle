@@ -1,14 +1,9 @@
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use alloc::vec;
-use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_model::{DropEndOfReader, StateDigest, StructuredBlobData};
+use borsh::BorshDeserialize;
+use hyle_model::StateDigest;
 
-use crate::caller::{CallerCallee, ExecutionContext};
-use crate::{
-    flatten_blobs,
-    utils::{as_hyle_output, check_caller_callees, parse_blob, parse_structured_blob},
-    ContractInput, Digestable, HyleOutput,
-};
+use crate::{flatten_blobs, utils::as_hyle_output, ContractInput, Digestable, HyleOutput};
 use crate::{HyleContract, RunResult};
 
 pub trait GuestEnv {
@@ -74,35 +69,6 @@ pub fn fail(input: ContractInput, initial_state_digest: StateDigest, message: &s
     }
 }
 
-pub fn init<Parameters>(input: &ContractInput) -> Result<(Parameters, ExecutionContext), String>
-where
-    Parameters: BorshSerialize + BorshDeserialize,
-{
-    let parsed_blob = parse_structured_blob::<Parameters>(&input.blobs, &input.index);
-
-    let parsed_blob = parsed_blob.ok_or("Failed to parse input blob".to_string())?;
-
-    let caller = check_caller_callees::<Parameters>(input, &parsed_blob)?;
-
-    let mut callees_blobs = vec::Vec::new();
-    for blob in input.blobs.clone().into_iter() {
-        if let Ok(structured_blob) = blob.data.clone().try_into() {
-            let structured_blob: StructuredBlobData<DropEndOfReader> = structured_blob; // for type inference
-            if structured_blob.caller == Some(input.index) {
-                callees_blobs.push(blob);
-            }
-        };
-    }
-
-    let ctx = ExecutionContext {
-        callees_blobs: callees_blobs.into(),
-        caller,
-        contract_name: parsed_blob.contract_name.clone(),
-    };
-
-    Ok((parsed_blob.data.parameters, ctx))
-}
-
 /// Executes an action on a given contract using the provided state and contract input.
 ///
 /// # Arguments
@@ -111,9 +77,7 @@ where
 ///
 /// # Type Parameters
 ///
-/// * `Contract` - The type of the contract that implements the `HyleContract` and `CallerCallee` traits.
-/// * `State` - The type of the state that must implement the `Digestable` and `BorshDeserialize` traits.
-/// * `Action` - The type of the action that must implement the `BorshSerialize` and `BorshDeserialize` traits.
+/// * `State` - The type of the state that must implement the `Digestable`, `BorshDeserialize`, `HyleContract` traits.
 ///
 /// # Returns
 ///
@@ -121,33 +85,25 @@ where
 ///
 /// # Panics
 ///
-/// Panics if the contract initialization or raw blob parsing fails.
-pub fn execute<Contract, State, Action>(contract_input: &ContractInput) -> (State, HyleOutput)
+/// Panics if the contract initialization fails.
+pub fn execute<State>(contract_input: &ContractInput) -> (State, HyleOutput)
 where
-    Action: BorshSerialize + BorshDeserialize,
-    State: Digestable + BorshDeserialize + 'static,
-    Contract: HyleContract<State, Action> + CallerCallee,
+    State: HyleContract + Digestable + BorshDeserialize + 'static,
 {
-    let state: State = borsh::from_slice(&contract_input.state).expect("Failed to decode state");
+    let mut state: State =
+        borsh::from_slice(&contract_input.state).expect("Failed to decode state");
     let initial_state_digest = state.as_digest();
 
-    // Attempts to initialize the contract with the given input.
-    let (action, execution_ctx) = match init::<Action>(contract_input) {
-        Ok(res) => res,
-        // If failing, falls back to parsing the raw blob from the contract input.
-        Err(err) => match parse_blob::<Action>(&contract_input.blobs, &contract_input.index) {
-            Some(action) => (action, ExecutionContext::default()),
-            // Panics if both the initialization and the raw blob parsing fail.
-            None => panic!("Hyllar contract initialization failed {}", err),
-        },
-    };
+    let mut res: RunResult = state.execute_action(contract_input);
 
-    let mut contract = Contract::init(state, execution_ctx);
+    let next_state_digest = state.as_digest();
 
-    let mut res: RunResult<State> = contract.execute_action(action, contract_input);
+    let output = as_hyle_output::<State>(
+        initial_state_digest,
+        next_state_digest,
+        contract_input.clone(),
+        &mut res,
+    );
 
-    let output = as_hyle_output::<State>(initial_state_digest, contract_input.clone(), &mut res);
-
-    let state = contract.state();
     (state, output)
 }

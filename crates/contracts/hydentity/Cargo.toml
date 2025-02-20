@@ -39,6 +39,7 @@ client_sdk = { path = "../../client-sdk", package = "client-sdk", features = [
 # Activate client in examples.
 sdk = { path = "../../contract-sdk", features = [
     "full-model",
+    "tracing",
 ], package = "hyle-contract-sdk" }
 hydentity = { path = ".", features = ["client"] }
 client_sdk = { path = "../../client-sdk", package = "client-sdk", features = [

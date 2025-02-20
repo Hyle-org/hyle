@@ -5,7 +5,7 @@ use hyle_model::{
     TransactionMetadata, ValidatorSignature, Verifier,
 };
 use serde::{Deserialize, Serialize};
-use staking::state::StakingState;
+use staking::state::Staking;
 use std::{collections::HashMap, path::Path, sync::Arc, vec};
 use tracing::{debug, error, warn};
 
@@ -82,7 +82,7 @@ pub trait Storage {
     #[cfg(test)]
     fn remove_lane_entry(&mut self, validator: &ValidatorPublicKey, dp_hash: &DataProposalHash);
 
-    fn new_cut(&self, staking: &StakingState, previous_cut: &Cut) -> Result<Cut> {
+    fn new_cut(&self, staking: &Staking, previous_cut: &Cut) -> Result<Cut> {
         let validator_last_cut: HashMap<ValidatorPublicKey, (DataProposalHash, PoDA)> =
             previous_cut
                 .iter()
@@ -198,7 +198,7 @@ pub trait Storage {
     fn get_latest_car(
         &self,
         validator: &ValidatorPublicKey,
-        staking: &StakingState,
+        staking: &Staking,
         previous_committed_car: Option<&(DataProposalHash, PoDA)>,
     ) -> Result<Option<(DataProposalHash, LaneBytesSize, PoDA)>> {
         let bonded_validators = staking.bonded();
@@ -620,7 +620,7 @@ mod tests {
         utils::crypto::{self, BlstCrypto},
     };
     use hyle_model::{DataSized, Signature};
-    use staking::state::StakingState;
+    use staking::state::Staking;
     use std::collections::HashMap;
 
     fn setup_storage(pubkey: &ValidatorPublicKey) -> LanesStorage {
@@ -949,7 +949,7 @@ mod tests {
         let crypto: BlstCrypto = crypto::BlstCrypto::new("1".to_owned()).unwrap();
         let pubkey = crypto.validator_pubkey();
         let mut storage = setup_storage(pubkey);
-        let staking = StakingState::new();
+        let staking = Staking::new();
         let data_proposal = DataProposal::new(None, vec![]);
         let cumul_size: LaneBytesSize = LaneBytesSize(data_proposal.estimate_size() as u64);
         let entry = LaneEntry {

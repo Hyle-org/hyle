@@ -1,8 +1,10 @@
 use crate::{
     alloc::string::{String, ToString},
+    caller::ExecutionContext,
     guest::fail,
     Identity, StructuredBlobData,
 };
+use alloc::vec;
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::result::Result;
 
@@ -11,10 +13,13 @@ use hyle_model::{
     StateDigest, StructuredBlob,
 };
 
-pub fn parse_blob<Parameters>(blobs: &[Blob], index: &BlobIndex) -> Option<Parameters>
+pub fn parse_raw_contract_input<Parameters>(input: &ContractInput) -> Option<Parameters>
 where
     Parameters: BorshDeserialize,
 {
+    let blobs = &input.blobs;
+    let index = &input.index;
+
     let blob = match blobs.get(index.0) {
         Some(v) => v,
         None => {
@@ -27,6 +32,37 @@ where
     };
 
     Some(parameters)
+}
+
+pub fn parse_contract_input_with_context<Parameters>(
+    input: &ContractInput,
+) -> Result<(Parameters, ExecutionContext), String>
+where
+    Parameters: BorshSerialize + BorshDeserialize,
+{
+    let parsed_blob = parse_structured_blob::<Parameters>(&input.blobs, &input.index);
+
+    let parsed_blob = parsed_blob.ok_or("Failed to parse input blob".to_string())?;
+
+    let caller = check_caller_callees::<Parameters>(input, &parsed_blob)?;
+
+    let mut callees_blobs = vec::Vec::new();
+    for blob in input.blobs.clone().into_iter() {
+        if let Ok(structured_blob) = blob.data.clone().try_into() {
+            let structured_blob: StructuredBlobData<DropEndOfReader> = structured_blob; // for type inference
+            if structured_blob.caller == Some(input.index) {
+                callees_blobs.push(blob);
+            }
+        };
+    }
+
+    let ctx = ExecutionContext {
+        callees_blobs: callees_blobs.into(),
+        caller,
+        contract_name: parsed_blob.contract_name.clone(),
+    };
+
+    Ok((parsed_blob.data.parameters, ctx))
 }
 
 pub fn parse_structured_blob<Parameters>(
@@ -54,21 +90,22 @@ where
 
 pub fn as_hyle_output<State: Digestable + BorshDeserialize>(
     initial_state_digest: StateDigest,
+    nex_state_digest: StateDigest,
     contract_input: ContractInput,
-    res: &mut crate::RunResult<State>,
+    res: &mut crate::RunResult,
 ) -> HyleOutput {
     match res {
         Ok(res) => HyleOutput {
             version: 1,
             initial_state: initial_state_digest,
-            next_state: res.1.as_digest(),
+            next_state: nex_state_digest,
             identity: contract_input.identity,
             index: contract_input.index,
             blobs: flatten_blobs(&contract_input.blobs),
             success: true,
             tx_hash: contract_input.tx_hash,
             tx_ctx: contract_input.tx_ctx,
-            registered_contracts: core::mem::take(&mut res.2),
+            registered_contracts: core::mem::take(&mut res.1),
             program_outputs: core::mem::take(&mut res.0).into_bytes(),
         },
         Err(message) => fail(contract_input, initial_state_digest, message),

@@ -1,6 +1,6 @@
 use core::str;
 
-use hyllar::HyllarState;
+use hyllar::Hyllar;
 use sdk::{
     erc20::ERC20Action, BlobIndex, ContractAction, ContractInput, ContractName, HyleOutput, TxHash,
 };
@@ -23,7 +23,7 @@ fn execute(inputs: ContractInput) -> HyleOutput {
 
 #[test]
 fn execute_transfer_from() {
-    let state = HyllarState::new(1000, "faucet".to_string());
+    let state = Hyllar::new(1000, "faucet".to_string());
     let output = execute(ContractInput {
         state: borsh::to_vec(&state).unwrap(),
         identity: "caller".into(),
@@ -31,7 +31,7 @@ fn execute_transfer_from() {
         tx_ctx: None,
         private_input: vec![],
         blobs: vec![ERC20Action::TransferFrom {
-            sender: "faucet".into(),
+            owner: "faucet".into(),
             recipient: "amm".into(),
             amount: 100,
         }

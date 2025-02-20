@@ -4,9 +4,9 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use rand::Rng;
 use rand_seeder::SipHasher;
 use sdk::{
-    caller::{CalleeBlobs, CallerCallee, ExecutionContext, MutCalleeBlobs},
-    info, Blob, BlobData, BlobIndex, ContractAction, ContractInput, ContractName, Digestable,
-    HyleContract, Identity, ProgramId, RegisterContractEffect, RunResult, StateDigest, Verifier,
+    info, utils::parse_raw_contract_input, Blob, BlobData, BlobIndex, ContractAction,
+    ContractInput, ContractName, Digestable, HyleContract, ProgramId, RegisterContractEffect,
+    RunResult, StateDigest, Verifier,
 };
 use uuid::Uuid;
 
@@ -40,32 +40,11 @@ impl ContractAction for UuidTldAction {
         }
     }
 }
-pub struct UuidTldContract {
-    pub exec_ctx: ExecutionContext,
-    state: UuidTldState,
-}
 
-impl CallerCallee for UuidTldContract {
-    fn caller(&self) -> &Identity {
-        &self.exec_ctx.caller
-    }
-    fn callee_blobs(&self) -> CalleeBlobs {
-        CalleeBlobs(self.exec_ctx.callees_blobs.borrow())
-    }
-    fn mut_callee_blobs(&self) -> MutCalleeBlobs {
-        MutCalleeBlobs(self.exec_ctx.callees_blobs.borrow_mut())
-    }
-}
-
-impl HyleContract<UuidTldState, UuidTldAction> for UuidTldContract {
-    fn execute_action(
-        &mut self,
-        action: UuidTldAction,
-        contract_input: &ContractInput,
-    ) -> RunResult<UuidTldState>
-    where
-        Self: Sized,
-    {
+impl HyleContract for UuidTld {
+    fn execute_action(&mut self, contract_input: &ContractInput) -> RunResult {
+        let action = parse_raw_contract_input::<UuidTldAction>(contract_input)
+            .ok_or("Failed to parse input")?;
         // Not an identity provider
         if contract_input.identity.0.ends_with(&format!(
             ".{}",
@@ -74,11 +53,10 @@ impl HyleContract<UuidTldState, UuidTldAction> for UuidTldContract {
             return Err("Invalid identity".to_string());
         }
 
-        let id = self.state.register_contract(contract_input)?;
+        let id = self.register_contract(contract_input)?;
 
         Ok((
             format!("registered {}", id.clone()),
-            self.state.clone(),
             vec![RegisterContractEffect {
                 contract_name: format!(
                     "{}.{}",
@@ -91,22 +69,14 @@ impl HyleContract<UuidTldState, UuidTldAction> for UuidTldContract {
             }],
         ))
     }
-
-    fn init(state: UuidTldState, exec_ctx: ExecutionContext) -> Self {
-        UuidTldContract { state, exec_ctx }
-    }
-
-    fn state(self) -> UuidTldState {
-        self.state
-    }
 }
 
 #[derive(Default, Debug, Clone, BorshSerialize, BorshDeserialize)]
-pub struct UuidTldState {
+pub struct UuidTld {
     registered_contracts: BTreeSet<u128>,
 }
 
-impl UuidTldState {
+impl UuidTld {
     fn serialize(&self) -> Result<Vec<u8>, String> {
         borsh::to_vec(self).map_err(|e| e.to_string())
     }
@@ -144,7 +114,7 @@ impl UuidTldState {
     }
 }
 
-impl Digestable for UuidTldState {
+impl Digestable for UuidTld {
     fn as_digest(&self) -> sdk::StateDigest {
         sdk::StateDigest(self.serialize().unwrap())
     }
@@ -184,18 +154,11 @@ mod test {
             program_id: ProgramId(vec![1, 2, 3]),
             state_digest: StateDigest(vec![0, 1, 2, 3]),
         };
-        let state = UuidTldState::default();
+        let mut state = UuidTld::default();
 
-        let exec_ctx = ExecutionContext {
-            caller: Identity::new("test"),
-            ..ExecutionContext::default()
-        };
-        let mut contract = UuidTldContract::init(state.clone(), exec_ctx);
         let contract_input = make_contract_input(action.clone(), borsh::to_vec(&state).unwrap());
 
-        let (_, state, registered_contracts) = contract
-            .execute_action(action.clone(), &contract_input)
-            .unwrap();
+        let (_, registered_contracts) = state.execute_action(&contract_input).unwrap();
 
         let effect: &RegisterContractEffect = registered_contracts.first().unwrap();
 
@@ -206,8 +169,7 @@ mod test {
 
         let contract_input = make_contract_input(action.clone(), borsh::to_vec(&state).unwrap());
 
-        let (_, _, registered_contracts) =
-            contract.execute_action(action, &contract_input).unwrap();
+        let (_, registered_contracts) = state.execute_action(&contract_input).unwrap();
 
         let effect = registered_contracts.first().unwrap();
 

@@ -6,19 +6,19 @@ use client_sdk::{
 };
 use fixtures::ctx::{E2EContract, E2ECtx};
 
-use hydentity::{client::register_identity, HydentityContract, HydentityState};
+use hydentity::{client::register_identity, Hydentity};
 use hyle::mempool::verifiers::verify_proof;
 use hyle_contract_sdk::{
-    guest, identity_provider::IdentityAction, BlobTransaction, ContractInput, ContractName,
-    Digestable, Hashed, HyleOutput, ProgramId, StateDigest, Verifier,
+    guest, BlobTransaction, ContractInput, ContractName, Digestable, Hashed, HyleOutput, ProgramId,
+    StateDigest, Verifier,
 };
 use hyle_contracts::{HYDENTITY_ELF, UUID_TLD_ELF, UUID_TLD_ID};
-use uuid_tld::{UuidTldAction, UuidTldContract, UuidTldState};
+use uuid_tld::{UuidTld, UuidTldAction};
 
 contract_states!(
     struct States {
-        uuid: (UuidTldContract, UuidTldState, UuidTldAction),
-        hydentity: (HydentityContract, HydentityState, IdentityAction),
+        uuid: UuidTld,
+        hydentity: Hydentity,
     }
 );
 
@@ -33,7 +33,7 @@ impl E2EContract for UuidContract {
         ProgramId(UUID_TLD_ID.to_vec())
     }
     fn state_digest() -> StateDigest {
-        UuidTldState::default().as_digest()
+        UuidTld::default().as_digest()
     }
 }
 
@@ -47,7 +47,7 @@ async fn test_uuid_registration() {
         .unwrap();
 
     let mut executor = TxExecutorBuilder::new(States {
-        uuid: UuidTldState::default(),
+        uuid: UuidTld::default(),
         hydentity: ctx
             .get_contract("hydentity")
             .await

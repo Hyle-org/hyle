@@ -1,14 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use sdk::caller::{CalleeBlobs, CallerCallee, MutCalleeBlobs};
-use sdk::{ContractInput, Identity};
+use sdk::{utils::parse_raw_contract_input, ContractInput};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use sdk::identity_provider::IdentityAction;
-use sdk::{
-    caller::ExecutionContext, identity_provider::IdentityVerification, Digestable, HyleContract,
-    RunResult,
-};
+use sdk::{identity_provider::IdentityVerification, Digestable, HyleContract, RunResult};
 use sha2::{Digest, Sha256};
 
 #[cfg(feature = "client")]
@@ -23,56 +18,25 @@ pub struct AccountInfo {
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone, Default)]
-pub struct HydentityState {
+pub struct Hydentity {
     identities: BTreeMap<String, AccountInfo>,
 }
 
-pub struct HydentityContract {
-    pub exec_ctx: ExecutionContext,
-    state: HydentityState,
-}
-
-impl HyleContract<HydentityState, IdentityAction> for HydentityContract {
-    fn execute_action(
-        &mut self,
-        action: IdentityAction,
-        contract_input: &ContractInput,
-    ) -> RunResult<HydentityState>
-    where
-        Self: Sized,
-    {
+impl HyleContract for Hydentity {
+    fn execute_action(&mut self, contract_input: &ContractInput) -> RunResult {
+        let action = parse_raw_contract_input(contract_input).ok_or("Failed to parse input")?;
         let private_input = std::str::from_utf8(&contract_input.private_input)
             .map_err(|_| "Invalid UTF-8 sequence")?;
-        let output = self.state.execute_action(action, private_input);
+        let output = self.execute_identity_action(action, private_input);
 
         match output {
             Err(e) => Err(e),
-            Ok(output) => Ok((output, self.state.clone(), vec![])),
+            Ok(output) => Ok((output, vec![])),
         }
     }
-
-    fn init(state: HydentityState, exec_ctx: ExecutionContext) -> Self {
-        HydentityContract { state, exec_ctx }
-    }
-
-    fn state(self) -> HydentityState {
-        self.state
-    }
 }
 
-impl CallerCallee for HydentityContract {
-    fn caller(&self) -> &Identity {
-        &self.exec_ctx.caller
-    }
-    fn callee_blobs(&self) -> CalleeBlobs {
-        CalleeBlobs(self.exec_ctx.callees_blobs.borrow())
-    }
-    fn mut_callee_blobs(&self) -> MutCalleeBlobs {
-        MutCalleeBlobs(self.exec_ctx.callees_blobs.borrow_mut())
-    }
-}
-
-impl HydentityState {
+impl Hydentity {
     pub fn to_bytes(&self) -> Vec<u8> {
         borsh::to_vec(self).expect("Failed to encode Balances")
     }
@@ -85,7 +49,7 @@ impl HydentityState {
     }
 }
 
-impl IdentityVerification for HydentityState {
+impl IdentityVerification for Hydentity {
     fn register_identity(
         &mut self,
         account: &str,
@@ -143,13 +107,13 @@ impl IdentityVerification for HydentityState {
     }
 }
 
-impl Digestable for HydentityState {
+impl Digestable for Hydentity {
     fn as_digest(&self) -> sdk::StateDigest {
         sdk::StateDigest(self.to_bytes())
     }
 }
 
-impl TryFrom<sdk::StateDigest> for HydentityState {
+impl TryFrom<sdk::StateDigest> for Hydentity {
     type Error = anyhow::Error;
 
     fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
@@ -164,7 +128,7 @@ mod tests {
 
     #[test]
     fn test_register_identity() {
-        let mut hydentity = HydentityState::default();
+        let mut hydentity = Hydentity::default();
         let account = "test_account";
         let private_input = "test_input";
 
@@ -183,7 +147,7 @@ mod tests {
 
     #[test]
     fn test_register_identity_that_already_exists() {
-        let mut hydentity = HydentityState::default();
+        let mut hydentity = Hydentity::default();
         let account = "test_account";
         let private_input = "test_input";
 
@@ -193,7 +157,7 @@ mod tests {
 
     #[test]
     fn test_verify_identity() {
-        let mut hydentity = HydentityState::default();
+        let mut hydentity = Hydentity::default();
         let account = "test_account";
         let private_input = "test_input";
 
@@ -218,7 +182,7 @@ mod tests {
 
     #[test]
     fn test_get_identity_info() {
-        let mut hydentity = HydentityState::default();
+        let mut hydentity = Hydentity::default();
         let account = "test_account";
         let private_input = "test_input";
 
@@ -243,7 +207,7 @@ mod tests {
 
     #[test]
     fn test_as_digest() {
-        let mut hydentity = HydentityState::default();
+        let mut hydentity = Hydentity::default();
         hydentity
             .register_identity("test_account", "test_input")
             .unwrap();
@@ -255,19 +219,19 @@ mod tests {
 
     #[test]
     fn test_try_from_state_digest() {
-        let mut hydentity = HydentityState::default();
+        let mut hydentity = Hydentity::default();
         hydentity
             .register_identity("test_account", "test_input")
             .unwrap();
 
         let digest = hydentity.as_digest();
 
-        let decoded_hydentity: HydentityState =
-            HydentityState::try_from(digest.clone()).expect("Failed to decode state digest");
+        let decoded_hydentity: Hydentity =
+            Hydentity::try_from(digest.clone()).expect("Failed to decode state digest");
         assert_eq!(decoded_hydentity.identities, hydentity.identities);
 
         let invalid_digest = sdk::StateDigest(vec![5, 5, 5]);
-        let result = HydentityState::try_from(invalid_digest);
+        let result = Hydentity::try_from(invalid_digest);
         assert!(result.is_err());
     }
 }
