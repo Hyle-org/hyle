@@ -15,7 +15,7 @@ hyle-contracts = { path = "../contracts", package = "hyle-contracts" }
 hyle-contract-sdk = { path = "../contract-sdk" }
 client-sdk = { path = "../client-sdk", features = ["tcp", "risc0"] }
 
-anyhow = "1.0.95"
+anyhow = "1.0.96"
 borsh = "1.5.5"
 clap = { version = "4.5.30", features = ["derive"]}
 tracing = "0.1"

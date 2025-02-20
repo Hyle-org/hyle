@@ -18,7 +18,7 @@ serde = { version = "1.0", default-features = false, features = [
     "derive",
     "alloc",
 ] }
-anyhow = "1.0.95"
+anyhow = "1.0.96"
 borsh = { version ="1.5.5", features = [ "derive" ]}
 serde_with = "3.12.0"
 
