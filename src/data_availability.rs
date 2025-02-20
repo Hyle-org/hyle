@@ -113,7 +113,6 @@ impl DataAvailability {
 
         let (catchup_sender, mut catchup_receiver) = tokio::sync::mpsc::channel(100);
 
-        return Ok(());
         module_handle_messages! {
             on_bus self.bus,
             listen<MempoolBlockEvent> evt => {
