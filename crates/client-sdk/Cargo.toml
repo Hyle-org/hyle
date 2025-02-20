@@ -11,7 +11,7 @@ rust-version = { workspace = true }
 sdk = { path = "../contract-sdk", package = "hyle-contract-sdk", default-features = false, features = [
     "full-model",
 ] }
-anyhow = "1.0.94"
+anyhow = "1.0.96"
 borsh = "1.5.5"
 serde = "1.0"
 serde_json = { version = "1" }
