@@ -27,7 +27,7 @@ impl<T, Error: Into<anyhow::Error> + Display + Send + Sync + 'static> LogMe<T>
                 let ae = ae.context(context_msg);
                 warn!(
                   target: module_path!(),
-                  error = %ae,
+                  warning = %ae,
                   "{:#}",
                   ae
                 );
