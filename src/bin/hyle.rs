@@ -235,13 +235,14 @@ async fn main() -> Result<()> {
     #[cfg(unix)]
     {
         use tokio::signal::unix;
-        let mut terminate = unix::signal(unix::SignalKind::interrupt())?;
+        let mut interrupt = unix::signal(unix::SignalKind::interrupt())?;
+        let mut terminate = unix::signal(unix::SignalKind::terminate())?;
         tokio::select! {
             Err(e) = handler.start_modules() => {
                 error!("Error running modules: {:?}", e);
             }
-            _ = tokio::signal::ctrl_c() => {
-                info!("Ctrl-C received, shutting down");
+            _ = interrupt.recv() =>  {
+                info!("SIGINT received, shutting down");
             }
             _ = terminate.recv() =>  {
                 info!("SIGTERM received, shutting down");
