@@ -4,7 +4,7 @@ use crate::{
     guest::fail,
     Identity, StructuredBlobData,
 };
-use alloc::vec;
+use alloc::{format, vec};
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::result::Result;
 
@@ -13,7 +13,9 @@ use hyle_model::{
     StateDigest, StructuredBlob,
 };
 
-pub fn parse_raw_contract_input<Parameters>(input: &ContractInput) -> Option<Parameters>
+pub fn parse_raw_contract_input<Parameters>(
+    input: &ContractInput,
+) -> Result<(Parameters, ExecutionContext), String>
 where
     Parameters: BorshDeserialize,
 {
@@ -23,18 +25,19 @@ where
     let blob = match blobs.get(index.0) {
         Some(v) => v,
         None => {
-            return None;
+            return Err(format!("Could not find Blob at index {index}"));
         }
     };
 
     let Ok(parameters) = borsh::from_slice::<Parameters>(blob.data.0.as_slice()) else {
-        return None;
+        return Err(format!("Could not deserialize Blob at index {index}"));
     };
 
-    Some(parameters)
+    let exec_ctx = ExecutionContext::default();
+    Ok((parameters, exec_ctx))
 }
 
-pub fn parse_contract_input_with_context<Parameters>(
+pub fn parse_contract_input<Parameters>(
     input: &ContractInput,
 ) -> Result<(Parameters, ExecutionContext), String>
 where
@@ -95,19 +98,28 @@ pub fn as_hyle_output<State: Digestable + BorshDeserialize>(
     res: &mut crate::RunResult,
 ) -> HyleOutput {
     match res {
-        Ok(res) => HyleOutput {
-            version: 1,
-            initial_state: initial_state_digest,
-            next_state: nex_state_digest,
-            identity: contract_input.identity,
-            index: contract_input.index,
-            blobs: flatten_blobs(&contract_input.blobs),
-            success: true,
-            tx_hash: contract_input.tx_hash,
-            tx_ctx: contract_input.tx_ctx,
-            registered_contracts: core::mem::take(&mut res.1),
-            program_outputs: core::mem::take(&mut res.0).into_bytes(),
-        },
+        Ok((ref mut program_output, execution_context, ref mut registered_contracts)) => {
+            if execution_context.callee_blobs().0.is_empty() {
+                return fail(
+                    contract_input,
+                    initial_state_digest,
+                    "Execution context has not been fully consumed",
+                );
+            }
+            HyleOutput {
+                version: 1,
+                initial_state: initial_state_digest,
+                next_state: nex_state_digest,
+                identity: contract_input.identity,
+                index: contract_input.index,
+                blobs: flatten_blobs(&contract_input.blobs),
+                success: true,
+                tx_hash: contract_input.tx_hash,
+                tx_ctx: contract_input.tx_ctx,
+                registered_contracts: core::mem::take(registered_contracts),
+                program_outputs: core::mem::take(program_output).into_bytes(),
+            }
+        }
         Err(message) => fail(contract_input, initial_state_digest, message),
     }
 }

@@ -1,6 +1,6 @@
 use sdk::{
-    erc20::ERC20Action, utils::parse_contract_input_with_context, ContractInput, ContractName,
-    HyleContract, RunResult, StakingAction,
+    erc20::ERC20Action, utils::parse_contract_input, ContractInput, ContractName, HyleContract,
+    RunResult, StakingAction,
 };
 use state::Staking;
 
@@ -12,8 +12,7 @@ pub mod state;
 
 impl HyleContract for Staking {
     fn execute_action(&mut self, contract_input: &ContractInput) -> RunResult {
-        let (action, execution_ctx) =
-            parse_contract_input_with_context::<StakingAction>(contract_input)?;
+        let (action, execution_ctx) = parse_contract_input::<StakingAction>(contract_input)?;
 
         // FIXME: hardcoded contract names
         let staking_contract_name = ContractName("staking".to_string());
@@ -52,7 +51,7 @@ impl HyleContract for Staking {
 
         match output {
             Err(e) => Err(e),
-            Ok(output) => Ok((output, vec![])),
+            Ok(output) => Ok((output, execution_ctx, vec![])),
         }
     }
 }

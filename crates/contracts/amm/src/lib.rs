@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::erc20::ERC20Action;
-use sdk::utils::parse_contract_input_with_context;
+use sdk::utils::parse_contract_input;
 use sdk::{
     Blob, BlobIndex, ContractAction, ContractInput, Digestable, HyleContract, RunResult,
     StateDigest,
@@ -57,8 +57,7 @@ pub struct Amm {
 
 impl HyleContract for Amm {
     fn execute_action(&mut self, contract_input: &ContractInput) -> RunResult {
-        let (action, execution_ctx) =
-            parse_contract_input_with_context::<AmmAction>(contract_input)?;
+        let (action, execution_ctx) = parse_contract_input::<AmmAction>(contract_input)?;
         let output = match action {
             AmmAction::Swap {
                 pair,
@@ -98,7 +97,7 @@ impl HyleContract for Amm {
         };
         match output {
             Err(e) => Err(e),
-            Ok(output) => Ok((output, vec![])),
+            Ok(output) => Ok((output, execution_ctx, vec![])),
         }
     }
 }

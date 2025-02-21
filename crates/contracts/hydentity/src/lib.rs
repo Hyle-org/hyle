@@ -24,14 +24,14 @@ pub struct Hydentity {
 
 impl HyleContract for Hydentity {
     fn execute_action(&mut self, contract_input: &ContractInput) -> RunResult {
-        let action = parse_raw_contract_input(contract_input).ok_or("Failed to parse input")?;
+        let (action, exec_ctx) = parse_raw_contract_input(contract_input)?;
         let private_input = std::str::from_utf8(&contract_input.private_input)
             .map_err(|_| "Invalid UTF-8 sequence")?;
         let output = self.execute_identity_action(action, private_input);
 
         match output {
             Err(e) => Err(e),
-            Ok(output) => Ok((output, vec![])),
+            Ok(output) => Ok((output, exec_ctx, vec![])),
         }
     }
 }

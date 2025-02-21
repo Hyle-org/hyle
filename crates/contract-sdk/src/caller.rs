@@ -23,7 +23,7 @@ impl ExecutionContext {
         &self.caller
     }
 
-    fn callee_blobs(&self) -> CalleeBlobs {
+    pub fn callee_blobs(&self) -> CalleeBlobs {
         CalleeBlobs(self.callees_blobs.borrow())
     }
 

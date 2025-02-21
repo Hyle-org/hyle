@@ -101,7 +101,7 @@ pub trait ERC20 {
     fn execute_token_action(
         &mut self,
         action: ERC20Action,
-        execution_ctx: ExecutionContext,
+        execution_ctx: &ExecutionContext,
     ) -> Result<String, String> {
         let caller = execution_ctx.caller().clone().0;
         match action {
@@ -267,7 +267,7 @@ mod tests {
             caller: "caller".into(),
             ..ExecutionContext::default()
         };
-        let result = mock.execute_token_action(action, execution_ctx);
+        let result = mock.execute_token_action(action, &execution_ctx);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Total Supply: 1000");
@@ -287,7 +287,7 @@ mod tests {
             caller: "caller".into(),
             ..ExecutionContext::default()
         };
-        let result = mock.execute_token_action(action, execution_ctx);
+        let result = mock.execute_token_action(action, &execution_ctx);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Balance of account1: 500");
@@ -312,7 +312,7 @@ mod tests {
             caller: "caller".into(),
             ..ExecutionContext::default()
         };
-        let result = mock.execute_token_action(action, execution_ctx);
+        let result = mock.execute_token_action(action, &execution_ctx);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Transferred 200 to recipient1");
@@ -339,7 +339,7 @@ mod tests {
             caller: "spender".into(),
             ..ExecutionContext::default()
         };
-        let result = mock.execute_token_action(action, execution_ctx);
+        let result = mock.execute_token_action(action, &execution_ctx);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Transferred 300 from owner to recipient");
@@ -364,7 +364,7 @@ mod tests {
             caller: "caller".into(),
             ..ExecutionContext::default()
         };
-        let result = mock.execute_token_action(action, execution_ctx);
+        let result = mock.execute_token_action(action, &execution_ctx);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Approved 400 for spender1");
@@ -385,7 +385,7 @@ mod tests {
             caller: "caller".into(),
             ..ExecutionContext::default()
         };
-        let result = mock.execute_token_action(action, execution_ctx);
+        let result = mock.execute_token_action(action, &execution_ctx);
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Allowance of spender1 by owner1: 500");

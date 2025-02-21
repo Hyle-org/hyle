@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::erc20::ERC20;
-use sdk::utils::parse_contract_input_with_context;
+use sdk::utils::parse_contract_input;
 use sdk::ContractInput;
 use sdk::{erc20::ERC20Action, Digestable, HyleContract, RunResult};
 use serde::{Deserialize, Serialize};
@@ -52,13 +52,12 @@ impl Hyllar {
 
 impl HyleContract for Hyllar {
     fn execute_action(&mut self, contract_input: &ContractInput) -> RunResult {
-        let (action, execution_ctx) =
-            parse_contract_input_with_context::<ERC20Action>(contract_input)?;
-        let output = self.execute_token_action(action, execution_ctx);
+        let (action, execution_ctx) = parse_contract_input::<ERC20Action>(contract_input)?;
+        let output = self.execute_token_action(action, &execution_ctx);
 
         match output {
             Err(e) => Err(e),
-            Ok(output) => Ok((output, vec![])),
+            Ok(output) => Ok((output, execution_ctx, vec![])),
         }
     }
 }
