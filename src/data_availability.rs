@@ -597,12 +597,6 @@ pub mod tests {
         tokio::spawn(async move {
             da.start().await.unwrap();
         });
-        // Feed Da with blocks, should stream them to the client
-        for block in blocks {
-            block_sender
-                .send(MempoolBlockEvent::BuiltSignedBlock(block))
-                .unwrap();
-        }
 
         let mut client =
             codec_data_availability::connect("client_id".to_string(), config.da_address.clone())
@@ -613,6 +607,13 @@ pub mod tests {
             .send(DataAvailabilityRequest(BlockHeight(0)))
             .await
             .unwrap();
+
+        // Feed Da with blocks, should stream them to the client
+        for block in blocks {
+            block_sender
+                .send(MempoolBlockEvent::BuiltSignedBlock(block))
+                .unwrap();
+        }
 
         // wait until it's up
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
