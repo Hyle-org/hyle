@@ -51,7 +51,7 @@ impl Hyllar {
 }
 
 impl HyleContract for Hyllar {
-    fn execute_action(&mut self, contract_input: &ContractInput) -> RunResult {
+    fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
         let (action, execution_ctx) = parse_contract_input::<ERC20Action>(contract_input)?;
         let output = self.execute_token_action(action, &execution_ctx);
 

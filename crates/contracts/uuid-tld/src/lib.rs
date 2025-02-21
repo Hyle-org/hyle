@@ -42,7 +42,7 @@ impl ContractAction for UuidTldAction {
 }
 
 impl HyleContract for UuidTld {
-    fn execute_action(&mut self, contract_input: &ContractInput) -> RunResult {
+    fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
         let (action, exec_ctx) = parse_raw_contract_input::<UuidTldAction>(contract_input)?;
         // Not an identity provider
         if contract_input.identity.0.ends_with(&format!(
@@ -158,7 +158,7 @@ mod test {
 
         let contract_input = make_contract_input(action.clone(), borsh::to_vec(&state).unwrap());
 
-        let (_, _, registered_contracts) = state.execute_action(&contract_input).unwrap();
+        let (_, _, registered_contracts) = state.execute(&contract_input).unwrap();
 
         let effect: &RegisterContractEffect = registered_contracts.first().unwrap();
 
@@ -169,7 +169,7 @@ mod test {
 
         let contract_input = make_contract_input(action.clone(), borsh::to_vec(&state).unwrap());
 
-        let (_, _, registered_contracts) = state.execute_action(&contract_input).unwrap();
+        let (_, _, registered_contracts) = state.execute(&contract_input).unwrap();
 
         let effect = registered_contracts.first().unwrap();
 

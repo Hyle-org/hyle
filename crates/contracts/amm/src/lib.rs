@@ -56,7 +56,7 @@ pub struct Amm {
 }
 
 impl HyleContract for Amm {
-    fn execute_action(&mut self, contract_input: &ContractInput) -> RunResult {
+    fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
         let (action, mut execution_ctx) = parse_contract_input::<AmmAction>(contract_input)?;
         let output = match action {
             AmmAction::Swap {

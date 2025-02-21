@@ -47,7 +47,7 @@ macro_rules! info {
 pub type RunResult = Result<(String, ExecutionContext, Vec<RegisterContractEffect>), String>;
 
 pub trait HyleContract {
-    fn execute_action(&mut self, contract_input: &ContractInput) -> RunResult;
+    fn execute(&mut self, contract_input: &ContractInput) -> RunResult;
 }
 
 pub const fn to_u8_array(val: &[u32; 8]) -> [u8; 32] {

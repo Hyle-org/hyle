@@ -94,7 +94,7 @@ where
         borsh::from_slice(&contract_input.state).expect("Failed to decode state");
     let initial_state_digest = state.as_digest();
 
-    let mut res: RunResult = state.execute_action(contract_input);
+    let mut res: RunResult = state.execute(contract_input);
 
     let next_state_digest = state.as_digest();
 

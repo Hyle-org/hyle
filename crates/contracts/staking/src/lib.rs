@@ -11,7 +11,7 @@ pub mod fees;
 pub mod state;
 
 impl HyleContract for Staking {
-    fn execute_action(&mut self, contract_input: &ContractInput) -> RunResult {
+    fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
         let (action, execution_ctx) = parse_contract_input::<StakingAction>(contract_input)?;
 
         let output = match action {
