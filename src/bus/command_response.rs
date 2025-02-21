@@ -168,10 +168,13 @@ macro_rules! handle_messages {
             }
         }
         }
+
         while let Ok($res) = $index.try_recv() {
             receive_bus_metrics::<$message, _>(&mut $bus);
             $handler;
         };
+
+        tracing::trace!("Remaining messages in topic {}: {}", stringify!($message), $index.len());
     };
 
     // Fallback to else case

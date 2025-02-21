@@ -8,14 +8,14 @@ mod blocks_memory;
 // Pick one of the two implementations
 use blocks_fjall::Blocks;
 use client_sdk::tcp::{TcpCommand, TcpEvent};
-use codec::{codec_data_availability, DataAvailabilityEvent};
 //use blocks_memory::Blocks;
+
+use codec::{codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequest};
 
 use crate::{
     bus::{BusClientSender, BusMessage},
     consensus::ConsensusCommand,
     genesis::GenesisEvent,
-    indexer::da_listener::RawDAListener,
     model::*,
     module_handle_messages,
     p2p::network::{OutboundMessage, PeerEvent},
@@ -25,7 +25,7 @@ use crate::{
         modules::{module_bus_client, Module},
     },
 };
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::str;
 use serde::{Deserialize, Serialize};
@@ -401,12 +401,13 @@ impl DataAvailability {
             .last()
             .map(|block| block.height() + 1)
             .unwrap_or(BlockHeight(0));
-        let Ok(mut stream) = RawDAListener::new(&ip, start).await else {
-            bail!("Error occured setting up the DA listener");
-        };
+        let mut client = codec_data_availability::connect("block_catcher".to_string(), ip)
+            .await
+            .context("Error occured setting up the DA listener")?;
+        client.send(DataAvailabilityRequest(start)).await?;
         self.catchup_task = Some(tokio::spawn(async move {
             loop {
-                match stream.recv().await {
+                match client.recv().await {
                     None => {
                         break;
                     }

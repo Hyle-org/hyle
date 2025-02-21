@@ -34,6 +34,7 @@ use std::{
     sync::Arc,
 };
 use storage::{DataProposalVerdict, LaneEntry, Storage};
+use tokio::task::JoinSet;
 // Pick one of the two implementations
 // use storage_memory::LanesStorage;
 use storage_fjall::LanesStorage;
@@ -83,7 +84,6 @@ struct MempoolBusClient {
     sender(MempoolBlockEvent),
     sender(MempoolStatusEvent),
     sender(InternalMempoolEvent),
-    receiver(InternalMempoolEvent),
     receiver(SignedByValidator<MempoolNetMessage>),
     receiver(RestApiMessage),
     receiver(TcpServerMessage),
@@ -91,6 +91,7 @@ struct MempoolBusClient {
     receiver(GenesisEvent),
     receiver(NodeStateEvent),
     receiver(Query<QueryNewCut, Cut>),
+    receiver(InternalMempoolEvent),
 }
 }
 
@@ -112,6 +113,7 @@ pub struct MempoolStore {
 pub struct Mempool {
     bus: MempoolBusClient,
     file: Option<PathBuf>,
+    blocker: JoinSet<Result<()>>,
     conf: SharedConf,
     crypto: SharedBlstCrypto,
     metrics: MempoolMetrics,
@@ -217,6 +219,7 @@ impl Module for Mempool {
             bus,
             file: Some(ctx.common.config.data_directory.clone()),
             conf: ctx.common.config.clone(),
+            blocker: JoinSet::new(),
             metrics,
             crypto: Arc::clone(&ctx.node.crypto),
             lanes: LanesStorage::new(
@@ -244,6 +247,17 @@ impl Mempool {
 
         module_handle_messages! {
             on_bus self.bus,
+            on_shutdown {
+                // Flush RestApi topic to fill join_set with last tasks
+                let recv_rest_api: *mut tokio::sync::broadcast::Receiver<RestApiMessage> = unsafe { self.bus.splitting_get_mut() };
+                while let Ok(cmd) = unsafe { (*recv_rest_api).try_recv() } {
+                    let _ = self.handle_api_message(cmd).log_error("Handling API Message in Mempool");
+                }
+                // Waiting all proof txs being processed
+                let mut join_set: JoinSet<Result<()>> = JoinSet::new();
+                std::mem::swap(&mut self.blocker, &mut join_set);
+                join_set.join_all().await;
+            },
             listen<SignedByValidator<MempoolNetMessage>> cmd => {
                 let _ = self.handle_net_message(cmd)
                     .log_error("Handling MempoolNetMessage in Mempool");
@@ -356,7 +370,10 @@ impl Mempool {
     }
 
     fn handle_data_proposal_management(&mut self) -> Result<()> {
-        trace!("🌝 Handling DataProposal management");
+        debug!(
+            "🌝 Handling DataProposal management with {} txs",
+            self.waiting_dissemination_txs.len()
+        );
         // Create new DataProposal with pending txs
         let crypto = self.crypto.clone();
         let new_txs = std::mem::take(&mut self.waiting_dissemination_txs);
@@ -929,6 +946,9 @@ impl Mempool {
     fn on_new_tx(&mut self, tx: Transaction) -> Result<()> {
         // TODO: Verify fees ?
 
+        let tx_type: &'static str = (&tx.transaction_data).into();
+        trace!("Tx {} received in mempool", tx_type);
+
         let tx_hash = tx.hashed();
 
         match tx.transaction_data {
@@ -947,13 +967,15 @@ impl Mempool {
                 let kc = self.known_contracts.clone();
                 let sender: &tokio::sync::broadcast::Sender<InternalMempoolEvent> = self.bus.get();
                 let sender = sender.clone();
-                tokio::task::spawn_blocking(move || {
-                    let tx =
-                        Self::process_proof_tx(kc, tx).log_error("Error processing proof tx")?;
+                self.blocker.spawn_blocking(move || {
+                    let tx = Self::process_proof_tx(kc, tx)
+                        .log_error("Processing proof tx in blocker")?;
                     sender
                         .send(InternalMempoolEvent::OnProcessedNewTx(tx))
-                        .log_warn("sending processed TX")
+                        .log_warn("sending processed TX")?;
+                    Ok(())
                 });
+
                 return Ok(());
             }
             TransactionData::VerifiedProof(ref proof_tx) => {
@@ -1213,6 +1235,7 @@ pub mod test {
                 bus,
                 file: None,
                 conf: SharedConf::default(),
+                blocker: JoinSet::new(),
                 crypto: Arc::new(crypto),
                 metrics: MempoolMetrics::global("id".to_string()),
                 lanes,

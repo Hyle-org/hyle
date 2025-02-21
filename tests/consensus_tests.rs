@@ -7,11 +7,12 @@ mod fixtures;
 mod e2e_consensus {
 
     use client_sdk::helpers::risc0::Risc0Prover;
-    use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutorBuilder};
+    use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutor, TxExecutorBuilder};
     use fixtures::test_helpers::send_transaction;
     use hydentity::client::{register_identity, verify_identity};
     use hydentity::Hydentity;
     use hyle::{genesis::States, utils::logger::LogMe};
+    use hyle_contract_sdk::erc20::ERC20;
     use hyle_contract_sdk::Digestable;
     use hyle_contract_sdk::Identity;
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF, STAKING_ELF};
@@ -20,7 +21,7 @@ mod e2e_consensus {
     use hyllar::{Hyllar, FAUCET_ID};
     use staking::client::{delegate, stake};
     use staking::state::Staking;
-    use tracing::info;
+    use tracing::{info, warn};
 
     use super::*;
 
@@ -163,6 +164,46 @@ mod e2e_consensus {
         Ok(())
     }
 
+    async fn gen_txs(
+        ctx: &mut E2ECtx,
+        tx_ctx: &mut TxExecutor<States>,
+        id: String,
+        amount: u128,
+    ) -> Result<()> {
+        let identity = Identity(format!("{}.hydentity", id));
+        {
+            let mut transaction = ProvableBlobTx::new(identity.clone());
+
+            register_identity(&mut transaction, "hydentity".into(), "password".to_owned())?;
+
+            let tx_hash = send_transaction(ctx.client(), transaction, tx_ctx).await;
+            tracing::warn!("Register TX Hash: {:?}", tx_hash);
+        }
+
+        {
+            let mut transaction = ProvableBlobTx::new("faucet.hydentity".into());
+
+            verify_identity(
+                &mut transaction,
+                "hydentity".into(),
+                &tx_ctx.hydentity,
+                "password".to_string(),
+            )?;
+
+            transfer(
+                &mut transaction,
+                "hyllar".into(),
+                identity.0.clone(),
+                amount,
+            )?;
+
+            let tx_hash = send_transaction(ctx.client(), transaction, tx_ctx).await;
+            tracing::warn!("Transfer TX Hash: {:?}", tx_hash);
+        }
+
+        Ok(())
+    }
+
     #[test_log::test(tokio::test)]
     async fn can_rejoin_blocking_consensus() -> Result<()> {
         let mut ctx = E2ECtx::new_multi_with_indexer(2, 500).await?;
@@ -205,6 +246,71 @@ mod e2e_consensus {
         ctx.restart_node(3)?;
 
         ctx.wait_height(1).await?;
+
+        Ok(())
+    }
+
+    async fn init_states(ctx: &mut E2ECtx) -> TxExecutor<States> {
+        let hyllar: Hyllar = ctx
+            .indexer_client()
+            .fetch_current_state(&"hyllar".into())
+            .await
+            .unwrap();
+        let hydentity: Hydentity = ctx
+            .indexer_client()
+            .fetch_current_state(&"hydentity".into())
+            .await
+            .unwrap();
+
+        let states = States {
+            hyllar,
+            hydentity,
+            staking: Staking::default(),
+        };
+
+        TxExecutorBuilder::new(states)
+            // Replace prover binaries for non-reproducible mode.
+            .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
+            .with_prover("hyllar".into(), Risc0Prover::new(HYLLAR_ELF))
+            .build()
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn can_restart_single_node_after_txs() -> Result<()> {
+        let mut ctx = E2ECtx::new_single_with_indexer(500).await?;
+
+        _ = ctx.wait_height(1).await;
+
+        // Gen a few txs
+        let mut tx_ctx = init_states(&mut ctx).await;
+
+        warn!("Starting generating txs");
+
+        for i in 0..6 {
+            _ = gen_txs(&mut ctx, &mut tx_ctx, format!("alex{}", i), 100 + i).await;
+        }
+
+        ctx.stop_node(0).await?;
+        ctx.restart_node(0)?;
+
+        ctx.wait_height(0).await?;
+
+        for i in 6..10 {
+            _ = gen_txs(&mut ctx, &mut tx_ctx, format!("alex{}", i), 100 + i).await;
+        }
+
+        ctx.wait_height(2).await?;
+
+        let state: Hyllar = ctx
+            .indexer_client()
+            .fetch_current_state(&ContractName::new("hyllar"))
+            .await?;
+
+        for i in 0..10 {
+            let balance = state.balance_of(&format!("alex{}.hydentity", i));
+            info!("Checking alex{}.hydentity balance: {:?}", i, balance);
+            assert_eq!(balance.unwrap(), ((100 + i) as u128));
+        }
 
         Ok(())
     }
