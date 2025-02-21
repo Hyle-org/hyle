@@ -603,6 +603,11 @@ pub mod tests {
                 .await
                 .unwrap();
 
+        client
+            .send(DataAvailabilityRequest(BlockHeight(0)))
+            .await
+            .unwrap();
+
         // Feed Da with blocks, should stream them to the client
         for block in blocks {
             block_sender
