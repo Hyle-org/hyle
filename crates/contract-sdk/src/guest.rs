@@ -64,7 +64,7 @@ pub fn fail(input: ContractInput, initial_state_digest: StateDigest, message: &s
         success: false,
         tx_hash: input.tx_hash,
         tx_ctx: input.tx_ctx,
-        registered_contracts: vec![],
+        onchain_effects: vec![],
         program_outputs: message.to_string().into_bytes(),
     }
 }
