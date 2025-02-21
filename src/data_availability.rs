@@ -9,10 +9,7 @@ mod blocks_memory;
 use blocks_fjall::Blocks;
 //use blocks_memory::Blocks;
 
-use codec::{
-    DataAvailabilityServerCodec, DataAvailabilityServerEvent, DataAvailabilityServerRequest,
-};
-use utils::get_current_timestamp;
+use codec::{codec_data_availability, DataAvailabilityEvent};
 
 use crate::{
     bus::{BusClientSender, BusMessage},
@@ -23,6 +20,7 @@ use crate::{
     model::*,
     module_handle_messages,
     p2p::network::{OutboundMessage, PeerEvent},
+    tcp::{TcpCommand, TcpEvent},
     utils::{
         conf::SharedConf,
         logger::LogMe,
@@ -32,18 +30,9 @@ use crate::{
 use anyhow::{bail, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::str;
-use futures::{
-    stream::{SplitSink, SplitStream},
-    SinkExt, StreamExt,
-};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use std::collections::HashMap;
-use tokio::{
-    net::{TcpListener, TcpStream},
-    task::{JoinHandle, JoinSet},
-};
-use tokio_util::codec::Framed;
+use tokio::sync::mpsc::Sender;
 use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
@@ -67,17 +56,6 @@ struct DABusClient {
 }
 }
 
-/// A peer we are streaming blocks to
-#[derive(Debug)]
-struct BlockStreamPeer {
-    /// Last timestamp we received a ping from the peer.
-    last_ping: u64,
-    /// Sender to stream blocks to the peer
-    sender: SplitSink<Framed<TcpStream, DataAvailabilityServerCodec>, DataAvailabilityServerEvent>,
-    /// Handle to abort the receiving side of the stream
-    keepalive_abort: JoinHandle<()>,
-}
-
 #[derive(Debug)]
 pub struct DataAvailability {
     config: SharedConf,
@@ -85,9 +63,6 @@ pub struct DataAvailability {
     pub blocks: Blocks,
 
     buffered_signed_blocks: BTreeSet<SignedBlock>,
-
-    // Peers subscribed to block streaming
-    stream_peer_metadata: HashMap<String, BlockStreamPeer>,
 
     need_catchup: bool,
     catchup_task: Option<tokio::task::JoinHandle<()>>,
@@ -110,7 +85,6 @@ impl Module for DataAvailability {
                     .join("data_availability.db"),
             )?,
             buffered_signed_blocks: BTreeSet::new(),
-            stream_peer_metadata: HashMap::new(),
             need_catchup: false,
             catchup_task: None,
             catchup_height: None,
@@ -124,35 +98,34 @@ impl Module for DataAvailability {
 
 impl DataAvailability {
     pub async fn start(&mut self) -> Result<()> {
-        let stream_request_receiver = TcpListener::bind(&self.config.da_address).await?;
+        let pool = codec_data_availability::listen(self.config.da_address.clone()).await?;
+
         info!(
             "📡  Starting DataAvailability module, listening for stream requests on {}",
             &self.config.da_address
         );
 
-        let mut pending_stream_requests = JoinSet::new();
+        let (pool_sender, mut pool_receiver) = pool.run_in_background().await?;
 
         let (catchup_block_sender, mut catchup_block_receiver) =
             tokio::sync::mpsc::channel::<SignedBlock>(100);
 
-        // TODO: this is a soft cap on the number of peers we can stream to.
-        let (ping_sender, mut ping_receiver) = tokio::sync::mpsc::channel(100);
         let (catchup_sender, mut catchup_receiver) = tokio::sync::mpsc::channel(100);
 
         module_handle_messages! {
             on_bus self.bus,
             listen<MempoolBlockEvent> evt => {
-                _ = self.handle_mempool_event(evt).await.log_error("Handling Mempool Event");
+                _ = self.handle_mempool_event(evt, pool_sender.clone()).await.log_error("Handling Mempool Event");
             }
 
             listen<MempoolStatusEvent> evt => {
-                _ = self.handle_mempool_status_event(evt).await.log_error("Handling Mempool Event");
+                _ = self.handle_mempool_status_event(evt, pool_sender.clone()).await.log_error("Handling Mempool Event");
             }
 
             listen<GenesisEvent> cmd => {
                 if let GenesisEvent::GenesisBlock(signed_block) = cmd {
                     debug!("🌱  Genesis block received with validators {:?}", signed_block.consensus_proposal.staking_actions.clone());
-                    let _= self.handle_signed_block(signed_block).await.log_error("Handling GenesisBlock Event");
+                    let _= self.handle_signed_block(signed_block, pool_sender.clone()).await.log_error("Handling GenesisBlock Event");
                 } else {
                     // TODO: I think this is technically a data race with p2p ?
                     self.need_catchup = true;
@@ -172,7 +145,7 @@ impl DataAvailability {
             Some(streamed_block) = catchup_block_receiver.recv() => {
                 let height = streamed_block.height().0;
 
-                let _ = self.handle_signed_block(streamed_block).await.log_error(format!("Handling streamed block {height}"));
+                let _ = self.handle_signed_block(streamed_block, pool_sender.clone()).await.log_error(format!("Handling streamed block {height}"));
 
                 // Stop streaming after reaching a height communicated by Mempool
                 if let Some(until_height) = self.catchup_height.as_ref() {
@@ -188,56 +161,26 @@ impl DataAvailability {
                 }
             }
 
-            // Handle new TCP connections to stream data to peers
-            // We spawn an async task that waits for the start height as the first message.
-            Ok((stream, addr)) = stream_request_receiver.accept() => {
-                // This handler is defined inline so I don't have to give a type to pending_stream_requests
-                pending_stream_requests.spawn(async move {
-                    let (sender, mut receiver) = Framed::new(stream, DataAvailabilityServerCodec::default()).split();
-                    // Read the start height from the peer.
-                    match receiver.next().await {
-                        Some(Ok(data)) => {
-                            if let DataAvailabilityServerRequest::BlockHeight(start_height) = data {
-                                Ok((start_height, sender, receiver, addr.to_string()))
-                            } else {
-                                Err(anyhow::anyhow!("Got a ping instead of a block height"))
-                            }
-                        }
-                        _ => Err(anyhow::anyhow!("no start height")),
-                    }
-                });
+            Some(request) = pool_receiver.recv() => {
+                info!("Received message from the connection pool");
+
+                let TcpEvent{ dest, data } = request;
+                _ = self.start_streaming_to_peer(data.0, catchup_sender.clone(), &dest).await;
             }
 
-            // Actually connect to a peer and start streaming data.
-            Some(Ok(cmd)) = pending_stream_requests.join_next() => {
-                match cmd {
-                    Ok((start_height, sender, receiver, peer_ip)) => {
-                        if let Err(e) = self.start_streaming_to_peer(start_height, ping_sender.clone(), catchup_sender.clone(), sender, receiver, &peer_ip).await {
-                            error!("Error while starting stream to peer {}: {:?}", &peer_ip, e)
-                        }
-                        info!("📡 Started streaming to peer {}", &peer_ip);
-                    }
-                    Err(e) => {
-                        error!("Error while handling stream request: {:?}", e);
-                    }
-                }
-            }
 
             // Send one block to a peer as part of "catchup",
             // once we have sent all blocks the peer is presumably synchronised.
             Some((mut block_hashes, peer_ip)) = catchup_receiver.recv() => {
                 let hash = block_hashes.pop();
 
-                trace!("📡  Sending block {:?} to peer {}", &hash, &peer_ip);
                 if let Some(hash) = hash {
+                    debug!("📡  Sending block {} to peer {}", &hash, &peer_ip);
                     if let Ok(Some(signed_block)) = self.blocks.get(&hash)
                     {
                         // Errors will be handled when sending new blocks, ignore here.
-                        if self.stream_peer_metadata
-                            .get_mut(&peer_ip)
-                            .context("peer not found")?
-                            .sender
-                            .send(DataAvailabilityServerEvent::SignedBlock(signed_block))
+                        if pool_sender
+                            .send(TcpCommand::Send(peer_ip.clone(), Box::new(DataAvailabilityEvent::SignedBlock(signed_block))))
                             .await.is_ok() {
                             let _ = catchup_sender.send((block_hashes, peer_ip)).await;
                         }
@@ -245,20 +188,19 @@ impl DataAvailability {
                 }
             }
 
-            Some(peer_id) = ping_receiver.recv() => {
-                if let Some(peer) = self.stream_peer_metadata.get_mut(&peer_id) {
-                    peer.last_ping = get_current_timestamp();
-                }
-            }
         };
 
         Ok(())
     }
 
-    async fn handle_mempool_event(&mut self, evt: MempoolBlockEvent) -> Result<()> {
+    async fn handle_mempool_event(
+        &mut self,
+        evt: MempoolBlockEvent,
+        pool_sender: Sender<TcpCommand<DataAvailabilityEvent>>,
+    ) -> Result<()> {
         match evt {
             MempoolBlockEvent::BuiltSignedBlock(signed_block) => {
-                self.handle_signed_block(signed_block).await?;
+                self.handle_signed_block(signed_block, pool_sender).await?;
             }
             MempoolBlockEvent::StartedBuildingBlocks(height) => {
                 self.catchup_height = Some(height - 1);
@@ -281,14 +223,25 @@ impl DataAvailability {
 
         Ok(())
     }
-    async fn handle_mempool_status_event(&mut self, evt: MempoolStatusEvent) -> Result<()> {
-        self.stream_to_peers(DataAvailabilityServerEvent::MempoolStatusEvent(evt))
-            .await;
+    async fn handle_mempool_status_event(
+        &mut self,
+        evt: MempoolStatusEvent,
+        pool_sender: Sender<TcpCommand<DataAvailabilityEvent>>,
+    ) -> Result<()> {
+        pool_sender
+            .send(TcpCommand::Broadcast(Box::new(
+                DataAvailabilityEvent::MempoolStatusEvent(evt),
+            )))
+            .await?;
 
         Ok(())
     }
 
-    async fn handle_signed_block(&mut self, block: SignedBlock) -> Result<()> {
+    async fn handle_signed_block(
+        &mut self,
+        block: SignedBlock,
+        pool_sender: Sender<TcpCommand<DataAvailabilityEvent>>,
+    ) -> Result<()> {
         let hash = block.hashed();
         // if new block is already handled, ignore it
         if self.blocks.contains(&hash) {
@@ -324,13 +277,17 @@ impl DataAvailability {
         }
 
         // store block
-        self.add_processed_block(block).await;
-        self.pop_buffer(hash).await;
+        self.add_processed_block(block, pool_sender.clone()).await;
+        self.pop_buffer(hash, pool_sender).await;
         self.blocks.persist().context("Persisting blocks")?;
         Ok(())
     }
 
-    async fn pop_buffer(&mut self, mut last_block_hash: ConsensusProposalHash) {
+    async fn pop_buffer(
+        &mut self,
+        mut last_block_hash: ConsensusProposalHash,
+        pool_sender: Sender<TcpCommand<DataAvailabilityEvent>>,
+    ) {
         // Iterative loop to avoid stack overflows
         while let Some(first_buffered) = self.buffered_signed_blocks.first() {
             if first_buffered.parent_hash() != &last_block_hash {
@@ -347,11 +304,16 @@ impl DataAvailability {
             )]
             let first_buffered = self.buffered_signed_blocks.pop_first().unwrap();
             last_block_hash = first_buffered.hashed();
-            self.add_processed_block(first_buffered).await;
+            self.add_processed_block(first_buffered, pool_sender.clone())
+                .await;
         }
     }
 
-    async fn add_processed_block(&mut self, block: SignedBlock) {
+    async fn add_processed_block(
+        &mut self,
+        block: SignedBlock,
+        pool_sender: Sender<TcpCommand<DataAvailabilityEvent>>,
+    ) {
         // TODO: if we don't have streaming peers, we could just pass the block here
         // and avoid a clone + drop cost (which can be substantial for large blocks).
         if let Err(e) = self.blocks.put(block.clone()) {
@@ -383,10 +345,14 @@ impl DataAvailability {
                 .join("")
         );
 
-        // Stream block to all peers
         // TODO: use retain once async closures are supported ?
-        self.stream_to_peers(DataAvailabilityServerEvent::SignedBlock(block.clone()))
-            .await;
+        //
+        _ = pool_sender
+            .send(TcpCommand::Broadcast(Box::new(
+                DataAvailabilityEvent::SignedBlock(block.clone()),
+            )))
+            .await
+            .log_error("Sending block to tcp connection pool");
 
         // Send the block to NodeState for processing
         _ = self
@@ -395,69 +361,12 @@ impl DataAvailability {
             .log_error("Sending OrderedSignedBlock");
     }
 
-    async fn stream_to_peers(&mut self, event: DataAvailabilityServerEvent) {
-        let mut to_remove = Vec::new();
-        for (peer_id, peer) in self.stream_peer_metadata.iter_mut() {
-            let last_ping = peer.last_ping;
-            if last_ping + 60 * 5 < get_current_timestamp() {
-                info!("peer {} timed out", &peer_id);
-                peer.keepalive_abort.abort();
-                to_remove.push(peer_id.clone());
-            } else {
-                debug!("streaming event {:?} to peer {}", &event, &peer_id);
-                match peer.sender.send(event.clone()).await {
-                    Ok(_) => {}
-                    Err(e) => {
-                        debug!(
-                            "Couldn't send new block to peer {}, stopping streaming  : {:?}",
-                            &peer_id, e
-                        );
-                        peer.keepalive_abort.abort();
-                        to_remove.push(peer_id.clone());
-                    }
-                }
-            }
-        }
-        for peer_id in to_remove {
-            self.stream_peer_metadata.remove(&peer_id);
-        }
-    }
-
     async fn start_streaming_to_peer(
         &mut self,
         start_height: BlockHeight,
-        ping_sender: tokio::sync::mpsc::Sender<String>,
         catchup_sender: tokio::sync::mpsc::Sender<(Vec<ConsensusProposalHash>, String)>,
-        sender: SplitSink<
-            Framed<TcpStream, DataAvailabilityServerCodec>,
-            DataAvailabilityServerEvent,
-        >,
-        mut receiver: SplitStream<Framed<TcpStream, DataAvailabilityServerCodec>>,
-        peer_ip: &String,
+        peer_ip: &str,
     ) -> Result<()> {
-        // Start a task to process pings from the peer.
-        // We do the processing in the main select! loop to keep things synchronous.
-        // This makes it easier to store data in the same struct without mutexing.
-        let peer_ip_keepalive = peer_ip.to_string();
-        let keepalive_abort = tokio::task::Builder::new()
-            .name("da-keep-alive-abort")
-            .spawn(async move {
-                loop {
-                    receiver.next().await;
-                    let _ = ping_sender.send(peer_ip_keepalive.clone()).await;
-                }
-            })?;
-
-        // Then store data so we can send new blocks as they come.
-        self.stream_peer_metadata.insert(
-            peer_ip.to_string(),
-            BlockStreamPeer {
-                last_ping: get_current_timestamp(),
-                sender,
-                keepalive_abort,
-            },
-        );
-
         // Finally, stream past blocks as required.
         // We'll create a copy of the range so we don't stream everything.
         // We will safely stream everything as any new block will be sent
@@ -477,7 +386,7 @@ impl DataAvailability {
         processed_block_hashes.reverse();
 
         catchup_sender
-            .send((processed_block_hashes, peer_ip.clone()))
+            .send((processed_block_hashes, peer_ip.to_string()))
             .await?;
 
         Ok(())
@@ -499,28 +408,22 @@ impl DataAvailability {
         };
         self.catchup_task = Some(tokio::spawn(async move {
             loop {
-                match stream.next().await {
+                match stream.recv().await {
                     None => {
-                        warn!("End of stream");
                         break;
                     }
-                    Some(Err(e)) => {
-                        warn!("Error while streaming data from peer: {:#}", e);
-                        break;
-                    }
-                    Some(Ok(streamed_block)) => {
-                        if let DataAvailabilityServerEvent::SignedBlock(block) = streamed_block {
-                            info!(
-                                "📦 Received block (height {}) from stream",
-                                block.consensus_proposal.slot
-                            );
-                            // TODO: we should wait if the stream is full.
-                            if let Err(e) = sender.send(block).await {
-                                tracing::error!("Error while sending block over channel: {:#}", e);
-                                break;
-                            }
+                    Some(DataAvailabilityEvent::SignedBlock(block)) => {
+                        info!(
+                            "📦 Received block (height {}) from stream",
+                            block.consensus_proposal.slot
+                        );
+                        // TODO: we should wait if the stream is full.
+                        if let Err(e) = sender.send(block).await {
+                            tracing::error!("Error while sending block over channel: {:#}", e);
+                            break;
                         }
                     }
+                    Some(_) => {}
                 }
             }
         }));
@@ -532,8 +435,9 @@ impl DataAvailability {
 pub mod tests {
     #![allow(clippy::indexing_slicing)]
 
-    use crate::data_availability::codec::DataAvailabilityServerEvent;
+    use crate::data_availability::codec::{DataAvailabilityEvent, DataAvailabilityRequest};
     use crate::model::ValidatorPublicKey;
+    use crate::tcp::TcpCommand;
     use crate::{
         bus::BusClientSender,
         consensus::CommittedConsensusProposal,
@@ -545,11 +449,10 @@ pub mod tests {
         },
         utils::{conf::Conf, integration_test::find_available_port},
     };
-    use futures::{SinkExt, StreamExt};
     use staking::state::Staking;
-    use tokio::io::AsyncWriteExt;
-    use tokio_util::codec::{Framed, LengthDelimitedCodec};
+    use tokio::sync::mpsc::{channel, Sender};
 
+    use super::codec::codec_data_availability;
     use super::module_bus_client;
     use super::Blocks;
     use anyhow::Result;
@@ -576,7 +479,6 @@ pub mod tests {
                 bus,
                 blocks,
                 buffered_signed_blocks: Default::default(),
-                stream_peer_metadata: Default::default(),
                 need_catchup: false,
                 catchup_task: None,
                 catchup_height: None,
@@ -591,8 +493,15 @@ pub mod tests {
             }
         }
 
-        pub async fn handle_signed_block(&mut self, block: SignedBlock) {
-            self.da.handle_signed_block(block.clone()).await.unwrap();
+        pub async fn handle_signed_block(
+            &mut self,
+            block: SignedBlock,
+            sender: Sender<TcpCommand<DataAvailabilityEvent>>,
+        ) {
+            self.da
+                .handle_signed_block(block.clone(), sender)
+                .await
+                .unwrap();
             let full_block = self.node_state.handle_signed_block(&block);
             self.node_state_bus
                 .send(NodeStateEvent::NewBlock(Box::new(full_block)))
@@ -618,6 +527,7 @@ pub mod tests {
         let tmpdir = tempfile::tempdir().unwrap().into_path();
         let blocks = Blocks::new(&tmpdir).unwrap();
 
+        let (sender, _) = channel(1);
         let bus = super::DABusClient::new_from_bus(crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
         ))
@@ -627,7 +537,6 @@ pub mod tests {
             bus,
             blocks,
             buffered_signed_blocks: Default::default(),
-            stream_peer_metadata: Default::default(),
             need_catchup: false,
             catchup_task: None,
             catchup_height: None,
@@ -641,7 +550,7 @@ pub mod tests {
         }
         blocks.reverse();
         for block in blocks {
-            da.handle_signed_block(block).await.unwrap();
+            da.handle_signed_block(block, sender.clone()).await.unwrap();
         }
     }
 
@@ -670,7 +579,6 @@ pub mod tests {
             bus,
             blocks,
             buffered_signed_blocks: Default::default(),
-            stream_peer_metadata: Default::default(),
             need_catchup: false,
             catchup_task: None,
             catchup_height: None,
@@ -684,32 +592,30 @@ pub mod tests {
             block.consensus_proposal.slot = i;
         }
         blocks.reverse();
-        for block in blocks {
-            da.handle_signed_block(block).await.unwrap();
-        }
 
+        // Start Da and its client
         tokio::spawn(async move {
             da.start().await.unwrap();
         });
 
+        let mut client =
+            codec_data_availability::connect("client_id".to_string(), config.da_address.clone())
+                .await
+                .unwrap();
+
+        // Feed Da with blocks, should stream them to the client
+        for block in blocks {
+            block_sender
+                .send(MempoolBlockEvent::BuiltSignedBlock(block))
+                .unwrap();
+        }
+
         // wait until it's up
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-        let mut stream = tokio::net::TcpStream::connect(config.da_address.clone())
-            .await
-            .unwrap();
-
-        // TODO: figure out why writing doesn't work with da_stream.
-        stream.write_u32(8).await.unwrap();
-        stream.write_u64(0).await.unwrap();
-
-        let mut da_stream = Framed::new(stream, LengthDelimitedCodec::new());
-
         let mut heights_received = vec![];
-        while let Some(Ok(cmd)) = da_stream.next().await {
-            let bytes = cmd;
-            let event: DataAvailabilityServerEvent = borsh::from_slice(&bytes).unwrap();
-            if let DataAvailabilityServerEvent::SignedBlock(block) = event {
+        while let Some(event) = client.recv().await {
+            if let DataAvailabilityEvent::SignedBlock(block) = event {
                 heights_received.push(block.height().0);
             }
             if heights_received.len() == 14 {
@@ -718,7 +624,8 @@ pub mod tests {
         }
         assert_eq!(heights_received, (0..14).collect::<Vec<u64>>());
 
-        da_stream.close().await.unwrap();
+        client.close().await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
         let mut ccp = CommittedConsensusProposal {
             staking: Staking::default(),
@@ -743,21 +650,19 @@ pub mod tests {
 
         // End of the first stream
 
-        let mut stream = tokio::net::TcpStream::connect(config.da_address.clone())
+        let mut client =
+            codec_data_availability::connect("client_id".to_string(), config.da_address)
+                .await
+                .unwrap();
+
+        client
+            .send(DataAvailabilityRequest(BlockHeight(0)))
             .await
             .unwrap();
 
-        // TODO: figure out why writing doesn't work with da_stream.
-        stream.write_u32(8).await.unwrap();
-        stream.write_u64(0).await.unwrap();
-
-        let mut da_stream = Framed::new(stream, LengthDelimitedCodec::new());
-
         let mut heights_received = vec![];
-        while let Some(Ok(cmd)) = da_stream.next().await {
-            let bytes = cmd;
-            let event: DataAvailabilityServerEvent = borsh::from_slice(&bytes).unwrap();
-            if let DataAvailabilityServerEvent::SignedBlock(block) = event {
+        while let Some(event) = client.recv().await {
+            if let DataAvailabilityEvent::SignedBlock(block) = event {
                 heights_received.push(block.height().0);
             }
             if heights_received.len() == 18 {
@@ -769,6 +674,7 @@ pub mod tests {
     }
     #[test_log::test(tokio::test)]
     async fn test_da_catchup() {
+        let (sender, _) = channel(1);
         let sender_global_bus = crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
         );
@@ -790,7 +696,7 @@ pub mod tests {
         }
         blocks.reverse();
         for block in blocks {
-            da_sender.handle_signed_block(block).await;
+            da_sender.handle_signed_block(block, sender.clone()).await;
         }
 
         let da_sender_address = da_sender.da.config.da_address.clone();
@@ -813,7 +719,7 @@ pub mod tests {
         let mut received_blocks = vec![];
         while let Some(streamed_block) = rx.recv().await {
             da_receiver
-                .handle_signed_block(streamed_block.clone())
+                .handle_signed_block(streamed_block.clone(), sender.clone())
                 .await;
             received_blocks.push(streamed_block);
             if received_blocks.len() == 10 {
@@ -846,7 +752,7 @@ pub mod tests {
         // We should still be subscribed
         while let Some(streamed_block) = rx.recv().await {
             da_receiver
-                .handle_signed_block(streamed_block.clone())
+                .handle_signed_block(streamed_block.clone(), sender.clone())
                 .await;
             received_blocks.push(streamed_block);
             if received_blocks.len() == 15 {
