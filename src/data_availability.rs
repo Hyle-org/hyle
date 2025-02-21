@@ -9,7 +9,7 @@ mod blocks_memory;
 use blocks_fjall::Blocks;
 //use blocks_memory::Blocks;
 
-use codec::{codec_data_availability, DataAvailabilityServerEvent};
+use codec::{codec_data_availability, DataAvailabilityEvent};
 
 use crate::{
     bus::{BusClientSender, BusMessage},
@@ -180,7 +180,7 @@ impl DataAvailability {
                     {
                         // Errors will be handled when sending new blocks, ignore here.
                         if pool_sender
-                            .send(TcpCommand::Send(peer_ip.clone(), Box::new(DataAvailabilityServerEvent::SignedBlock(signed_block))))
+                            .send(TcpCommand::Send(peer_ip.clone(), Box::new(DataAvailabilityEvent::SignedBlock(signed_block))))
                             .await.is_ok() {
                             let _ = catchup_sender.send((block_hashes, peer_ip)).await;
                         }
@@ -196,7 +196,7 @@ impl DataAvailability {
     async fn handle_mempool_event(
         &mut self,
         evt: MempoolBlockEvent,
-        pool_sender: Sender<TcpCommand<DataAvailabilityServerEvent>>,
+        pool_sender: Sender<TcpCommand<DataAvailabilityEvent>>,
     ) -> Result<()> {
         match evt {
             MempoolBlockEvent::BuiltSignedBlock(signed_block) => {
@@ -226,11 +226,11 @@ impl DataAvailability {
     async fn handle_mempool_status_event(
         &mut self,
         evt: MempoolStatusEvent,
-        pool_sender: Sender<TcpCommand<DataAvailabilityServerEvent>>,
+        pool_sender: Sender<TcpCommand<DataAvailabilityEvent>>,
     ) -> Result<()> {
         pool_sender
             .send(TcpCommand::Broadcast(Box::new(
-                DataAvailabilityServerEvent::MempoolStatusEvent(evt),
+                DataAvailabilityEvent::MempoolStatusEvent(evt),
             )))
             .await?;
 
@@ -240,7 +240,7 @@ impl DataAvailability {
     async fn handle_signed_block(
         &mut self,
         block: SignedBlock,
-        pool_sender: Sender<TcpCommand<DataAvailabilityServerEvent>>,
+        pool_sender: Sender<TcpCommand<DataAvailabilityEvent>>,
     ) -> Result<()> {
         let hash = block.hashed();
         // if new block is already handled, ignore it
@@ -286,7 +286,7 @@ impl DataAvailability {
     async fn pop_buffer(
         &mut self,
         mut last_block_hash: ConsensusProposalHash,
-        pool_sender: Sender<TcpCommand<DataAvailabilityServerEvent>>,
+        pool_sender: Sender<TcpCommand<DataAvailabilityEvent>>,
     ) {
         // Iterative loop to avoid stack overflows
         while let Some(first_buffered) = self.buffered_signed_blocks.first() {
@@ -312,7 +312,7 @@ impl DataAvailability {
     async fn add_processed_block(
         &mut self,
         block: SignedBlock,
-        pool_sender: Sender<TcpCommand<DataAvailabilityServerEvent>>,
+        pool_sender: Sender<TcpCommand<DataAvailabilityEvent>>,
     ) {
         // TODO: if we don't have streaming peers, we could just pass the block here
         // and avoid a clone + drop cost (which can be substantial for large blocks).
@@ -349,7 +349,7 @@ impl DataAvailability {
         //
         _ = pool_sender
             .send(TcpCommand::Broadcast(Box::new(
-                DataAvailabilityServerEvent::SignedBlock(block.clone()),
+                DataAvailabilityEvent::SignedBlock(block.clone()),
             )))
             .await
             .log_error("Sending block to tcp connection pool");
@@ -412,7 +412,7 @@ impl DataAvailability {
                     None => {
                         break;
                     }
-                    Some(DataAvailabilityServerEvent::SignedBlock(block)) => {
+                    Some(DataAvailabilityEvent::SignedBlock(block)) => {
                         info!(
                             "📦 Received block (height {}) from stream",
                             block.consensus_proposal.slot
@@ -435,9 +435,7 @@ impl DataAvailability {
 pub mod tests {
     #![allow(clippy::indexing_slicing)]
 
-    use crate::data_availability::codec::{
-        DataAvailabilityServerEvent, DataAvailabilityServerRequest,
-    };
+    use crate::data_availability::codec::{DataAvailabilityEvent, DataAvailabilityRequest};
     use crate::model::ValidatorPublicKey;
     use crate::tcp::TcpCommand;
     use crate::{
@@ -498,7 +496,7 @@ pub mod tests {
         pub async fn handle_signed_block(
             &mut self,
             block: SignedBlock,
-            sender: Sender<TcpCommand<DataAvailabilityServerEvent>>,
+            sender: Sender<TcpCommand<DataAvailabilityEvent>>,
         ) {
             self.da
                 .handle_signed_block(block.clone(), sender)
@@ -617,7 +615,7 @@ pub mod tests {
 
         let mut heights_received = vec![];
         while let Some(event) = client.recv().await {
-            if let DataAvailabilityServerEvent::SignedBlock(block) = event {
+            if let DataAvailabilityEvent::SignedBlock(block) = event {
                 heights_received.push(block.height().0);
             }
             if heights_received.len() == 14 {
@@ -658,13 +656,13 @@ pub mod tests {
                 .unwrap();
 
         client
-            .send(DataAvailabilityServerRequest(BlockHeight(0)))
+            .send(DataAvailabilityRequest(BlockHeight(0)))
             .await
             .unwrap();
 
         let mut heights_received = vec![];
         while let Some(event) = client.recv().await {
-            if let DataAvailabilityServerEvent::SignedBlock(block) = event {
+            if let DataAvailabilityEvent::SignedBlock(block) = event {
                 heights_received.push(block.height().0);
             }
             if heights_received.len() == 18 {

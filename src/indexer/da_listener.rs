@@ -10,7 +10,7 @@ use tracing::{debug, info};
 use crate::{
     bus::BusClientSender,
     data_availability::codec::{
-        codec_data_availability, DataAvailabilityServerEvent, DataAvailabilityServerRequest,
+        codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequest,
     },
     model::{BlockHeight, CommonRunContext},
     module_handle_messages,
@@ -116,8 +116,8 @@ impl DAListener {
         Ok(())
     }
 
-    async fn processing_next_frame(&mut self, event: DataAvailabilityServerEvent) -> Result<()> {
-        if let DataAvailabilityServerEvent::SignedBlock(block) = event {
+    async fn processing_next_frame(&mut self, event: DataAvailabilityEvent) -> Result<()> {
+        if let DataAvailabilityEvent::SignedBlock(block) = event {
             debug!(
                 "📦 Received block: {} {}",
                 block.consensus_proposal.slot,
@@ -140,7 +140,7 @@ impl RawDAListener {
         let mut client =
             codec_data_availability::connect("raw_da_listener".to_string(), target.to_string())
                 .await?;
-        client.send(DataAvailabilityServerRequest(height)).await?;
+        client.send(DataAvailabilityRequest(height)).await?;
         Ok(RawDAListener { client })
     }
 }

@@ -429,7 +429,8 @@ macro_rules! tcp_client_server {
         paste::paste! {
         $vis mod [< codec_ $name:snake >] {
             #![allow(unused)]
-            use super::*;
+            pub use super::$req;
+            pub use super::$res;
             use anyhow::{Context, Result};
             crate::tcp::implem_tcp_codec!{
                 ClientCodec,
@@ -441,7 +442,6 @@ macro_rules! tcp_client_server {
                 decode: $req,
                 encode: $res
             }
-
 
             pub type Client = crate::tcp::TcpClient<ClientCodec, $req, $res>;
             pub type Server = crate::tcp::TcpServer<ServerCodec, $req, $res>;
@@ -463,26 +463,32 @@ pub(crate) use tcp_client_server;
 pub mod tests {
     use std::time::Duration;
 
-    use crate::{
-        data_availability::codec::{DataAvailabilityServerEvent, DataAvailabilityServerRequest},
-        tcp::{TcpCommand, TcpMessage},
-    };
+    use crate::tcp::{TcpCommand, TcpMessage};
 
     use anyhow::Result;
+    use borsh::{BorshDeserialize, BorshSerialize};
     use futures::TryStreamExt;
     use hyle_model::{BlockHeight, SignedBlock};
 
+    #[derive(BorshDeserialize, BorshSerialize, Clone, Debug, PartialEq, Eq)]
+    pub struct DataAvailabilityRequest(pub BlockHeight);
+
+    #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+    pub enum DataAvailabilityEvent {
+        SignedBlock(SignedBlock),
+    }
+
     tcp_client_server! {
         DataAvailability,
-        request: crate::data_availability::codec::DataAvailabilityServerRequest,
-        response: crate::data_availability::codec::DataAvailabilityServerEvent
+        request: DataAvailabilityRequest,
+        response: DataAvailabilityEvent
     }
 
     #[test_log::test(tokio::test)]
     async fn tcp_test() -> Result<()> {
-        let test = codec_data_availability::listen("0.0.0.0:2345".to_string()).await?;
+        let server = codec_data_availability::listen("0.0.0.0:2345".to_string()).await?;
 
-        let (sender, mut receiver) = test.run_in_background().await?;
+        let (sender, mut receiver) = server.run_in_background().await?;
 
         let mut client =
             codec_data_availability::connect("me".to_string(), "0.0.0.0:2345".to_string()).await?;
@@ -491,29 +497,25 @@ pub mod tests {
         client.ping().await?;
 
         // Send data to server
-        client
-            .send(DataAvailabilityServerRequest(BlockHeight(2)))
-            .await?;
+        client.send(DataAvailabilityRequest(BlockHeight(2))).await?;
 
         tokio::time::sleep(Duration::from_secs(1)).await;
 
         let d = receiver.try_recv().unwrap().data;
 
-        assert_eq!(DataAvailabilityServerRequest(BlockHeight(2)), *d);
+        assert_eq!(DataAvailabilityRequest(BlockHeight(2)), *d);
         assert!(receiver.try_recv().is_err());
 
         // From server to client
         _ = sender
             .send(TcpCommand::Broadcast(Box::new(
-                DataAvailabilityServerEvent::SignedBlock(SignedBlock::default()),
+                DataAvailabilityEvent::SignedBlock(SignedBlock::default()),
             )))
             .await;
 
         assert_eq!(
             client.receiver.try_next().await.unwrap().unwrap(),
-            TcpMessage::Data(DataAvailabilityServerEvent::SignedBlock(
-                SignedBlock::default()
-            ))
+            TcpMessage::Data(DataAvailabilityEvent::SignedBlock(SignedBlock::default()))
         );
 
         Ok(())

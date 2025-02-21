@@ -7,18 +7,18 @@ use crate::{
 };
 
 #[derive(BorshDeserialize, BorshSerialize, Clone, Debug, PartialEq, Eq)]
-pub struct DataAvailabilityServerRequest(pub BlockHeight);
+pub struct DataAvailabilityRequest(pub BlockHeight);
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-pub enum DataAvailabilityServerEvent {
+pub enum DataAvailabilityEvent {
     SignedBlock(SignedBlock),
     MempoolStatusEvent(MempoolStatusEvent),
 }
 
 tcp_client_server! {
     pub DataAvailability,
-    request: DataAvailabilityServerRequest,
-    response: DataAvailabilityServerEvent
+    request: DataAvailabilityRequest,
+    response: DataAvailabilityEvent
 }
 
 #[cfg(test)]
@@ -26,9 +26,7 @@ mod test {
     use bytes::BytesMut;
     use tokio_util::codec::{Decoder, Encoder};
 
-    use crate::data_availability::codec::{
-        codec_data_availability, DataAvailabilityServerEvent, DataAvailabilityServerRequest,
-    };
+    use crate::data_availability::codec::codec_data_availability;
     use crate::model::{AggregateSignature, ConsensusProposal};
     use crate::model::{BlockHeight, SignedBlock};
 
@@ -38,7 +36,7 @@ mod test {
         let mut client_codec = codec_data_availability::ClientCodec;
         let mut buffer = BytesMut::new();
 
-        let block = DataAvailabilityServerEvent::SignedBlock(SignedBlock {
+        let block = codec_data_availability::DataAvailabilityEvent::SignedBlock(SignedBlock {
             data_proposals: vec![],
             certificate: AggregateSignature::default(),
             consensus_proposal: ConsensusProposal::default(),
@@ -46,7 +44,7 @@ mod test {
 
         server_codec.encode(block.clone(), &mut buffer).unwrap();
 
-        let decoded_block: DataAvailabilityServerEvent =
+        let decoded_block: codec_data_availability::DataAvailabilityEvent =
             client_codec.decode(&mut buffer).unwrap().unwrap();
 
         // Vérifiez si le buffer a été correctement consommé
@@ -59,13 +57,13 @@ mod test {
         let mut client_codec = codec_data_availability::ClientCodec;
         let mut buffer = BytesMut::new();
 
-        let block_height = DataAvailabilityServerRequest(BlockHeight(1));
+        let block_height = codec_data_availability::DataAvailabilityRequest(BlockHeight(1));
 
         client_codec
             .encode(block_height.clone(), &mut buffer)
             .unwrap();
 
-        let decoded_block_height: DataAvailabilityServerRequest =
+        let decoded_block_height: codec_data_availability::DataAvailabilityRequest =
             server_codec.decode(&mut buffer).unwrap().unwrap();
 
         // Vérifiez si le buffer a été correctement consommé
