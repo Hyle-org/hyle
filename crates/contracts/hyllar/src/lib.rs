@@ -23,7 +23,7 @@ pub mod indexer;
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone)]
 pub struct HyllarToken {
     total_supply: u128,
-    balances: BTreeMap<String, u128>, // Balances for each account
+    pub balances: BTreeMap<String, u128>, // Balances for each account
     #[serde_as(as = "Vec<(_, _)>")]
     allowances: BTreeMap<(String, String), u128>, // Allowances (owner, spender)
 }
