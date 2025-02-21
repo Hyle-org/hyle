@@ -57,18 +57,27 @@ pub struct Amm {
 
 impl HyleContract for Amm {
     fn execute_action(&mut self, contract_input: &ContractInput) -> RunResult {
-        let (action, execution_ctx) = parse_contract_input::<AmmAction>(contract_input)?;
+        let (action, mut execution_ctx) = parse_contract_input::<AmmAction>(contract_input)?;
         let output = match action {
             AmmAction::Swap {
                 pair,
                 amounts: (from_amount, to_amount),
             } => {
+                // Check that a blob for the transfer exists for first token in swap
                 execution_ctx.is_in_callee_blobs(
                     &ContractName(pair.0.clone()),
                     ERC20Action::TransferFrom {
-                        owner: execution_ctx.caller().0.clone(),
+                        owner: execution_ctx.caller.0.clone(),
                         recipient: execution_ctx.contract_name.0.clone(),
                         amount: from_amount,
+                    },
+                )?;
+                // Check that a blob for the transfer exists for second token in swap
+                execution_ctx.is_in_callee_blobs(
+                    &ContractName(pair.1.clone()),
+                    ERC20Action::Transfer {
+                        recipient: execution_ctx.caller.0.clone(),
+                        amount: to_amount,
                     },
                 )?;
                 self.verify_swap(pair, from_amount, to_amount)
@@ -78,7 +87,7 @@ impl HyleContract for Amm {
                 execution_ctx.is_in_callee_blobs(
                     &ContractName(pair.0.clone()),
                     ERC20Action::TransferFrom {
-                        owner: execution_ctx.caller().0.clone(),
+                        owner: execution_ctx.caller.0.clone(),
                         recipient: execution_ctx.contract_name.0.clone(),
                         amount: amounts.0,
                     },
@@ -87,7 +96,7 @@ impl HyleContract for Amm {
                 execution_ctx.is_in_callee_blobs(
                     &ContractName(pair.1.clone()),
                     ERC20Action::TransferFrom {
-                        owner: execution_ctx.caller().0.clone(),
+                        owner: execution_ctx.caller.0.clone(),
                         recipient: execution_ctx.contract_name.0.clone(),
                         amount: amounts.1,
                     },

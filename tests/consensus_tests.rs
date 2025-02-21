@@ -15,8 +15,8 @@ mod e2e_consensus {
     use hyle_contract_sdk::Digestable;
     use hyle_contract_sdk::Identity;
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF, STAKING_ELF};
-    use hyle_model::StateDigest;
-    use hyllar::client::{approve, transfer};
+    use hyle_model::{ContractName, StateDigest};
+    use hyllar::client::transfer;
     use hyllar::Hyllar;
     use staking::client::{delegate, stake};
     use staking::state::Staking;
@@ -127,14 +127,14 @@ mod e2e_consensus {
                 "password".to_string(),
             )?;
 
-            approve(
+            stake(&mut transaction, ContractName::new("staking"), stake_amount)?;
+
+            transfer(
                 &mut transaction,
                 "hyllar".into(),
-                "staking".into(),
-                u128::MAX,
+                "staking".to_string(),
+                stake_amount,
             )?;
-
-            stake(&mut transaction, stake_amount)?;
 
             delegate(&mut transaction, node_info.pubkey.clone().unwrap())?;
 

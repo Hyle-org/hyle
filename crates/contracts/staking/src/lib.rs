@@ -1,5 +1,5 @@
 use sdk::{
-    erc20::ERC20Action, utils::parse_contract_input, ContractInput, ContractName, HyleContract,
+    erc20::ERC20Action, utils::parse_contract_input, Blob, BlobIndex, ContractInput, HyleContract,
     RunResult, StakingAction,
 };
 use state::Staking;
@@ -14,37 +14,17 @@ impl HyleContract for Staking {
     fn execute_action(&mut self, contract_input: &ContractInput) -> RunResult {
         let (action, execution_ctx) = parse_contract_input::<StakingAction>(contract_input)?;
 
-        // FIXME: hardcoded contract names
-        let staking_contract_name = ContractName("staking".to_string());
-        let token_contract_name = ContractName("hyllar".to_string());
-
         let output = match action {
             StakingAction::Stake { amount } => {
-                // Check that a blob for the transfer exists
-                execution_ctx.is_in_callee_blobs(
-                    &token_contract_name,
-                    ERC20Action::TransferFrom {
-                        owner: contract_input.identity.0.clone(),
-                        recipient: staking_contract_name.0,
-                        amount,
-                    },
-                )?;
-                self.stake(execution_ctx.caller().clone(), amount)
+                check_transfer_blob(&contract_input.blobs, contract_input.index + 1, amount)?;
+                self.stake(execution_ctx.caller.clone(), amount)
             }
             StakingAction::Delegate { validator } => {
-                self.delegate_to(execution_ctx.caller().clone(), validator)
+                self.delegate_to(execution_ctx.caller.clone(), validator)
             }
             StakingAction::Distribute { claim: _ } => todo!(),
             StakingAction::DepositForFees { holder, amount } => {
-                // Check that a blob for the transfer exists
-                execution_ctx.is_in_callee_blobs(
-                    &token_contract_name,
-                    ERC20Action::TransferFrom {
-                        owner: contract_input.identity.0.clone(),
-                        recipient: staking_contract_name.0,
-                        amount,
-                    },
-                )?;
+                check_transfer_blob(&contract_input.blobs, contract_input.index + 1, amount)?;
                 self.deposit_for_fees(holder, amount)
             }
         };
@@ -53,5 +33,42 @@ impl HyleContract for Staking {
             Err(e) => Err(e),
             Ok(output) => Ok((output, execution_ctx, vec![])),
         }
+    }
+}
+
+fn check_transfer_blob(blobs: &[Blob], index: BlobIndex, amount: u128) -> Result<(), String> {
+    let transfer_action = sdk::utils::parse_structured_blob::<ERC20Action>(blobs, &index)
+        .ok_or("No transfer blob found".to_string())?;
+    match transfer_action.data.parameters {
+        ERC20Action::Transfer {
+            recipient,
+            amount: transfer_amount,
+        } => {
+            if recipient != "staking" {
+                return Err(format!(
+                    "Transfer recipient should be 'staking' but was {}",
+                    &recipient
+                ));
+            }
+
+            let transfer_contract = transfer_action.contract_name;
+            if transfer_contract.0 != "hyllar" {
+                return Err(format!(
+                    "Only hyllar token are accepted to stake. Got {transfer_contract}."
+                ));
+            }
+
+            if amount != transfer_amount {
+                return Err(format!(
+                    "Transfer amount {transfer_amount} mismatch Stake amount {amount}"
+                ));
+            }
+
+            Ok(())
+        }
+        els => Err(format!(
+            "Wrong ERC20Action, should be a transfer {:?} to 'staking' but was {:?}",
+            amount, els
+        )),
     }
 }

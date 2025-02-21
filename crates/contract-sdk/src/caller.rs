@@ -1,38 +1,21 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 use borsh::{BorshDeserialize, BorshSerialize};
-use core::cell::{Ref, RefCell, RefMut};
 use serde::{Deserialize, Serialize};
 
 use hyle_model::{Blob, ContractName, Identity, StructuredBlob};
 
-// Used to hide the implementation of the callees blobs.
-pub struct CalleeBlobs<'a>(pub Ref<'a, Vec<Blob>>);
-pub struct MutCalleeBlobs<'a>(pub RefMut<'a, Vec<Blob>>);
-
 /// ExecutionContext provides an implementation of data for the CallerCallee trait
 #[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Default)]
 pub struct ExecutionContext {
-    pub callees_blobs: RefCell<Vec<Blob>>,
+    pub callees_blobs: Vec<Blob>,
     pub caller: Identity,
     pub contract_name: ContractName,
 }
 
 impl ExecutionContext {
-    pub fn caller(&self) -> &Identity {
-        &self.caller
-    }
-
-    pub fn callee_blobs(&self) -> CalleeBlobs {
-        CalleeBlobs(self.callees_blobs.borrow())
-    }
-
-    fn mut_callee_blobs(&self) -> MutCalleeBlobs {
-        MutCalleeBlobs(self.callees_blobs.borrow_mut())
-    }
-
     pub fn is_in_callee_blobs<U>(
-        &self,
+        &mut self,
         contract_name: &ContractName,
         action: U,
     ) -> Result<(), String>
@@ -40,7 +23,7 @@ impl ExecutionContext {
         U: BorshDeserialize + PartialEq,
         StructuredBlob<U>: TryFrom<Blob>,
     {
-        let index = self.callee_blobs().0.iter().position(|blob| {
+        let index = self.callees_blobs.iter().position(|blob| {
             if &blob.contract_name != contract_name {
                 return false;
             };
@@ -52,7 +35,7 @@ impl ExecutionContext {
 
         match index {
             Some(index) => {
-                self.mut_callee_blobs().0.remove(index);
+                self.callees_blobs.remove(index);
                 Ok(())
             }
             None => Err(alloc::format!(

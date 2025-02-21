@@ -245,7 +245,12 @@ impl<S: StateUpdater> TxExecutor<S> {
 
             if !out.success {
                 let program_error = std::str::from_utf8(&out.program_outputs).unwrap();
-                bail!("Execution failed ! Program output: {}", program_error);
+                bail!(
+                    "Execution failed on runner for blob {:?} on contrat {:?} ! Program output: {}",
+                    runner.contract_input.get().unwrap().index,
+                    runner.contract_name,
+                    program_error
+                );
             }
 
             self.states.update(&runner.contract_name, &mut *state)?;

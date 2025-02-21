@@ -4,8 +4,7 @@ use client_sdk::{
 };
 use sdk::{
     api::{APIFees, APIFeesBalance, APIStaking},
-    erc20::ERC20Action,
-    BlobIndex, ContractName, StakingAction, ValidatorPublicKey,
+    ContractName, StakingAction, ValidatorPublicKey,
 };
 
 use crate::{
@@ -98,32 +97,18 @@ impl From<APIFees> for Fees {
 
 pub fn deposit_for_fees(
     builder: &mut ProvableBlobTx,
+    contract_name: ContractName,
     holder: ValidatorPublicKey,
     amount: u128,
 ) -> anyhow::Result<()> {
-    // FIXME: hardcoded contract names
-    let staking_contract_name = ContractName("staking".to_string());
-    let token_contract_name = ContractName("hyllar".to_string());
-    let idx = builder.blobs.len();
     builder.add_action(
-        staking_contract_name.clone(),
+        contract_name,
         StakingAction::DepositForFees {
             holder: holder.clone(),
             amount,
         },
         None,
         None,
-        Some(vec![BlobIndex(idx + 1)]),
-    )?;
-    builder.add_action(
-        token_contract_name,
-        ERC20Action::TransferFrom {
-            owner: builder.identity.0.clone(),
-            recipient: staking_contract_name.0,
-            amount,
-        },
-        None,
-        Some(BlobIndex(idx)),
         None,
     )?;
     Ok(())
@@ -135,27 +120,16 @@ impl Staking {
     }
 }
 
-pub fn stake(builder: &mut ProvableBlobTx, amount: u128) -> anyhow::Result<()> {
-    // FIXME: hardcoded contract names
-    let staking_contract_name = ContractName("staking".to_string());
-    let token_contract_name = ContractName("hyllar".to_string());
-    let idx = builder.blobs.len();
+pub fn stake(
+    builder: &mut ProvableBlobTx,
+    contract_name: ContractName,
+    amount: u128,
+) -> anyhow::Result<()> {
     builder.add_action(
-        staking_contract_name.clone(),
+        contract_name,
         StakingAction::Stake { amount },
         None,
         None,
-        Some(vec![BlobIndex(idx + 1)]),
-    )?;
-    builder.add_action(
-        token_contract_name,
-        ERC20Action::TransferFrom {
-            owner: builder.identity.0.clone(),
-            recipient: staking_contract_name.0,
-            amount,
-        },
-        None,
-        Some(BlobIndex(idx)),
         None,
     )?;
     Ok(())

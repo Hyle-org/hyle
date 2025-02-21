@@ -20,7 +20,7 @@ serde = { version = "1.0", default-features = false, features = [
 ] }
 anyhow = "1.0.96"
 sha2 = { git = "https://github.com/risc0/RustCrypto-hashes", tag = "sha2-v0.10.8" }
-borsh = { version ="1.5.5", features = [ "derive" ]}
+borsh = { version = "1.5.5", features = ["derive"] }
 
 risc0-zkvm = { version = "1.2.3", default-features = false, optional = true, features = [
     'std',

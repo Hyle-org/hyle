@@ -60,7 +60,7 @@ where
     }
 
     let ctx = ExecutionContext {
-        callees_blobs: callees_blobs.into(),
+        callees_blobs,
         caller,
         contract_name: parsed_blob.contract_name.clone(),
     };
@@ -99,11 +99,14 @@ pub fn as_hyle_output<State: Digestable + BorshDeserialize>(
 ) -> HyleOutput {
     match res {
         Ok((ref mut program_output, execution_context, ref mut registered_contracts)) => {
-            if execution_context.callee_blobs().0.is_empty() {
+            if !execution_context.callees_blobs.is_empty() {
                 return fail(
                     contract_input,
                     initial_state_digest,
-                    "Execution context has not been fully consumed",
+                    &format!(
+                        "Execution context has not been fully consumed {:?}",
+                        execution_context.callees_blobs
+                    ),
                 );
             }
             HyleOutput {

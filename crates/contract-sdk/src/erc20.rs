@@ -103,7 +103,7 @@ pub trait ERC20 {
         action: ERC20Action,
         execution_ctx: &ExecutionContext,
     ) -> Result<String, String> {
-        let caller = execution_ctx.caller().clone().0;
+        let caller = execution_ctx.caller.clone().0;
         match action {
             ERC20Action::TotalSupply => self
                 .total_supply()
@@ -142,12 +142,12 @@ pub trait ERC20 {
     ///
     /// * `Result<(), String>` - `Ok(())` if the transfer action is valid, or an error message on failure.
     fn check_transfer(
-        exec_ctx: ExecutionContext,
+        mut exec_ctx: ExecutionContext,
         recipient: &str,
         amount: u128,
     ) -> Result<(), String> {
         exec_ctx.is_in_callee_blobs(
-            &exec_ctx.contract_name,
+            &exec_ctx.contract_name.clone(),
             ERC20Action::Transfer {
                 recipient: recipient.to_string(),
                 amount,
@@ -168,13 +168,13 @@ pub trait ERC20 {
     ///
     /// * `Result<(), String>` - `Ok(())` if the transfer from action is valid, or an error message on failure.
     fn check_transfer_from(
-        exec_ctx: ExecutionContext,
+        mut exec_ctx: ExecutionContext,
         owner: &str,
         recipient: &str,
         amount: u128,
     ) -> Result<(), String> {
         exec_ctx.is_in_callee_blobs(
-            &exec_ctx.contract_name,
+            &exec_ctx.contract_name.clone(),
             ERC20Action::TransferFrom {
                 owner: owner.to_string(),
                 recipient: recipient.to_string(),
