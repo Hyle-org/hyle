@@ -149,7 +149,7 @@ impl NodeIntegrationCtxBuilder {
                 }
                 Ok(_) = rx => {
                     info!("Node shutdown requested");
-                    let _ = node_modules.shutdown_modules(std::time::Duration::from_secs(2)).await;
+                    let _ = node_modules.shutdown_next_module().await;
                     Ok(())
                 }
             }
