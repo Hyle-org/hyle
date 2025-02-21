@@ -213,10 +213,10 @@ mod tests {
         let initial_supply = 1000;
         let mut token = Hyllar::new(initial_supply, "faucet".to_string());
 
-        assert!(token.approve("owner", "faucet", 300).is_ok());
+        assert!(token.approve("faucet", "spender", 300).is_ok());
 
         assert!(token
-            .transfer_from("owner", "faucet", "recipient", 200)
+            .transfer_from("faucet", "spender", "recipient", 200)
             .is_ok());
         assert_eq!(token.balance_of("faucet").unwrap(), 800);
         assert_eq!(token.balance_of("recipient").unwrap(), 200);
@@ -224,10 +224,10 @@ mod tests {
 
         assert_eq!(
             token
-                .transfer_from("owner", "faucet", "recipient", 200)
+                .transfer_from("faucet", "spender", "recipient", 200)
                 .unwrap_err()
                 .to_string(),
-            "Allowance exceeded for spender=faucet owner=spender allowance=100"
+            "Allowance exceeded for spender=spender owner=faucet allowance=100"
         );
     }
 

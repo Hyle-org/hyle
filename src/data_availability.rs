@@ -449,7 +449,6 @@ pub mod tests {
         },
         utils::{conf::Conf, integration_test::find_available_port},
     };
-    use futures::{SinkExt, StreamExt};
     use staking::state::Staking;
     use tokio::sync::mpsc::{channel, Sender};
 

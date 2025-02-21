@@ -245,7 +245,7 @@ mod tests {
             fn total_supply(&self) -> Result<u128, String>;
             fn balance_of(&self, account: &str) -> Result<u128, String>;
             fn transfer(&mut self, sender: &str, recipient: &str, amount: u128) -> Result<(), String>;
-            fn transfer_from(&mut self, caller: &str, sender: &str, recipient: &str, amount: u128) -> Result<(), String>;
+            fn transfer_from(&mut self, owner: &str, spender: &str, recipient: &str, amount: u128) -> Result<(), String>;
             fn approve(&mut self, owner: &str, spender: &str, amount: u128) -> Result<(), String>;
             fn allowance(&self, owner: &str, spender: &str) -> Result<u128, String>;
         }
@@ -323,29 +323,26 @@ mod tests {
         let mut mock = MockERC20Contract::new();
         mock.expect_transfer_from()
             .with(
-                predicate::eq("caller"),
-                predicate::eq("sender1"),
-                predicate::eq("recipient1"),
+                predicate::eq("owner"),
+                predicate::eq("spender"),
+                predicate::eq("recipient"),
                 predicate::eq(300),
             )
             .returning(|_, _, _, _| Ok(()));
 
         let action = ERC20Action::TransferFrom {
-            owner: "sender1".to_string(),
-            recipient: "recipient1".to_string(),
+            owner: "owner".to_string(),
+            recipient: "recipient".to_string(),
             amount: 300,
         };
         let execution_ctx = ExecutionContext {
-            caller: "caller".into(),
+            caller: "spender".into(),
             ..ExecutionContext::default()
         };
         let result = mock.execute_token_action(action, execution_ctx);
 
         assert!(result.is_ok());
-        assert_eq!(
-            result.unwrap(),
-            "Transferred 300 from sender1 to recipient1"
-        );
+        assert_eq!(result.unwrap(), "Transferred 300 from owner to recipient");
     }
 
     #[test]

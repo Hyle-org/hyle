@@ -307,42 +307,6 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_swap_invalid_sender() {
-        let normalized_token_pair =
-            UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
-        let mut state = Amm {
-            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
-        };
-
-        let result = state.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_verify_swap_invalid_recipient() {
-        let normalized_token_pair =
-            UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
-        let mut state = Amm {
-            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
-        };
-
-        let result = state.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_verify_swap_invalid_amm_recipient() {
-        let normalized_token_pair =
-            UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
-        let mut state = Amm {
-            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
-        };
-
-        let result = state.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
-        assert!(result.is_err());
-    }
-
-    #[test]
     fn test_verify_swap_invalid_pair() {
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
@@ -355,30 +319,6 @@ mod tests {
             5,
             10,
         );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_verify_swap_invalid_pair_in_blobs() {
-        let normalized_token_pair =
-            UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
-        let mut state = Amm {
-            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
-        };
-
-        let result = state.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_verify_swap_blob_not_found() {
-        let normalized_token_pair =
-            UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
-        let mut state = Amm {
-            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
-        };
-
-        let result = state.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
         assert!(result.is_err());
     }
 
@@ -431,28 +371,6 @@ mod tests {
     }
 
     #[test]
-    fn test_create_new_pair_invalid_recipient() {
-        let mut state = Amm {
-            pairs: BTreeMap::new(),
-        };
-
-        let result = state.create_new_pair(("token1".to_string(), "token2".to_string()), (20, 50));
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_create_new_pair_invalid_amounts() {
-        let mut state = Amm {
-            pairs: BTreeMap::new(),
-        };
-
-        let result = state.create_new_pair(("token1".to_string(), "token2".to_string()), (20, 50));
-
-        assert!(result.is_err());
-    }
-
-    #[test]
     fn test_create_new_pair_same_tokens() {
         let mut state = Amm {
             pairs: BTreeMap::new(),
@@ -462,17 +380,6 @@ mod tests {
             ("token1".to_string(), "token1".to_string()), // same tokens
             (20, 50),
         );
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_create_new_pair_blob_not_found() {
-        let mut state = Amm {
-            pairs: BTreeMap::new(),
-        };
-
-        let result = state.create_new_pair(("token1".to_string(), "token2".to_string()), (20, 50));
 
         assert!(result.is_err());
     }
