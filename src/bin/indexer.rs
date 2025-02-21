@@ -189,8 +189,7 @@ async fn main() -> Result<()> {
                 info!("SIGTERM received, shutting down");
             }
         }
-        _ = handler.shutdown_next_module().await;
-        _ = handler.shutdown_loop().await;
+        _ = handler.shutdown_all().await;
     }
     #[cfg(not(unix))]
     {
@@ -207,8 +206,7 @@ async fn main() -> Result<()> {
                 info!("SIGTERM received, shutting down");
             }
         }
-        _ = handler.shutdown_next_module().await;
-        _ = handler.shutdown_loop().await;
+        _ = handler.shutdown_all().await;
     }
 
     if args.pg {
