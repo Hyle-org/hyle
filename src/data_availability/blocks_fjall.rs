@@ -150,7 +150,7 @@ impl Blocks {
         self.by_height
             .range(FjallHeightKey::new(min)..FjallHeightKey::new(max))
             .map_while(|maybe_item| match maybe_item {
-                Ok((_, v)) => Some(Self::decode_item(v).map_err(Into::into)),
+                Ok((_, v)) => Some(Self::decode_item(v)),
                 Err(_) => None,
             })
     }
