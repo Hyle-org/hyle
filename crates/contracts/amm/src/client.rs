@@ -1,12 +1,10 @@
-use std::any::Any;
-
 use client_sdk::{
-    helpers::{risc0::Risc0Prover, ClientSdkExecutor},
+    helpers::risc0::Risc0Prover,
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
-use sdk::{erc20::ERC20Action, utils::as_hyle_output, BlobIndex, ContractName};
+use sdk::{erc20::ERC20Action, BlobIndex, ContractName};
 
-use crate::{execute, AmmAction, AmmState};
+use crate::{Amm, AmmAction};
 
 pub mod metadata {
     pub const AMM_ELF: &[u8] = include_bytes!("../amm.img");
@@ -14,33 +12,13 @@ pub mod metadata {
 }
 use metadata::*;
 
-pub struct AmmPseudoExecutor {}
-impl ClientSdkExecutor for AmmPseudoExecutor {
-    fn execute(
-        &self,
-        contract_input: &sdk::ContractInput,
-    ) -> anyhow::Result<(Box<dyn Any>, sdk::HyleOutput)> {
-        let initial_state: AmmState = borsh::from_slice(contract_input.state.as_slice())?;
-        let mut res = execute(initial_state.clone(), contract_input.clone());
-        let output = as_hyle_output(initial_state, contract_input.clone(), &mut res);
-        match res {
-            Ok(res) => Ok((Box::new(res.1.clone()), output)),
-            Err(e) => Err(anyhow::anyhow!(e)),
-        }
-    }
-}
-
-impl AmmState {
+impl Amm {
     pub fn setup_builder<S: StateUpdater>(
         &self,
         contract_name: ContractName,
         builder: &mut TxExecutorBuilder<S>,
     ) {
-        builder.init_with(
-            contract_name,
-            AmmPseudoExecutor {},
-            Risc0Prover::new(AMM_ELF),
-        );
+        builder.init_with(contract_name, Risc0Prover::new(AMM_ELF));
     }
 }
 
@@ -64,7 +42,7 @@ pub fn new_pair(
     builder.add_action(
         pair.0,
         ERC20Action::TransferFrom {
-            sender: builder.identity.0.clone(),
+            owner: builder.identity.0.clone(),
             recipient: contract_name.to_string(),
             amount: amounts.0,
         },
@@ -75,7 +53,7 @@ pub fn new_pair(
     builder.add_action(
         pair.1,
         ERC20Action::TransferFrom {
-            sender: builder.identity.0.clone(),
+            owner: builder.identity.0.clone(),
             recipient: contract_name.to_string(),
             amount: amounts.1,
         },
@@ -107,7 +85,7 @@ pub fn swap(
     builder.add_action(
         pair.0,
         ERC20Action::TransferFrom {
-            sender: builder.identity.0.clone(),
+            owner: builder.identity.0.clone(),
             recipient: contract_name.to_string(),
             amount: amounts.0,
         },

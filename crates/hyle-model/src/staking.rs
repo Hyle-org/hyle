@@ -11,7 +11,7 @@ pub struct RewardsClaim {
     block_heights: Vec<BlockHeight>,
 }
 
-/// Enum representing the actions that can be performed by the IdentityVerification contract.
+/// Enum representing the actions that can be performed by the Staking contract.
 #[derive(BorshSerialize, BorshDeserialize, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub enum StakingAction {
     Stake {

@@ -1,13 +1,10 @@
 use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use sdk::erc20::ERC20Action;
-use sdk::{
-    caller::{CalleeBlobs, CallerCallee, MutCalleeBlobs},
-    erc20::ERC20,
-    Digestable, Identity,
-};
-use sdk::{ContractInput, RunResult};
+use sdk::erc20::ERC20;
+use sdk::utils::parse_contract_input;
+use sdk::ContractInput;
+use sdk::{erc20::ERC20Action, Digestable, HyleContract, RunResult};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -21,20 +18,14 @@ pub mod indexer;
 /// Struct representing the Hyllar token.
 #[serde_as]
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone)]
-pub struct HyllarToken {
+pub struct Hyllar {
     total_supply: u128,
     balances: BTreeMap<String, u128>, // Balances for each account
     #[serde_as(as = "Vec<(_, _)>")]
     allowances: BTreeMap<(String, String), u128>, // Allowances (owner, spender)
 }
 
-#[derive(Debug)]
-pub struct HyllarTokenContract {
-    state: HyllarToken,
-    caller: Identity,
-}
-
-impl HyllarToken {
+impl Hyllar {
     /// Creates a new Hyllar token with the specified initial supply.
     ///
     /// # Arguments
@@ -47,7 +38,7 @@ impl HyllarToken {
     pub fn new(initial_supply: u128, faucet_id: String) -> Self {
         let mut balances = BTreeMap::new();
         balances.insert(faucet_id, initial_supply); // Assign initial supply to faucet
-        HyllarToken {
+        Hyllar {
             total_supply: initial_supply,
             balances,
             allowances: BTreeMap::new(),
@@ -59,99 +50,81 @@ impl HyllarToken {
     }
 }
 
-impl HyllarTokenContract {
-    pub fn init(state: HyllarToken, caller: Identity) -> HyllarTokenContract {
-        HyllarTokenContract { state, caller }
-    }
-    pub fn state(self) -> HyllarToken {
-        self.state
+impl HyleContract for Hyllar {
+    fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
+        let (action, execution_ctx) = parse_contract_input::<ERC20Action>(contract_input)?;
+        let output = self.execute_token_action(action, &execution_ctx);
+
+        match output {
+            Err(e) => Err(e),
+            Ok(output) => Ok((output, execution_ctx, vec![])),
+        }
     }
 }
 
-impl CallerCallee for HyllarTokenContract {
-    fn caller(&self) -> &Identity {
-        &self.caller
-    }
-    fn callee_blobs(&self) -> CalleeBlobs<'static> {
-        unimplemented!()
-    }
-    fn mut_callee_blobs(&self) -> MutCalleeBlobs<'static> {
-        unimplemented!()
-    }
-}
-
-impl ERC20 for HyllarTokenContract {
+impl ERC20 for Hyllar {
     fn total_supply(&self) -> Result<u128, String> {
-        Ok(self.state.total_supply)
+        Ok(self.total_supply)
     }
 
     fn balance_of(&self, account: &str) -> Result<u128, String> {
-        match self.state.balances.get(account) {
+        match self.balances.get(account) {
             Some(&balance) => Ok(balance),
             None => Err(format!("Account {account} not found")),
         }
     }
 
-    fn transfer(&mut self, recipient: &str, amount: u128) -> Result<(), String> {
-        let sender = self.caller();
-        let sender = sender.0.as_str();
+    fn transfer(&mut self, sender: &str, recipient: &str, amount: u128) -> Result<(), String> {
         let sender_balance = self.balance_of(sender)?;
 
         if sender_balance < amount {
             return Err("Insufficient balance".to_string());
         }
 
-        *self.state.balances.entry(sender.to_string()).or_insert(0) -= amount;
-        *self
-            .state
-            .balances
-            .entry(recipient.to_string())
-            .or_insert(0) += amount;
+        *self.balances.entry(sender.to_string()).or_insert(0) -= amount;
+        *self.balances.entry(recipient.to_string()).or_insert(0) += amount;
 
         Ok(())
     }
 
-    fn transfer_from(&mut self, sender: &str, recipient: &str, amount: u128) -> Result<(), String> {
-        let caller = self.caller().clone();
-        let allowance = self.allowance(sender, caller.0.as_str())?; // Assuming a fixed spender for simplicity
-        let sender_balance = self.balance_of(sender)?;
+    fn transfer_from(
+        &mut self,
+        owner: &str,
+        spender: &str,
+        recipient: &str,
+        amount: u128,
+    ) -> Result<(), String> {
+        let allowance = self.allowance(owner, spender)?; // Assuming a fixed spender for simplicity
+        let sender_balance = self.balance_of(owner)?;
 
         if allowance < amount {
             return Err(format!(
-                "Allowance exceeded for sender={sender} caller={caller} allowance={allowance}"
+                "Allowance exceeded for spender={spender} owner={owner} allowance={allowance}"
             ));
         }
         if sender_balance < amount {
             return Err("Insufficient balance".to_string());
         }
 
-        *self.state.balances.entry(sender.to_string()).or_insert(0) -= amount;
-        *self
-            .state
-            .balances
-            .entry(recipient.to_string())
-            .or_insert(0) += amount;
+        *self.balances.entry(owner.to_string()).or_insert(0) -= amount;
+        *self.balances.entry(recipient.to_string()).or_insert(0) += amount;
 
         // Decrease the allowance
         let new_allowance = allowance - amount;
-        self.state
-            .allowances
-            .insert((sender.to_string(), caller.0), new_allowance);
+        self.allowances
+            .insert((owner.to_string(), spender.to_string()), new_allowance);
 
         Ok(())
     }
 
-    fn approve(&mut self, spender: &str, amount: u128) -> Result<(), String> {
-        let owner = self.caller().clone().0;
-        self.state
-            .allowances
-            .insert((owner, spender.to_string()), amount);
+    fn approve(&mut self, owner: &str, spender: &str, amount: u128) -> Result<(), String> {
+        self.allowances
+            .insert((owner.to_string(), spender.to_string()), amount);
         Ok(())
     }
 
     fn allowance(&self, owner: &str, spender: &str) -> Result<u128, String> {
         match self
-            .state
             .allowances
             .get(&(owner.to_string(), spender.to_string()))
         {
@@ -161,18 +134,13 @@ impl ERC20 for HyllarTokenContract {
     }
 }
 
-impl Digestable for HyllarToken {
+impl Digestable for Hyllar {
     fn as_digest(&self) -> sdk::StateDigest {
         sdk::StateDigest(self.to_bytes())
     }
 }
-impl Digestable for HyllarTokenContract {
-    fn as_digest(&self) -> sdk::StateDigest {
-        sdk::StateDigest(self.state.to_bytes())
-    }
-}
 
-impl TryFrom<sdk::StateDigest> for HyllarToken {
+impl TryFrom<sdk::StateDigest> for Hyllar {
     type Error = anyhow::Error;
 
     fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
@@ -180,38 +148,14 @@ impl TryFrom<sdk::StateDigest> for HyllarToken {
     }
 }
 
-pub fn execute(
-    stdout: &mut impl std::fmt::Write,
-    state: HyllarToken,
-    contract_input: ContractInput,
-) -> RunResult<HyllarToken> {
-    let (_, parsed_blob, caller) = match sdk::guest::init_with_caller::<ERC20Action>(contract_input)
-    {
-        Ok(res) => res,
-        Err(err) => {
-            panic!("Hyllar contract initialization failed {}", err);
-        }
-    };
-
-    let _ = stdout.write_str("Init token contract");
-    let mut contract = HyllarTokenContract::init(state, caller);
-
-    let _ = stdout.write_str("execute action");
-    let res = contract.execute_action(parsed_blob.data.parameters)?;
-    let state = contract.state();
-
-    Ok((res, state, vec![]))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sdk::Identity;
 
     #[test]
     fn test_new_hyllar_token() {
         let initial_supply = 1000;
-        let token = HyllarToken::new(initial_supply, "faucet".to_string());
+        let token = Hyllar::new(initial_supply, "faucet".to_string());
 
         assert_eq!(token.total_supply, initial_supply);
         assert_eq!(
@@ -224,21 +168,19 @@ mod tests {
     #[test]
     fn test_total_supply() {
         let initial_supply = 1000;
-        let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let contract = HyllarTokenContract::init(token, Identity::new("caller"));
+        let token = Hyllar::new(initial_supply, "faucet".to_string());
 
-        assert_eq!(contract.total_supply().unwrap(), initial_supply);
+        assert_eq!(token.total_supply().unwrap(), initial_supply);
     }
 
     #[test]
     fn test_balance_of() {
         let initial_supply = 1000;
-        let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let contract = HyllarTokenContract::init(token, Identity::new("caller"));
+        let token = Hyllar::new(initial_supply, "faucet".to_string());
 
-        assert_eq!(contract.balance_of("faucet").unwrap(), initial_supply);
+        assert_eq!(token.balance_of("faucet").unwrap(), initial_supply);
         assert_eq!(
-            contract.balance_of("nonexistent").unwrap_err(),
+            token.balance_of("nonexistent").unwrap_err(),
             "Account nonexistent not found".to_string()
         );
     }
@@ -246,77 +188,72 @@ mod tests {
     #[test]
     fn test_transfer() {
         let initial_supply = 1000;
-        let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let mut contract = HyllarTokenContract::init(token, Identity::new("faucet"));
+        let mut token = Hyllar::new(initial_supply, "faucet".to_string());
 
-        assert!(contract.transfer("recipient", 500).is_ok());
-        assert_eq!(contract.balance_of("faucet").unwrap(), 500);
-        assert_eq!(contract.balance_of("recipient").unwrap(), 500);
+        assert!(token.transfer("faucet", "recipient", 500).is_ok());
+        assert_eq!(token.balance_of("faucet").unwrap(), 500);
+        assert_eq!(token.balance_of("recipient").unwrap(), 500);
 
-        assert!(contract.transfer("recipient", 600).is_err());
+        assert!(token.transfer("faucet", "recipient", 600).is_err());
     }
 
     #[test]
     fn test_approve_and_allowance() {
         let initial_supply = 1000;
-        let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let mut contract = HyllarTokenContract::init(token, Identity::new("owner"));
+        let mut token = Hyllar::new(initial_supply, "faucet".to_string());
 
-        assert!(contract.approve("spender", 300).is_ok());
-        assert_eq!(contract.allowance("owner", "spender").unwrap(), 300);
-        assert_eq!(contract.allowance("owner", "other_spender").unwrap(), 0);
+        assert!(token.approve("owner", "spender", 300).is_ok());
+        assert_eq!(token.allowance("owner", "spender").unwrap(), 300);
+        assert_eq!(token.allowance("owner", "other_spender").unwrap(), 0);
     }
 
     #[test]
     fn test_transfer_from() {
         let initial_supply = 1000;
-        let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let mut contract = HyllarTokenContract::init(token, Identity::new("faucet"));
+        let mut token = Hyllar::new(initial_supply, "faucet".to_string());
 
-        assert!(contract.approve("spender", 300).is_ok());
-        let mut contract = HyllarTokenContract::init(contract.state(), Identity::new("spender"));
+        assert!(token.approve("faucet", "spender", 300).is_ok());
 
-        assert!(contract.transfer_from("faucet", "recipient", 200).is_ok());
-        assert_eq!(contract.balance_of("faucet").unwrap(), 800);
-        assert_eq!(contract.balance_of("recipient").unwrap(), 200);
-        assert_eq!(contract.allowance("faucet", "spender").unwrap(), 100);
+        assert!(token
+            .transfer_from("faucet", "spender", "recipient", 200)
+            .is_ok());
+        assert_eq!(token.balance_of("faucet").unwrap(), 800);
+        assert_eq!(token.balance_of("recipient").unwrap(), 200);
+        assert_eq!(token.allowance("faucet", "spender").unwrap(), 100);
 
         assert_eq!(
-            contract
-                .transfer_from("faucet", "recipient", 200)
+            token
+                .transfer_from("faucet", "spender", "recipient", 200)
                 .unwrap_err()
                 .to_string(),
-            "Allowance exceeded for sender=faucet caller=spender allowance=100"
+            "Allowance exceeded for spender=spender owner=faucet allowance=100"
         );
     }
 
     #[test]
     fn test_transfer_from_unallowed() {
         let initial_supply = 1000;
-        let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let mut contract = HyllarTokenContract::init(token, Identity::new("spender"));
+        let mut token = Hyllar::new(initial_supply, "faucet".to_string());
 
         assert_eq!(
-            contract
-                .transfer_from("faucet", "recipient", 200)
+            token
+                .transfer_from("faucet", "spender", "recipient", 200)
                 .unwrap_err()
                 .to_string(),
-            "Allowance exceeded for sender=faucet caller=spender allowance=0"
+            "Allowance exceeded for spender=spender owner=faucet allowance=0"
         );
     }
 
     #[test]
     fn test_transfer_from_insufficient_balance() {
         let initial_supply = 1000;
-        let token = HyllarToken::new(initial_supply, "faucet".to_string());
-        let mut contract = HyllarTokenContract::init(token, Identity::new("faucet"));
+        let mut token = Hyllar::new(initial_supply, "faucet".to_string());
 
         // Approve an allowance for the spender
-        assert!(contract.approve("spender", 5000).is_ok());
+        assert!(token.approve("faucet", "spender", 5000).is_ok());
 
         // Attempt to transfer more than the sender's balance
-        let mut contract = HyllarTokenContract::init(contract.state(), Identity::new("spender"));
-        let result = contract.transfer_from("faucet", "recipient", 1100);
+        let result = token.transfer_from("faucet", "spender", "recipient", 1100);
 
         assert!(result.is_err());
         assert_eq!(
@@ -328,7 +265,7 @@ mod tests {
     #[test]
     fn test_as_digest() {
         let initial_supply = 1000;
-        let token = HyllarToken::new(initial_supply, "faucet".to_string());
+        let token = Hyllar::new(initial_supply, "faucet".to_string());
         let digest = token.as_digest();
 
         let encoded = borsh::to_vec(&token).expect("Failed to encode Balances");
@@ -338,16 +275,16 @@ mod tests {
     #[test]
     fn test_try_from_state_digest() {
         let initial_supply = 1000;
-        let token = HyllarToken::new(initial_supply, "faucet".to_string());
+        let token = Hyllar::new(initial_supply, "faucet".to_string());
         let digest = token.as_digest();
 
-        let decoded_token: HyllarToken =
-            HyllarToken::try_from(digest.clone()).expect("Failed to decode state digest");
+        let decoded_token: Hyllar =
+            Hyllar::try_from(digest.clone()).expect("Failed to decode state digest");
         assert_eq!(decoded_token.total_supply, token.total_supply);
         assert_eq!(decoded_token.balances, token.balances);
 
         let invalid_digest = sdk::StateDigest(vec![0, 1, 2, 3]);
-        let result = HyllarToken::try_from(invalid_digest);
+        let result = Hyllar::try_from(invalid_digest);
         assert!(result.is_err());
     }
 }

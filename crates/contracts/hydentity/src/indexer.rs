@@ -1,5 +1,5 @@
 use crate::{AccountInfo, Hydentity};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use client_sdk::contract_indexer::{
     axum::Router,
     utoipa::openapi::OpenApi,
@@ -16,11 +16,7 @@ use client_sdk::contract_indexer::{
     utoipa::{self, ToSchema},
     AppError,
 };
-use sdk::{
-    identity_provider::{IdentityAction, IdentityVerification},
-    tracing::info,
-    Blob, BlobIndex, BlobTransaction, Identity,
-};
+use sdk::{identity_provider::IdentityVerification, Identity};
 use serde::Serialize;
 
 use client_sdk::contract_indexer::axum;
@@ -32,22 +28,6 @@ impl ContractHandler for Hydentity {
             .split_for_parts();
 
         (router.with_state(store), api)
-    }
-
-    fn handle(tx: &BlobTransaction, index: BlobIndex, mut state: Self) -> Result<Self> {
-        let Blob {
-            data,
-            contract_name,
-        } = tx.blobs.get(index.0).context("Failed to get blob")?;
-
-        let action: IdentityAction =
-            borsh::from_slice(data.0.as_slice()).context("Failed to decode payload")?;
-
-        let res = state
-            .execute_action(action, "")
-            .map_err(|e| anyhow::anyhow!(e))?;
-        info!("🚀 Executed {contract_name}: {res:?}");
-        Ok(state)
     }
 }
 

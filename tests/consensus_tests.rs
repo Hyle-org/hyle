@@ -15,9 +15,9 @@ mod e2e_consensus {
     use hyle_contract_sdk::Digestable;
     use hyle_contract_sdk::Identity;
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF, STAKING_ELF};
-    use hyle_model::StateDigest;
+    use hyle_model::{ContractName, StateDigest};
     use hyllar::client::transfer;
-    use hyllar::HyllarToken;
+    use hyllar::Hyllar;
     use staking::client::{delegate, stake};
     use staking::state::Staking;
     use tracing::info;
@@ -50,7 +50,7 @@ mod e2e_consensus {
 
         assert!(node_info.pubkey.is_some());
 
-        let hyllar: HyllarToken = ctx
+        let hyllar: Hyllar = ctx
             .indexer_client()
             .fetch_current_state(&"hyllar".into())
             .await
@@ -127,7 +127,7 @@ mod e2e_consensus {
                 "password".to_string(),
             )?;
 
-            stake(&mut transaction, "staking".into(), stake_amount)?;
+            stake(&mut transaction, ContractName::new("staking"), stake_amount)?;
 
             transfer(
                 &mut transaction,
@@ -136,11 +136,7 @@ mod e2e_consensus {
                 stake_amount,
             )?;
 
-            delegate(
-                &mut transaction,
-                "staking".into(),
-                node_info.pubkey.clone().unwrap(),
-            )?;
+            delegate(&mut transaction, node_info.pubkey.clone().unwrap())?;
 
             let tx_hash = send_transaction(ctx.client(), transaction, &mut tx_ctx).await;
             tracing::warn!("staking TX Hash: {:?}", tx_hash);

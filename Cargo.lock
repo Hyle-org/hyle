@@ -7453,7 +7453,6 @@ checksum = "93d59ca99a559661b96bf898d8fce28ed87935fd2bea9f05983c1464dd6c71b1"
 name = "uuid-tld"
 version = "0.11.0"
 dependencies = [
- "anyhow",
  "borsh",
  "client-sdk",
  "hyle-contract-sdk",

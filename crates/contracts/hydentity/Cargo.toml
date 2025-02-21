@@ -25,7 +25,7 @@ serde = { version = "1.0", default-features = false, features = [
 ] }
 anyhow = "1.0.96"
 sha2 = { git = "https://github.com/risc0/RustCrypto-hashes", tag = "sha2-v0.10.8" }
-borsh = { version ="1.5.5", features = [ "derive" ]}
+borsh = { version = "1.5.5", features = ["derive"] }
 hex = "0.4.3"
 
 risc0-zkvm = { version = "1.2.3", default-features = false, optional = true, features = [
@@ -37,9 +37,16 @@ client_sdk = { path = "../../client-sdk", package = "client-sdk", features = [
 
 [dev-dependencies]
 # Activate client in examples.
-sdk = { path = "../../contract-sdk", features = ["full-model"], package = "hyle-contract-sdk" }
+sdk = { path = "../../contract-sdk", features = [
+    "full-model",
+    "tracing",
+], package = "hyle-contract-sdk" }
 hydentity = { path = ".", features = ["client"] }
-client_sdk = { path = "../../client-sdk", package = "client-sdk", features = ["risc0", "rest", "indexer"] }
+client_sdk = { path = "../../client-sdk", package = "client-sdk", features = [
+    "risc0",
+    "rest",
+    "indexer",
+] }
 
 clap = { version = "4.5", features = ["derive"] }
 tokio = { version = "1.42.0", features = ["full", "tracing"] }

@@ -27,7 +27,7 @@ use hyle::{
         modules::ModulesHandler,
     },
 };
-use hyllar::HyllarToken;
+use hyllar::Hyllar;
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
@@ -169,13 +169,13 @@ async fn main() -> Result<()> {
     if run_indexer {
         handler.build_module::<Indexer>(ctx.common.clone()).await?;
         handler
-            .build_module::<ContractStateIndexer<HyllarToken>>(ContractStateIndexerCtx {
+            .build_module::<ContractStateIndexer<Hyllar>>(ContractStateIndexerCtx {
                 contract_name: "hyllar".into(),
                 common: ctx.common.clone(),
             })
             .await?;
         handler
-            .build_module::<ContractStateIndexer<HyllarToken>>(ContractStateIndexerCtx {
+            .build_module::<ContractStateIndexer<Hyllar>>(ContractStateIndexerCtx {
                 contract_name: "hyllar2".into(),
                 common: ctx.common.clone(),
             })

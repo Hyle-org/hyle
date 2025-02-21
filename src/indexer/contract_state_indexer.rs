@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::contract_indexer::{ContractHandler, ContractStateStore};
 use hyle_contract_sdk::{BlobIndex, ContractName, TxId};
-use hyle_model::RegisterContractEffect;
+use hyle_model::{RegisterContractEffect, TxContext};
 use serde::{Deserialize, Serialize};
 use std::{ops::Deref, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
@@ -150,6 +150,7 @@ where
     }
 
     async fn handle_processed_block(&mut self, block: Block) -> Result<()> {
+        let tx_context = block.get_context();
         for (_, contract) in block.registered_contracts {
             if self.contract_name == contract.contract_name {
                 self.handle_register_contract(contract).await?;
@@ -175,7 +176,8 @@ where
                     s_tx.0
                 ))?
                 .clone();
-            self.settle_tx(&TxId(dp_hash, s_tx)).await?;
+            self.settle_tx(&TxId(dp_hash, s_tx), tx_context.clone())
+                .await?;
         }
         Ok(())
     }
@@ -205,7 +207,7 @@ where
         Ok(())
     }
 
-    async fn settle_tx(&mut self, tx: &TxId) -> Result<()> {
+    async fn settle_tx(&mut self, tx: &TxId, tx_context: TxContext) -> Result<()> {
         let mut store = self.store.write().await;
         let Some(tx) = store.unsettled_blobs.remove(tx) else {
             debug!(cn = %self.contract_name, "🔨 No supported blobs found in transaction: {}", tx);
@@ -224,7 +226,7 @@ where
                 .clone()
                 .ok_or(anyhow!("No state found for {contract_name}"))?;
 
-            let new_state = State::handle(&tx, BlobIndex(index), state)?;
+            let new_state = State::handle(&tx, BlobIndex(index), state, tx_context.clone())?;
 
             debug!(cn = %self.contract_name, "📈 Updated state for {contract_name}");
 
@@ -236,8 +238,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use hyle_contract_sdk::{BlobData, ProgramId, StateDigest};
-    use hyle_model::DataProposalHash;
+    use hyle_contract_sdk::{BlobData, HyleContract, ProgramId, StateDigest};
+    use hyle_model::{DataProposalHash, Digestable};
     use utoipa::openapi::OpenApi;
 
     use super::*;
@@ -259,8 +261,25 @@ mod tests {
         }
     }
 
+    impl Digestable for MockState {
+        fn as_digest(&self) -> StateDigest {
+            StateDigest(self.0.clone())
+        }
+    }
+
+    impl HyleContract for MockState {
+        fn execute(&mut self, _: &hyle_model::ContractInput) -> hyle_contract_sdk::RunResult {
+            Err("not implemented".into())
+        }
+    }
+
     impl ContractHandler for MockState {
-        fn handle(tx: &BlobTransaction, index: BlobIndex, mut state: Self) -> Result<Self> {
+        fn handle(
+            tx: &BlobTransaction,
+            index: BlobIndex,
+            mut state: Self,
+            _tx_context: TxContext,
+        ) -> Result<Self> {
             state.0 = tx.blobs.get(index.0).unwrap().data.0.clone();
             Ok(state)
         }
@@ -349,7 +368,9 @@ mod tests {
             store.unsettled_blobs.insert(tx_id.clone(), tx);
         }
 
-        indexer.settle_tx(&tx_id).await.unwrap();
+        let tx_context = TxContext::default();
+
+        indexer.settle_tx(&tx_id, tx_context).await.unwrap();
 
         let store = indexer.store.read().await;
         assert!(!store.unsettled_blobs.contains_key(&tx_id));

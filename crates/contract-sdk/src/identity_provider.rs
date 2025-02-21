@@ -54,7 +54,7 @@ pub trait IdentityVerification {
     ///
     /// * `action` - The action to execute, represented as an IdentityAction enum.
     /// * `private_input` - A string representing the private input for the action.
-    fn execute_action(
+    fn execute_identity_action(
         &mut self,
         action: IdentityAction,
         private_input: &str,
@@ -151,7 +151,7 @@ mod tests {
             .times(1)
             .returning(|_, _| Ok(()));
 
-        let result = mock.execute_action(action, private_input);
+        let result = mock.execute_identity_action(action, private_input);
         assert!(result.is_ok());
     }
 
@@ -171,7 +171,7 @@ mod tests {
             nonce: 0,
         };
 
-        let result = mock.execute_action(action, private_input);
+        let result = mock.execute_identity_action(action, private_input);
         assert!(result.is_ok());
     }
 
@@ -190,7 +190,7 @@ mod tests {
             account: account.clone(),
         };
 
-        let result = mock.execute_action(action, "");
+        let result = mock.execute_identity_action(action, "");
         assert!(result.is_ok());
     }
 }
