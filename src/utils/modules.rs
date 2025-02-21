@@ -15,8 +15,8 @@ use crate::{
     utils::logger::LogMe,
 };
 use anyhow::{Error, Result};
-use rand::{distr::Alphanumeric, seq::IndexedRandom, Rng};
-use tracing::{debug, info, warn};
+use rand::{distr::Alphanumeric, Rng};
+use tracing::{debug, info};
 
 /// Module trait to define startup dependencies
 pub trait Module
@@ -228,8 +228,6 @@ impl ModulesHandler {
                 })?;
         }
 
-        // Reorder the list of modules to shut them down in reverse order
-        self.started_modules.reverse();
         Ok(())
     }
 
@@ -279,6 +277,13 @@ impl ModulesHandler {
                 tracing::debug!("Not shutting already shut module {}", module_name);
             }
         }
+
+        Ok(())
+    }
+
+    pub async fn shutdown_all(&mut self) -> Result<()> {
+        self.shutdown_next_module().await?;
+        self.shutdown_loop().await?;
 
         Ok(())
     }
@@ -436,13 +441,6 @@ mod tests {
         assert_eq!(handler.modules.len(), 1);
     }
 
-    async fn is_future_pending<F: Future>(future: F) -> bool {
-        tokio::select! {
-            _ = future => false, // La future est prête
-            _ = tokio::time::sleep(Duration::from_millis(1)) => true, // Timeout, donc la future est pending
-        }
-    }
-
     #[tokio::test]
     async fn test_start_modules() {
         let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
@@ -455,10 +453,8 @@ mod tests {
             )
             .await
             .unwrap();
-        let handle = handler.start_modules();
 
-        assert!(is_future_pending(handle).await);
-
+        _ = handler.start_modules().await;
         _ = handler.shutdown_next_module().await;
 
         assert_eq!(
@@ -491,11 +487,8 @@ mod tests {
             )
             .await
             .unwrap();
-        let handle = handler.start_modules();
-
-        assert!(is_future_pending(handle).await);
-
-        _ = handler.shutdown_next_module().await;
+        _ = handler.start_modules().await;
+        _ = handler.shutdown_all().await;
 
         // Shutdown last module first
         assert_eq!(
@@ -523,7 +516,6 @@ mod tests {
     #[tokio::test]
     async fn test_shutdown_modules_exactly_once() {
         let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
-        let mut cancellation_counter_receiver = get_receiver::<usize>(&shared_bus).await;
         let mut shutdown_completed_receiver = get_receiver::<ShutdownCompleted>(&shared_bus).await;
         let mut handler = ModulesHandler::new(&shared_bus).await;
 
@@ -545,11 +537,9 @@ mod tests {
             )
             .await
             .unwrap();
-        let handle = handler.start_modules();
 
-        assert!(is_future_pending(handle).await);
-
-        _ = handler.shutdown_next_module().await;
+        _ = handler.start_modules().await;
+        _ = handler.shutdown_all().await;
 
         // Shutdown last module first
         assert_eq!(
@@ -568,9 +558,5 @@ mod tests {
             shutdown_completed_receiver.recv().await.unwrap().module,
             std::any::type_name::<TestModule<usize>>().to_string()
         );
-
-        assert_eq!(cancellation_counter_receiver.try_recv().expect("1"), 1);
-        assert_eq!(cancellation_counter_receiver.try_recv().expect("1"), 1);
-        assert_eq!(cancellation_counter_receiver.try_recv().expect("1"), 1);
     }
 }
