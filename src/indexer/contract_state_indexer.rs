@@ -238,8 +238,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use hyle_contract_sdk::{BlobData, ProgramId, StateDigest};
-    use hyle_model::DataProposalHash;
+    use hyle_contract_sdk::{BlobData, HyleContract, ProgramId, StateDigest};
+    use hyle_model::{DataProposalHash, Digestable};
     use utoipa::openapi::OpenApi;
 
     use super::*;
@@ -258,6 +258,21 @@ mod tests {
 
         fn try_from(value: StateDigest) -> Result<Self> {
             Ok(MockState(value.0))
+        }
+    }
+
+    impl Digestable for MockState {
+        fn as_digest(&self) -> StateDigest {
+            StateDigest(self.0.clone())
+        }
+    }
+
+    impl HyleContract for MockState {
+        fn execute_action(
+            &mut self,
+            _: &hyle_model::ContractInput,
+        ) -> hyle_contract_sdk::RunResult {
+            Err("not implemented".into())
         }
     }
 

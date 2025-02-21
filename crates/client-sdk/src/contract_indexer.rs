@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use reqwest::StatusCode;
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::RwLock;
@@ -8,7 +8,10 @@ use axum::{
     Router,
 };
 use borsh::{BorshDeserialize, BorshSerialize};
-use sdk::{BlobIndex, BlobTransaction, ContractName, TxContext, TxId};
+use sdk::{
+    guest, info, Blob, BlobIndex, BlobTransaction, ContractInput, ContractName, Digestable, Hashed,
+    HyleContract, TxContext, TxId,
+};
 use utoipa::openapi::OpenApi;
 
 pub use axum;
@@ -36,7 +39,7 @@ impl<State> Default for ContractStateStore<State> {
 
 pub trait ContractHandler
 where
-    Self: Sized,
+    Self: Sized + HyleContract + BorshSerialize + BorshDeserialize + Digestable + 'static,
 {
     fn api(
         store: ContractHandlerStore<Self>,
@@ -47,7 +50,27 @@ where
         index: BlobIndex,
         state: Self,
         tx_context: TxContext,
-    ) -> Result<Self>;
+    ) -> Result<Self> {
+        let Blob {
+            contract_name,
+            data: _,
+        } = tx.blobs.get(index.0).context("Failed to get blob")?;
+
+        let serialized_state = borsh::to_vec(&state)?;
+        let contract_input = ContractInput {
+            state: serialized_state,
+            identity: tx.identity.clone(),
+            index,
+            blobs: tx.blobs.clone(),
+            tx_hash: tx.hashed(),
+            tx_ctx: Some(tx_context),
+            private_input: vec![],
+        };
+
+        let (state, hyle_output) = guest::execute::<Self>(&contract_input);
+        info!("🚀 Executed {contract_name}: {hyle_output:?}");
+        Ok(state)
+    }
 }
 
 // Make our own error that wraps `anyhow::Error`.

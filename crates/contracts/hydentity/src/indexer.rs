@@ -1,5 +1,5 @@
 use crate::{AccountInfo, Hydentity};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use client_sdk::contract_indexer::{
     axum::Router,
     utoipa::openapi::OpenApi,
@@ -16,10 +16,7 @@ use client_sdk::contract_indexer::{
     utoipa::{self, ToSchema},
     AppError,
 };
-use sdk::{
-    guest, identity_provider::IdentityVerification, tracing, Blob, BlobIndex, BlobTransaction,
-    ContractInput, Hashed, Identity, TxContext,
-};
+use sdk::{identity_provider::IdentityVerification, Identity};
 use serde::Serialize;
 
 use client_sdk::contract_indexer::axum;
@@ -31,33 +28,6 @@ impl ContractHandler for Hydentity {
             .split_for_parts();
 
         (router.with_state(store), api)
-    }
-
-    fn handle(
-        tx: &BlobTransaction,
-        index: BlobIndex,
-        state: Self,
-        tx_context: TxContext,
-    ) -> Result<Self> {
-        let Blob {
-            contract_name,
-            data: _,
-        } = tx.blobs.get(index.0).context("Failed to get blob")?;
-
-        let serialized_state = borsh::to_vec(&state)?;
-        let contract_input = ContractInput {
-            state: serialized_state,
-            identity: tx.identity.clone(),
-            index,
-            blobs: tx.blobs.clone(),
-            tx_hash: tx.hashed(),
-            tx_ctx: Some(tx_context),
-            private_input: vec![],
-        };
-
-        let (state, hyle_output) = guest::execute::<Hydentity>(&contract_input);
-        tracing::info!("🚀 Executed {contract_name}: {hyle_output:?}");
-        Ok(state)
     }
 }
 

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use client_sdk::contract_indexer::{
     axum::{
         extract::{Path, State},
@@ -26,33 +26,6 @@ impl ContractHandler for Hyllar {
             .split_for_parts();
 
         (router.with_state(store), api)
-    }
-
-    fn handle(
-        tx: &BlobTransaction,
-        index: BlobIndex,
-        state: Hyllar,
-        tx_context: TxContext,
-    ) -> Result<Hyllar> {
-        let Blob {
-            contract_name,
-            data: _,
-        } = tx.blobs.get(index.0).context("Failed to get blob")?;
-
-        let serialized_state = borsh::to_vec(&state)?;
-        let contract_input = ContractInput {
-            state: serialized_state,
-            identity: tx.identity.clone(),
-            index,
-            blobs: tx.blobs.clone(),
-            tx_hash: tx.hashed(),
-            tx_ctx: Some(tx_context),
-            private_input: vec![],
-        };
-
-        let (state, hyle_output) = guest::execute::<Hyllar>(&contract_input);
-        info!("🚀 Executed {contract_name}: {hyle_output:?}");
-        Ok(state)
     }
 }
 
