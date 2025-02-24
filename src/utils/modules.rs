@@ -177,34 +177,6 @@ macro_rules! module_bus_client {
 
 pub use module_bus_client;
 
-bus_client! {
-    pub struct ShutdownClient {
-        sender(signal::ShutdownModule),
-        sender(signal::ShutdownCompleted),
-        receiver(signal::ShutdownCompleted),
-    }
-}
-
-impl ShutdownClient {
-    pub async fn shutdown_module(&mut self, module_name: &str) {
-        _ = self
-            .send(signal::ShutdownModule {
-                module: module_name.to_string(),
-            })
-            .log_error(module_path!(), "Shutting down module");
-
-        handle_messages! {
-            on_bus *self,
-            listen<ShutdownCompleted> msg => {
-                if msg.module == module_name {
-                    debug!("Module {} successfully shut", msg.module);
-                    break;
-                }
-            }
-        }
-    }
-}
-
 pub struct ModulesHandler {
     bus: SharedMessageBus,
     modules: Vec<ModuleStarter>,
@@ -244,7 +216,6 @@ impl ModulesHandler {
                             module: module.name.to_string(),
                         })
                         .log_error(module_path!(), "Sending ShutdownCompleted message");
-                    Ok(())
                 })?;
 
             tasks.push(handle);
@@ -261,14 +232,19 @@ impl ModulesHandler {
     pub async fn shutdown_modules(&mut self, timeout: Duration) -> Result<()> {
         let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
 
-        for module_name in self.started_modules.drain(..).rev() {
-            if ![std::any::type_name::<Genesis>()].contains(&module_name) {
-                _ = tokio::time::timeout(timeout, shutdown_client.shutdown_module(module_name))
-                    .await
+        if let Some(module_name) = self.started_modules.pop() {
+            // May be the shutdown message was skipped because the module failed somehow
+            if !self.shut_modules.contains(&module_name.to_string()) {
+                _ = shutdown_client
+                    .send(signal::ShutdownModule {
+                        module: module_name.to_string(),
+                    })
                     .log_error(
                         module_path!(),
                         format!("Shutting down module {module_name}"),
                     );
+            } else {
+                tracing::debug!("Not shutting already shut module {}", module_name);
             }
         }
 

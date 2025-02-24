@@ -100,10 +100,8 @@ impl DAListener {
     pub async fn start(&mut self) -> Result<(), Error> {
         module_handle_messages! {
             on_bus self.bus,
-            frame = self.listener.next() => {
-                if let Some(Ok(streamed_signed_block)) = frame {
-                    _ = self.processing_next_frame(streamed_signed_block).await.log_error(module_path!(), "Consuming da stream");
-                } else if frame.is_none() {
+            frame = self.listener.recv() => {
+                let Some(streamed_signed_block) = frame else {
                     bail!("DA stream closed");
                 } else if let Some(Err(e)) = frame {
                     bail!("Error while reading DA stream: {}", e);
