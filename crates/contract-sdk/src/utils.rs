@@ -33,7 +33,7 @@ where
         return Err(format!("Could not deserialize Blob at index {index}"));
     };
 
-    let exec_ctx = ExecutionContext::default();
+    let exec_ctx = ExecutionContext::new(input.identity.clone(), blob.contract_name.clone());
     Ok((parameters, exec_ctx))
 }
 
