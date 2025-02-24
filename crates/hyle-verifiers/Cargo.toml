@@ -27,7 +27,7 @@ test-log = { version = "0.2.17", features = [
 ], default-features = false }
 
 [build-dependencies]
-cargo-toml-parser = { path = "/home/bertrand/workspace/cargo-toml-parser" }
+cargo-toml-parser = "0.2.1"
 
 [features]
 default = []

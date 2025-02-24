@@ -962,7 +962,9 @@ dependencies = [
 
 [[package]]
 name = "cargo-toml-parser"
-version = "0.2.0"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e14656017de701d73f0af4787d9ec0f942ffa6eb6e428c5389c39b5e4f863c80"
 dependencies = [
  "serde",
  "toml",
