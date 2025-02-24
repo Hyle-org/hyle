@@ -14,6 +14,14 @@ pub struct ExecutionContext {
 }
 
 impl ExecutionContext {
+    pub fn new(caller: Identity, contract_name: ContractName) -> Self {
+        ExecutionContext {
+            callees_blobs: Vec::new(),
+            caller,
+            contract_name,
+        }
+    }
+
     pub fn is_in_callee_blobs<U>(
         &mut self,
         contract_name: &ContractName,
