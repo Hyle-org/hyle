@@ -172,7 +172,7 @@ impl DataAvailability {
             Some(streamed_block) = catchup_block_receiver.recv() => {
                 let height = streamed_block.height().0;
 
-                let _ = self.handle_signed_block(streamed_block).await.log_error(module_path!(), format!("Handling streamed block {height}"));
+                let _ = self.handle_signed_block(streamed_block, pool_sender.clone()).await.log_error(module_path!(), format!("Handling streamed block {height}"));
 
                 // Stop streaming after reaching a height communicated by Mempool
                 if let Some(until_height) = self.catchup_height.as_ref() {

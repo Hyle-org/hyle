@@ -183,6 +183,14 @@ pub struct ModulesHandler {
     started_modules: Vec<&'static str>,
 }
 
+bus_client! {
+    pub struct ShutdownClient {
+        sender(signal::ShutdownModule),
+        sender(signal::ShutdownCompleted),
+        receiver(signal::ShutdownCompleted),
+    }
+}
+
 impl ModulesHandler {
     pub async fn new(shared_bus: &SharedMessageBus) -> ModulesHandler {
         let shared_message_bus = shared_bus.new_handle();
@@ -231,7 +239,6 @@ impl ModulesHandler {
     /// Shutdown modules in reverse order (start A, B, C, shutdown C, B, A)
     pub async fn shutdown_modules(&mut self, timeout: Duration) -> Result<()> {
         let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
-
         if let Some(module_name) = self.started_modules.pop() {
             // May be the shutdown message was skipped because the module failed somehow
             if !self.shut_modules.contains(&module_name.to_string()) {
@@ -239,10 +246,7 @@ impl ModulesHandler {
                     .send(signal::ShutdownModule {
                         module: module_name.to_string(),
                     })
-                    .log_error(
-                        module_path!(),
-                        format!("Shutting down module {module_name}"),
-                    );
+                    .log_error(module_path!(), format!("Shutting down module"));
             } else {
                 tracing::debug!("Not shutting already shut module {}", module_name);
             }
