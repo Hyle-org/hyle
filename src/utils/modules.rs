@@ -14,9 +14,9 @@ use crate::{
     handle_messages,
     utils::logger::LogMe,
 };
-use anyhow::{Context, Error, Result};
+use anyhow::{bail, Error, Result};
+use futures::future::select_all;
 use rand::{distr::Alphanumeric, Rng};
-use signal::ShutdownCompleted;
 use tokio::task::JoinHandle;
 use tracing::{debug, info};
 
@@ -180,30 +180,12 @@ bus_client! {
     }
 }
 
-impl ShutdownClient {
-    pub async fn shutdown_module(&mut self, module_name: &str) {
-        _ = self
-            .send(signal::ShutdownModule {
-                module: module_name.to_string(),
-            })
-            .log_error("Shutting down module");
-
-        handle_messages! {
-            on_bus *self,
-            listen<ShutdownCompleted> msg => {
-                if msg.module == module_name {
-                    debug!("Module {} successfully shut", msg.module);
-                    break;
-                }
-            }
-        }
-    }
-}
-
 pub struct ModulesHandler {
     bus: SharedMessageBus,
     modules: Vec<ModuleStarter>,
     started_modules: Vec<&'static str>,
+    running_modules: Vec<JoinHandle<()>>,
+    shut_modules: Vec<String>,
 }
 
 impl ModulesHandler {
@@ -214,18 +196,29 @@ impl ModulesHandler {
             bus: shared_message_bus,
             modules: vec![],
             started_modules: vec![],
+            running_modules: vec![],
+            shut_modules: vec![],
         }
     }
 
+    fn long_running_module(module_name: &str) -> bool {
+        ![std::any::type_name::<Genesis>()].contains(&module_name)
+    }
+
     pub async fn start_modules(&mut self) -> Result<()> {
-        let mut tasks: Vec<JoinHandle<Result<()>>> = vec![];
+        if !self.running_modules.is_empty() {
+            bail!("Modules are already running!");
+        }
 
         for module in self.modules.drain(..) {
-            self.started_modules.push(module.name);
+            if Self::long_running_module(module.name) {
+                self.started_modules.push(module.name);
+            }
             let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
 
             debug!("Starting module {}", module.name);
-            let handle = tokio::task::Builder::new()
+
+            let task = tokio::task::Builder::new()
                 .name(module.name)
                 .spawn(async move {
                     match module.starter.await {
@@ -239,30 +232,89 @@ impl ModulesHandler {
                             module: module.name.to_string(),
                         })
                         .log_error("Sending ShutdownCompleted message");
-                    Ok(())
                 })?;
 
-            tasks.push(handle);
+            if Self::long_running_module(module.name) {
+                self.running_modules.push(task);
+            }
         }
 
+        Ok(())
+    }
+
+    pub async fn shutdown_loop(&mut self) -> Result<()> {
+        if self.started_modules.is_empty() {
+            return Ok(());
+        }
+
+        let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
+
+        // Sends a trigger event when one task ends (should not, but in case of panic, no event is sent)
+        let join_set: Vec<JoinHandle<()>> = self.running_modules.drain(..).collect();
+        let started_modules_cloned = self.started_modules.clone();
+        tokio::task::Builder::new()
+            .name("module-panic-failure-listener")
+            .spawn(async move {
+                let (_res, idx, _remaining) = select_all(join_set).await;
+                if let Some(module_name) = started_modules_cloned.get(idx) {
+                    _ = shutdown_client
+                        .send(signal::ShutdownCompleted {
+                            module: module_name.to_string(),
+                        })
+                        .log_error("Sending ShutdownCompleted message");
+                }
+            })?;
+
+        let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
         // Return a future that waits for the first error or the abort command.
-        futures::future::select_all(tasks)
-            .await
-            .0
-            .context("Joining error")?
+        handle_messages! {
+            on_bus shutdown_client,
+            listen<signal::ShutdownCompleted> msg => {
+
+                if Self::long_running_module(msg.module.as_str()) && !self.shut_modules.contains(&msg.module)  {
+                    dbg!(&msg);
+                    self.started_modules.retain(|module| *module != msg.module.clone());
+                    self.shut_modules.push(msg.module.clone());
+                    if self.started_modules.is_empty() {
+                        break;
+                    } else {
+                        _ = self.shutdown_next_module().await;
+                    }
+                }
+            }
+
+            _ = tokio::time::sleep(Duration::from_secs(3)) => {
+                if !self.shut_modules.is_empty() {
+                    _ = self.shutdown_next_module().await;
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Shutdown modules in reverse order (start A, B, C, shutdown C, B, A)
-    pub async fn shutdown_modules(&mut self, timeout: Duration) -> Result<()> {
+    pub async fn shutdown_next_module(&mut self) -> Result<()> {
         let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
-
-        for module_name in self.started_modules.drain(..).rev() {
-            if ![std::any::type_name::<Genesis>()].contains(&module_name) {
-                _ = tokio::time::timeout(timeout, shutdown_client.shutdown_module(module_name))
-                    .await
-                    .log_error(format!("Shutting down module {module_name}"));
+        if let Some(module_name) = self.started_modules.pop() {
+            // May be the shutdown message was skipped because the module failed somehow
+            if !self.shut_modules.contains(&module_name.to_string()) {
+                _ = shutdown_client
+                    .send(signal::ShutdownModule {
+                        module: module_name.to_string(),
+                    })
+                    .log_error("Shutting down module");
+            } else {
+                tracing::debug!("Not shutting already shut module {}", module_name);
             }
         }
+
+        Ok(())
+    }
+
+    pub async fn shutdown_modules(&mut self) -> Result<()> {
+        self.shutdown_next_module().await?;
+        self.shutdown_loop().await?;
 
         Ok(())
     }
@@ -302,7 +354,7 @@ mod tests {
 
     use super::*;
     use crate::bus::SharedMessageBus;
-    use signal::ShutdownModule;
+    use signal::{ShutdownCompleted, ShutdownModule};
     use std::{fs::File, sync::Arc};
     use tempfile::tempdir;
     use tokio::sync::Mutex;
@@ -360,6 +412,45 @@ mod tests {
     test_module!(TestBusClient, usize);
     test_module!(TestBusClient, bool);
 
+    // Failing module by breaking event loop
+
+    impl Module for TestModule<u64> {
+        type Context = TestBusClient;
+        async fn build(_ctx: Self::Context) -> Result<Self> {
+            Ok(TestModule {
+                bus: _ctx,
+                _field: Default::default(),
+            })
+        }
+
+        async fn run(&mut self) -> Result<()> {
+            module_handle_messages! {
+                on_bus self.bus,
+                _ = async { } => {
+                    break;
+                }
+            };
+
+            Ok(())
+        }
+    }
+
+    // Failing module by early exit (no shutdown completed event emitted)
+
+    impl Module for TestModule<u32> {
+        type Context = TestBusClient;
+        async fn build(_ctx: Self::Context) -> Result<Self> {
+            Ok(TestModule {
+                bus: _ctx,
+                _field: Default::default(),
+            })
+        }
+
+        async fn run(&mut self) -> Result<()> {
+            panic!("bruh");
+        }
+    }
+
     #[test]
     fn test_load_from_disk_or_default() {
         let dir = tempdir().unwrap();
@@ -413,18 +504,11 @@ mod tests {
         let mut handler = ModulesHandler::new(&shared_bus).await;
         let module = TestModule {
             bus: TestBusClient::new_from_bus(shared_bus.new_handle()).await,
-            _field: 2,
+            _field: 2_usize,
         };
 
         handler.add_module(module).unwrap();
         assert_eq!(handler.modules.len(), 1);
-    }
-
-    async fn is_future_pending<F: Future>(future: F) -> bool {
-        tokio::select! {
-            _ = future => false, // La future est prête
-            _ = tokio::time::sleep(Duration::from_millis(1)) => true, // Timeout, donc la future est pending
-        }
     }
 
     #[tokio::test]
@@ -439,11 +523,9 @@ mod tests {
             )
             .await
             .unwrap();
-        let handle = handler.start_modules();
 
-        assert!(is_future_pending(handle).await);
-
-        _ = handler.shutdown_modules(Duration::from_secs(1)).await;
+        _ = handler.start_modules().await;
+        _ = handler.shutdown_next_module().await;
 
         assert_eq!(
             shutdown_receiver.recv().await.unwrap().module,
@@ -475,11 +557,8 @@ mod tests {
             )
             .await
             .unwrap();
-        let handle = handler.start_modules();
-
-        assert!(is_future_pending(handle).await);
-
-        _ = handler.shutdown_modules(Duration::from_secs(1)).await;
+        _ = handler.start_modules().await;
+        _ = handler.shutdown_modules().await;
 
         // Shutdown last module first
         assert_eq!(
@@ -529,11 +608,10 @@ mod tests {
             )
             .await
             .unwrap();
-        let handle = handler.start_modules();
 
-        assert!(is_future_pending(handle).await);
-
-        _ = handler.shutdown_modules(Duration::from_secs(1)).await;
+        _ = handler.start_modules().await;
+        _ = tokio::time::sleep(Duration::from_millis(100)).await;
+        _ = handler.shutdown_modules().await;
 
         // Shutdown last module first
         assert_eq!(
@@ -556,5 +634,133 @@ mod tests {
         assert_eq!(cancellation_counter_receiver.try_recv().expect("1"), 1);
         assert_eq!(cancellation_counter_receiver.try_recv().expect("1"), 1);
         assert_eq!(cancellation_counter_receiver.try_recv().expect("1"), 1);
+    }
+
+    #[tokio::test]
+    async fn test_shutdown_all_modules_if_one_fails() {
+        let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
+        let mut shutdown_completed_receiver = get_receiver::<ShutdownCompleted>(&shared_bus).await;
+        let mut handler = ModulesHandler::new(&shared_bus).await;
+
+        handler
+            .build_module::<TestModule<usize>>(
+                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+            )
+            .await
+            .unwrap();
+        handler
+            .build_module::<TestModule<String>>(
+                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+            )
+            .await
+            .unwrap();
+        handler
+            .build_module::<TestModule<u64>>(
+                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+            )
+            .await
+            .unwrap();
+        handler
+            .build_module::<TestModule<bool>>(
+                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+            )
+            .await
+            .unwrap();
+
+        _ = handler.start_modules().await;
+
+        // Starting shutdown loop should shut all modules because one failed immediatly
+
+        _ = handler.shutdown_loop().await;
+
+        // u64 module fails first, emits two events, one because it is the first task to end,
+        // and the other because it finished to shutdown corretly
+        assert_eq!(
+            shutdown_completed_receiver.recv().await.unwrap().module,
+            std::any::type_name::<TestModule<u64>>().to_string()
+        );
+        assert_eq!(
+            shutdown_completed_receiver.recv().await.unwrap().module,
+            std::any::type_name::<TestModule<u64>>().to_string()
+        );
+        // Shutdown last module first
+        assert_eq!(
+            shutdown_completed_receiver.recv().await.unwrap().module,
+            std::any::type_name::<TestModule<bool>>().to_string()
+        );
+
+        assert_eq!(
+            shutdown_completed_receiver.recv().await.unwrap().module,
+            std::any::type_name::<TestModule<String>>().to_string()
+        );
+
+        // Then first module at last
+
+        assert_eq!(
+            shutdown_completed_receiver.recv().await.unwrap().module,
+            std::any::type_name::<TestModule<usize>>().to_string()
+        );
+    }
+    #[tokio::test]
+    async fn test_shutdown_all_modules_if_one_module_panics() {
+        let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
+        let mut shutdown_completed_receiver = get_receiver::<ShutdownCompleted>(&shared_bus).await;
+        let mut handler = ModulesHandler::new(&shared_bus).await;
+
+        handler
+            .build_module::<TestModule<usize>>(
+                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+            )
+            .await
+            .unwrap();
+        handler
+            .build_module::<TestModule<String>>(
+                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+            )
+            .await
+            .unwrap();
+        handler
+            .build_module::<TestModule<u32>>(
+                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+            )
+            .await
+            .unwrap();
+        handler
+            .build_module::<TestModule<bool>>(
+                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
+            )
+            .await
+            .unwrap();
+
+        _ = handler.start_modules().await;
+
+        // Starting shutdown loop should shut all modules because one failed immediatly
+
+        _ = handler.shutdown_loop().await;
+
+        // u32 module failed with panic, but the event should be emitted
+
+        assert_eq!(
+            shutdown_completed_receiver.recv().await.unwrap().module,
+            std::any::type_name::<TestModule<u32>>().to_string()
+        );
+
+        // Shutdown last module first
+        assert_eq!(
+            shutdown_completed_receiver.recv().await.unwrap().module,
+            std::any::type_name::<TestModule<bool>>().to_string()
+        );
+
+        assert_eq!(
+            shutdown_completed_receiver.recv().await.unwrap().module,
+            std::any::type_name::<TestModule<String>>().to_string()
+        );
+
+        // Then first module at last
+
+        assert_eq!(
+            shutdown_completed_receiver.recv().await.unwrap().module,
+            std::any::type_name::<TestModule<usize>>().to_string()
+        );
     }
 }

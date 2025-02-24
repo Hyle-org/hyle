@@ -19,10 +19,7 @@ use hyle::{
     },
 };
 use hyllar::Hyllar;
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::sync::{Arc, Mutex};
 use testcontainers_modules::{
     postgres::Postgres,
     testcontainers::{runners::AsyncRunner, ImageExt},
@@ -173,13 +170,17 @@ async fn main() -> Result<()> {
         })
         .await?;
 
+    _ = handler.start_modules().await;
+
     #[cfg(unix)]
     {
         use tokio::signal::unix;
         let mut terminate = unix::signal(unix::SignalKind::interrupt())?;
         tokio::select! {
-            Err(e) = handler.start_modules() => {
-                error!("Error running modules: {:?}", e);
+            res = handler.shutdown_loop() => {
+                if let Err(e) = res {
+                    error!("Error running modules: {:?}", e);
+                }
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("Ctrl-C received, shutting down");
@@ -188,19 +189,24 @@ async fn main() -> Result<()> {
                 info!("SIGTERM received, shutting down");
             }
         }
-        _ = handler.shutdown_modules(Duration::from_secs(3)).await;
+        _ = handler.shutdown_modules().await;
     }
     #[cfg(not(unix))]
     {
         tokio::select! {
-            Err(e) = handler.start_modules() => {
-                error!("Error running modules: {:?}", e);
+            res = handler.shutdown_loop() => {
+                if let Err(e) = res {
+                    error!("Error running modules: {:?}", e);
+                }
             }
             _ = tokio::signal::ctrl_c() => {
                 info!("Ctrl-C received, shutting down");
             }
+            _ = terminate.recv() =>  {
+                info!("SIGTERM received, shutting down");
+            }
         }
-        _ = handler.shutdown_modules(Duration::from_secs(3)).await;
+        _ = handler.shutdown_modules().await;
     }
 
     if args.pg {
