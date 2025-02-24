@@ -68,6 +68,24 @@ where
     Ok((parsed_blob.data.parameters, ctx))
 }
 
+pub fn parse_blob<Parameters>(blobs: &[Blob], index: &BlobIndex) -> Option<Parameters>
+where
+    Parameters: BorshDeserialize,
+{
+    let blob = match blobs.get(index.0) {
+        Some(v) => v,
+        None => {
+            return None;
+        }
+    };
+
+    let Ok(parameters) = borsh::from_slice::<Parameters>(blob.data.0.as_slice()) else {
+        return None;
+    };
+
+    Some(parameters)
+}
+
 pub fn parse_structured_blob<Parameters>(
     blobs: &[Blob],
     index: &BlobIndex,
