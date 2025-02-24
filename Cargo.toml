@@ -26,7 +26,7 @@ default-members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.12.0"
+version = "0.12.1"
 edition = "2021"
 homepage = "https://hyle.eu/"
 repository = "https://github.com/Hyle-org/hyle/"
