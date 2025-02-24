@@ -106,12 +106,8 @@ pub mod signal {
         pub module: String,
     }
 
-    #[derive(Clone, Debug)]
-    pub struct ShutdownAll;
-
     impl BusMessage for ShutdownModule {}
     impl BusMessage for ShutdownCompleted {}
-    impl BusMessage for ShutdownAll {}
 
     pub async fn async_receive_shutdown<T>(
         should_shutdown: &mut bool,
