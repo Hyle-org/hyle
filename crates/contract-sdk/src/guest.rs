@@ -49,7 +49,7 @@ impl GuestEnv for SP1Env {
 
     fn read<T: BorshDeserialize>(&self) -> T {
         let vec = sp1_zkvm::io::read_vec();
-        borsh::from_slice(&slice).unwrap()
+        borsh::from_slice(&vec).unwrap()
     }
 }
 
