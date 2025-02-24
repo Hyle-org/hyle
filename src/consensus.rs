@@ -387,7 +387,7 @@ impl Consensus {
 
                     _ = command_sender
                         .send(ConsensusCommand::StartNewSlot)
-                        .log_error("Cannot send StartNewSlot message over channel");
+                        .log_error(module_path!(), "Cannot send StartNewSlot message over channel");
                 })?;
             Ok(())
         }
@@ -545,7 +545,7 @@ impl Consensus {
         }
 
         self.try_commit_current_proposal(commit_qc.clone())
-            .log_error("Processing Commit Ticket")
+            .log_error(module_path!(), "Processing Commit Ticket")
             .is_ok()
     }
 
@@ -676,7 +676,7 @@ impl Consensus {
                     certificate: commit_quorum_certificate.clone(),
                 },
             ))
-            .log_error("Failed to send ConsensusEvent::CommittedConsensusProposal on the bus");
+            .log_error(module_path!(), "Failed to send ConsensusEvent::CommittedConsensusProposal on the bus");
 
         debug!(
             "📈 Slot {} committed",
@@ -899,7 +899,7 @@ impl Consensus {
                                     certificate: signed_block.certificate,
                                 },
                             ))
-                            .log_error("Failed to send ConsensusEvent::CommittedConsensusProposal on the bus");
+                            .log_error(module_path!(), "Failed to send ConsensusEvent::CommittedConsensusProposal on the bus");
                         break;
                     },
                     GenesisEvent::NoGenesis => {
@@ -934,13 +934,13 @@ impl Consensus {
         module_handle_messages! {
             on_bus self.bus,
             listen<NodeStateEvent> event => {
-                let _ = self.handle_node_state_event(event).await.log_error("Error while handling data event");
+                let _ = self.handle_node_state_event(event).await.log_error(module_path!(), "Error while handling data event");
             }
             listen<ConsensusCommand> cmd => {
-                let _ = self.handle_command(cmd).await.log_error("Error while handling consensus command");
+                let _ = self.handle_command(cmd).await.log_error(module_path!(), "Error while handling consensus command");
             }
             listen<SignedByValidator<ConsensusNetMessage>> cmd => {
-                let _ = self.handle_net_message(cmd).log_error("Consensus message failed");
+                let _ = self.handle_net_message(cmd).log_error(module_path!(), "Consensus message failed");
             }
             command_response<QueryConsensusInfo, ConsensusInfo> _ => {
                 let slot = self.bft_round_state.consensus_proposal.slot;
@@ -954,7 +954,7 @@ impl Consensus {
             }
             _ = timeout_ticker.tick() => {
                 self.bus.send(ConsensusCommand::TimeoutTick)
-                    .log_error("Cannot send message over channel")?;
+                    .log_error(module_path!(), "Cannot send message over channel")?;
             }
         };
 

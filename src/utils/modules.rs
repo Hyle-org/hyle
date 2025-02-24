@@ -38,7 +38,10 @@ where
             Ok(mut reader) => {
                 info!("Loaded data from disk {}", file.to_string_lossy());
                 borsh::from_reader(&mut reader)
-                    .log_error(format!("Loading and decoding {}", file.to_string_lossy()))
+                    .log_error(
+                        module_path!(),
+                        format!("Loading and decoding {}", file.to_string_lossy()),
+                    )
                     .ok()
             }
             Err(_) => {
@@ -76,16 +79,18 @@ where
             .collect();
         let tmp = file.with_extension(format!("{}.tmp", salt));
         debug!("Saving on disk in a tmp file {:?}", tmp.clone());
-        let mut buf_writer =
-            BufWriter::new(fs::File::create(tmp.as_path()).log_error("Create file")?);
-        borsh::to_writer(&mut buf_writer, store).log_error("Serializing Ctx chain")?;
+        let mut buf_writer = BufWriter::new(
+            fs::File::create(tmp.as_path()).log_error(module_path!(), "Create file")?,
+        );
+        borsh::to_writer(&mut buf_writer, store)
+            .log_error(module_path!(), "Serializing Ctx chain")?;
 
-        buf_writer.flush().log_error(format!(
-            "Flushing Buffer writer for store {}",
-            type_name::<S>()
-        ))?;
+        buf_writer.flush().log_error(
+            module_path!(),
+            format!("Flushing Buffer writer for store {}", type_name::<S>()),
+        )?;
         debug!("Renaming {:?} to {:?}", &tmp, &file);
-        fs::rename(tmp, file).log_error("Rename file")?;
+        fs::rename(tmp, file).log_error(module_path!(), "Rename file")?;
         Ok(())
     }
 }
@@ -186,7 +191,7 @@ impl ShutdownClient {
             .send(signal::ShutdownModule {
                 module: module_name.to_string(),
             })
-            .log_error("Shutting down module");
+            .log_error(module_path!(), "Shutting down module");
 
         handle_messages! {
             on_bus *self,
@@ -238,7 +243,7 @@ impl ModulesHandler {
                         .send(signal::ShutdownCompleted {
                             module: module.name.to_string(),
                         })
-                        .log_error("Sending ShutdownCompleted message");
+                        .log_error(module_path!(), "Sending ShutdownCompleted message");
                     Ok(())
                 })?;
 
@@ -260,7 +265,10 @@ impl ModulesHandler {
             if ![std::any::type_name::<Genesis>()].contains(&module_name) {
                 _ = tokio::time::timeout(timeout, shutdown_client.shutdown_module(module_name))
                     .await
-                    .log_error(format!("Shutting down module {module_name}"));
+                    .log_error(
+                        module_path!(),
+                        format!("Shutting down module {module_name}"),
+                    );
             }
         }
 

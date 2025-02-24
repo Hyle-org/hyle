@@ -85,7 +85,7 @@ impl FollowerRole for Consensus {
             Ticket::TimeoutQC(timeout_qc) => {
                 if self
                     .try_process_timeout_qc(timeout_qc)
-                    .log_error("Processing Timeout ticket")
+                    .log_error(module_path!(), "Processing Timeout ticket")
                     .is_err()
                 {
                     bail!("Invalid timeout ticket");

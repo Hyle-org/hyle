@@ -11,8 +11,16 @@ use tracing_subscriber::{
 
 // A simple way to log without interrupting fluency
 pub trait LogMe<T> {
-    fn log_warn<C: Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T>;
-    fn log_error<C: Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T>;
+    fn log_warn<C: Display + Send + Sync + 'static>(
+        self,
+        target: &'static str,
+        context_msg: C,
+    ) -> anyhow::Result<T>;
+    fn log_error<C: Display + Send + Sync + 'static>(
+        self,
+        target: &'static str,
+        context_msg: C,
+    ) -> anyhow::Result<T>;
 }
 
 // Will log a warning in case of error
@@ -20,34 +28,32 @@ pub trait LogMe<T> {
 impl<T, Error: Into<anyhow::Error> + Display + Send + Sync + 'static> LogMe<T>
     for Result<T, Error>
 {
-    fn log_warn<C: Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T> {
+    fn log_warn<C: Display + Send + Sync + 'static>(
+        self,
+        target: &'static str,
+        context_msg: C,
+    ) -> anyhow::Result<T> {
         match self {
             Err(e) => {
                 let ae: anyhow::Error = e.into();
                 let ae = ae.context(context_msg);
-                warn!(
-                  target: module_path!(),
-                  warning = %ae,
-                  "{:#}",
-                  ae
-                );
+                warn!(target, "{:#}", ae);
                 Err(ae)
             }
             Ok(t) => Ok(t),
         }
     }
 
-    fn log_error<C: Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T> {
+    fn log_error<C: Display + Send + Sync + 'static>(
+        self,
+        target: &'static str,
+        context_msg: C,
+    ) -> anyhow::Result<T> {
         match self {
             Err(e) => {
                 let ae: anyhow::Error = e.into();
                 let ae = ae.context(context_msg);
-                error!(
-                  target: module_path!(),
-                  error = %ae,
-                  "{:#}",
-                  ae
-                );
+                error!(target, "{:#}", ae);
                 Err(ae)
             }
             Ok(t) => Ok(t),

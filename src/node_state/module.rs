@@ -99,7 +99,7 @@ impl Module for NodeStateModule {
                         _ = self
                             .bus
                             .send(NodeStateEvent::NewBlock(Box::new(node_state_block)))
-                            .log_error("Sending DataEvent while processing SignedBlock");
+                            .log_error(module_path!(), "Sending DataEvent while processing SignedBlock");
                     }
                 }
             }
@@ -109,7 +109,7 @@ impl Module for NodeStateModule {
             self.config.data_directory.join("node_state.bin").as_path(),
             &self.inner,
         )
-        .log_error("Saving node state");
+        .log_error(module_path!(), "Saving node state");
 
         Ok(())
     }

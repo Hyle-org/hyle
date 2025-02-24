@@ -142,17 +142,17 @@ impl DataAvailability {
         module_handle_messages! {
             on_bus self.bus,
             listen<MempoolBlockEvent> evt => {
-                _ = self.handle_mempool_event(evt).await.log_error("Handling Mempool Event");
+                _ = self.handle_mempool_event(evt).await.log_error(module_path!(), "Handling Mempool Event");
             }
 
             listen<MempoolStatusEvent> evt => {
-                _ = self.handle_mempool_status_event(evt).await.log_error("Handling Mempool Event");
+                _ = self.handle_mempool_status_event(evt).await.log_error(module_path!(), "Handling Mempool Event");
             }
 
             listen<GenesisEvent> cmd => {
                 if let GenesisEvent::GenesisBlock(signed_block) = cmd {
                     debug!("🌱  Genesis block received with validators {:?}", signed_block.consensus_proposal.staking_actions.clone());
-                    let _= self.handle_signed_block(signed_block).await.log_error("Handling GenesisBlock Event");
+                    let _= self.handle_signed_block(signed_block).await.log_error(module_path!(), "Handling GenesisBlock Event");
                 } else {
                     // TODO: I think this is technically a data race with p2p ?
                     self.need_catchup = true;
@@ -172,7 +172,7 @@ impl DataAvailability {
             Some(streamed_block) = catchup_block_receiver.recv() => {
                 let height = streamed_block.height().0;
 
-                let _ = self.handle_signed_block(streamed_block).await.log_error(format!("Handling streamed block {height}"));
+                let _ = self.handle_signed_block(streamed_block).await.log_error(module_path!(), format!("Handling streamed block {height}"));
 
                 // Stop streaming after reaching a height communicated by Mempool
                 if let Some(until_height) = self.catchup_height.as_ref() {
@@ -392,7 +392,7 @@ impl DataAvailability {
         _ = self
             .bus
             .send(DataEvent::OrderedSignedBlock(block))
-            .log_error("Sending OrderedSignedBlock");
+            .log_error(module_path!(), "Sending OrderedSignedBlock");
     }
 
     async fn stream_to_peers(&mut self, event: DataAvailabilityServerEvent) {

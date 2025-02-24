@@ -126,13 +126,13 @@ impl Indexer {
             listen<NodeStateEvent> event => {
                 _ = self.handle_node_state_event(event)
                     .await
-                    .log_error("Indexer handling node state event");
+                    .log_error(module_path!(), "Indexer handling node state event");
             }
 
             listen<MempoolStatusEvent> event => {
                 _ = self.handle_mempool_status_event(event)
                     .await
-                    .log_error("Indexer handling mempool status event");
+                    .log_error(module_path!(), "Indexer handling mempool status event");
             }
 
             Some((contract_name, socket)) = self.new_sub_receiver.recv() => {
@@ -154,7 +154,7 @@ impl Indexer {
                                     match maybe_transaction {
                                         Ok(transaction) => {
                                             if let Ok(json) = serde_json::to_vec(&transaction)
-                                                .log_error("Serialize transaction to JSON") {
+                                                .log_error(module_path!(), "Serialize transaction to JSON") {
                                                 if ws_tx.send(Message::Binary(json.into())).await.is_err() {
                                                     break;
                                                 }
@@ -302,7 +302,10 @@ impl Indexer {
                         parent_data_proposal_hash_db,
                     )
                     .await
-                    .log_warn("Inserting tx data at status 'waiting dissemination'");
+                    .log_warn(
+                        module_path!(),
+                        "Inserting tx data at status 'waiting dissemination'",
+                    );
             }
 
             MempoolStatusEvent::DataProposalCreated {
@@ -315,7 +318,7 @@ impl Indexer {
                     let tx_type: TransactionTypeDb = value.transaction_kind.into();
                     let version = i32::try_from(value.version)
                         .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))
-                        .log_error("Converting version number into i32")
+                        .log_error(module_path!(), "Converting version number into i32")
                         .unwrap_or(0);
 
                     let tx_hash: TxHashDb = value.id.1.into();
@@ -401,7 +404,7 @@ impl Indexer {
                     blob_tx.blobs.iter().enumerate(),
                     |mut b, (blob_index, blob)| {
                         let blob_index = i32::try_from(blob_index)
-                            .log_error("Blob index is too large to fit into an i32")
+                            .log_error(module_path!(), "Blob index is too large to fit into an i32")
                             .unwrap_or_default();
 
                         let identity = &blob_tx.identity.0;
@@ -486,7 +489,7 @@ impl Indexer {
             .bind(i)
             .execute(&mut *transaction)
             .await
-            .log_warn(format!("Inserting transaction {:?}", tx_hash))?;
+            .log_warn(module_path!(), format!("Inserting transaction {:?}", tx_hash))?;
 
             _ = self
                 .insert_tx_data(
@@ -496,7 +499,7 @@ impl Indexer {
                     parent_data_proposal_hash.clone(),
                 )
                 .await
-                .log_warn("Inserting tx data when tx in block");
+                .log_warn(module_path!(), "Inserting tx data when tx in block");
 
             if let TransactionData::Blob(blob_tx) = &tx.transaction_data {
                 // Send the transaction to all websocket subscribers
@@ -537,7 +540,7 @@ impl Indexer {
             .bind(serialized_events)
             .execute(&mut *transaction)
             .await
-            .log_warn(format!("Inserting transaction state event {:?}", tx_hash))?;
+            .log_warn(module_path!(), format!("Inserting transaction state event {:?}", tx_hash))?;
         }
 
         // Handling new stakers

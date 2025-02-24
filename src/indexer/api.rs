@@ -285,7 +285,7 @@ pub async fn get_transaction_with_hash(
 ) -> Result<Json<APITransaction>, StatusCode> {
     let transaction = sqlx::query_as::<_, TransactionDb>(
         r#"
-        SELECT tx_hash, version, transaction_type, transaction_status, parent_dp_hash, block_hash, index 
+        SELECT tx_hash, version, transaction_type, transaction_status, parent_dp_hash, block_hash, index
         FROM transactions
         WHERE tx_hash = $1
         ORDER BY index ASC
@@ -295,7 +295,7 @@ pub async fn get_transaction_with_hash(
     .fetch_optional(&state.db)
     .await
     .map(|db| db.map(Into::<APITransaction>::into))
-    .log_error("Select transaction")
+    .log_error(module_path!(), "Select transaction")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match transaction {
@@ -331,7 +331,7 @@ pub async fn get_transaction_events(
     .bind(tx_hash)
     .fetch_all(&state.db)
     .await
-    .log_error("Failed to fetch transactions with blobs")
+    .log_error(module_path!(), "Failed to fetch transactions with blobs")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let transactions: Result<Vec<APITransactionEvents>, anyhow::Error> = rows
@@ -409,7 +409,7 @@ pub async fn get_blob_transactions_by_contract(
     .bind(contract_name.clone())
     .fetch_all(&state.db)
     .await
-    .log_error("Failed to fetch transactions with blobs")
+    .log_error(module_path!(), "Failed to fetch transactions with blobs")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let transactions: Result<Vec<TransactionWithBlobs>, anyhow::Error> = rows

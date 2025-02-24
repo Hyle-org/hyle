@@ -127,7 +127,7 @@ where
             listen<NodeStateEvent> event => {
                 _ = self.handle_node_state_event(event)
                     .await
-                    .log_error("Handling node state event")
+                    .log_error(module_path!(), "Handling node state event")
             }
         };
 

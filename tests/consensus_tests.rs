@@ -54,7 +54,7 @@ mod e2e_consensus {
             .indexer_client()
             .fetch_current_state(&"hyllar".into())
             .await
-            .log_error("fetch state failed")
+            .log_error(module_path!(), "fetch state failed")
             .unwrap();
         let hydentity: Hydentity = ctx
             .indexer_client()
