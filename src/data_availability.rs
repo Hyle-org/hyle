@@ -98,14 +98,15 @@ impl Module for DataAvailability {
 
 impl DataAvailability {
     pub async fn start(&mut self) -> Result<()> {
-        let pool = codec_data_availability::listen(self.config.da_address.clone()).await?;
-
         info!(
             "📡  Starting DataAvailability module, listening for stream requests on {}",
             &self.config.da_address
         );
 
-        let (pool_sender, mut pool_receiver) = pool.run_in_background().await?;
+        let (pool_sender, mut pool_receiver) =
+            codec_data_availability::create_server(self.config.da_address.clone())
+                .run_in_background()
+                .await?;
 
         let (catchup_block_sender, mut catchup_block_receiver) =
             tokio::sync::mpsc::channel::<SignedBlock>(100);
