@@ -1,27 +1,33 @@
 use crate::{
-    bus::BusMessage,
+    bus::{BusClientSender, BusMessage},
     model::{SharedRunContext, Transaction},
     module_handle_messages,
-    p2p::stream::read_stream,
+    tcp::tcp_client_server,
     utils::{
         conf::SharedConf,
+        logger::LogMe,
         modules::{module_bus_client, Module},
     },
 };
 
 use anyhow::{Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_model::TcpServerNetMessage;
 use serde::{Deserialize, Serialize};
-use tokio::{io::AsyncWriteExt, net::TcpListener};
-use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tracing::info;
 
 #[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
 pub enum TcpServerMessage {
     NewTx(Transaction),
 }
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
+pub struct TcpServerResponse;
 impl BusMessage for TcpServerMessage {}
+
+tcp_client_server! {
+    TcpServer,
+    request: TcpServerMessage,
+    response: TcpServerResponse
+}
 
 module_bus_client! {
 #[derive(Debug)]
@@ -61,211 +67,21 @@ impl TcpServer {
             .as_ref()
             .context("tcp_server_address not specified in conf file. Not Starting module.")?;
 
-        let tcp_listener = TcpListener::bind(tcp_server_address).await?;
+        let (_, mut receiver) = codec_tcp_server::create_server(tcp_server_address.clone())
+            .run_in_background()
+            .await?;
 
         info!(
             "📡  Starting TcpServer module, listening for stream requests on {}",
             tcp_server_address
         );
 
-        let mut readers: tokio::task::JoinSet<Result<()>> = tokio::task::JoinSet::new();
-
         module_handle_messages! {
             on_bus self.bus,
-
-            Ok((tcp_stream, _)) = tcp_listener.accept() => {
-                let sender: &tokio::sync::broadcast::Sender<TcpServerMessage> = self.bus.get();
-                let sender = sender.clone();
-                readers.spawn(async move {
-                    let mut codec = LengthDelimitedCodec::new();
-                    codec.set_max_frame_length(128 * 1024 * 1024); // Set max frame length to 128 Mb
-                    let mut framed = Framed::new(tcp_stream, codec);
-                    loop {
-                        let net_msg = read_stream(&mut framed).await.context("Reading TCP stream")?;
-                        match net_msg {
-                            TcpServerNetMessage::NewTx(tx) => {
-                                sender.send(TcpServerMessage::NewTx(tx))?;
-                            },
-                            TcpServerNetMessage::Ping => {
-                                framed.get_mut().write_all(b"Pong").await?;
-                            }
-                        };
-                    }
-                });
+            Some(res) = receiver.recv() => {
+                _ = self.bus.send(*res.data).log_error("Sending message on TcpServerMessage topic from connection pool");
             }
         };
-
-        readers.abort_all();
-
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use futures::SinkExt;
-    use hyle_model::BlobTransaction;
-    use rand::Rng;
-    use std::{sync::Arc, time::Duration};
-    use tokio::{io::AsyncReadExt, net::TcpStream, sync::broadcast::Receiver, time::timeout};
-    use tokio_util::codec::FramedWrite;
-
-    use crate::{
-        bus::{dont_use_this::get_receiver, SharedMessageBus},
-        utils::conf::Conf,
-    };
-
-    use super::*;
-
-    pub async fn build() -> (TcpServer, Receiver<TcpServerMessage>) {
-        let shared_bus = SharedMessageBus::default();
-
-        let bus = TcpServerBusClient::new_from_bus(shared_bus.new_handle()).await;
-
-        let tcp_server_message_receiver = get_receiver::<TcpServerMessage>(&shared_bus).await;
-
-        let mut rng = rand::rng();
-        let random_port: u32 = rng.random_range(1024..65536);
-
-        let config = Conf {
-            run_tcp_server: true,
-            tcp_server_address: Some(format!("127.0.0.1:{random_port}").to_string()),
-            ..Default::default()
-        };
-
-        (
-            TcpServer {
-                config: Arc::new(config),
-                bus,
-            },
-            tcp_server_message_receiver,
-        )
-    }
-
-    pub async fn assert_server_up(addr: &str, timeout_duration: u64) -> Result<()> {
-        let mut connected = false;
-
-        timeout(Duration::from_millis(timeout_duration), async {
-            loop {
-                match TcpStream::connect(addr).await {
-                    Ok(_) => {
-                        connected = true;
-                        break;
-                    }
-                    _ => {
-                        info!("⏰ Waiting for server to be ready");
-                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    }
-                }
-            }
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("Timeout reached while waiting for height: {e}"))?;
-
-        assert!(
-            connected,
-            "Could not connect after {timeout_duration} seconds"
-        );
-
-        info!("✅ Server is ready");
-        Ok(())
-    }
-
-    pub async fn assert_new_tx(
-        mut receiver: Receiver<TcpServerMessage>,
-        tx: Transaction,
-        timeout_duration: u64,
-    ) -> Result<Transaction> {
-        timeout(Duration::from_millis(timeout_duration), async {
-            loop {
-                match receiver.try_recv() {
-                    Ok(TcpServerMessage::NewTx(received_tx)) => {
-                        if tx == received_tx {
-                            return Ok(tx);
-                        } else {
-                            println!("Expected NewTx({:?}), found NewTx({:?})", tx, received_tx);
-                        }
-                    }
-                    Err(_) => {
-                        info!("⏰ Waiting for server to be send transaction message");
-                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                    }
-                }
-            }
-        })
-        .await
-        .map_err(|e| anyhow::anyhow!("Timeout reached while waiting for new transaction: {e}"))?
-    }
-
-    #[test_log::test(tokio::test)]
-    async fn test_tcp_server() -> Result<()> {
-        let (mut tcp_server, _) = build().await;
-
-        let addr = tcp_server.config.tcp_server_address.clone().unwrap();
-
-        // Starts server
-        tokio::spawn(async move {
-            let result = tcp_server.start().await;
-            assert!(result.is_ok(), "{}", result.unwrap_err().to_string());
-        });
-
-        assert_server_up(&addr, 500).await?;
-        Ok(())
-    }
-
-    #[test_log::test(tokio::test)]
-    async fn test_ping() -> Result<()> {
-        let (mut tcp_server, _) = build().await;
-
-        let addr = tcp_server.config.tcp_server_address.clone().unwrap();
-
-        // Starts server
-        tokio::spawn(async move {
-            let result = tcp_server.start().await;
-            assert!(result.is_ok(), "{}", result.unwrap_err().to_string());
-        });
-
-        assert_server_up(&addr, 500).await?;
-
-        let stream = TcpStream::connect(addr).await?;
-        let mut framed = FramedWrite::new(stream, LengthDelimitedCodec::new());
-
-        let encoded_msg = borsh::to_vec(&TcpServerNetMessage::Ping)?;
-
-        framed.send(encoded_msg.into()).await?;
-
-        // Reading the pong response
-        let mut buf = vec![0; 4];
-        framed.get_mut().read_exact(&mut buf).await?;
-        assert_eq!(&buf, b"Pong");
-
-        Ok(())
-    }
-
-    #[test_log::test(tokio::test)]
-    async fn test_send_transaction() -> Result<()> {
-        let (mut tcp_server, tcp_message_receiver) = build().await;
-
-        let addr = tcp_server.config.tcp_server_address.clone().unwrap();
-
-        // Starts server
-        tokio::spawn(async move {
-            let result = tcp_server.start().await;
-            assert!(result.is_ok(), "{}", result.unwrap_err().to_string());
-        });
-
-        // wait until it's up
-        assert_server_up(&addr, 500).await?;
-
-        // Sending the transaction
-        let stream = TcpStream::connect(addr).await?;
-        let mut framed = FramedWrite::new(stream, LengthDelimitedCodec::new());
-
-        let tx: Transaction = BlobTransaction::default().into();
-        let net_msg = TcpServerNetMessage::NewTx(tx.clone());
-        framed.send(net_msg.to_binary().unwrap().into()).await?;
-
-        assert_new_tx(tcp_message_receiver, tx, 500).await?;
 
         Ok(())
     }
