@@ -202,7 +202,7 @@ impl ModulesHandler {
     }
 
     fn long_running_module(module_name: &str) -> bool {
-        ![std::any::type_name::<Genesis>(), "whatever-module"].contains(&module_name)
+        ![std::any::type_name::<Genesis>()].contains(&module_name)
     }
 
     pub async fn start_modules(&mut self) -> Result<()> {
@@ -251,15 +251,18 @@ impl ModulesHandler {
 
         // Sends a trigger event when one task ends (should not, but in case of panic, no event is sent)
         let join_set: Vec<JoinHandle<()>> = self.running_modules.drain(..).collect();
+        let started_modules_cloned = self.started_modules.clone();
         tokio::task::Builder::new()
             .name("module-panic-failure-listener")
             .spawn(async move {
-                _ = select_all(join_set).await;
-                _ = shutdown_client
-                    .send(signal::ShutdownCompleted {
-                        module: "whatever-module".to_string(),
-                    })
-                    .log_error("Sending ShutdownCompleted message");
+                let (_res, idx, _remaining) = select_all(join_set).await;
+                if let Some(module_name) = started_modules_cloned.get(idx) {
+                    _ = shutdown_client
+                        .send(signal::ShutdownCompleted {
+                            module: module_name.to_string(),
+                        })
+                        .log_error("Sending ShutdownCompleted message");
+                }
             })?;
 
         let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
@@ -267,7 +270,10 @@ impl ModulesHandler {
         handle_messages! {
             on_bus shutdown_client,
             listen<signal::ShutdownCompleted> msg => {
-                if Self::long_running_module(msg.module.as_str()) || (msg.module == "whatever-module" && self.shut_modules.is_empty())  {
+
+                if Self::long_running_module(msg.module.as_str()) && !self.shut_modules.contains(&msg.module)  {
+                    dbg!(&msg);
+                    self.started_modules.retain(|module| *module != msg.module.clone());
                     self.shut_modules.push(msg.module.clone());
                     if self.started_modules.is_empty() {
                         break;
@@ -565,13 +571,6 @@ mod tests {
             std::any::type_name::<TestModule<String>>().to_string()
         );
 
-        // After the first module is shut, its task completed and triggered the generic shutdown event
-
-        assert_eq!(
-            shutdown_completed_receiver.recv().await.unwrap().module,
-            "whatever-module".to_string()
-        );
-
         // Then first module at last
         assert_eq!(
             shutdown_receiver.recv().await.unwrap().module,
@@ -618,11 +617,6 @@ mod tests {
         assert_eq!(
             shutdown_completed_receiver.recv().await.unwrap().module,
             std::any::type_name::<TestModule<bool>>().to_string()
-        );
-
-        assert_eq!(
-            shutdown_completed_receiver.recv().await.unwrap().module,
-            "whatever-module".to_string()
         );
 
         assert_eq!(
@@ -679,19 +673,16 @@ mod tests {
 
         _ = handler.shutdown_loop().await;
 
-        // u64 module fails first
+        // u64 module fails first, emits two events, one because it is the first task to end,
+        // and the other because it finished to shutdown corretly
         assert_eq!(
             shutdown_completed_receiver.recv().await.unwrap().module,
             std::any::type_name::<TestModule<u64>>().to_string()
         );
-
-        // Since the task finished, the generic event is sent
-
         assert_eq!(
             shutdown_completed_receiver.recv().await.unwrap().module,
-            "whatever-module".to_string()
+            std::any::type_name::<TestModule<u64>>().to_string()
         );
-
         // Shutdown last module first
         assert_eq!(
             shutdown_completed_receiver.recv().await.unwrap().module,
@@ -711,7 +702,7 @@ mod tests {
         );
     }
     #[tokio::test]
-    async fn test_shutdown_all_modules_if_one_module_task_early_fails() {
+    async fn test_shutdown_all_modules_if_one_module_panics() {
         let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
         let mut shutdown_completed_receiver = get_receiver::<ShutdownCompleted>(&shared_bus).await;
         let mut handler = ModulesHandler::new(&shared_bus).await;
@@ -747,11 +738,11 @@ mod tests {
 
         _ = handler.shutdown_loop().await;
 
-        // u32 module failed without emitting event: since the task finished, the generic event is sent
+        // u32 module failed with panic, but the event should be emitted
 
         assert_eq!(
             shutdown_completed_receiver.recv().await.unwrap().module,
-            "whatever-module".to_string()
+            std::any::type_name::<TestModule<u32>>().to_string()
         );
 
         // Shutdown last module first
