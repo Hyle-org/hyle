@@ -191,6 +191,14 @@ bus_client! {
     }
 }
 
+pub struct ModulesHandler {
+    bus: SharedMessageBus,
+    modules: Vec<ModuleStarter>,
+    started_modules: Vec<&'static str>,
+    running_modules: Vec<JoinHandle<()>>,
+    shut_modules: Vec<String>,
+}
+
 impl ModulesHandler {
     pub async fn new(shared_bus: &SharedMessageBus) -> ModulesHandler {
         let shared_message_bus = shared_bus.new_handle();
