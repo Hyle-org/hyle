@@ -7,6 +7,8 @@ use anyhow::{bail, Context, Error};
 use hyle_model::{HyleOutput, ProgramId};
 use rand::Rng;
 
+include!(concat!(env!("OUT_DIR"), "/dependency_versions.rs"));
+
 #[cfg(feature = "sp1")]
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1VerifyingKey};
 

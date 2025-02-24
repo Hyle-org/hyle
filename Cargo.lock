@@ -961,6 +961,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cargo-toml-parser"
+version = "0.2.0"
+dependencies = [
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "cargo_metadata"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2664,6 +2672,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "borsh",
+ "cargo-toml-parser",
  "hyle-model",
  "rand 0.9.0",
  "risc0-zkvm",
