@@ -284,12 +284,15 @@ impl Genesis {
             let identity = Identity::new("faucet.hydentity");
             let mut transaction = ProvableBlobTx::new(identity.clone());
 
+            let faucet_pwd =
+                std::env::var("HYLE_FAUCET_PASSWORD").unwrap_or("password".to_string());
+
             // Verify identity
             verify_identity(
                 &mut transaction,
                 ContractName::new("hydentity"),
                 &tx_executor.hydentity,
-                "password".to_string(),
+                faucet_pwd,
             )?;
 
             // Transfer
@@ -379,9 +382,12 @@ impl Genesis {
         let hyllar_program_id = hyle_contracts::HYLLAR_ID.to_vec();
         let hydentity_program_id = hyle_contracts::HYDENTITY_ID.to_vec();
 
+        // get password from env var if exists
+        let password = std::env::var("HYLE_FAUCET_PASSWORD").unwrap_or("password".to_string());
+
         let mut hydentity_state = hydentity::Hydentity::default();
         hydentity_state
-            .register_identity("faucet.hydentity", "password")
+            .register_identity("faucet.hydentity", &password)
             .expect("faucet must register");
 
         let staking_state = staking::state::Staking::new();
