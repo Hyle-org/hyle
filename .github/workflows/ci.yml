@@ -24,6 +24,9 @@ jobs:
       - uses: actions/checkout@v4
       - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
 
+      // For keyring dependencies
+      - run: sudo apt install libdbus-1-dev pkg-config
+
       - name: Cache Docker layers
         id: image-cache
         uses: actions/cache@v4
@@ -76,6 +79,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      // For keyring dependencies
+      - run: sudo apt install libdbus-1-dev pkg-config
       - name: Install r0vm
         run: |
           wget https://github.com/risc0/risc0/releases/download/v1.2.0/cargo-risczero-x86_64-unknown-linux-gnu.tgz
@@ -105,6 +110,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      // For keyring dependencies
+      - run: sudo apt install libdbus-1-dev pkg-config
       - name: Build model
         run: cargo build -p hyle-model --no-default-features
       - name: Build
@@ -118,4 +125,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Machete
-        uses: bnjbvr/cargo-machete@main
+        uses: bnjbvr/cargo-machete@v0.7.1
