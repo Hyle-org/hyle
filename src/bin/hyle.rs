@@ -88,6 +88,8 @@ async fn main() -> Result<()> {
         ),
     )?;
 
+    info!("Loaded key {:?} for validator", pubkey);
+
     let pg;
     if args.pg {
         if std::fs::metadata(&config.data_directory).is_ok() {

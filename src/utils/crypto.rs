@@ -1,3 +1,30 @@
+//! # BlstCrypto
+//!
+//! The `BlstCrypto` struct is used to manage cryptographic keys and operations.
+//!
+//! ## Initialization
+//!
+//! The function `new` is used to initialize a `BlstCrypto` instance. The behavior of this function depends on the environment:
+//!
+//! ```rust
+//! use crate::utils::crypto::BlstCrypto;
+//!
+//! let validator_name = String::from("validator_name");
+//! let crypto = BlstCrypto::new(validator_name).expect("Failed to initialize BlstCrypto");
+//! ```
+//!
+//! ### Non-Test Environment
+//!
+//! This module load the private key seed from the environment variable `HYLE_VALIDATOR_SECRET`.
+//! The content of the variable must be a hexadecimal string.
+//! If the variable is not set, it tries to load the key from the keyring.
+//!
+//! Note: you can use tools like seahorse (https://wiki.gnome.org/Apps/Seahorse) to manage your keyring
+//!
+//! ### Test Environment
+//!
+//! In a test environment the modules generates a secret key based on the validator name, which is less secure but suitable for testing purposes.
+//!
 #![allow(dead_code, unused_variables)]
 
 use std::sync::Arc;
@@ -30,6 +57,53 @@ const DST: &[u8] = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_NUL_";
 pub const SIG_SIZE: usize = 48;
 
 impl BlstCrypto {
+    #[cfg(not(test))]
+    pub fn new(validator_name: String) -> Result<Self> {
+        let sk = Self::load_from_env().or_else(|err| {
+            println!("Could not load secret from env: {}", err);
+            Self::load_from_keyring(&validator_name)
+        })?;
+
+        let validator_pubkey = as_validator_pubkey(sk.sk_to_pk());
+
+        Ok(BlstCrypto {
+            sk,
+            validator_pubkey,
+        })
+    }
+
+    /// Load the secret key from the environment variable `HYLE_VALIDATOR_SECRET`.
+    #[cfg(not(test))]
+    fn load_from_env() -> Result<SecretKey> {
+        let secret = std::env::var("HYLE_VALIDATOR_SECRET")
+            .map_err(|_| anyhow!("HYLE_VALIDATOR_SECRET not set"))?;
+        SecretKey::key_gen(&hex::decode(secret)?, &[])
+            .map_err(|e| anyhow!("Could not generate key from keyring secret: {:?}", e))
+    }
+
+    /// Load the secret key from the keyring. If the key does not exist, a new random one is generated.
+    #[cfg(not(test))]
+    fn load_from_keyring(validator_name: &str) -> Result<SecretKey> {
+        let user = whoami::username();
+        let entry = keyring::Entry::new_with_target("hyle", validator_name, &user)?;
+
+        let sk = match entry.get_password() {
+            Ok(secret) => SecretKey::key_gen(&hex::decode(secret)?, &[])
+                .map_err(|e| anyhow!("Could not generate key from keyring secret: {:?}", e))?,
+            Err(keyring::Error::NoEntry) => {
+                let mut ikm = [0u8; 32];
+                rand::rng().fill(&mut ikm);
+                entry.set_password(&hex::encode(ikm))?;
+                SecretKey::key_gen(&ikm, &[])
+                    .map_err(|e| anyhow!("Could not generate new key: {:?}", e))?
+            }
+            Err(e) => bail!("Could not get secret: {:?}", e),
+        };
+
+        Ok(sk)
+    }
+
+    #[cfg(test)]
     pub fn new(validator_name: String) -> Result<Self> {
         // TODO load secret key from keyring or other
         // here basically secret_key <=> validator_id which is very badly secure !
@@ -49,6 +123,7 @@ impl BlstCrypto {
         })
     }
 
+    #[cfg(test)]
     pub fn new_random() -> Result<Self> {
         let mut rng = rand::rng();
         let id: String = (0..32)
