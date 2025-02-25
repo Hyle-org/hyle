@@ -18,7 +18,7 @@ use anyhow::{bail, Error, Result};
 use futures::future::select_all;
 use rand::{distr::Alphanumeric, Rng};
 use tokio::task::JoinHandle;
-use tracing::{debug, info};
+use tracing::{debug, info, trace};
 
 /// Module trait to define startup dependencies
 pub trait Module
@@ -255,8 +255,18 @@ impl ModulesHandler {
         tokio::task::Builder::new()
             .name("module-panic-failure-listener")
             .spawn(async move {
+                trace!("Module failure listener - Join set size {}", join_set.len());
+                trace!(
+                    "Module failure listener - Started modules {:?}",
+                    started_modules_cloned.clone()
+                );
+                if join_set.is_empty() {
+                    return;
+                }
                 let (_res, idx, _remaining) = select_all(join_set).await;
                 if let Some(module_name) = started_modules_cloned.get(idx) {
+                    debug!("First module to shutdown {}", module_name);
+
                     _ = shutdown_client
                         .send(signal::ShutdownCompleted {
                             module: module_name.to_string(),
@@ -272,7 +282,6 @@ impl ModulesHandler {
             listen<signal::ShutdownCompleted> msg => {
 
                 if Self::long_running_module(msg.module.as_str()) && !self.shut_modules.contains(&msg.module)  {
-                    dbg!(&msg);
                     self.started_modules.retain(|module| *module != msg.module.clone());
                     self.shut_modules.push(msg.module.clone());
                     if self.started_modules.is_empty() {
@@ -538,6 +547,7 @@ mod tests {
         );
     }
 
+    // When modules are strated in the following order A, B, C, they should be closed in the reverse order C, B, A
     #[tokio::test]
     async fn test_start_stop_modules_in_order() {
         let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
@@ -636,6 +646,10 @@ mod tests {
         assert_eq!(cancellation_counter_receiver.try_recv().expect("1"), 1);
     }
 
+    // in case a module fails, it will emit a shutdowncompleted event that will trigger the shutdown loop and shut all other modules
+    // the module panic listener will also emit an event because the task ended (and it does not know why)
+    // That is why in case of a graceful failure, the shutdown loop receives 2 events for the failed module
+    // All other modules are shut in the right order
     #[tokio::test]
     async fn test_shutdown_all_modules_if_one_fails() {
         let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
@@ -701,6 +715,10 @@ mod tests {
             std::any::type_name::<TestModule<usize>>().to_string()
         );
     }
+
+    // in case a module panics,
+    // the module panic listener will know the task has ended, and will trigger a shutdown completed event
+    // the other modules will shut in the right order
     #[tokio::test]
     async fn test_shutdown_all_modules_if_one_module_panics() {
         let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
@@ -745,7 +763,6 @@ mod tests {
             std::any::type_name::<TestModule<u32>>().to_string()
         );
 
-        // Shutdown last module first
         assert_eq!(
             shutdown_completed_receiver.recv().await.unwrap().module,
             std::any::type_name::<TestModule<bool>>().to_string()
@@ -755,8 +772,6 @@ mod tests {
             shutdown_completed_receiver.recv().await.unwrap().module,
             std::any::type_name::<TestModule<String>>().to_string()
         );
-
-        // Then first module at last
 
         assert_eq!(
             shutdown_completed_receiver.recv().await.unwrap().module,
