@@ -116,4 +116,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Machete
-        uses: bnjbvr/cargo-machete@main
+        uses: bnjbvr/cargo-machete@v0.7.1
