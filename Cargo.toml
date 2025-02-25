@@ -97,7 +97,7 @@ assertables = { version = "9.5.0" }
 axum = { version = "0.8.1", features = ["ws", "macros"] }
 axum-otel-metrics = { version = "0.10.0" }
 bytes = { version = "1.10.0" }
-clap = { version = "4.5.30", features = ["derive"] }
+clap = { version = "4.5.31", features = ["derive"] }
 config = { version = "=0.15.0", default-features = false, features = ["ron"] }
 futures = { version = "0.3.31" }
 hyle-contracts = { path = "./crates/contracts", package = "hyle-contracts" }
