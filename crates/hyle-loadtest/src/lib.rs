@@ -1,17 +1,26 @@
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
 use anyhow::Result;
 use client_sdk::contract_states;
+use client_sdk::helpers::risc0::Risc0Prover;
 use client_sdk::helpers::test::TestProver;
+use client_sdk::rest_client::{IndexerApiHttpClient, NodeApiHttpClient};
 use client_sdk::tcp_client::NodeTcpClient;
-use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutorBuilder};
+use client_sdk::transaction_builder::{
+    ProvableBlobTx, StateUpdater, TxExecutor, TxExecutorBuilder,
+};
+use hydentity::client::{register_identity, verify_identity};
 use hydentity::Hydentity;
 use hyle_contract_sdk::erc20::ERC20;
-use hyle_contract_sdk::BlobTransaction;
 use hyle_contract_sdk::Identity;
 use hyle_contract_sdk::{guest, ContractInput, ContractName, HyleOutput};
 use hyle_contract_sdk::{Blob, BlobData, ContractAction, RegisterContractAction};
+use hyle_contract_sdk::{BlobTransaction, TxHash};
 use hyle_contract_sdk::{Digestable, TcpServerNetMessage};
+use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF};
 use hyllar::client::transfer;
 use hyllar::Hyllar;
+use rand::Rng;
 use tokio::task::JoinSet;
 use tracing::info;
 
@@ -20,6 +29,14 @@ contract_states!(
     pub struct States {
         pub hydentity: Hydentity,
         pub hyllar_test: Hyllar,
+    }
+);
+
+contract_states!(
+    #[derive(Debug, Clone)]
+    pub struct CanonicalStates {
+        pub hydentity: Hydentity,
+        pub hyllar: Hyllar,
     }
 );
 
@@ -258,6 +275,155 @@ pub async fn send_proof_txs(url: String, proof_txs: Vec<Vec<u8>>) -> Result<()> 
     info!("Proof transactions sent: {:?} total", proof_txs.len());
 
     Ok(())
+}
+
+pub fn get_current_timestamp_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_millis() as u64
+}
+
+pub async fn send_transaction<S: StateUpdater>(
+    client: &NodeApiHttpClient,
+    transaction: ProvableBlobTx,
+    ctx: &mut TxExecutor<S>,
+) -> TxHash {
+    let identity = transaction.identity.clone();
+    let blobs = transaction.blobs.clone();
+    let tx_hash = client
+        .send_tx_blob(&BlobTransaction::new(identity, blobs))
+        .await
+        .unwrap();
+
+    let provable_tx = ctx.process(transaction).unwrap();
+    for proof in provable_tx.iter_prove() {
+        let tx = proof.await.unwrap();
+        client.send_tx_proof(&tx).await.unwrap();
+    }
+    tx_hash
+}
+
+pub async fn long_running_test(url: String) -> Result<()> {
+    let client = NodeApiHttpClient::new("http://rest-api.devnet.hyle.eu".to_string())?;
+    let indexer = IndexerApiHttpClient::new("http://rest-api.devnet.hyle.eu".to_string())?;
+
+    let mut users: Vec<u64> = vec![];
+
+    let qps = 10;
+
+    loop {
+        let hyllar: Hyllar = indexer
+            .fetch_current_state(&ContractName::new("hyllar"))
+            .await?;
+        let hydentity: Hydentity = indexer
+            .fetch_current_state(&ContractName::new("hydentity"))
+            .await?;
+
+        let mut tx_ctx = TxExecutorBuilder::new(CanonicalStates { hydentity, hyllar })
+            // Replace prover binaries for non-reproducible mode.
+            .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
+            .with_prover("hyllar".into(), Risc0Prover::new(HYLLAR_ELF))
+            .build();
+
+        let now = get_current_timestamp_ms();
+
+        // Every 1/10
+        if now % qps * 1000 > qps * 900 || users.len() < 2 {
+            let ident = Identity(format!("{}.hydentity", now));
+            users.push(now);
+
+            tracing::warn!("Creating identity with 100 tokens: {}", ident);
+
+            // Register new identity
+            let mut transaction = ProvableBlobTx::new(ident.clone());
+
+            _ = register_identity(&mut transaction, "hydentity".into(), "password".to_owned());
+
+            let tx_hash = send_transaction(&client, transaction, &mut tx_ctx).await;
+            tracing::warn!("Register TX Hash: {:?}", tx_hash);
+
+            // Feed with some token
+            let mut transaction = ProvableBlobTx::new("faucet.hydentity".into());
+
+            verify_identity(
+                &mut transaction,
+                "hydentity".into(),
+                &tx_ctx.hydentity,
+                "password".to_string(),
+            )?;
+
+            transfer(&mut transaction, "hyllar".into(), ident.0.clone(), 100)?;
+
+            let tx_hash = send_transaction(&client, transaction, &mut tx_ctx).await;
+            tracing::warn!("Transfer TX Hash: {:?}", tx_hash);
+
+            continue;
+        }
+
+        // pick 2 random guys and send some tokens from 1 to another
+
+        let mut rng = rand::rng();
+
+        let (guy_1_idx, guy_2_idx): (u32, u32) = (rng.random(), rng.random());
+
+        let users_nb = users.len() as u32;
+
+        let (_, &guy_1_id) = users
+            .iter()
+            .enumerate()
+            .find(|(i, _)| *i as u32 == guy_1_idx % users_nb)
+            .unwrap();
+
+        let (_, &guy_2_id) = users
+            .iter()
+            .enumerate()
+            .find(|(i, _)| *i as u32 == (guy_2_idx % users_nb))
+            .unwrap();
+
+        if guy_1_id == guy_2_id {
+            continue;
+        }
+
+        let guy_1_balance = ERC20::balance_of(&tx_ctx.hyllar, &guy_1_id.to_string()).unwrap();
+        let guy_2_balance = ERC20::balance_of(&tx_ctx.hyllar, &guy_2_id.to_string()).unwrap();
+
+        let amount = rng.random_range(1..guy_1_balance);
+
+        info!(
+            "Transfering amount {} from {} to {}",
+            amount, guy_1_id, guy_2_id
+        );
+
+        let ident = Identity(format!("{}.hydentity", guy_1_id));
+
+        let mut transaction = ProvableBlobTx::new(ident);
+        verify_identity(
+            &mut transaction,
+            "hydentity".into(),
+            &tx_ctx.hydentity,
+            "password".to_string(),
+        )?;
+        transfer(
+            &mut transaction,
+            "hyllar".into(),
+            format!("{}.hyllar", guy_2_id),
+            amount as u128,
+        )?;
+
+        info!(
+            "New balances:\n - {}: {}\n - {}: {}",
+            guy_1_id,
+            guy_1_balance - amount,
+            guy_2_id,
+            guy_2_balance + amount
+        );
+
+        let tx_hash = send_transaction(&client, transaction, &mut tx_ctx).await;
+        tracing::warn!("Transfer TX Hash: {:?}", tx_hash);
+
+        tokio::time::sleep(Duration::from_millis(90)).await;
+    }
 }
 
 pub async fn send_massive_blob(users: u32, url: String) -> Result<()> {

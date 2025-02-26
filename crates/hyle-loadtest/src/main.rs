@@ -2,10 +2,11 @@ use anyhow::Error;
 use clap::{Parser, Subcommand};
 use hydentity::Hydentity;
 use hyle_loadtest::{
-    generate, generate_blobs_txs, generate_proof_txs, load_blob_txs, load_proof_txs, send,
-    send_blob_txs, send_massive_blob, send_proof_txs, setup, setup_hyllar, States,
+    generate, generate_blobs_txs, generate_proof_txs, load_blob_txs, load_proof_txs,
+    long_running_test, send, send_blob_txs, send_massive_blob, send_proof_txs, setup, setup_hyllar,
+    States,
 };
-use tracing::Level;
+use tracing::{info, Level};
 
 /// A cli to interact with hyle node
 #[derive(Debug, Parser)] // requires `derive` feature
@@ -57,6 +58,9 @@ enum SendCommands {
 
     #[command(alias = "smb")]
     SendMassiveBlob,
+
+    #[command(alias = "lrt")]
+    LongRunningTest,
 }
 
 #[tokio::main]
@@ -70,10 +74,10 @@ async fn main() -> Result<(), Error> {
     let users = args.users;
     let verifier = args.verifier;
 
-    let states = States {
-        hyllar_test: setup_hyllar(users)?,
-        hydentity: Hydentity::default(),
-    };
+    // let states = States {
+    //     hyllar_test: setup_hyllar(users)?,
+    //     hydentity: Hydentity::default(),
+    // };
 
     match args.command {
         SendCommands::Setup => setup(url, users, verifier).await?,
@@ -81,10 +85,10 @@ async fn main() -> Result<(), Error> {
             generate_blobs_txs(users).await?;
         }
         SendCommands::GenerateProofTransactions => {
-            generate_proof_txs(users, states).await?;
+            // generate_proof_txs(users, states).await?;
         }
         SendCommands::GenerateTransactions => {
-            generate(users, states).await?;
+            // generate(users, states).await?;
         }
         SendCommands::SendBlobTransactions => {
             let blob_txs = load_blob_txs(users)?;
@@ -102,11 +106,15 @@ async fn main() -> Result<(), Error> {
         SendCommands::LoadTest => {
             setup(url.clone(), users, verifier).await?;
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-            let (blob_txs, proof_txs) = generate(users, states).await?;
-            send(url, blob_txs, proof_txs).await?;
+            // let (blob_txs, proof_txs) = generate(users, states).await?;
+            // send(url, blob_txs, proof_txs).await?;
         }
         SendCommands::SendMassiveBlob => {
             send_massive_blob(users, url).await?;
+        }
+        SendCommands::LongRunningTest => {
+            info!("Starting long running test");
+            long_running_test(url).await?;
         }
     }
 
