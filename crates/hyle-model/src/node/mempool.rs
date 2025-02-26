@@ -99,6 +99,12 @@ pub struct TxId(pub DataProposalHash, pub TxHash);
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct DataProposalHash(pub String);
 
+impl DataProposalHash {
+    pub fn genesis(v_pubkey: ValidatorPublicKey) -> DataProposalHash {
+        DataProposalHash(hex::encode(v_pubkey.0))
+    }
+}
+
 impl Hashed<DataProposalHash> for DataProposal {
     fn hashed(&self) -> DataProposalHash {
         if let Some(hash) = self.hash_cache.read().unwrap().as_ref() {

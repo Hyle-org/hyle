@@ -342,6 +342,45 @@ impl Indexer {
                     .await
                     .context("Upserting data at status data_proposal_created")?;
             }
+
+            MempoolStatusEvent::DataProposalPoda {
+                data_proposal_hash: _,
+                txs_metadatas,
+                signatures: _,
+            } => {
+                let mut query_builder = QueryBuilder::new("INSERT INTO transactions (tx_hash, parent_dp_hash, version, transaction_type, transaction_status)");
+
+                query_builder.push_values(txs_metadatas, |mut b, value| {
+                    let tx_type: TransactionTypeDb = value.transaction_kind.into();
+                    let version = i32::try_from(value.version)
+                        .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))
+                        .log_error("Converting version number into i32")
+                        .unwrap_or(0);
+
+                    let tx_hash: TxHashDb = value.id.1.into();
+                    let parent_data_proposal_hash_db: DataProposalHashDb = value.id.0.into();
+
+                    b.push_bind(tx_hash)
+                        .push_bind(parent_data_proposal_hash_db)
+                        .push_bind(version)
+                        .push_bind(tx_type)
+                        .push_bind(TransactionStatusDb::DataProposalPoda);
+                });
+
+                // If the TX is already present, we try to update its status, only if the status is lower ('waiting_dissemination', 'data_proposal_created').
+                query_builder.push(" ON CONFLICT(tx_hash, parent_dp_hash) DO UPDATE SET ");
+
+                query_builder.push("transaction_status=");
+                query_builder.push_bind(TransactionStatusDb::DataProposalPoda);
+                query_builder
+                    .push(" WHERE transactions.transaction_status IN ('waiting_dissemination', 'data_proposal_created')");
+
+                query_builder
+                    .build()
+                    .execute(transaction.deref_mut())
+                    .await
+                    .context("Upserting data at status data_proposal_poda")?;
+            }
         }
 
         transaction.commit().await?;
@@ -1192,6 +1231,47 @@ mod test {
             &server,
             proof_tx_1_wd.hashed(),
             TransactionStatusDb::DataProposalCreated,
+        )
+        .await;
+
+        let data_proposal_poda_event = MempoolStatusEvent::DataProposalPoda {
+            signatures: vec![],
+            data_proposal_hash: data_proposal.hashed(),
+            txs_metadatas: vec![
+                register_tx_1_wd.metadata(parent_data_proposal_hash.clone()),
+                register_tx_2_wd.metadata(parent_data_proposal_hash.clone()),
+                blob_transaction_wd.metadata(parent_data_proposal_hash.clone()),
+                proof_tx_1_wd.metadata(parent_data_proposal_hash.clone()),
+            ],
+        };
+
+        indexer
+            .handle_mempool_status_event(data_proposal_poda_event.clone())
+            .await
+            .expect("MempoolStatusEvent");
+
+        assert_tx_status(
+            &server,
+            register_tx_1_wd.hashed(),
+            TransactionStatusDb::DataProposalPoda,
+        )
+        .await;
+        assert_tx_status(
+            &server,
+            register_tx_2_wd.hashed(),
+            TransactionStatusDb::DataProposalPoda,
+        )
+        .await;
+        assert_tx_status(
+            &server,
+            blob_transaction_wd.hashed(),
+            TransactionStatusDb::DataProposalPoda,
+        )
+        .await;
+        assert_tx_status(
+            &server,
+            proof_tx_1_wd.hashed(),
+            TransactionStatusDb::DataProposalPoda,
         )
         .await;
 

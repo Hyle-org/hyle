@@ -102,6 +102,31 @@ pub trait Storage {
         Ok(cut)
     }
 
+    fn tx_metadatas(
+        &mut self,
+        data_proposal_hash: &DataProposalHash,
+    ) -> Result<Vec<TransactionMetadata>> {
+        let id = self.id().clone();
+        match self.get_by_hash(&id, data_proposal_hash)? {
+            Some(lane_entry) => {
+                let parent_data_proposal_hash = lane_entry
+                    .data_proposal
+                    .parent_data_proposal_hash
+                    .clone()
+                    .unwrap_or(DataProposalHash::genesis(id.clone()));
+                let txs_metadatas: Vec<TransactionMetadata> = lane_entry
+                    .data_proposal
+                    .txs
+                    .iter()
+                    .map(|tx| tx.metadata(parent_data_proposal_hash.clone()))
+                    .collect();
+                Ok(txs_metadatas)
+            }
+            None => {
+                bail!("Could not find lane entry for {id} ({data_proposal_hash})");
+            }
+        }
+    }
     // Called by the initial proposal validator to aggregate votes
     fn on_data_vote(
         &mut self,
@@ -520,7 +545,7 @@ pub trait Storage {
         let parent_data_proposal = data_proposal
             .parent_data_proposal_hash
             .clone()
-            .unwrap_or_default();
+            .unwrap_or_else(|| DataProposalHash(hex::encode(validator_key.0.clone())));
 
         let tx_metadatas = data_proposal
             .txs
