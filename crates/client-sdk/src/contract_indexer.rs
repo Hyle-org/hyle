@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
+use core::str;
 use reqwest::StatusCode;
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::RwLock;
+use tracing::debug;
 
 use axum::{
     response::{IntoResponse, Response},
@@ -68,7 +70,12 @@ where
         };
 
         let (state, hyle_output) = guest::execute::<Self>(&contract_input);
-        info!("🚀 Executed {contract_name}: {hyle_output:?}");
+        let res = str::from_utf8(&hyle_output.program_outputs).unwrap_or("no output");
+        info!("🚀 Executed {contract_name}: {}", res);
+        debug!(
+            handler = %contract_name,
+            "hyle_output: {:?}", hyle_output
+        );
         Ok(state)
     }
 }
