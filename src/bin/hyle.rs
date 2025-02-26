@@ -72,7 +72,7 @@ async fn main() -> Result<()> {
     let mut config = conf::Conf::new(args.config_file, args.data_directory, args.run_indexer)
         .context("reading config file")?;
 
-    let crypto = Arc::new(BlstCrypto::new(config.id.clone()).context("Could not create crypto")?);
+    let crypto = Arc::new(BlstCrypto::new(&config.id).context("Could not create crypto")?);
     let pubkey = Some(crypto.validator_pubkey().clone());
 
     setup_tracing(

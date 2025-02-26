@@ -545,7 +545,7 @@ mod tests {
         let shared_bus = SharedMessageBus::default();
         let bus = GenesisBusClient::new_from_bus(shared_bus.new_handle()).await;
         let test_bus = TestGenesisBusClient::new_from_bus(shared_bus.new_handle()).await;
-        let crypto = Arc::new(BlstCrypto::new(config.id.clone()).unwrap());
+        let crypto = Arc::new(BlstCrypto::new(&config.id).unwrap());
         (
             Genesis {
                 config: Arc::new(config),
@@ -705,7 +705,7 @@ mod tests {
             let (mut genesis, mut bus) = new(config.clone()).await;
             bus.send(PeerEvent::NewPeer {
                 name: "node-2".into(),
-                pubkey: BlstCrypto::new("node-2".into())
+                pubkey: BlstCrypto::new("node-2")
                     .unwrap()
                     .validator_pubkey()
                     .clone(),
@@ -714,7 +714,7 @@ mod tests {
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-3".into(),
-                pubkey: BlstCrypto::new("node-3".into())
+                pubkey: BlstCrypto::new("node-3")
                     .unwrap()
                     .validator_pubkey()
                     .clone(),
@@ -723,7 +723,7 @@ mod tests {
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-4".into(),
-                pubkey: BlstCrypto::new("node-4".into())
+                pubkey: BlstCrypto::new("node-4")
                     .unwrap()
                     .validator_pubkey()
                     .clone(),
@@ -739,7 +739,7 @@ mod tests {
             let (mut genesis, mut bus) = new(config).await;
             bus.send(PeerEvent::NewPeer {
                 name: "node-4".into(),
-                pubkey: BlstCrypto::new("node-4".into())
+                pubkey: BlstCrypto::new("node-4")
                     .unwrap()
                     .validator_pubkey()
                     .clone(),
@@ -748,7 +748,7 @@ mod tests {
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-2".into(),
-                pubkey: BlstCrypto::new("node-2".into())
+                pubkey: BlstCrypto::new("node-2")
                     .unwrap()
                     .validator_pubkey()
                     .clone(),
@@ -757,7 +757,7 @@ mod tests {
             .expect("send");
             bus.send(PeerEvent::NewPeer {
                 name: "node-3".into(),
-                pubkey: BlstCrypto::new("node-3".into())
+                pubkey: BlstCrypto::new("node-3")
                     .unwrap()
                     .validator_pubkey()
                     .clone(),

@@ -58,10 +58,10 @@ pub const SIG_SIZE: usize = 48;
 
 impl BlstCrypto {
     #[cfg(not(test))]
-    pub fn new(validator_name: String) -> Result<Self> {
+    pub fn new(validator_name: &str) -> Result<Self> {
         let sk = Self::load_from_env().or_else(|err| {
             println!("Could not load secret from env: {}", err);
-            Self::load_from_keyring(&validator_name)
+            Self::load_from_keyring(validator_name)
         })?;
 
         let validator_pubkey = as_validator_pubkey(sk.sk_to_pk());
@@ -104,14 +104,9 @@ impl BlstCrypto {
     }
 
     #[cfg(test)]
-    pub fn new(validator_name: String) -> Result<Self> {
-        // TODO load secret key from keyring or other
+    pub fn new(validator_name: &str) -> Result<Self> {
         // here basically secret_key <=> validator_id which is very badly secure !
-        let validator_name_bytes = validator_name.as_bytes();
-        let mut ikm = [0u8; 32];
-        let len = std::cmp::min(validator_name_bytes.len(), 32);
-        #[allow(clippy::indexing_slicing, reason = "len checked")]
-        ikm[..len].copy_from_slice(&validator_name_bytes[..len]);
+        let ikm = Self::secret_from_name(validator_name);
 
         let sk = SecretKey::key_gen(&ikm, &[])
             .map_err(|e| anyhow!("Could not generate key: {:?}", e))?;
@@ -123,13 +118,22 @@ impl BlstCrypto {
         })
     }
 
+    pub fn secret_from_name(validator_name: &str) -> [u8; 32] {
+        let validator_name_bytes = validator_name.as_bytes();
+        let mut ikm = [0u8; 32];
+        let len = std::cmp::min(validator_name_bytes.len(), 32);
+        #[allow(clippy::indexing_slicing, reason = "len checked")]
+        ikm[..len].copy_from_slice(&validator_name_bytes[..len]);
+        ikm
+    }
+
     #[cfg(test)]
     pub fn new_random() -> Result<Self> {
         let mut rng = rand::rng();
         let id: String = (0..32)
             .map(|_| rng.random_range(33..127) as u8 as char) // Caractères imprimables ASCII
             .collect();
-        Self::new(id.as_str().into())
+        Self::new(id.as_str())
     }
 
     pub fn validator_pubkey(&self) -> &ValidatorPublicKey {
