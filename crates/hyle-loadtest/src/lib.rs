@@ -305,45 +305,49 @@ pub async fn send_transaction<S: StateUpdater>(
 }
 
 pub async fn long_running_test(url: String) -> Result<()> {
-    let client = NodeApiHttpClient::new("http://rest-api.devnet.hyle.eu".to_string())?;
-    let indexer = IndexerApiHttpClient::new("http://rest-api.devnet.hyle.eu".to_string())?;
+    std::env::set_var("RISC0_DEV_MODE", "true");
+    // let client = NodeApiHttpClient::new("http://rest-api.devnet.hyle.eu".to_string())?;
+    // let indexer = IndexerApiHttpClient::new("http://rest-api.devnet.hyle.eu".to_string())?;
+    let client = NodeApiHttpClient::new("http://0.0.0.0:4321".to_string())?;
+    let indexer = IndexerApiHttpClient::new("http://0.0.0.0:4321".to_string())?;
 
     let mut users: Vec<u64> = vec![];
 
-    let qps = 10;
+    let hyllar: Hyllar = indexer
+        .fetch_current_state(&ContractName::new("hyllar"))
+        .await?;
+    let hydentity: Hydentity = indexer
+        .fetch_current_state(&ContractName::new("hydentity"))
+        .await?;
+
+    let mut tx_ctx = TxExecutorBuilder::new(CanonicalStates { hydentity, hyllar })
+        // Replace prover binaries for non-reproducible mode.
+        .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
+        .with_prover("hyllar".into(), Risc0Prover::new(HYLLAR_ELF))
+        .build();
 
     loop {
-        let hyllar: Hyllar = indexer
-            .fetch_current_state(&ContractName::new("hyllar"))
-            .await?;
-        let hydentity: Hydentity = indexer
-            .fetch_current_state(&ContractName::new("hydentity"))
-            .await?;
-
-        let mut tx_ctx = TxExecutorBuilder::new(CanonicalStates { hydentity, hyllar })
-            // Replace prover binaries for non-reproducible mode.
-            .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
-            .with_prover("hyllar".into(), Risc0Prover::new(HYLLAR_ELF))
-            .build();
-
         let now = get_current_timestamp_ms();
 
         // Every 1/10
-        if now % qps * 1000 > qps * 900 || users.len() < 2 {
+        if now % 5 == 0 || users.len() < 2 {
             let ident = Identity(format!("{}.hydentity", now));
             users.push(now);
 
-            tracing::warn!("Creating identity with 100 tokens: {}", ident);
+            tracing::info!("Creating identity with 100 tokens: {}", ident);
 
+            // tokio::time::sleep(Duration::from_millis(2000)).await;
             // Register new identity
             let mut transaction = ProvableBlobTx::new(ident.clone());
 
             _ = register_identity(&mut transaction, "hydentity".into(), "password".to_owned());
 
             let tx_hash = send_transaction(&client, transaction, &mut tx_ctx).await;
-            tracing::warn!("Register TX Hash: {:?}", tx_hash);
+            tracing::info!("Register TX Hash: {:?}", tx_hash);
 
             // Feed with some token
+            tracing::info!("Feeding identity {} with tokens", ident);
+
             let mut transaction = ProvableBlobTx::new("faucet.hydentity".into());
 
             verify_identity(
@@ -356,12 +360,13 @@ pub async fn long_running_test(url: String) -> Result<()> {
             transfer(&mut transaction, "hyllar".into(), ident.0.clone(), 100)?;
 
             let tx_hash = send_transaction(&client, transaction, &mut tx_ctx).await;
-            tracing::warn!("Transfer TX Hash: {:?}", tx_hash);
+            tracing::info!("Transfer TX Hash: {:?}", tx_hash);
 
             continue;
         }
 
         // pick 2 random guys and send some tokens from 1 to another
+        info!("Running a transfer between 2 buddies",);
 
         let mut rng = rand::rng();
 
@@ -385,8 +390,32 @@ pub async fn long_running_test(url: String) -> Result<()> {
             continue;
         }
 
-        let guy_1_balance = ERC20::balance_of(&tx_ctx.hyllar, &guy_1_id.to_string()).unwrap();
-        let guy_2_balance = ERC20::balance_of(&tx_ctx.hyllar, &guy_2_id.to_string()).unwrap();
+        let guy_1_id = format!("{}.hydentity", guy_1_id);
+        let guy_2_id = format!("{}.hydentity", guy_2_id);
+
+        // dbg!(&users);
+
+        // dbg!(&tx_ctx.hydentity);
+        // dbg!(&tx_ctx.hyllar);
+
+        info!("Getting balances for {} and {}", guy_1_id, guy_2_id);
+
+        let Ok(guy_1_balance) = ERC20::balance_of(&tx_ctx.hyllar, &guy_1_id.to_string()) else {
+            tracing::warn!("Balance of {} not found", guy_1_id);
+            dbg!(&tx_ctx.hyllar);
+            tokio::time::sleep(Duration::from_millis(2000)).await;
+            continue;
+        };
+        let Ok(guy_2_balance) = ERC20::balance_of(&tx_ctx.hyllar, &guy_2_id.to_string()) else {
+            tracing::warn!("Balance of {} not found", guy_2_id);
+            dbg!(&tx_ctx.hyllar);
+            tokio::time::sleep(Duration::from_millis(2000)).await;
+            continue;
+        };
+
+        if guy_1_balance < 2 {
+            continue;
+        }
 
         let amount = rng.random_range(1..guy_1_balance);
 
@@ -395,9 +424,7 @@ pub async fn long_running_test(url: String) -> Result<()> {
             amount, guy_1_id, guy_2_id
         );
 
-        let ident = Identity(format!("{}.hydentity", guy_1_id));
-
-        let mut transaction = ProvableBlobTx::new(ident);
+        let mut transaction = ProvableBlobTx::new(Identity(guy_1_id.clone()));
         verify_identity(
             &mut transaction,
             "hydentity".into(),
@@ -407,7 +434,7 @@ pub async fn long_running_test(url: String) -> Result<()> {
         transfer(
             &mut transaction,
             "hyllar".into(),
-            format!("{}.hyllar", guy_2_id),
+            guy_2_id.clone(),
             amount as u128,
         )?;
 
@@ -420,9 +447,7 @@ pub async fn long_running_test(url: String) -> Result<()> {
         );
 
         let tx_hash = send_transaction(&client, transaction, &mut tx_ctx).await;
-        tracing::warn!("Transfer TX Hash: {:?}", tx_hash);
-
-        tokio::time::sleep(Duration::from_millis(90)).await;
+        tracing::info!("Transfer TX Hash: {:?}", tx_hash);
     }
 }
 
