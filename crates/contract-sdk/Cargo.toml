@@ -8,7 +8,7 @@ repository = { workspace = true }
 rust-version = "1.81"
 
 [dependencies]
-hyle_model = { path = "../hyle-model", package = "hyle-model", default-features = false }
+hyle-model = { workspace = true, default-features = false }
 serde = { version = "1.0", default-features = false, features = [
     "derive",
     "alloc",
@@ -26,4 +26,4 @@ mockall = "0.13.0"
 risc0 = ["dep:risc0-zkvm"]
 sp1 = ["dep:sp1-zkvm"]
 tracing = ["dep:tracing"]
-full-model = ["hyle_model/full"]
+full-model = ["hyle-model/full"]

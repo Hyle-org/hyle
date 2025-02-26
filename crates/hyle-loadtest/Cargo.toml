@@ -9,11 +9,11 @@ rust-version.workspace = true
 
 [dependencies]
 tokio = "1.42"
-hyllar = { path = "../contracts/hyllar", features = ["client"] }
-hydentity = { path = "../contracts/hydentity", features = ["client"] }
-hyle-contracts = { path = "../contracts", package = "hyle-contracts" }
-hyle-contract-sdk = { path = "../contract-sdk", features = ["tracing"] }
-client-sdk = { path = "../client-sdk", features = ["tcp", "risc0"] }
+hyllar = { workspace = true, features = ["client"] }
+hydentity = { workspace = true, features = ["client"] }
+hyle-contracts = { workspace = true }
+hyle-contract-sdk = { workspace = true, features = ["tracing"] }
+client-sdk = { workspace = true, features= ["tcp", "risc0"] }
 
 anyhow = "1.0.96"
 borsh = "1.5.5"

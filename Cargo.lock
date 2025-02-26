@@ -76,7 +76,7 @@ version = "0.12.0"
 dependencies = [
  "anyhow",
  "borsh",
- "client-sdk",
+ "hyle-client-sdk",
  "hyle-contract-sdk",
  "risc0-zkvm",
  "serde",
@@ -823,25 +823,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bonsai-runner"
-version = "0.12.0"
-dependencies = [
- "anyhow",
- "axum 0.8.1",
- "bincode",
- "bonsai-sdk",
- "borsh",
- "bytemuck",
- "hex",
- "risc0-zkvm",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber 0.3.19",
-]
-
-[[package]]
 name = "bonsai-sdk"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1110,29 +1091,6 @@ name = "clap_lex"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f46ad14479a25103f283c0f10005961cf086d8dc42205bb44c46ac563475dca6"
-
-[[package]]
-name = "client-sdk"
-version = "0.12.0"
-dependencies = [
- "anyhow",
- "axum 0.8.1",
- "bincode",
- "bonsai-runner",
- "borsh",
- "futures",
- "hyle-contract-sdk",
- "reqwest",
- "risc0-zkvm",
- "serde",
- "serde_json",
- "sp1-sdk",
- "tokio",
- "tokio-util",
- "tracing",
- "utoipa",
- "utoipa-axum",
-]
 
 [[package]]
 name = "colorchoice"
@@ -2580,9 +2538,9 @@ dependencies = [
  "anyhow",
  "borsh",
  "clap",
- "client-sdk",
  "hex",
  "hydentity",
+ "hyle-client-sdk",
  "hyle-contract-sdk",
  "risc0-zkvm",
  "serde",
@@ -2610,13 +2568,13 @@ dependencies = [
  "bytes",
  "chrono",
  "clap",
- "client-sdk",
  "config",
  "dhat",
  "fjall",
  "futures",
  "hex",
  "hydentity",
+ "hyle-client-sdk",
  "hyle-contract-sdk",
  "hyle-contracts",
  "hyle-model",
@@ -2659,6 +2617,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyle-bonsai-runner"
+version = "0.12.0"
+dependencies = [
+ "anyhow",
+ "axum 0.8.1",
+ "bincode",
+ "bonsai-sdk",
+ "borsh",
+ "bytemuck",
+ "hex",
+ "risc0-zkvm",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber 0.3.19",
+]
+
+[[package]]
+name = "hyle-client-sdk"
+version = "0.12.0"
+dependencies = [
+ "anyhow",
+ "axum 0.8.1",
+ "bincode",
+ "borsh",
+ "futures",
+ "hyle-bonsai-runner",
+ "hyle-contract-sdk",
+ "reqwest",
+ "risc0-zkvm",
+ "serde",
+ "serde_json",
+ "sp1-sdk",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "utoipa",
+ "utoipa-axum",
+]
+
+[[package]]
 name = "hyle-contract-sdk"
 version = "0.12.0"
 dependencies = [
@@ -2686,8 +2686,8 @@ dependencies = [
  "anyhow",
  "borsh",
  "clap",
- "client-sdk",
  "hydentity",
+ "hyle-client-sdk",
  "hyle-contract-sdk",
  "hyle-contracts",
  "hyllar",
@@ -2739,7 +2739,7 @@ version = "0.12.0"
 dependencies = [
  "anyhow",
  "borsh",
- "client-sdk",
+ "hyle-client-sdk",
  "hyle-contract-sdk",
  "hyllar",
  "risc0-zkvm",
@@ -5226,9 +5226,9 @@ version = "0.12.0"
 dependencies = [
  "anyhow",
  "borsh",
- "client-sdk",
  "hex",
  "hydentity",
+ "hyle-client-sdk",
  "hyle-contract-sdk",
  "hyle-contracts",
  "risc0-recursion",
@@ -6649,7 +6649,7 @@ version = "0.12.0"
 dependencies = [
  "anyhow",
  "borsh",
- "client-sdk",
+ "hyle-client-sdk",
  "hyle-contract-sdk",
  "risc0-zkvm",
  "serde",
@@ -7604,7 +7604,7 @@ name = "uuid-tld"
 version = "0.12.0"
 dependencies = [
  "borsh",
- "client-sdk",
+ "hyle-client-sdk",
  "hyle-contract-sdk",
  "rand 0.9.0",
  "rand_seeder",
