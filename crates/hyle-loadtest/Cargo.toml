@@ -1,5 +1,6 @@
 [package]
 name = "hyle-loadtest"
+description = "Hyle loadtest tooling"
 version.workspace = true
 edition.workspace = true
 homepage.workspace = true

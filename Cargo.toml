@@ -41,15 +41,16 @@ client-sdk = { version = "0.12.0", default-features = false, path = "crates/clie
 hyle-contracts = { version = "0.12.0", default-features = false, path = "crates/contracts", package = "hyle-contracts" }
 hyle-model = { version = "0.12.0", default-features = false, path = "crates/hyle-model", package = "hyle-model" }
 hyle-verifiers = { version = "0.12.0", default-features = false, path = "crates/hyle-verifiers", package = "hyle-verifiers" }
-risc0-recursion = { version = "0.12.0", default-features = false, path = "crates/contracts/risc0-recursion", package = "risc0-recursion" }
-hydentity = { version = "0.12.0", default-features = false, path = "crates/contracts/hydentity", package = "hydentity" }
-hyllar = { version = "0.12.0", default-features = false, path = "crates/contracts/hyllar", package = "hyllar" }
-staking = { version = "0.12.0", default-features = false, path = "crates/contracts/staking", package = "staking" }
-amm = { version = "0.12.0", default-features = false, path = "crates/contracts/amm", package = "amm" }
-uuid-tld = { version = "0.12.0", default-features = false, path = "crates/contracts/uuid-tld", package = "uuid-tld" }
+risc0-recursion = { version = "0.12.0", default-features = false, path = "crates/contracts/risc0-recursion", package = "hyle-risc0-recursion" }
+hydentity = { version = "0.12.0", default-features = false, path = "crates/contracts/hydentity", package = "hyle-hydentity" }
+hyllar = { version = "0.12.0", default-features = false, path = "crates/contracts/hyllar", package = "hyle-hyllar" }
+staking = { version = "0.12.0", default-features = false, path = "crates/contracts/staking", package = "hyle-staking" }
+amm = { version = "0.12.0", default-features = false, path = "crates/contracts/amm", package = "hyle-amm" }
+uuid-tld = { version = "0.12.0", default-features = false, path = "crates/contracts/uuid-tld", package = "hyle-uuid-tld" }
 
 [package]
 name = "hyle"
+description = "Hyle node"
 version = { workspace = true }
 edition = { workspace = true }
 # license = { workspace = true }
@@ -57,7 +58,6 @@ homepage = { workspace = true }
 repository = { workspace = true }
 rust-version = { workspace = true }
 default-run = "hyle"
-
 
 [[bin]]
 name = "hyle"
@@ -147,6 +147,9 @@ utoipa = { version = "5.3.1", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "9.0.0", features = ["axum"] }
 utoipa-axum = { version = "0.2.0" }
 testcontainers-modules = { version = "0.11.6", features = ["postgres"] }
+
+[patch.crates-io]
+sha2 = { git = "https://github.com/risc0/RustCrypto-hashes", tag = "sha2-v0.10.8-risczero.0" }
 
 [dev-dependencies]
 amm = { workspace = true, features = ["client"] }

@@ -1,5 +1,6 @@
 [package]
 name = "hyle-bonsai-runner"
+description = "Hyle async lib to use risc0 bonsai"
 version = { workspace = true }
 edition = { workspace = true }
 # license = { workspace = true }

@@ -4,7 +4,7 @@ use client_sdk::rest_client::NodeApiHttpClient;
 use client_sdk::transaction_builder::ProvableBlobTx;
 use client_sdk::transaction_builder::TxExecutor;
 use client_sdk::transaction_builder::TxExecutorBuilder;
-use hydentity::Hydentity;
+use hyle_hydentity::Hydentity;
 use sdk::identity_provider::IdentityAction;
 use sdk::Hashed;
 use sdk::{guest, ContractInput, ContractName, HyleOutput};
@@ -76,7 +76,7 @@ async fn main() {
 
             let mut transaction = ProvableBlobTx::new(identity.clone().into());
 
-            hydentity::client::register_identity(
+            hyle_hydentity::client::register_identity(
                 &mut transaction,
                 ContractName::new("hydentity"),
                 password,

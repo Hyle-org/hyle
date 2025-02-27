@@ -3,7 +3,7 @@ use client_sdk::{
     transaction_builder::{ProvableBlobTx, TxExecutorBuilder},
 };
 use hydentity::{client::register_identity, Hydentity};
-use risc0_recursion::ProofInput;
+use hyle_risc0_recursion::ProofInput;
 use sdk::{guest, ContractInput, ContractName, HyleOutput};
 
 contract_states!(

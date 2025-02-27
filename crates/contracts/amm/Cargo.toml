@@ -1,5 +1,6 @@
 [package]
-name = "amm"
+name = "hyle-amm"
+description = "Hyle Smart Contract"
 version = { workspace = true }
 edition = { workspace = true }
 # license = { workspace = true }
@@ -9,6 +10,7 @@ rust-version = "1.81"
 
 [[bin]]
 name = "amm"
+path = "src/main.rs"
 required-features = ["risc0"]
 test = false
 

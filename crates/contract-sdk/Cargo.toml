@@ -1,5 +1,6 @@
 [package]
 name = "hyle-contract-sdk"
+description = "Hyle smart contract SDK"
 version = { workspace = true }
 edition = { workspace = true }
 # license = { workspace = true }
