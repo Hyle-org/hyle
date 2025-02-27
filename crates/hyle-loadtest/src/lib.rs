@@ -305,11 +305,17 @@ pub async fn send_transaction<S: StateUpdater>(
 }
 
 pub async fn long_running_test(url: String) -> Result<()> {
+    if true {
+        std::env::set_var("RISC0_PROVER", "bonsai");
+        std::env::set_var("BONSAI_API_URL", "https://api.bonsai.xyz/");
+        std::env::set_var("BONSAI_API_KEY", "nec4UpZfL45P2LRoRP4dw3JTZ2yp82ja9bIjcNWF");
+    }
+
     std::env::set_var("RISC0_DEV_MODE", "true");
-    // let client = NodeApiHttpClient::new("http://rest-api.devnet.hyle.eu".to_string())?;
-    // let indexer = IndexerApiHttpClient::new("http://rest-api.devnet.hyle.eu".to_string())?;
-    let client = NodeApiHttpClient::new("http://0.0.0.0:4321".to_string())?;
-    let indexer = IndexerApiHttpClient::new("http://0.0.0.0:4321".to_string())?;
+    let client = NodeApiHttpClient::new("http://rest-api.devnet.hyle.eu".to_string())?;
+    let indexer = IndexerApiHttpClient::new("http://rest-api.devnet.hyle.eu".to_string())?;
+    // let client = NodeApiHttpClient::new("http://0.0.0.0:4321".to_string())?;
+    // let indexer = IndexerApiHttpClient::new("http://0.0.0.0:4321".to_string())?;
 
     let mut users: Vec<u64> = vec![];
 
@@ -329,7 +335,7 @@ pub async fn long_running_test(url: String) -> Result<()> {
     loop {
         let now = get_current_timestamp_ms();
 
-        // Every 1/10
+        // Create a new user
         if now % 5 == 0 || users.len() < 2 {
             let ident = Identity(format!("{}.hydentity", now));
             users.push(now);
