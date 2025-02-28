@@ -4,6 +4,7 @@ members = [
     "crates/contracts/amm",
     "crates/contracts/hydentity",
     "crates/contracts/hyllar",
+    "crates/contracts/token",
     "crates/contracts/staking",
     "crates/contracts/risc0-recursion",
     "crates/contracts/uuid-tld",
@@ -67,7 +68,7 @@ staking = { path = "./crates/contracts/staking", default-features = false, featu
 client-sdk = { path = "./crates/client-sdk", default-features = false, features = [
     "rest",
     "tcp",
-    "indexer"
+    "indexer",
 ] }
 hyle-model = { path = "./crates/hyle-model", default-features = false, features = [
     "full",
@@ -75,6 +76,7 @@ hyle-model = { path = "./crates/hyle-model", default-features = false, features 
 ] }
 hydentity = { path = "./crates/contracts/hydentity", features = ["client"] }
 hyllar = { path = "./crates/contracts/hyllar", features = ["client"] }
+token = { path = "./crates/contracts/token", features = ["client"] }
 risc0-recursion = { path = "./crates/contracts/risc0-recursion" }
 
 hyle-verifiers = { path = "crates/hyle-verifiers" }

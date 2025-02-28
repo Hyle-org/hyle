@@ -1,0 +1,50 @@
+[package]
+name = "token"
+version = { workspace = true }
+edition = { workspace = true }
+# license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+rust-version = "1.81"
+
+[[bin]]
+name = "token"
+required-features = ["risc0"]
+test = false
+
+[dependencies]
+
+rand = "0.8"
+crypto-bigint = "0.6.0"
+crypto-primes = "0.6.0"
+
+sdk = { path = "../../contract-sdk", package = "hyle-contract-sdk" }
+serde = { version = "1.0", default-features = false, features = [
+    "derive",
+    "alloc",
+] }
+anyhow = "1.0.96"
+borsh = { version = "1.5.5", features = ["derive"] }
+serde_with = "3.12.0"
+sha2 = { git = "https://github.com/risc0/RustCrypto-hashes", tag = "sha2-v0.10.8" }
+risc0-zkvm = { version = "1.2.4", default-features = false, optional = true, features = [
+    'std',
+] }
+client_sdk = { path = "../../client-sdk", package = "client-sdk", features = [
+    "risc0",
+    "indexer",
+], optional = true }
+
+[dev-dependencies]
+# Active client feature for tests
+token = { path = ".", features = ["client"] }
+
+risc0-zkvm = { version = "1.2.4", default-features = false, features = [
+    'std',
+    'prove',
+] }
+
+[features]
+default = []
+client = ["dep:client_sdk"]
+risc0 = ["dep:risc0-zkvm", "sdk/risc0"]

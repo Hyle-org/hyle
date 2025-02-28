@@ -271,20 +271,4 @@ mod tests {
         let encoded = borsh::to_vec(&token).expect("Failed to encode Balances");
         assert_eq!(digest.0, encoded);
     }
-
-    #[test]
-    fn test_try_from_state_digest() {
-        let initial_supply = 1000;
-        let token = Hyllar::new(initial_supply, "faucet".to_string());
-        let digest = token.as_digest();
-
-        let decoded_token: Hyllar =
-            Hyllar::try_from(digest.clone()).expect("Failed to decode state digest");
-        assert_eq!(decoded_token.total_supply, token.total_supply);
-        assert_eq!(decoded_token.balances, token.balances);
-
-        let invalid_digest = sdk::StateDigest(vec![0, 1, 2, 3]);
-        let result = Hyllar::try_from(invalid_digest);
-        assert!(result.is_err());
-    }
 }

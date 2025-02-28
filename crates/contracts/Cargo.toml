@@ -22,6 +22,7 @@ methods = [
     "amm",
     "hyllar",
     "hydentity",
+    "token",
     "staking",
     "risc0-recursion",
     "uuid-tld",

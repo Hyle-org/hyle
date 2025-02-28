@@ -357,6 +357,7 @@ macro_rules! contract_states {
             fn execute(&self, contract_name: &ContractName, contract_input: &ContractInput) -> anyhow::Result<(Box<dyn std::any::Any>, HyleOutput)> {
                 match contract_name.0.as_str() {
                     $(stringify!($contract_name) => {
+                        // TODO: investigate if we add a function to update contract state outside of proving path
                         let (state, output) = guest::execute::<$contract_state>(contract_input);
                         Ok((Box::new(state) as Box<dyn std::any::Any>, output))
                     })*
