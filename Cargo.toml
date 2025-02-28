@@ -67,7 +67,8 @@ staking = { path = "./crates/contracts/staking", default-features = false, featu
 client-sdk = { path = "./crates/client-sdk", default-features = false, features = [
     "rest",
     "tcp",
-    "indexer"
+    "indexer",
+  "sp1"
 ] }
 hyle-model = { path = "./crates/hyle-model", default-features = false, features = [
     "full",

@@ -86,60 +86,56 @@ pub mod risc0 {
     }
 }
 
-#[cfg(feature = "sp1")]
+//#[cfg(feature = "sp1")]
 pub mod sp1 {
     use anyhow::Context;
-    use sp1_sdk::{ProverClient, SP1Stdin};
+    use sp1_sdk::{EnvProver, ProverClient, SP1ProvingKey, SP1Stdin, SP1VerifyingKey};
 
     use super::*;
 
-    pub fn execute(binary: &[u8], contract_input: &ContractInput) -> Result<HyleOutput> {
-        let client = ProverClient::from_env();
-        let mut stdin = SP1Stdin::new();
-        let encoded = borsh::to_vec(contract_input)?;
-        stdin.write_vec(encoded);
+    pub struct SP1Prover {
+        pk: SP1ProvingKey,
+        pub vk: SP1VerifyingKey,
+        client: EnvProver,
+    }
+    impl SP1Prover {
+        pub fn new(binary: &[u8]) -> Self {
+            // Setup the program for proving.
+            let client = ProverClient::from_env();
+            let (pk, vk) = client.setup(binary);
+            Self { client, pk, vk }
+        }
+        pub async fn prove(&self, contract_input: ContractInput) -> Result<ProofData> {
+            // Setup the inputs.
+            let mut stdin = SP1Stdin::new();
+            let encoded = borsh::to_vec(&contract_input)?;
+            stdin.write_vec(encoded);
 
-        let (public_values, _) = client
-            .execute(binary, &stdin)
-            .run()
-            .expect("failed to generate proof");
+            // Generate the proof
+            let proof = self
+                .client
+                .prove(&self.pk, &stdin)
+                //.compressed()
+                .run()
+                .expect("failed to generate proof");
 
-        let hyle_output = borsh::from_slice::<HyleOutput>(public_values.as_slice())
-            .context("Failed to extract HyleOuput from SP1 proof")?;
+            let hyle_output = borsh::from_slice::<HyleOutput>(proof.public_values.as_slice())
+                .context("Failed to extract HyleOuput from SP1 proof")?;
 
-        check_output(&hyle_output)?;
+            check_output(&hyle_output)?;
 
-        Ok(hyle_output)
+            let encoded_receipt = bincode::serialize(&proof)?;
+            Ok(ProofData(encoded_receipt))
+        }
     }
 
-    pub fn prove(
-        binary: &[u8],
-        contract_input: &ContractInput,
-    ) -> anyhow::Result<(ProofData, HyleOutput)> {
-        let client = ProverClient::from_env();
-
-        // Setup the inputs.
-        let mut stdin = SP1Stdin::new();
-        let encoded = borsh::to_vec(contract_input)?;
-        stdin.write_vec(encoded);
-
-        // Setup the program for proving.
-        let (pk, _vk) = client.setup(binary);
-
-        // Generate the proof
-        let proof = client
-            .prove(&pk, &stdin)
-            //.compressed()
-            .run()
-            .expect("failed to generate proof");
-
-        let hyle_output = borsh::from_slice::<HyleOutput>(proof.public_values.as_slice())
-            .context("Failed to extract HyleOuput from SP1 proof")?;
-
-        check_output(&hyle_output)?;
-
-        let encoded_receipt = bincode::serialize(&proof)?;
-        Ok((ProofData(encoded_receipt), hyle_output))
+    impl ClientSdkProver for SP1Prover {
+        fn prove(
+            &self,
+            contract_input: ContractInput,
+        ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
+            Box::pin(self.prove(contract_input))
+        }
     }
 }
 
