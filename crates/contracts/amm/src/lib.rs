@@ -2,11 +2,10 @@ use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use sdk::caller::{CalleeBlobs, CallerCallee, CheckCalleeBlobs, ExecutionContext, MutCalleeBlobs};
-use sdk::erc20::{ERC20BlobChecker, ERC20};
-use sdk::{erc20::ERC20Action, Identity};
+use sdk::erc20::ERC20Action;
+use sdk::utils::parse_contract_input;
 use sdk::{
-    Blob, BlobIndex, ContractAction, ContractInput, Digestable, DropEndOfReader, RunResult,
+    Blob, BlobIndex, ContractAction, ContractInput, Digestable, HyleContract, RunResult,
     StateDigest,
 };
 use sdk::{BlobData, ContractName, StructuredBlobData};
@@ -51,32 +50,70 @@ impl Hash for UnorderedTokenPair {
     }
 }
 
-pub struct AmmContract {
-    pub exec_ctx: ExecutionContext,
-    contract_name: ContractName,
-    state: AmmState,
-}
-
-impl CallerCallee for AmmContract {
-    fn caller(&self) -> &Identity {
-        &self.exec_ctx.caller
-    }
-    fn callee_blobs(&self) -> CalleeBlobs {
-        CalleeBlobs(self.exec_ctx.callees_blobs.borrow())
-    }
-    fn mut_callee_blobs(&self) -> MutCalleeBlobs {
-        MutCalleeBlobs(self.exec_ctx.callees_blobs.borrow_mut())
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Default)]
-pub struct AmmState {
+pub struct Amm {
     pairs: BTreeMap<UnorderedTokenPair, TokenPairAmount>,
 }
 
-impl AmmState {
+impl HyleContract for Amm {
+    fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
+        let (action, mut execution_ctx) = parse_contract_input::<AmmAction>(contract_input)?;
+        let output = match action {
+            AmmAction::Swap {
+                pair,
+                amounts: (from_amount, to_amount),
+            } => {
+                // Check that a blob for the transfer exists for first token in swap
+                execution_ctx.is_in_callee_blobs(
+                    &ContractName(pair.0.clone()),
+                    ERC20Action::TransferFrom {
+                        owner: execution_ctx.caller.0.clone(),
+                        recipient: execution_ctx.contract_name.0.clone(),
+                        amount: from_amount,
+                    },
+                )?;
+                // Check that a blob for the transfer exists for second token in swap
+                execution_ctx.is_in_callee_blobs(
+                    &ContractName(pair.1.clone()),
+                    ERC20Action::Transfer {
+                        recipient: execution_ctx.caller.0.clone(),
+                        amount: to_amount,
+                    },
+                )?;
+                self.verify_swap(pair, from_amount, to_amount)
+            }
+            AmmAction::NewPair { pair, amounts } => {
+                // Check that a blob for the transfer exists for first token in pair
+                execution_ctx.is_in_callee_blobs(
+                    &ContractName(pair.0.clone()),
+                    ERC20Action::TransferFrom {
+                        owner: execution_ctx.caller.0.clone(),
+                        recipient: execution_ctx.contract_name.0.clone(),
+                        amount: amounts.0,
+                    },
+                )?;
+                // Check that a blob for the transfer exists for second token in pair
+                execution_ctx.is_in_callee_blobs(
+                    &ContractName(pair.1.clone()),
+                    ERC20Action::TransferFrom {
+                        owner: execution_ctx.caller.0.clone(),
+                        recipient: execution_ctx.contract_name.0.clone(),
+                        amount: amounts.1,
+                    },
+                )?;
+                self.create_new_pair(pair, amounts)
+            }
+        };
+        match output {
+            Err(e) => Err(e),
+            Ok(output) => Ok((output, execution_ctx, vec![])),
+        }
+    }
+}
+
+impl Amm {
     pub fn new(pairs: BTreeMap<UnorderedTokenPair, TokenPairAmount>) -> Self {
-        AmmState { pairs }
+        Amm { pairs }
     }
 
     pub fn get_paired_amount(
@@ -96,24 +133,6 @@ impl AmmState {
     pub fn as_bytes(&self) -> Vec<u8> {
         borsh::to_vec(self).expect("Failed to encode AmmState")
     }
-}
-
-impl AmmContract {
-    pub fn new(exec_ctx: ExecutionContext, contract_name: ContractName, state: AmmState) -> Self {
-        AmmContract {
-            exec_ctx,
-            contract_name,
-            state,
-        }
-    }
-
-    pub fn state(self) -> AmmState {
-        self.state
-    }
-
-    pub fn contract_name(self) -> ContractName {
-        self.contract_name
-    }
 
     pub fn create_new_pair(
         &mut self,
@@ -125,32 +144,15 @@ impl AmmContract {
             return Err("Swap can only happen between two different tokens".to_string());
         }
 
-        // Check that a blob exists matching the given action, pop it from the callee blobs.
-        self.is_in_callee_blobs(
-            &ContractName(pair.0.clone()),
-            ERC20Action::TransferFrom {
-                sender: self.caller().0.clone(),
-                recipient: self.contract_name.0.clone(),
-                amount: amounts.0,
-            },
-        )?;
-
-        // Sugared version using traits
-        ERC20BlobChecker::new(&ContractName(pair.1.clone()), &self).transfer_from(
-            &self.caller().0,
-            &self.contract_name.0,
-            amounts.1,
-        )?;
-
         let normalized_pair = UnorderedTokenPair::new(pair.0, pair.1);
 
-        if self.state.pairs.contains_key(&normalized_pair) {
+        if self.pairs.contains_key(&normalized_pair) {
             return Err(format!("Pair {:?} already exists", normalized_pair));
         }
 
         let program_outputs = format!("Pair {:?} created", normalized_pair);
 
-        self.state.pairs.insert(normalized_pair, amounts);
+        self.pairs.insert(normalized_pair, amounts);
 
         Ok(program_outputs)
     }
@@ -166,20 +168,10 @@ impl AmmContract {
             return Err("Swap can only happen between two different tokens".to_string());
         }
 
-        // Check that we were transferred the correct amount of tokens
-        self.is_in_callee_blobs(
-            &ContractName(pair.0.clone()),
-            ERC20Action::TransferFrom {
-                sender: self.caller().0.clone(),
-                recipient: self.contract_name.0.clone(),
-                amount: from_amount,
-            },
-        )?;
-
         // Compute x,y and check swap is legit (x*y=k)
         let normalized_pair = UnorderedTokenPair::new(pair.0.clone(), pair.1.clone());
         let is_normalized_order = pair.0 <= pair.1;
-        let Some((prev_x, prev_y)) = self.state.pairs.get_mut(&normalized_pair) else {
+        let Some((prev_x, prev_y)) = self.pairs.get_mut(&normalized_pair) else {
             return Err(format!("Pair {:?} not found in AMM state", pair));
         };
         let expected_to_amount = if is_normalized_order {
@@ -205,33 +197,20 @@ impl AmmContract {
         }
 
         // At this point the contract has effectively taken some fees but we don't actually count them.
-
-        // Check that we transferred the correct amount of tokens
-        self.is_in_callee_blobs(
-            &ContractName(pair.1.clone()),
-            ERC20Action::Transfer {
-                recipient: self.caller().0.clone(),
-                amount: to_amount,
-            },
-        )?;
-
         Ok(format!(
             "Swap of {} {} for {} {} is valid",
-            self.caller(),
-            pair.0,
-            self.caller(),
-            pair.1
+            from_amount, pair.0, to_amount, pair.1
         ))
     }
 }
 
-impl Digestable for AmmState {
+impl Digestable for Amm {
     fn as_digest(&self) -> sdk::StateDigest {
         sdk::StateDigest(self.as_bytes())
     }
 }
 
-impl TryFrom<StateDigest> for AmmState {
+impl TryFrom<StateDigest> for Amm {
     type Error = anyhow::Error;
 
     fn try_from(state: StateDigest) -> Result<Self, Self::Error> {
@@ -239,7 +218,7 @@ impl TryFrom<StateDigest> for AmmState {
     }
 }
 
-/// Enum representing the actions that can be performed by the Amm contract.
+/// Enum representing the actions that can be performed by the Amm state.
 #[derive(BorshSerialize, BorshDeserialize, Debug, Clone)]
 pub enum AmmAction {
     Swap {
@@ -270,260 +249,80 @@ impl ContractAction for AmmAction {
     }
 }
 
-pub fn execute(amm_initial_state: AmmState, contract_input: ContractInput) -> RunResult<AmmState> {
-    let (input, parsed_blob, caller) =
-        match sdk::guest::init_with_caller::<AmmAction>(contract_input) {
-            Ok(res) => res,
-            Err(err) => {
-                panic!("Amm contract initialization failed {}", err);
-            }
-        };
-
-    // TODO: refactor this into ExecutionContext
-    let mut callees_blobs = Vec::new();
-    for blob in input.blobs.clone().into_iter() {
-        if let Ok(structured_blob) = blob.data.clone().try_into() {
-            let structured_blob: StructuredBlobData<DropEndOfReader> = structured_blob; // for type inference
-            if structured_blob.caller == Some(input.index) {
-                callees_blobs.push(blob);
-            }
-        };
-    }
-
-    let execution_ctx = ExecutionContext {
-        callees_blobs: callees_blobs.into(),
-        caller,
-    };
-
-    let mut amm_contract =
-        AmmContract::new(execution_ctx, parsed_blob.contract_name, amm_initial_state);
-
-    let amm_action = parsed_blob.data.parameters;
-
-    let res = match amm_action {
-        AmmAction::Swap {
-            pair,
-            amounts: (from_amount, to_amount),
-        } => amm_contract.verify_swap(pair, from_amount, to_amount),
-        AmmAction::NewPair { pair, amounts } => amm_contract.create_new_pair(pair, amounts),
-    };
-
-    assert!(amm_contract.callee_blobs().is_empty());
-
-    res.map(|po| (po, amm_contract.state, vec![]))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sdk::{erc20::ERC20Action, Blob, ContractAction, ContractName, Identity};
     use std::collections::BTreeMap;
-
-    fn create_test_blob_from(
-        contract_name: &str,
-        sender: &str,
-        recipient: &str,
-        amount: u128,
-    ) -> Blob {
-        let cf = ERC20Action::TransferFrom {
-            sender: sender.to_owned(),
-            recipient: recipient.to_owned(),
-            amount,
-        };
-        cf.as_blob(ContractName::new(contract_name), None, None)
-    }
-    fn create_test_blob(contract_name: &str, recipient: &str, amount: u128) -> Blob {
-        let cf = ERC20Action::Transfer {
-            recipient: recipient.to_owned(),
-            amount,
-        };
-        cf.as_blob(ContractName::new(contract_name), None, None)
-    }
 
     #[test]
     fn test_verify_swap_success() {
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
-        let state = AmmState {
+        let mut state = Amm {
             pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
         };
         println!(
             "default state: {:?}",
-            AmmState {
+            Amm {
                 pairs: BTreeMap::default(),
             }
             .as_digest()
         );
 
-        let callees_blobs = vec![
-            create_test_blob_from("token1", "test", "amm", 5),
-            create_test_blob("token2", "test", 10),
-        ];
-        let exec_ctx = ExecutionContext {
-            callees_blobs: callees_blobs.into(),
-            caller: Identity::new("test"),
-        };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
-
-        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
+        let result = state.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
         assert!(result.is_ok());
         // Assert that the amounts for the pair token1/token2 have been updated
-        assert_eq!(
-            contract.state.pairs.get(&normalized_token_pair),
-            Some(&(25, 40))
-        );
+        assert_eq!(state.pairs.get(&normalized_token_pair), Some(&(25, 40)));
     }
 
     #[test]
     fn test_verify_opposite_swap_success() {
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
-        let state = AmmState {
+        let mut state = Amm {
             pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
         };
 
-        // Swaping from token2 to token1
-        let callees_blobs = vec![
-            create_test_blob_from("token2", "test", "amm", 50),
-            create_test_blob("token1", "test", 10),
-        ];
-
-        let exec_ctx = ExecutionContext {
-            callees_blobs: callees_blobs.into(),
-            caller: Identity::new("test"),
-        };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
-
-        let result = contract.verify_swap(("token2".to_string(), "token1".to_string()), 50, 10);
+        let result = state.verify_swap(("token2".to_string(), "token1".to_string()), 50, 10);
 
         assert!(result.is_ok());
         // Assert that the amounts for the pair token1/token2 have been updated
-        println!("{:?}", contract.state.pairs.get(&normalized_token_pair));
-        assert!(contract.state.pairs.get(&normalized_token_pair) == Some(&(10, 100)));
+        println!("{:?}", state.pairs.get(&normalized_token_pair));
+        assert!(state.pairs.get(&normalized_token_pair) == Some(&(10, 100)));
     }
 
     #[test]
     fn test_verify_swap_success_with_slippage() {
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
-        let state = AmmState {
+        let mut state = Amm {
             pairs: BTreeMap::from([(normalized_token_pair.clone(), (2000, 5000))]),
         };
         println!(
             "default state: {:?}",
-            AmmState {
+            Amm {
                 pairs: BTreeMap::default(),
             }
             .as_digest()
         );
 
-        let callees_blobs = vec![
-            create_test_blob_from("token1", "test", "amm", 500),
-            create_test_blob("token2", "test", 980),
-        ];
-        let exec_ctx = ExecutionContext {
-            callees_blobs: callees_blobs.into(),
-            caller: Identity::new("test"),
-        };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
-
-        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 500, 980);
+        let result = state.verify_swap(("token1".to_string(), "token2".to_string()), 500, 980);
         assert!(result.is_ok());
         assert_eq!(
-            contract.state.pairs.get(&normalized_token_pair),
+            state.pairs.get(&normalized_token_pair),
             Some(&(2500, 4000)) // 20 of token2 taken as 'fees'
         );
-    }
-
-    #[test]
-    fn test_verify_swap_invalid_sender() {
-        let normalized_token_pair =
-            UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
-        let state = AmmState {
-            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
-        };
-
-        let callees_blobs = vec![
-            create_test_blob_from("token1", "test_hack", "amm", 5), // incorrect sender
-            create_test_blob("token2", "test", 10),
-        ];
-
-        let exec_ctx = ExecutionContext {
-            callees_blobs: callees_blobs.into(),
-            caller: Identity::new("test"),
-        };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
-
-        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_verify_swap_invalid_recipient() {
-        let normalized_token_pair =
-            UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
-        let state = AmmState {
-            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
-        };
-
-        let callees_blobs = vec![
-            create_test_blob_from("token1", "test", "amm", 5),
-            create_test_blob("token2", "test_hack", 10), // incorrect recipient
-        ];
-
-        let exec_ctx = ExecutionContext {
-            callees_blobs: callees_blobs.into(),
-            caller: Identity::new("test"),
-        };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
-
-        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_verify_swap_invalid_amm_recipient() {
-        let normalized_token_pair =
-            UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
-        let state = AmmState {
-            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
-        };
-
-        let callees_blobs = vec![
-            create_test_blob_from("token1", "test", "amm_hack", 5), // incorrect recipient
-            create_test_blob("token2", "test", 10),
-        ];
-
-        let exec_ctx = ExecutionContext {
-            callees_blobs: callees_blobs.into(),
-            caller: Identity::new("test"),
-        };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
-
-        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
-        assert!(result.is_err());
     }
 
     #[test]
     fn test_verify_swap_invalid_pair() {
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
-        let state = AmmState {
+        let mut state = Amm {
             pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
         };
 
-        let callees_blobs = vec![
-            create_test_blob_from("token1", "test", "amm", 5),
-            create_test_blob("token2", "test", 10),
-        ];
-
-        let exec_ctx = ExecutionContext {
-            callees_blobs: callees_blobs.into(),
-            caller: Identity::new("test"),
-        };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
-
-        let result = contract.verify_swap(
+        let result = state.verify_swap(
             ("token1".to_string(), "rubbish".to_string()), // Invalid pair
             5,
             10,
@@ -532,68 +331,14 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_swap_invalid_pair_in_blobs() {
-        let normalized_token_pair =
-            UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
-        let state = AmmState {
-            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
-        };
-
-        let callees_blobs = vec![
-            create_test_blob_from("token1", "test", "amm", 5),
-            create_test_blob("token1", "test", 10), // Invalid pair, same token
-        ];
-
-        let exec_ctx = ExecutionContext {
-            callees_blobs: callees_blobs.into(),
-            caller: Identity::new("test"),
-        };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
-
-        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_verify_swap_blob_not_found() {
-        let normalized_token_pair =
-            UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
-        let state = AmmState {
-            pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
-        };
-
-        let callees_blobs = vec![create_test_blob_from("token1", "test", "amm", 5)];
-
-        let exec_ctx = ExecutionContext {
-            callees_blobs: callees_blobs.into(),
-            caller: Identity::new("test"),
-        };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
-
-        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
-        assert!(result.is_err());
-    }
-
-    #[test]
     fn test_verify_swap_invalid_swap_formula() {
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
-        let state = AmmState {
+        let mut state = Amm {
             pairs: BTreeMap::from([(normalized_token_pair.clone(), (20, 50))]),
         };
 
-        let callees_blobs = vec![
-            create_test_blob_from("token1", "test", "amm", 0), // Invalid amount
-            create_test_blob("token2", "test", 50),            // Invalid amount
-        ];
-
-        let exec_ctx = ExecutionContext {
-            callees_blobs: callees_blobs.into(),
-            caller: Identity::new("test"),
-        };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
-
-        let result = contract.verify_swap(("token1".to_string(), "token2".to_string()), 0, 50);
+        let result = state.verify_swap(("token1".to_string(), "token2".to_string()), 0, 50);
         assert!(result.is_err());
         assert!(result
             .err()
@@ -603,147 +348,46 @@ mod tests {
 
     #[test]
     fn test_create_new_pair_success() {
-        let state = AmmState {
+        let mut state = Amm {
             pairs: BTreeMap::new(),
         };
 
-        let callees_blobs = vec![
-            create_test_blob_from("token1", "test", "amm", 20),
-            create_test_blob_from("token2", "test", "amm", 50),
-        ];
-
-        let exec_ctx = ExecutionContext {
-            callees_blobs: callees_blobs.into(),
-            caller: Identity::new("test"),
-        };
-
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
-        let result =
-            contract.create_new_pair(("token1".to_string(), "token2".to_string()), (20, 50));
-        assert_eq!(contract.callee_blobs().len(), 0);
+        let result = state.create_new_pair(("token1".to_string(), "token2".to_string()), (20, 50));
 
         println!("result: {:?}", result);
         assert!(result.is_ok());
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
-        assert!(contract.state.pairs.get(&normalized_token_pair) == Some(&(20, 50)));
+        assert!(state.pairs.get(&normalized_token_pair) == Some(&(20, 50)));
     }
 
     #[test]
     fn test_create_new_pair_already_exists() {
         let normalized_token_pair =
             UnorderedTokenPair::new("token1".to_string(), "token2".to_string());
-        let state = AmmState {
+        let mut state = Amm {
             pairs: BTreeMap::from([(
                 UnorderedTokenPair::new("token1".to_string(), "token2".to_string()),
                 (100, 200),
             )]),
         };
 
-        let callees_blobs = vec![
-            create_test_blob_from("token1", "test", "amm", 20),
-            create_test_blob_from("token2", "test", "amm", 50),
-        ];
-
-        let exec_ctx = ExecutionContext {
-            callees_blobs: callees_blobs.into(),
-            caller: Identity::new("test"),
-        };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
-
-        let result =
-            contract.create_new_pair(("token1".to_string(), "token2".to_string()), (20, 50));
+        let result = state.create_new_pair(("token1".to_string(), "token2".to_string()), (20, 50));
 
         assert!(result.is_err());
-        assert!(contract.state.pairs.get(&normalized_token_pair) == Some(&(100, 200)));
-    }
-
-    #[test]
-    fn test_create_new_pair_invalid_recipient() {
-        let state = AmmState {
-            pairs: BTreeMap::new(),
-        };
-
-        let callees_blobs = vec![
-            create_test_blob_from("token1", "test", "invalid_recipient", 20), // incorrect recipient
-            create_test_blob_from("token2", "test", "amm", 50),
-        ];
-        let exec_ctx = ExecutionContext {
-            callees_blobs: callees_blobs.into(),
-            caller: Identity::new("test"),
-        };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
-
-        let result =
-            contract.create_new_pair(("token1".to_string(), "token2".to_string()), (20, 50));
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_create_new_pair_invalid_amounts() {
-        let state = AmmState {
-            pairs: BTreeMap::new(),
-        };
-
-        let callees_blobs = vec![
-            create_test_blob_from("token1", "test", "amm", 10), // incorrect amount
-            create_test_blob_from("token2", "test", "amm", 50),
-        ];
-
-        let exec_ctx = ExecutionContext {
-            callees_blobs: callees_blobs.into(),
-            caller: Identity::new("test"),
-        };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
-
-        let result =
-            contract.create_new_pair(("token1".to_string(), "token2".to_string()), (20, 50));
-
-        assert!(result.is_err());
+        assert!(state.pairs.get(&normalized_token_pair) == Some(&(100, 200)));
     }
 
     #[test]
     fn test_create_new_pair_same_tokens() {
-        let state = AmmState {
+        let mut state = Amm {
             pairs: BTreeMap::new(),
         };
 
-        let callees_blobs = vec![
-            create_test_blob_from("token1", "test", "amm", 20),
-            create_test_blob_from("token1", "test", "amm", 50),
-        ];
-
-        let exec_ctx = ExecutionContext {
-            callees_blobs: callees_blobs.into(),
-            caller: Identity::new("test"),
-        };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
-
-        let result = contract.create_new_pair(
+        let result = state.create_new_pair(
             ("token1".to_string(), "token1".to_string()), // same tokens
             (20, 50),
         );
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_create_new_pair_blob_not_found() {
-        let state = AmmState {
-            pairs: BTreeMap::new(),
-        };
-
-        let callees_blobs = vec![create_test_blob_from("token1", "test", "amm", 20)];
-
-        let exec_ctx = ExecutionContext {
-            callees_blobs: callees_blobs.into(),
-            caller: Identity::new("test"),
-        };
-        let mut contract = AmmContract::new(exec_ctx, ContractName::new("amm"), state);
-
-        let result =
-            contract.create_new_pair(("token1".to_string(), "token2".to_string()), (20, 50));
 
         assert!(result.is_err());
     }
@@ -753,7 +397,7 @@ mod tests {
         let pair = UnorderedTokenPair::new("token1".into(), "token2".into());
         let mut pairs = BTreeMap::new();
         pairs.insert(pair.clone(), (10, 20));
-        let state = AmmState { pairs };
+        let state = Amm { pairs };
 
         let result = state.get_paired_amount("token1".to_string(), "token2".to_string(), 5);
 
@@ -764,7 +408,7 @@ mod tests {
 
     #[test]
     fn test_get_paired_amount_non_existing_pair() {
-        let state = AmmState {
+        let state = Amm {
             pairs: BTreeMap::new(),
         };
 
@@ -778,7 +422,7 @@ mod tests {
         let pair = UnorderedTokenPair::new("token1".into(), "token2".into());
         let mut pairs = BTreeMap::new();
         pairs.insert(pair.clone(), (10, 20));
-        let state = AmmState { pairs };
+        let state = Amm { pairs };
 
         let result = state.get_paired_amount("token1".to_string(), "token2".to_string(), 0);
 
@@ -792,7 +436,7 @@ mod tests {
         let pair = UnorderedTokenPair::new("token1".into(), "token2".into());
         let mut pairs = BTreeMap::new();
         pairs.insert(pair.clone(), (0, 20));
-        let state = AmmState { pairs };
+        let state = Amm { pairs };
 
         let result = state.get_paired_amount("token1".to_string(), "token2".to_string(), 5);
 

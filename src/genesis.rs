@@ -17,9 +17,9 @@ use hydentity::{
     client::{register_identity, verify_identity},
     Hydentity,
 };
-use hyle_contract_sdk::{identity_provider::IdentityVerification, Identity, StateDigest};
+use hyle_contract_sdk::{guest, identity_provider::IdentityVerification, Identity, StateDigest};
 use hyle_contract_sdk::{ContractName, Digestable, ProgramId};
-use hyllar::{client::transfer, HyllarToken};
+use hyllar::{client::transfer, Hyllar};
 use serde::{Deserialize, Serialize};
 use staking::{
     client::{delegate, deposit_for_fees, stake},
@@ -71,7 +71,7 @@ impl Module for Genesis {
 contract_states!(
     #[derive(Debug, Clone)]
     pub struct States {
-        pub hyllar: HyllarToken,
+        pub hyllar: Hyllar,
         pub hydentity: Hydentity,
         pub staking: Staking,
     }
@@ -362,7 +362,7 @@ impl Genesis {
             )?;
 
             // Delegate
-            delegate(&mut transaction, ContractName::new("staking"), peer.clone())?;
+            delegate(&mut transaction, peer.clone())?;
 
             txs.push(tx_executor.process(transaction)?);
         }
@@ -379,7 +379,7 @@ impl Genesis {
         let hyllar_program_id = hyle_contracts::HYLLAR_ID.to_vec();
         let hydentity_program_id = hyle_contracts::HYDENTITY_ID.to_vec();
 
-        let mut hydentity_state = hydentity::Hydentity::new();
+        let mut hydentity_state = hydentity::Hydentity::default();
         hydentity_state
             .register_identity("faucet.hydentity", "password")
             .expect("faucet must register");
@@ -387,7 +387,7 @@ impl Genesis {
         let staking_state = staking::state::Staking::new();
 
         let ctx = TxExecutorBuilder::new(States {
-            hyllar: hyllar::HyllarToken::new(100_000_000_000, "faucet.hydentity".to_string()),
+            hyllar: hyllar::Hyllar::new(100_000_000_000, "faucet.hydentity".to_string()),
             hydentity: hydentity_state,
             staking: staking_state,
         })

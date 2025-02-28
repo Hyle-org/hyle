@@ -4,20 +4,19 @@ use client_sdk::{
 };
 use hydentity::{client::register_identity, Hydentity};
 use risc0_recursion::ProofInput;
-use sdk::{ContractName, HyleOutput};
+use sdk::{guest, ContractInput, ContractName, HyleOutput};
 
 contract_states!(
     struct States {
         hydentity: Hydentity,
     }
 );
-
 #[test_log::test(tokio::test)]
 async fn test_recursion() {
     std::env::set_var("RISC0_DEV_MODE", "1");
 
     let mut executor = TxExecutorBuilder::new(States {
-        hydentity: Hydentity::new(),
+        hydentity: Hydentity::default(),
     })
     .build();
 

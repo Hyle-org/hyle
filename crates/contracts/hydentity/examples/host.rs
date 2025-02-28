@@ -6,8 +6,8 @@ use client_sdk::transaction_builder::TxExecutor;
 use client_sdk::transaction_builder::TxExecutorBuilder;
 use hydentity::Hydentity;
 use sdk::identity_provider::IdentityAction;
-use sdk::ContractName;
 use sdk::Hashed;
+use sdk::{guest, ContractInput, ContractName, HyleOutput};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -32,7 +32,6 @@ enum Commands {
         nonce: u32,
     },
 }
-
 contract_states!(
     #[derive(Debug, Clone)]
     pub struct States {

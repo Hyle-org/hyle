@@ -1,17 +1,13 @@
-use std::any::Any;
-
 use client_sdk::{
-    helpers::{risc0::Risc0Prover, ClientSdkExecutor},
+    helpers::risc0::Risc0Prover,
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
 use sdk::{
     api::{APIFees, APIFeesBalance, APIStaking},
-    utils::as_hyle_output,
-    ContractName, HyleOutput, StakingAction, ValidatorPublicKey,
+    ContractName, StakingAction, ValidatorPublicKey,
 };
 
 use crate::{
-    execute,
     fees::{Fees, ValidatorFeeState},
     state::Staking,
 };
@@ -22,33 +18,13 @@ pub mod metadata {
 }
 use metadata::*;
 
-struct StakingPseudoExecutor {}
-impl ClientSdkExecutor for StakingPseudoExecutor {
-    fn execute(
-        &self,
-        contract_input: &sdk::ContractInput,
-    ) -> anyhow::Result<(Box<dyn Any>, HyleOutput)> {
-        let initial_state: Staking = borsh::from_slice(contract_input.state.as_slice())?;
-        let mut res = execute(initial_state.clone(), contract_input.clone());
-        let output = as_hyle_output(initial_state, contract_input.clone(), &mut res);
-        match res {
-            Ok(res) => Ok((Box::new(res.1.clone()), output)),
-            Err(e) => Err(anyhow::anyhow!(e)),
-        }
-    }
-}
-
 impl Staking {
     pub fn setup_builder<S: StateUpdater>(
         &self,
         contract_name: ContractName,
         builder: &mut TxExecutorBuilder<S>,
     ) {
-        builder.init_with(
-            contract_name,
-            StakingPseudoExecutor {},
-            Risc0Prover::new(STAKING_ELF),
-        );
+        builder.init_with(contract_name, Risc0Prover::new(STAKING_ELF));
     }
 }
 
@@ -159,13 +135,11 @@ pub fn stake(
     Ok(())
 }
 
-pub fn delegate(
-    builder: &mut ProvableBlobTx,
-    contract_name: ContractName,
-    validator: ValidatorPublicKey,
-) -> anyhow::Result<()> {
+pub fn delegate(builder: &mut ProvableBlobTx, validator: ValidatorPublicKey) -> anyhow::Result<()> {
+    // FIXME: hardcoded contract names
+    let staking_contract_name = ContractName("staking".to_string());
     builder.add_action(
-        contract_name,
+        staking_contract_name,
         StakingAction::Delegate {
             validator: validator.clone(),
         },

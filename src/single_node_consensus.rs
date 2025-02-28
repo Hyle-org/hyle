@@ -120,6 +120,15 @@ impl SingleNodeConsensus {
                 return Ok(());
             }
             self.store.has_done_genesis = true;
+            // Save the genesis block to disk
+            if let Some(file) = &self.file {
+                if let Err(e) = Self::save_on_disk(file.as_path(), &self.store) {
+                    warn!(
+                        "Failed to save consensus single node storage on disk: {}",
+                        e
+                    );
+                }
+            }
             tracing::trace!("Genesis block done");
         }
 

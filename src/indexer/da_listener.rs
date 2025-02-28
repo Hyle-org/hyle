@@ -6,17 +6,14 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{bail, Error, Result};
-use futures::{SinkExt, StreamExt};
+use anyhow::{bail, Result};
 use hyle_model::Hashed;
-use tokio::net::TcpStream;
-use tokio_util::codec::Framed;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::{
     bus::BusClientSender,
     data_availability::codec::{
-        DataAvailabilityClientCodec, DataAvailabilityServerEvent, DataAvailabilityServerRequest,
+        codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequest,
     },
     model::{BlockHeight, CommonRunContext},
     module_handle_messages,
@@ -45,18 +42,18 @@ pub struct DAListener {
 
 /// Implementation of the bit that actually listens to the data availability stream
 pub struct RawDAListener {
-    da_stream: Framed<TcpStream, DataAvailabilityClientCodec>,
+    client: codec_data_availability::Client,
 }
 
 impl Deref for RawDAListener {
-    type Target = Framed<TcpStream, DataAvailabilityClientCodec>;
+    type Target = codec_data_availability::Client;
     fn deref(&self) -> &Self::Target {
-        &self.da_stream
+        &self.client
     }
 }
 impl DerefMut for RawDAListener {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.da_stream
+        &mut self.client
     }
 }
 
@@ -100,15 +97,14 @@ impl Module for DAListener {
 }
 
 impl DAListener {
-    pub async fn start(&mut self) -> Result<(), Error> {
+    pub async fn start(&mut self) -> Result<()> {
         module_handle_messages! {
             on_bus self.bus,
             frame = self.listener.recv() => {
                 let Some(streamed_signed_block) = frame else {
                     bail!("DA stream closed");
-                } else if let Some(Err(e)) = frame {
-                    bail!("Error while reading DA stream: {}", e);
-                }
+                };
+                self.processing_next_frame(streamed_signed_block).await.log_error("Consuming da stream")?;
             }
         };
         let _ = Self::save_on_disk::<NodeState>(
@@ -123,8 +119,8 @@ impl DAListener {
         Ok(())
     }
 
-    async fn processing_next_frame(&mut self, event: DataAvailabilityServerEvent) -> Result<()> {
-        if let DataAvailabilityServerEvent::SignedBlock(block) = event {
+    async fn processing_next_frame(&mut self, event: DataAvailabilityEvent) -> Result<()> {
+        if let DataAvailabilityEvent::SignedBlock(block) = event {
             debug!(
                 "📦 Received block: {} {}",
                 block.consensus_proposal.slot,
@@ -144,53 +140,10 @@ impl DAListener {
 
 impl RawDAListener {
     pub async fn new(target: &str, height: BlockHeight) -> Result<Self> {
-        let da_stream = Self::connect_to(target, height).await?;
-        Ok(RawDAListener { da_stream })
-    }
-
-    async fn ping(&mut self) -> Result<()> {
-        self.da_stream
-            .send(DataAvailabilityServerRequest::Ping)
-            .await
-    }
-
-    async fn connect_to(
-        target: &str,
-        height: BlockHeight,
-    ) -> Result<Framed<TcpStream, DataAvailabilityClientCodec>> {
-        info!(
-            "Connecting to node for data availability stream on {}",
-            &target
-        );
-        let timeout = std::time::Duration::from_secs(10);
-        let start = std::time::Instant::now();
-
-        let stream = loop {
-            debug!("Trying to connect to {}", target);
-            match TcpStream::connect(&target).await {
-                Ok(stream) => break stream,
-                Err(e) => {
-                    if start.elapsed() >= timeout {
-                        bail!("Failed to connect to {}: {}. Timeout reached.", target, e);
-                    }
-                    warn!(
-                        "Failed to connect to {}: {}. Retrying in 1 second...",
-                        target, e
-                    );
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                }
-            }
-        };
-        let addr = stream.local_addr()?;
-        let mut da_stream = Framed::new(stream, DataAvailabilityClientCodec::default());
-        info!(
-            "Connected to data stream to {} on {}. Starting stream from height {}",
-            &target, addr, height
-        );
-        // Send the start height
-        da_stream
-            .send(DataAvailabilityServerRequest::BlockHeight(height))
-            .await?;
-        Ok(da_stream)
+        let mut client =
+            codec_data_availability::connect("raw_da_listener".to_string(), target.to_string())
+                .await?;
+        client.send(DataAvailabilityRequest(height)).await?;
+        Ok(RawDAListener { client })
     }
 }

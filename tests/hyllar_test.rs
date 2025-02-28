@@ -16,16 +16,16 @@ mod e2e_hyllar {
         client::{register_identity, verify_identity},
         Hydentity,
     };
-    use hyle_contract_sdk::{erc20::ERC20, ContractName};
+    use hyle_contract_sdk::{erc20::ERC20, guest, ContractInput, ContractName, HyleOutput};
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF};
-    use hyllar::{client::transfer, HyllarToken};
+    use hyllar::{client::transfer, Hyllar};
 
     use super::*;
 
     contract_states!(
         struct States {
             hydentity: Hydentity,
-            hyllar: HyllarToken,
+            hyllar: Hyllar,
         }
     );
 
@@ -35,7 +35,7 @@ mod e2e_hyllar {
         let contract = ctx.get_contract("hydentity").await?;
         let hydentity: hydentity::Hydentity = contract.state.try_into()?;
         let contract = ctx.get_contract("hyllar").await?;
-        let hyllar: HyllarToken = contract.state.try_into()?;
+        let hyllar: Hyllar = contract.state.try_into()?;
         let mut executor = TxExecutorBuilder::new(States { hydentity, hyllar })
             // Replace prover binaries for non-reproducible mode.
             .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
@@ -90,8 +90,7 @@ mod e2e_hyllar {
         ctx.wait_height(5).await?;
 
         let contract = ctx.get_contract("hyllar").await?;
-        let state: hyllar::HyllarToken = contract.state.try_into()?;
-        let state = hyllar::HyllarTokenContract::init(state, "caller".into());
+        let state: hyllar::Hyllar = contract.state.try_into()?;
         assert_eq!(
             state
                 .balance_of("bob.hydentity")

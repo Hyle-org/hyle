@@ -1,17 +1,15 @@
-use alloc::string::{String, ToString};
+use alloc::string::ToString;
 use alloc::vec;
-use borsh::{BorshDeserialize, BorshSerialize};
+use borsh::BorshDeserialize;
+use hyle_model::StateDigest;
 
-use crate::{
-    flatten_blobs,
-    utils::{as_hyle_output, check_caller_callees, parse_blob, parse_structured_blob},
-    ContractInput, Digestable, HyleOutput, Identity, StructuredBlob,
-};
+use crate::{flatten_blobs, utils::as_hyle_output, ContractInput, Digestable, HyleOutput};
+use crate::{HyleContract, RunResult};
 
 pub trait GuestEnv {
     fn log(&self, message: &str);
     fn commit(&self, output: &HyleOutput);
-    fn read<State: BorshDeserialize + 'static>(&self) -> (State, ContractInput);
+    fn read<T: BorshDeserialize + 'static>(&self) -> T;
 }
 
 pub struct Risc0Env;
@@ -26,13 +24,11 @@ impl GuestEnv for Risc0Env {
         risc0_zkvm::guest::env::commit(output);
     }
 
-    fn read<State: BorshDeserialize>(&self) -> (State, ContractInput) {
+    fn read<T: BorshDeserialize>(&self) -> T {
         let len: usize = risc0_zkvm::guest::env::read();
         let mut slice = vec![0u8; len];
         risc0_zkvm::guest::env::read_slice(&mut slice);
-        let contract_input: ContractInput = borsh::from_slice(&slice).unwrap();
-        let state: State = borsh::from_slice(&contract_input.state).unwrap();
-        (state, contract_input)
+        borsh::from_slice(&slice).unwrap()
     }
 }
 
@@ -51,24 +47,17 @@ impl GuestEnv for SP1Env {
         sp1_zkvm::io::commit_slice(&vec);
     }
 
-    fn read<State: BorshDeserialize>(&self) -> (State, ContractInput) {
+    fn read<T: BorshDeserialize>(&self) -> T {
         let vec = sp1_zkvm::io::read_vec();
-        let contract_input: ContractInput = borsh::from_slice(&slice).unwrap();
-        let state: State = borsh::from_slice(&contract_input.state).unwrap();
-        (state, contract_input)
+        borsh::from_slice(&vec).unwrap()
     }
 }
 
-pub fn fail<State: Digestable>(
-    input: ContractInput,
-    initial_state: State,
-    message: &str,
-) -> HyleOutput {
-    let digest = initial_state.as_digest();
+pub fn fail(input: ContractInput, initial_state_digest: StateDigest, message: &str) -> HyleOutput {
     HyleOutput {
         version: 1,
-        initial_state: digest.clone(),
-        next_state: digest,
+        initial_state: initial_state_digest.clone(),
+        next_state: initial_state_digest,
         identity: input.identity,
         index: input.index,
         blobs: flatten_blobs(&input.blobs),
@@ -80,43 +69,41 @@ pub fn fail<State: Digestable>(
     }
 }
 
-pub fn panic(env: impl GuestEnv, message: &str) {
-    env.log(message);
-    // should we env::commit ?
-    panic!("{}", message);
-}
-
-pub fn init_raw<Parameters>(input: ContractInput) -> (ContractInput, Option<Parameters>)
+/// Executes an action on a given contract using the provided state and contract input.
+///
+/// # Arguments
+///
+/// * `contract_input` - A reference to the contract input that contains the current state, blobs, identity, etc.
+///
+/// # Type Parameters
+///
+/// * `State` - The type of the state that must implement the `Digestable`, `BorshDeserialize`, `HyleContract` traits.
+///
+/// # Returns
+///
+/// A pair containing the new state and the contract output as `HyleOutput`.
+///
+/// # Panics
+///
+/// Panics if the contract initialization fails.
+pub fn execute<State>(contract_input: &ContractInput) -> (State, HyleOutput)
 where
-    Parameters: BorshDeserialize,
+    State: HyleContract + Digestable + BorshDeserialize + 'static,
 {
-    let parsed_blob = parse_blob::<Parameters>(&input.blobs, &input.index);
+    let mut state: State =
+        borsh::from_slice(&contract_input.state).expect("Failed to decode state");
+    let initial_state_digest = state.as_digest();
 
-    (input, parsed_blob)
-}
+    let mut res: RunResult = state.execute(contract_input);
 
-pub fn init_with_caller<Parameters>(
-    input: ContractInput,
-) -> Result<(ContractInput, StructuredBlob<Parameters>, Identity), String>
-where
-    Parameters: BorshSerialize + BorshDeserialize,
-{
-    let parsed_blob = parse_structured_blob::<Parameters>(&input.blobs, &input.index);
+    let next_state_digest = state.as_digest();
 
-    let parsed_blob = parsed_blob.ok_or("Failed to parse input blob".to_string())?;
+    let output = as_hyle_output::<State>(
+        initial_state_digest,
+        next_state_digest,
+        contract_input.clone(),
+        &mut res,
+    );
 
-    let caller = check_caller_callees::<Parameters>(&input, &parsed_blob)?;
-
-    Ok((input, parsed_blob, caller))
-}
-
-pub fn commit<State>(
-    env: impl GuestEnv,
-    initial_state: State,
-    contract_input: ContractInput,
-    mut res: crate::RunResult<State>,
-) where
-    State: Digestable + BorshDeserialize,
-{
-    env.commit(&as_hyle_output(initial_state, contract_input, &mut res));
+    (state, output)
 }

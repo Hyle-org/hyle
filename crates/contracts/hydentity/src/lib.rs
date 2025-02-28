@@ -1,8 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use sdk::{utils::parse_raw_contract_input, ContractInput};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use sdk::{identity_provider::IdentityVerification, ContractInput, Digestable, RunResult};
+use sdk::{identity_provider::IdentityVerification, Digestable, HyleContract, RunResult};
 use sha2::{Digest, Sha256};
 
 #[cfg(feature = "client")]
@@ -16,18 +17,26 @@ pub struct AccountInfo {
     pub nonce: u32,
 }
 
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Hydentity {
     identities: BTreeMap<String, AccountInfo>,
 }
 
-impl Hydentity {
-    pub fn new() -> Self {
-        Hydentity {
-            identities: BTreeMap::new(),
+impl HyleContract for Hydentity {
+    fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
+        let (action, exec_ctx) = parse_raw_contract_input(contract_input)?;
+        let private_input = std::str::from_utf8(&contract_input.private_input)
+            .map_err(|_| "Invalid UTF-8 sequence")?;
+        let output = self.execute_identity_action(action, private_input);
+
+        match output {
+            Err(e) => Err(e),
+            Ok(output) => Ok((output, exec_ctx, vec![])),
         }
     }
+}
 
+impl Hydentity {
     pub fn to_bytes(&self) -> Vec<u8> {
         borsh::to_vec(self).expect("Failed to encode Balances")
     }
@@ -37,12 +46,6 @@ impl Hydentity {
         let state: AccountInfo =
             serde_json::from_str(&info).map_err(|_| "Failed to parse accounf info")?;
         Ok(state.nonce)
-    }
-}
-
-impl Default for Hydentity {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -116,28 +119,6 @@ impl TryFrom<sdk::StateDigest> for Hydentity {
     fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
         borsh::from_slice(&state.0).map_err(|_| anyhow::anyhow!("Could not decode hydentity state"))
     }
-}
-
-use core::str::from_utf8;
-use sdk::identity_provider::IdentityAction;
-
-pub fn execute(mut state: Hydentity, contract_input: ContractInput) -> RunResult<Hydentity> {
-    let (input, parsed_blob) = sdk::guest::init_raw::<IdentityAction>(contract_input);
-
-    let parsed_blob = match parsed_blob {
-        Some(v) => v,
-        None => {
-            return Err("Failed to parse input blob".to_string());
-        }
-    };
-
-    sdk::info!("Executing action: {:?}", parsed_blob);
-
-    let password = from_utf8(&input.private_input).unwrap();
-
-    let res = state.execute_action(parsed_blob, password)?;
-
-    Ok((res, state, vec![]))
 }
 
 #[cfg(test)]

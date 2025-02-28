@@ -6,39 +6,39 @@ use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutorBuilder};
 use hydentity::Hydentity;
 use hyle_contract_sdk::erc20::ERC20;
 use hyle_contract_sdk::BlobTransaction;
+use hyle_contract_sdk::Identity;
+use hyle_contract_sdk::{guest, ContractInput, ContractName, HyleOutput};
 use hyle_contract_sdk::{Blob, BlobData, ContractAction, RegisterContractAction};
-use hyle_contract_sdk::{ContractName, Identity};
 use hyle_contract_sdk::{Digestable, TcpServerNetMessage};
 use hyllar::client::transfer;
-use hyllar::{HyllarToken, HyllarTokenContract};
+use hyllar::Hyllar;
 use tokio::task::JoinSet;
 use tracing::info;
+
 contract_states!(
     #[derive(Debug, Clone)]
     pub struct States {
         pub hydentity: Hydentity,
-        pub hyllar_test: HyllarToken,
+        pub hyllar_test: Hyllar,
     }
 );
 
-pub fn setup_hyllar(users: u32) -> Result<HyllarTokenContract> {
-    let hyllar_token = HyllarToken::new(0, "faucet.hyllar_test".into());
-    let mut hyllar_contract =
-        HyllarTokenContract::init(hyllar_token.clone(), "faucet.hyllar_test".into());
+pub fn setup_hyllar(users: u32) -> Result<Hyllar> {
+    let mut hyllar_token = Hyllar::new(0, "faucet.hyllar_test".into());
 
     // Create an entry for each users
     for n in 0..users {
         let ident = &format!("{n}.hyllar_test");
-        hyllar_contract
-            .transfer(ident, 0)
+        hyllar_token
+            .transfer(ident, ident, 0)
             .map_err(|e| anyhow::anyhow!(e))?;
     }
-    Ok(hyllar_contract)
+    Ok(hyllar_token)
 }
 
 /// Create a new contract "hyllar_test" that already contains entries for each users
 pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
-    let hyllar_contract = setup_hyllar(users)?;
+    let hyllar = setup_hyllar(users)?;
 
     let tx = BlobTransaction::new(
         Identity::new("hyle.hyle"),
@@ -46,7 +46,7 @@ pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
             contract_name: "hyllar_test".into(),
             verifier: verifier.into(),
             program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
-            state_digest: hyllar_contract.state().as_digest(),
+            state_digest: hyllar.as_digest(),
         }
         .as_blob("hyle".into(), None, None)],
     );

@@ -12,11 +12,11 @@ tokio = "1.42"
 hyllar = { path = "../contracts/hyllar", features = ["client"] }
 hydentity = { path = "../contracts/hydentity", features = ["client"] }
 hyle-contracts = { path = "../contracts", package = "hyle-contracts" }
-hyle-contract-sdk = { path = "../contract-sdk" }
+hyle-contract-sdk = { path = "../contract-sdk", features = ["tracing"] }
 client-sdk = { path = "../client-sdk", features = ["tcp", "risc0"] }
 
 anyhow = "1.0.96"
 borsh = "1.5.5"
-clap = { version = "4.5.30", features = ["derive"]}
+clap = { version = "4.5.31", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"

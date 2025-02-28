@@ -1,10 +1,10 @@
-use crate::{execute, Hydentity};
 use client_sdk::{
-    helpers::{risc0::Risc0Prover, ClientSdkExecutor},
+    helpers::risc0::Risc0Prover,
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
-use sdk::{identity_provider::IdentityAction, utils::as_hyle_output, ContractName, HyleOutput};
-use std::any::Any;
+use sdk::{identity_provider::IdentityAction, ContractName};
+
+use crate::Hydentity;
 
 pub mod metadata {
     pub const HYDENTITY_ELF: &[u8] = include_bytes!("../hydentity.img");
@@ -12,34 +12,13 @@ pub mod metadata {
 }
 use metadata::*;
 
-struct HydentityPseudoExecutor {}
-impl ClientSdkExecutor for HydentityPseudoExecutor {
-    fn execute(
-        &self,
-        contract_input: &sdk::ContractInput,
-    ) -> anyhow::Result<(Box<dyn Any>, HyleOutput)> {
-        let initial_state: Hydentity = borsh::from_slice(contract_input.state.as_slice())?;
-        let mut res = execute(initial_state.clone(), contract_input.clone());
-
-        let output = as_hyle_output(initial_state, contract_input.clone(), &mut res);
-        match res {
-            Ok(res) => Ok((Box::new(res.1.clone()), output)),
-            Err(e) => Err(anyhow::anyhow!(e)),
-        }
-    }
-}
-
 impl Hydentity {
     pub fn setup_builder<S: StateUpdater>(
         &self,
         contract_name: ContractName,
         builder: &mut TxExecutorBuilder<S>,
     ) {
-        builder.init_with(
-            contract_name,
-            HydentityPseudoExecutor {},
-            Risc0Prover::new(HYDENTITY_ELF),
-        );
+        builder.init_with(contract_name, Risc0Prover::new(HYDENTITY_ELF));
     }
 }
 
