@@ -6,7 +6,7 @@ updates:
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
     rebase-strategy: "auto"
     commit-message:
       prefix: ":arrow_up:"
