@@ -255,7 +255,7 @@ impl ModulesHandler {
                     .send(signal::ShutdownModule {
                         module: module_name.to_string(),
                     })
-                    .log_error(format!("Shutting down module"));
+                    .log_error("Shutting down module");
             } else {
                 tracing::debug!("Not shutting already shut module {}", module_name);
             }
