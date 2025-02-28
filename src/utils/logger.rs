@@ -9,9 +9,7 @@ use tracing_subscriber::{
     EnvFilter,
 };
 
-// moved trait to macro. current impl will only point to the module parent. i.e., `consensus_tests` instead of `consensus_tests::e2e_consensus`
-// if you want to get the precise module, call the macro within every function that'll use `.log_warn` or `.log_error`
-// if you don't like these hoops, consider adjusting the api to fit a little by taking in the module_path directly into the `.log` function
+// Consolidated LogMe trait
 #[macro_export]
 macro_rules! log_me_impl {
   ($t: ty) => {
