@@ -1,5 +1,8 @@
 //! Mempool logic & pending transaction management.
 
+use crate::init_logger;
+init_logger!();
+
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{CommittedConsensusProposal, ConsensusEvent},
@@ -264,21 +267,21 @@ impl Mempool {
             on_bus self.bus,
             listen<SignedByValidator<MempoolNetMessage>> cmd => {
                 let _ = self.handle_net_message(cmd)
-                    .log_error(module_path!(), "Handling MempoolNetMessage in Mempool");
+                    .log_error("Handling MempoolNetMessage in Mempool");
             }
             listen<RestApiMessage> cmd => {
-                let _ = self.handle_api_message(cmd).log_error(module_path!(), "Handling API Message in Mempool");
+                let _ = self.handle_api_message(cmd).log_error("Handling API Message in Mempool");
             }
             listen<TcpServerMessage> cmd => {
-                let _ = self.handle_tcp_server_message(cmd).log_error(module_path!(), "Handling TCP Server message in Mempool");
+                let _ = self.handle_tcp_server_message(cmd).log_error("Handling TCP Server message in Mempool");
             }
             listen<InternalMempoolEvent> event => {
                 let _ = self.handle_internal_event(event)
-                    .log_error(module_path!(), "Handling InternalMempoolEvent in Mempool");
+                    .log_error("Handling InternalMempoolEvent in Mempool");
             }
             listen<ConsensusEvent> cmd => {
                 let _ = self.handle_consensus_event(cmd)
-                    .log_error(module_path!(), "Handling ConsensusEvent in Mempool");
+                    .log_error("Handling ConsensusEvent in Mempool");
             }
             listen<NodeStateEvent> cmd => {
                 let NodeStateEvent::NewBlock(block) = cmd;
@@ -291,7 +294,7 @@ impl Mempool {
             }
             _ = interval.tick() => {
                 let _ = self.handle_data_proposal_management()
-                    .log_error(module_path!(), "Creating Data Proposal on tick");
+                    .log_error("Creating Data Proposal on tick");
             }
         };
 
@@ -969,11 +972,11 @@ impl Mempool {
                 let sender: &tokio::sync::broadcast::Sender<InternalMempoolEvent> = self.bus.get();
                 let sender = sender.clone();
                 tokio::task::spawn_blocking(move || {
-                    let tx = Self::process_proof_tx(kc, tx)
-                        .log_error(module_path!(), "Error processing proof tx")?;
+                    let tx =
+                        Self::process_proof_tx(kc, tx).log_error("Error processing proof tx")?;
                     sender
                         .send(InternalMempoolEvent::OnProcessedNewTx(tx))
-                        .log_warn(module_path!(), "sending processed TX")
+                        .log_warn("sending processed TX")
                 });
                 return Ok(());
             }

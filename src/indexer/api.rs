@@ -1,3 +1,5 @@
+use crate::init_logger;
+init_logger!();
 use crate::utils::logger::LogMe;
 
 use super::IndexerApiState;
@@ -295,7 +297,7 @@ pub async fn get_transaction_with_hash(
     .fetch_optional(&state.db)
     .await
     .map(|db| db.map(Into::<APITransaction>::into))
-    .log_error(module_path!(), "Select transaction")
+    .log_error("Select transaction")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match transaction {
@@ -331,7 +333,7 @@ pub async fn get_transaction_events(
     .bind(tx_hash)
     .fetch_all(&state.db)
     .await
-    .log_error(module_path!(), "Failed to fetch transactions with blobs")
+    .log_error("Failed to fetch transactions with blobs")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let transactions: Result<Vec<APITransactionEvents>, anyhow::Error> = rows
@@ -409,7 +411,7 @@ pub async fn get_blob_transactions_by_contract(
     .bind(contract_name.clone())
     .fetch_all(&state.db)
     .await
-    .log_error(module_path!(), "Failed to fetch transactions with blobs")
+    .log_error("Failed to fetch transactions with blobs")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let transactions: Result<Vec<TransactionWithBlobs>, anyhow::Error> = rows

@@ -1,3 +1,6 @@
+use crate::init_logger;
+init_logger!();
+
 use std::{
     any::type_name,
     fs,
@@ -79,18 +82,16 @@ where
             .collect();
         let tmp = file.with_extension(format!("{}.tmp", salt));
         debug!("Saving on disk in a tmp file {:?}", tmp.clone());
-        let mut buf_writer = BufWriter::new(
-            fs::File::create(tmp.as_path()).log_error(module_path!(), "Create file")?,
-        );
-        borsh::to_writer(&mut buf_writer, store)
-            .log_error(module_path!(), "Serializing Ctx chain")?;
+        let mut buf_writer =
+            BufWriter::new(fs::File::create(tmp.as_path()).log_error("Create file")?);
+        borsh::to_writer(&mut buf_writer, store).log_error("Serializing Ctx chain")?;
 
         buf_writer.flush().log_error(
             module_path!(),
             format!("Flushing Buffer writer for store {}", type_name::<S>()),
         )?;
         debug!("Renaming {:?} to {:?}", &tmp, &file);
-        fs::rename(tmp, file).log_error(module_path!(), "Rename file")?;
+        fs::rename(tmp, file).log_error("Rename file")?;
         Ok(())
     }
 }
@@ -231,7 +232,7 @@ impl ModulesHandler {
                         .send(signal::ShutdownCompleted {
                             module: module.name.to_string(),
                         })
-                        .log_error(module_path!(), "Sending ShutdownCompleted message");
+                        .log_error("Sending ShutdownCompleted message");
                 })?;
 
             tasks.push(handle);
@@ -254,7 +255,7 @@ impl ModulesHandler {
                     .send(signal::ShutdownModule {
                         module: module_name.to_string(),
                     })
-                    .log_error(module_path!(), format!("Shutting down module"));
+                    .log_error(format!("Shutting down module"));
             } else {
                 tracing::debug!("Not shutting already shut module {}", module_name);
             }

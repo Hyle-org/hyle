@@ -1,5 +1,8 @@
 //! State required for participation in consensus by the node.
 
+use crate::init_logger;
+init_logger!();
+
 use super::NodeState;
 use crate::bus::{command_response::Query, BusClientSender, BusMessage};
 use crate::data_availability::DataEvent;
@@ -99,7 +102,7 @@ impl Module for NodeStateModule {
                         _ = self
                             .bus
                             .send(NodeStateEvent::NewBlock(Box::new(node_state_block)))
-                            .log_error(module_path!(), "Sending DataEvent while processing SignedBlock");
+                            .log_error("Sending DataEvent while processing SignedBlock");
                     }
                 }
             }
@@ -109,7 +112,7 @@ impl Module for NodeStateModule {
             self.config.data_directory.join("node_state.bin").as_path(),
             &self.inner,
         )
-        .log_error(module_path!(), "Saving node state");
+        .log_error("Saving node state");
 
         Ok(())
     }

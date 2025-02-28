@@ -11,16 +11,15 @@ use tracing_subscriber::{
 
 // A simple way to log without interrupting fluency
 pub trait LogMe<T> {
-    fn log_warn<C: Display + Send + Sync + 'static>(
-        self,
-        target: &'static str,
-        context_msg: C,
-    ) -> anyhow::Result<T>;
-    fn log_error<C: Display + Send + Sync + 'static>(
-        self,
-        target: &'static str,
-        context_msg: C,
-    ) -> anyhow::Result<T>;
+    fn log_warn<C: Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T>;
+    fn log_error<C: Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T>;
+}
+
+#[macro_export]
+macro_rules! init_logger {
+    () => {
+        static MODULE_PATH: &'static str = module_path!();
+    };
 }
 
 // Will log a warning in case of error
@@ -28,32 +27,24 @@ pub trait LogMe<T> {
 impl<T, Error: Into<anyhow::Error> + Display + Send + Sync + 'static> LogMe<T>
     for Result<T, Error>
 {
-    fn log_warn<C: Display + Send + Sync + 'static>(
-        self,
-        target: &'static str,
-        context_msg: C,
-    ) -> anyhow::Result<T> {
+    fn log_warn<C: Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T> {
         match self {
             Err(e) => {
                 let ae: anyhow::Error = e.into();
                 let ae = ae.context(context_msg);
-                warn!(target, "{:#}", ae);
+                warn!(target: MODULE_PATH, "{:#}", ae);
                 Err(ae)
             }
             Ok(t) => Ok(t),
         }
     }
 
-    fn log_error<C: Display + Send + Sync + 'static>(
-        self,
-        target: &'static str,
-        context_msg: C,
-    ) -> anyhow::Result<T> {
+    fn log_error<C: Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T> {
         match self {
             Err(e) => {
                 let ae: anyhow::Error = e.into();
                 let ae = ae.context(context_msg);
-                error!(target, "{:#}", ae);
+                error!(target: MODULE_PATH, "{:#}", ae);
                 Err(ae)
             }
             Ok(t) => Ok(t),

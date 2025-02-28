@@ -1,3 +1,6 @@
+use crate::init_logger;
+init_logger!();
+
 use anyhow::{anyhow, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::contract_indexer::{ContractHandler, ContractStateStore};
@@ -127,7 +130,7 @@ where
             listen<NodeStateEvent> event => {
                 _ = self.handle_node_state_event(event)
                     .await
-                    .log_error(module_path!(), "Handling node state event")
+                    .log_error("Handling node state event")
             }
         };
 

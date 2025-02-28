@@ -1,3 +1,6 @@
+use crate::init_logger;
+init_logger!();
+
 use std::{
     ops::{Deref, DerefMut},
     sync::Arc,
@@ -115,7 +118,7 @@ impl DAListener {
                 .as_path(),
             &self.node_state,
         )
-        .log_error(module_path!(), "Saving node state");
+        .log_error("Saving node state");
 
         Ok(())
     }

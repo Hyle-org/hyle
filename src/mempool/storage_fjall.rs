@@ -1,3 +1,6 @@
+use crate::init_logger;
+init_logger!();
+
 use std::{collections::HashMap, path::Path, sync::Arc};
 
 use anyhow::{bail, Result};

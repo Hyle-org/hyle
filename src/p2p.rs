@@ -1,5 +1,8 @@
 //! Networking layer
 
+use crate::init_logger;
+init_logger!();
+
 use crate::utils::logger::LogMe;
 use crate::{
     bus::{BusMessage, SharedMessageBus},
@@ -115,7 +118,7 @@ impl P2P {
                 }
                 error!("Can't reach peer #{}: {}.", id, peer_address);
             })
-            .log_error(module_path!(), "Failed to spawn peer thread");
+            .log_error("Failed to spawn peer thread");
     }
 
     fn handle_command(&mut self, cmd: P2PCommand) {
