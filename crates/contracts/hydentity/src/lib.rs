@@ -1,5 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use sdk::{tracing, utils::parse_raw_contract_input, ContractInput};
+use sdk::{utils::parse_raw_contract_input, ContractInput};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
