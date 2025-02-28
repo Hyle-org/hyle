@@ -1,7 +1,6 @@
 //! Networking layer
 
-use crate::init_logger;
-init_logger!();
+
 
 use crate::utils::logger::LogMe;
 use crate::{

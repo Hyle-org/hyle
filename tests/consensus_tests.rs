@@ -1,8 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use crate::init_logger;
-init_logger!();
-
 use anyhow::Result;
 use fixtures::ctx::E2ECtx;
 

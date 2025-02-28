@@ -1,8 +1,5 @@
 //! Minimal block storage layer for data availability.
 
-use crate::init_logger;
-init_logger!();
-
 pub mod codec;
 
 mod blocks_fjall;

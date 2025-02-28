@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::fmt::Display;
-use tracing::{error, warn};
+// use tracing::{error, warn};
 use tracing::{level_filters::LevelFilter, Subscriber};
 use tracing_subscriber::{
     fmt::{format, FormatEvent, FormatFields},
@@ -9,17 +9,27 @@ use tracing_subscriber::{
     EnvFilter,
 };
 
+// Create helper macros that will be used internally by the trait implementation
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __private_log_warn {
+    ($e:expr) => {
+        tracing::warn!(target: module_path!(), "{:#}", $e)
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __private_log_error {
+    ($e:expr) => {
+        tracing::error!(target: module_path!(), "{:#}", $e)
+    };
+}
+
 // A simple way to log without interrupting fluency
 pub trait LogMe<T> {
     fn log_warn<C: Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T>;
     fn log_error<C: Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T>;
-}
-
-#[macro_export]
-macro_rules! init_logger {
-    () => {
-        static MODULE_PATH: &'static str = module_path!();
-    };
 }
 
 // Will log a warning in case of error
@@ -32,7 +42,10 @@ impl<T, Error: Into<anyhow::Error> + Display + Send + Sync + 'static> LogMe<T>
             Err(e) => {
                 let ae: anyhow::Error = e.into();
                 let ae = ae.context(context_msg);
-                warn!(target: MODULE_PATH, "{:#}", ae);
+
+                // Use the private macro - this will expand at the call site
+                crate::__private_log_warn!(ae);
+
                 Err(ae)
             }
             Ok(t) => Ok(t),
@@ -44,7 +57,10 @@ impl<T, Error: Into<anyhow::Error> + Display + Send + Sync + 'static> LogMe<T>
             Err(e) => {
                 let ae: anyhow::Error = e.into();
                 let ae = ae.context(context_msg);
-                error!(target: MODULE_PATH, "{:#}", ae);
+
+                // Use the private macro - this will expand at the call site
+                crate::__private_log_error!(ae);
+
                 Err(ae)
             }
             Ok(t) => Ok(t),

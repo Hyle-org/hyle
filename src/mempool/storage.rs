@@ -1,5 +1,4 @@
-use crate::init_logger;
-init_logger!();
+
 
 use anyhow::{bail, Result};
 use borsh::{BorshDeserialize, BorshSerialize};

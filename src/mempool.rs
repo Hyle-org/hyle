@@ -1,8 +1,5 @@
 //! Mempool logic & pending transaction management.
 
-use crate::init_logger;
-init_logger!();
-
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{CommittedConsensusProposal, ConsensusEvent},

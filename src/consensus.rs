@@ -1,7 +1,6 @@
 //! Handles all consensus logic up to block commitment.
 
-use crate::init_logger;
-init_logger!();
+
 
 use crate::model::*;
 use crate::module_handle_messages;

@@ -1,6 +1,3 @@
-use crate::init_logger;
-init_logger!();
-
 use std::{
     any::type_name,
     fs,
@@ -174,12 +171,6 @@ macro_rules! module_bus_client {
 }
 
 pub use module_bus_client;
-
-pub struct ModulesHandler {
-    bus: SharedMessageBus,
-    modules: Vec<ModuleStarter>,
-    started_modules: Vec<&'static str>,
-}
 
 bus_client! {
     pub struct ShutdownClient {

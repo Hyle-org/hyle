@@ -1,8 +1,5 @@
 //! State required for participation in consensus by the node.
 
-use crate::init_logger;
-init_logger!();
-
 use super::NodeState;
 use crate::bus::{command_response::Query, BusClientSender, BusMessage};
 use crate::data_availability::DataEvent;

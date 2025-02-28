@@ -1,6 +1,3 @@
-use crate::init_logger;
-init_logger!();
-
 use std::time::Duration;
 use std::time::SystemTime;
 

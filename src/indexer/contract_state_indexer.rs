@@ -1,6 +1,3 @@
-use crate::init_logger;
-init_logger!();
-
 use anyhow::{anyhow, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::contract_indexer::{ContractHandler, ContractStateStore};

@@ -1,8 +1,5 @@
 //! Index system for historical data.
 
-use crate::init_logger;
-init_logger!();
-
 mod api;
 pub mod contract_state_indexer;
 pub mod da_listener;
