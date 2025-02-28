@@ -1,5 +1,8 @@
 //! State required for participation in consensus by the node.
 
+use crate::log_me_impl;
+log_me_impl!(Result<T, Error>);
+
 use super::NodeState;
 use crate::bus::{command_response::Query, BusClientSender, BusMessage};
 use crate::data_availability::DataEvent;
@@ -7,7 +10,6 @@ use crate::model::Contract;
 use crate::model::{Block, BlockHeight, CommonRunContext, ContractName};
 use crate::module_handle_messages;
 use crate::utils::conf::SharedConf;
-use crate::utils::logger::LogMe;
 use crate::utils::modules::{module_bus_client, Module};
 use anyhow::{Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};

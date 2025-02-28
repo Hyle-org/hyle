@@ -4,9 +4,11 @@ mod api;
 pub mod contract_state_indexer;
 pub mod da_listener;
 
+use crate::log_me_impl;
+log_me_impl!(Result<T, Error>);
+
 use crate::mempool::MempoolStatusEvent;
 use crate::model::*;
-use crate::utils::logger::LogMe;
 use crate::{
     module_handle_messages,
     node_state::module::NodeStateEvent,

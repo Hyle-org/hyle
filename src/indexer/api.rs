@@ -1,5 +1,8 @@
 use crate::utils::logger::LogMe;
 
+use crate::log_me_impl;
+log_me_impl!(Result<T, Error>);
+
 use super::IndexerApiState;
 use api::{
     APIBlob, APIBlock, APIContract, APIContractState, APITransaction, APITransactionEvents,

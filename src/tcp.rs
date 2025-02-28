@@ -1,3 +1,6 @@
+use crate::log_me_impl;
+log_me_impl!(Result<T, Error>);
+
 use std::collections::HashMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -16,8 +19,6 @@ use tokio_util::codec::{Decoder, Encoder, Framed, LengthDelimitedCodec};
 
 use anyhow::{anyhow, bail, Context, Result};
 use tracing::{debug, error, info, trace, warn};
-
-use crate::utils::logger::LogMe;
 
 #[derive(Debug, Clone, BorshDeserialize, BorshSerialize, PartialEq)]
 pub enum TcpMessage<Data: Clone> {

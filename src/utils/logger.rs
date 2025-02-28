@@ -9,63 +9,49 @@ use tracing_subscriber::{
     EnvFilter,
 };
 
-// Create helper macros that will be used internally by the trait implementation
-#[doc(hidden)]
+// moved trait to macro. current impl will only point to the module parent. i.e., `consensus_tests` instead of `consensus_tests::e2e_consensus`
+// if you want to get the precise module, call the macro within every function that'll use `.log_warn` or `.log_error`
+// if you don't like these hoops, consider adjusting the api to fit a little by taking in the module_path directly into the `.log` function
 #[macro_export]
-macro_rules! __private_log_warn {
-    ($e:expr) => {
-        tracing::warn!(target: module_path!(), "{:#}", $e)
-    };
-}
+macro_rules! log_me_impl {
+  ($t: ty) => {
+  // Will log a warning in case of error
+  // WARN {context_msg}: {cause}
+  trait LogMe<T> {
+     fn log_warn<C: std::fmt::Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T>;
+     fn log_error<C: std::fmt::Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T>;
+  }
+  impl<T, Error: Into<anyhow::Error> + std::fmt::Display + Send + Sync + 'static> LogMe<T>
+    for $t {
+      fn log_warn<C: std::fmt::Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T> {
+          match self {
+              Err(e) => {
+                  let ae: anyhow::Error = e.into();
+                  let ae = ae.context(context_msg);
 
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __private_log_error {
-    ($e:expr) => {
-        tracing::error!(target: module_path!(), "{:#}", $e)
-    };
-}
+                  tracing::error!(target: module_path!(), "{:#}", ae);
 
-// A simple way to log without interrupting fluency
-pub trait LogMe<T> {
-    fn log_warn<C: Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T>;
-    fn log_error<C: Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T>;
-}
+                  Err(ae)
+              }
+              Ok(t) => Ok(t),
+          }
+      }
 
-// Will log a warning in case of error
-// WARN {context_msg}: {cause}
-impl<T, Error: Into<anyhow::Error> + Display + Send + Sync + 'static> LogMe<T>
-    for Result<T, Error>
-{
-    fn log_warn<C: Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T> {
-        match self {
-            Err(e) => {
-                let ae: anyhow::Error = e.into();
-                let ae = ae.context(context_msg);
+      fn log_error<C: std::fmt::Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T> {
+          match self {
+              Err(e) => {
+                  let ae: anyhow::Error = e.into();
+                  let ae = ae.context(context_msg);
 
-                // Use the private macro - this will expand at the call site
-                crate::__private_log_warn!(ae);
+                  tracing::error!(target: module_path!(), "{:#}", ae);
 
-                Err(ae)
-            }
-            Ok(t) => Ok(t),
-        }
+                  Err(ae)
+              }
+              Ok(t) => Ok(t),
+          }
+      }
     }
-
-    fn log_error<C: Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T> {
-        match self {
-            Err(e) => {
-                let ae: anyhow::Error = e.into();
-                let ae = ae.context(context_msg);
-
-                // Use the private macro - this will expand at the call site
-                crate::__private_log_error!(ae);
-
-                Err(ae)
-            }
-            Ok(t) => Ok(t),
-        }
-    }
+  }
 }
 
 /// Custom formatter that appends node_name in front of full logs

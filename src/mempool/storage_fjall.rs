@@ -1,3 +1,6 @@
+use crate::log_me_impl;
+log_me_impl!(Result<T, Error>);
+
 use std::{collections::HashMap, path::Path, sync::Arc};
 
 use anyhow::{bail, Result};
@@ -6,10 +9,7 @@ use fjall::{
 };
 use tracing::info;
 
-use crate::{
-    model::{DataProposalHash, Hashed, ValidatorPublicKey},
-    utils::logger::LogMe,
-};
+use crate::model::{DataProposalHash, Hashed, ValidatorPublicKey};
 
 use super::storage::{CanBePutOnTop, LaneEntry, Storage};
 

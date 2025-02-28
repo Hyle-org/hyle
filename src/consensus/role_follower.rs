@@ -1,3 +1,6 @@
+use crate::log_me_impl;
+log_me_impl!(Result<T, Error>);
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use tracing::{debug, info, trace, warn};
 

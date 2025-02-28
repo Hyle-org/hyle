@@ -1,5 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
+use hyle::log_me_impl;
+log_me_impl!(Result<T, Error>);
+
 use anyhow::Result;
 use fixtures::ctx::E2ECtx;
 
@@ -12,7 +15,7 @@ mod e2e_consensus {
     use fixtures::test_helpers::send_transaction;
     use hydentity::client::{register_identity, verify_identity};
     use hydentity::Hydentity;
-    use hyle::{genesis::States, utils::logger::LogMe};
+    use hyle::genesis::States;
     use hyle_contract_sdk::Digestable;
     use hyle_contract_sdk::Identity;
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF, STAKING_ELF};

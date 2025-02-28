@@ -1,5 +1,8 @@
 //! Mempool logic & pending transaction management.
 
+use crate::log_me_impl;
+log_me_impl!(Result<T, Error>);
+
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{CommittedConsensusProposal, ConsensusEvent},
@@ -12,7 +15,6 @@ use crate::{
     utils::{
         conf::SharedConf,
         crypto::{BlstCrypto, SharedBlstCrypto},
-        logger::LogMe,
         modules::{module_bus_client, Module},
         serialize::arc_rwlock_borsh,
         static_type_map::Pick,

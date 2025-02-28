@@ -1,3 +1,6 @@
+use crate::log_me_impl;
+log_me_impl!(Result<T, Error>);
+
 use std::{
     any::type_name,
     fs,
@@ -12,7 +15,6 @@ use crate::{
     bus::{bus_client, BusClientSender, SharedMessageBus},
     genesis::Genesis,
     handle_messages,
-    utils::logger::LogMe,
 };
 use anyhow::{bail, Error, Result};
 use futures::future::select_all;

@@ -1,4 +1,5 @@
-
+use crate::log_me_impl;
+log_me_impl!(Result<T, Error>);
 
 use anyhow::{bail, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -16,7 +17,7 @@ use crate::{
         BlobProofOutput, Cut, DataProposal, DataProposalHash, Hashed, PoDA, SignedByValidator,
         Transaction, TransactionData, ValidatorPublicKey,
     },
-    utils::{crypto::BlstCrypto, logger::LogMe},
+    utils::crypto::BlstCrypto,
 };
 
 use super::verifiers::{verify_proof, verify_recursive_proof};
@@ -140,10 +141,10 @@ pub trait Storage {
         data_proposal_hash: &DataProposalHash,
         signatures: Vec<SignedByValidator<MempoolNetMessage>>,
     ) -> Result<()> {
-        match self.get_by_hash(validator, data_proposal_hash).log_warn(
-
-            "Received PoDA update for unknown DataProposal",
-        )? {
+        match self
+            .get_by_hash(validator, data_proposal_hash)
+            .log_warn("Received PoDA update for unknown DataProposal")?
+        {
             Some(mut lane_entry) => {
                 lane_entry.signatures.extend(signatures);
                 lane_entry.signatures.dedup();

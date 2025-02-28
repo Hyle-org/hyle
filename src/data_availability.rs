@@ -5,6 +5,9 @@ pub mod codec;
 mod blocks_fjall;
 mod blocks_memory;
 
+use crate::log_me_impl;
+log_me_impl!(Result<T, Error>);
+
 // Pick one of the two implementations
 use blocks_fjall::Blocks;
 //use blocks_memory::Blocks;

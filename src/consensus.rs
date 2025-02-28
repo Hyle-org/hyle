@@ -1,6 +1,7 @@
 //! Handles all consensus logic up to block commitment.
 
-
+use crate::log_me_impl;
+log_me_impl!(Result<T, Error>);
 
 use crate::model::*;
 use crate::module_handle_messages;

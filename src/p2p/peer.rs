@@ -1,3 +1,6 @@
+use crate::log_me_impl;
+log_me_impl!(Result<T, Error>);
+
 use std::time::Duration;
 use std::time::SystemTime;
 
@@ -27,7 +30,6 @@ use crate::module_handle_messages;
 use crate::p2p::stream::read_stream;
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::SharedBlstCrypto;
-use crate::utils::logger::LogMe;
 use crate::utils::modules::signal::ShutdownModule;
 
 bus_client! {

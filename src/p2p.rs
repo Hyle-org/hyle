@@ -1,8 +1,8 @@
 //! Networking layer
 
+use crate::log_me_impl;
+log_me_impl!(Result<T, Error>);
 
-
-use crate::utils::logger::LogMe;
 use crate::{
     bus::{BusMessage, SharedMessageBus},
     handle_messages,

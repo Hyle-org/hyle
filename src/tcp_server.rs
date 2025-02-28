@@ -1,3 +1,6 @@
+use crate::log_me_impl;
+log_me_impl!(Result<T, Error>);
+
 use crate::{
     bus::{BusClientSender, BusMessage},
     model::{SharedRunContext, Transaction},
@@ -5,7 +8,6 @@ use crate::{
     tcp::tcp_client_server,
     utils::{
         conf::SharedConf,
-        logger::LogMe,
         modules::{module_bus_client, Module},
     },
 };
