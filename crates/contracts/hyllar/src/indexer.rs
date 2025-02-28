@@ -27,6 +27,11 @@ impl ContractHandler for Hyllar {
 
         (router.with_state(store), api)
     }
+
+    fn init_state(register: sdk::BlobData) -> Result<Self> {
+        let action: HyllarRegisterAction = borsh::from_slice(&register.0)?;
+        Ok(Self::register(action))
+    }
 }
 
 #[utoipa::path(

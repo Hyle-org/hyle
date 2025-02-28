@@ -66,6 +66,7 @@ impl HyleContract for UuidTld {
                 verifier: action.verifier,
                 program_id: action.program_id,
                 state_digest: action.state_digest,
+                register_action: BlobData::default(),
             }],
         ))
     }

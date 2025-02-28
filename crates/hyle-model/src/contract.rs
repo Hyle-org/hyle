@@ -512,6 +512,7 @@ pub struct RegisterContractAction {
     pub program_id: ProgramId,
     pub state_digest: StateDigest,
     pub contract_name: ContractName,
+    pub register_action: BlobData,
 }
 
 #[cfg(feature = "full")]
@@ -568,6 +569,7 @@ pub struct RegisterContractEffect {
     pub program_id: ProgramId,
     pub state_digest: StateDigest,
     pub contract_name: ContractName,
+    pub register_action: BlobData,
 }
 
 #[cfg(feature = "full")]

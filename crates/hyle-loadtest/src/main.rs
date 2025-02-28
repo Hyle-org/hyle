@@ -71,7 +71,7 @@ async fn main() -> Result<(), Error> {
     let verifier = args.verifier;
 
     let states = States {
-        hyllar_test: setup_hyllar(users)?,
+        hyllar_test: setup_hyllar(users)?.1,
         hydentity: Hydentity::default(),
     };
 

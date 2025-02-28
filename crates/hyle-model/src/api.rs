@@ -6,8 +6,8 @@ use strum::IntoDiscriminant;
 use utoipa::ToSchema;
 
 use crate::{
-    BlockHash, BlockHeight, ConsensusProposalHash, ContractName, DataProposalHash, Identity,
-    LaneBytesSize, ProgramId, StateDigest, Transaction, TransactionKind, TxHash,
+    BlobData, BlockHash, BlockHeight, ConsensusProposalHash, ContractName, DataProposalHash,
+    Identity, LaneBytesSize, ProgramId, StateDigest, Transaction, TransactionKind, TxHash,
     ValidatorPublicKey, Verifier,
 };
 
@@ -24,6 +24,7 @@ pub struct APIRegisterContract {
     pub program_id: ProgramId,
     pub state_digest: StateDigest,
     pub contract_name: ContractName,
+    pub register_action: BlobData,
 }
 
 /// Copy from Staking contract

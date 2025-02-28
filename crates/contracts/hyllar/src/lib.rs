@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::erc20::ERC20;
 use sdk::utils::parse_contract_input;
@@ -7,6 +8,7 @@ use sdk::ContractInput;
 use sdk::{erc20::ERC20Action, Digestable, HyleContract, RunResult};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
+use sha2::{Digest, Sha256};
 
 extern crate alloc;
 
@@ -25,6 +27,20 @@ pub struct Hyllar {
     allowances: BTreeMap<(String, String), u128>, // Allowances (owner, spender)
 }
 
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone)]
+pub struct HyllarRegisterAction {
+    pub initial_supply: u128,
+    pub faucet_id: String,
+}
+
+impl HyllarRegisterAction {
+    pub fn as_blob_data(&self) -> anyhow::Result<sdk::BlobData> {
+        Ok(sdk::BlobData(
+            borsh::to_vec(self).context("Failed to encode HyllarRegisterAction")?,
+        ))
+    }
+}
+
 impl Hyllar {
     /// Creates a new Hyllar token with the specified initial supply.
     ///
@@ -35,7 +51,12 @@ impl Hyllar {
     /// # Returns
     ///
     /// * `HyllarToken` - A new instance of the Hyllar token.
-    pub fn new(initial_supply: u128, faucet_id: String) -> Self {
+    pub fn register(action: HyllarRegisterAction) -> Self {
+        let HyllarRegisterAction {
+            initial_supply,
+            faucet_id,
+        } = action;
+
         let mut balances = BTreeMap::new();
         balances.insert(faucet_id, initial_supply); // Assign initial supply to faucet
         Hyllar {
@@ -43,6 +64,13 @@ impl Hyllar {
             balances,
             allowances: BTreeMap::new(),
         }
+    }
+
+    pub fn new(initial_supply: u128, faucet_id: String) -> Self {
+        Self::register(HyllarRegisterAction {
+            initial_supply,
+            faucet_id,
+        })
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -136,15 +164,18 @@ impl ERC20 for Hyllar {
 
 impl Digestable for Hyllar {
     fn as_digest(&self) -> sdk::StateDigest {
-        sdk::StateDigest(self.to_bytes())
-    }
-}
-
-impl TryFrom<sdk::StateDigest> for Hyllar {
-    type Error = anyhow::Error;
-
-    fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
-        borsh::from_slice(&state.0).map_err(|_| anyhow::anyhow!("Could not decode hyllar state"))
+        let mut hasher = Sha256::new();
+        hasher.update(self.total_supply.to_le_bytes());
+        for (account, balance) in self.balances.iter() {
+            hasher.update(account.as_bytes());
+            hasher.update(balance.to_le_bytes());
+        }
+        for ((owner, spender), allowance) in self.allowances.iter() {
+            hasher.update(owner.as_bytes());
+            hasher.update(spender.as_bytes());
+            hasher.update(allowance.to_le_bytes());
+        }
+        sdk::StateDigest(hasher.finalize().to_vec())
     }
 }
 
@@ -260,31 +291,5 @@ mod tests {
             result.unwrap_err().to_string(),
             "Insufficient balance".to_string()
         );
-    }
-
-    #[test]
-    fn test_as_digest() {
-        let initial_supply = 1000;
-        let token = Hyllar::new(initial_supply, "faucet".to_string());
-        let digest = token.as_digest();
-
-        let encoded = borsh::to_vec(&token).expect("Failed to encode Balances");
-        assert_eq!(digest.0, encoded);
-    }
-
-    #[test]
-    fn test_try_from_state_digest() {
-        let initial_supply = 1000;
-        let token = Hyllar::new(initial_supply, "faucet".to_string());
-        let digest = token.as_digest();
-
-        let decoded_token: Hyllar =
-            Hyllar::try_from(digest.clone()).expect("Failed to decode state digest");
-        assert_eq!(decoded_token.total_supply, token.total_supply);
-        assert_eq!(decoded_token.balances, token.balances);
-
-        let invalid_digest = sdk::StateDigest(vec![0, 1, 2, 3]);
-        let result = Hyllar::try_from(invalid_digest);
-        assert!(result.is_err());
     }
 }

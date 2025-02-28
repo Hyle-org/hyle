@@ -4,14 +4,13 @@ use client_sdk::helpers::test::TestProver;
 use client_sdk::tcp_client::NodeTcpClient;
 use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutorBuilder};
 use hydentity::Hydentity;
-use hyle_contract_sdk::erc20::ERC20;
 use hyle_contract_sdk::BlobTransaction;
 use hyle_contract_sdk::Identity;
 use hyle_contract_sdk::{guest, ContractInput, ContractName, HyleOutput};
 use hyle_contract_sdk::{Blob, BlobData, ContractAction, RegisterContractAction};
 use hyle_contract_sdk::{Digestable, TcpServerNetMessage};
 use hyllar::client::transfer;
-use hyllar::Hyllar;
+use hyllar::{Hyllar, HyllarRegisterAction};
 use tokio::task::JoinSet;
 use tracing::info;
 
@@ -23,22 +22,18 @@ contract_states!(
     }
 );
 
-pub fn setup_hyllar(users: u32) -> Result<Hyllar> {
-    let mut hyllar_token = Hyllar::new(0, "faucet.hyllar_test".into());
-
-    // Create an entry for each users
-    for n in 0..users {
-        let ident = &format!("{n}.hyllar_test");
-        hyllar_token
-            .transfer(ident, ident, 0)
-            .map_err(|e| anyhow::anyhow!(e))?;
-    }
-    Ok(hyllar_token)
+pub fn setup_hyllar(_users: u32) -> Result<(HyllarRegisterAction, Hyllar)> {
+    let register = HyllarRegisterAction {
+        initial_supply: 0,
+        faucet_id: "faucet.hyllar_test".into(),
+    };
+    let hyllar = Hyllar::register(register.clone());
+    Ok((register, hyllar))
 }
 
 /// Create a new contract "hyllar_test" that already contains entries for each users
 pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
-    let hyllar = setup_hyllar(users)?;
+    let (register, hyllar) = setup_hyllar(users)?;
 
     let tx = BlobTransaction::new(
         Identity::new("hyle.hyle"),
@@ -47,6 +42,7 @@ pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
             verifier: verifier.into(),
             program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
             state_digest: hyllar.as_digest(),
+            register_action: register.as_blob_data()?,
         }
         .as_blob("hyle".into(), None, None)],
     );

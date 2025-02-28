@@ -6,6 +6,7 @@ mod fixtures;
 
 mod e2e_consensus {
 
+    use anyhow::Context;
     use client_sdk::helpers::risc0::Risc0Prover;
     use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutorBuilder};
     use fixtures::test_helpers::send_transaction;
@@ -56,16 +57,22 @@ mod e2e_consensus {
             .await
             .log_error("fetch state failed")
             .unwrap();
-        let hydentity: Hydentity = ctx
-            .indexer_client()
-            .fetch_current_state(&"hydentity".into())
-            .await
-            .unwrap();
+        let hydentity: Hydentity = StateDigest(
+            ctx.indexer_client()
+                .get_indexer_contract(&"hydentity".into())
+                .await
+                .unwrap()
+                .state_digest,
+        )
+        .try_into()
+        .unwrap();
 
-        let staking_state: StateDigest = ctx
-            .indexer_client()
-            .fetch_current_state(&"staking".into())
-            .await?;
+        let staking_state: StateDigest = StateDigest(
+            ctx.indexer_client()
+                .get_indexer_contract(&"staking".into())
+                .await?
+                .state_digest,
+        );
 
         let staking: Staking = ctx
             .client()
@@ -105,14 +112,16 @@ mod e2e_consensus {
                 "hydentity".into(),
                 &tx_ctx.hydentity,
                 "password".to_string(),
-            )?;
+            )
+            .expect("verify_identity failed");
 
             transfer(
                 &mut transaction,
                 "hyllar".into(),
                 node_identity.0.clone(),
                 stake_amount,
-            )?;
+            )
+            .expect("transfer failed");
 
             let tx_hash = send_transaction(ctx.client(), transaction, &mut tx_ctx).await;
             tracing::warn!("Transfer TX Hash: {:?}", tx_hash);

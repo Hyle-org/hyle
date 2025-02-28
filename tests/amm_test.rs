@@ -19,7 +19,7 @@ mod e2e_amm {
         helpers::risc0::Risc0Prover,
         transaction_builder::{ProvableBlobTx, TxExecutorBuilder},
     };
-    use fixtures::{ctx::E2EContract, proofs::generate_recursive_proof};
+    use fixtures::{proofs::generate_recursive_proof};
     use hydentity::{
         client::{register_identity, verify_identity},
         Hydentity,
@@ -42,8 +42,10 @@ mod e2e_amm {
         spender: &str,
         expected_allowance: u128,
     ) -> Result<()> {
-        let contract_hyllar = ctx.get_contract(contract_name).await?;
-        let state: hyllar::Hyllar = contract_hyllar.state.try_into()?;
+        let state: Hyllar = ctx
+            .indexer_client()
+            .fetch_current_state(&contract_name.into())
+            .await?;
 
         assert_eq!(
             state
@@ -59,8 +61,10 @@ mod e2e_amm {
         contract_name: &str,
         balances: &[(&str, u128)],
     ) -> Result<()> {
-        let contract_hyllar = ctx.get_contract(contract_name).await?;
-        let state: hyllar::Hyllar = contract_hyllar.state.try_into()?;
+        let state: Hyllar = ctx
+            .indexer_client()
+            .fetch_current_state(&contract_name.into())
+            .await?;
         for (account, expected) in balances {
             assert_eq!(
                 state.balance_of(account).expect("Account not found"),
@@ -101,10 +105,15 @@ mod e2e_amm {
         //    By sending 5 hyllar to amm
         //    By sending 10 hyllar2 to bob (from amm)
 
+        let hyllar: Hyllar = ctx
+            .indexer_client()
+            .fetch_current_state(&"hyllar".into())
+            .await?;
+
         let mut executor = TxExecutorBuilder::new(States {
             hydentity: ctx.get_contract("hydentity").await?.state.try_into()?,
-            hyllar: ctx.get_contract("hyllar").await?.state.try_into()?,
-            hyllar2: HyllarTestContract::state_digest().try_into()?,
+            hyllar,
+            hyllar2: HyllarTestContract::init_state(),
             amm: Amm::default(),
         })
         // Replace prover binaries for non-reproducible mode.
@@ -177,8 +186,10 @@ mod e2e_amm {
         info!("➡️  Waiting for height 5");
         ctx.wait_height(5).await?;
 
-        let contract_hyllar = ctx.get_contract("hyllar").await?;
-        let state: hyllar::Hyllar = contract_hyllar.state.try_into()?;
+        let state: Hyllar = ctx
+            .indexer_client()
+            .fetch_current_state(&"hyllar".into())
+            .await?;
 
         assert_eq!(
             state
@@ -452,6 +463,7 @@ mod e2e_amm {
         Ok(())
     }
 
+    #[ignore = "need new_single_with_indexer"]
     #[test_log::test(tokio::test)]
     async fn amm_single_node() -> Result<()> {
         let ctx = E2ECtx::new_single(300).await?;
@@ -460,7 +472,7 @@ mod e2e_amm {
 
     #[test_log::test(tokio::test)]
     async fn amm_multi_nodes() -> Result<()> {
-        let ctx = E2ECtx::new_multi(2, 300).await?;
+        let ctx = E2ECtx::new_multi_with_indexer(2, 300).await?;
 
         scenario_amm(ctx).await
     }

@@ -525,6 +525,7 @@ impl Indexer {
                 .clone()
                 .into();
             let serialized_events = serde_json::to_string(&events)?;
+            info!("Inserting transaction state event {tx_hash:?}: {serialized_events}");
 
             sqlx::query(
                 "INSERT INTO transaction_state_events (block_hash, index, tx_hash, parent_dp_hash, events)
@@ -865,6 +866,7 @@ mod test {
                 program_id: ProgramId(vec![3, 2, 1]),
                 state_digest,
                 contract_name,
+                register_action: BlobData::default(),
             }
             .as_blob("hyle".into(), None, None)],
         )

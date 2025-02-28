@@ -1,5 +1,5 @@
 use crate::{AccountInfo, Hydentity};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use client_sdk::contract_indexer::{
     axum::Router,
     utoipa::openapi::OpenApi,
@@ -16,7 +16,10 @@ use client_sdk::contract_indexer::{
     utoipa::{self, ToSchema},
     AppError,
 };
-use sdk::{identity_provider::IdentityVerification, Identity};
+use sdk::{
+    identity_provider::{IdentityAction, IdentityVerification},
+    Blob, BlobIndex, BlobTransaction, Identity, TxContext,
+};
 use serde::Serialize;
 
 use client_sdk::contract_indexer::axum;
@@ -28,6 +31,45 @@ impl ContractHandler for Hydentity {
             .split_for_parts();
 
         (router.with_state(store), api)
+    }
+
+    fn init_state(register: sdk::BlobData) -> Result<Self> {
+        borsh::from_slice(&register.0).map_err(|_| anyhow!("Failed to parse register action"))
+    }
+
+    fn handle(
+        tx: &BlobTransaction,
+        index: BlobIndex,
+        mut state: Self,
+        _tx_context: TxContext,
+    ) -> Result<Self> {
+        let Blob {
+            contract_name: _,
+            data,
+        } = tx.blobs.get(index.0).context("Failed to get blob")?;
+
+        let action: IdentityAction = borsh::from_slice(&data.0)?;
+
+        match action {
+            IdentityAction::RegisterIdentity { account } => {
+                state.identities.insert(
+                    account.to_string(),
+                    AccountInfo {
+                        // CSI can't compute hash as it doesn't have the private input
+                        hash: "".into(),
+                        nonce: 0,
+                    },
+                );
+            }
+            IdentityAction::VerifyIdentity { account, nonce: _ } => {
+                if let Some(id) = state.identities.get_mut(&account) {
+                    id.nonce += 1;
+                }
+            }
+            _ => {}
+        }
+
+        Ok(state)
     }
 }
 

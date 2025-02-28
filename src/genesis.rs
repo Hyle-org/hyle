@@ -19,7 +19,7 @@ use hydentity::{
 };
 use hyle_contract_sdk::{guest, identity_provider::IdentityVerification, Identity, StateDigest};
 use hyle_contract_sdk::{ContractName, Digestable, ProgramId};
-use hyllar::{client::transfer, Hyllar};
+use hyllar::{client::transfer, Hyllar, HyllarRegisterAction};
 use serde::{Deserialize, Serialize};
 use staking::{
     client::{delegate, deposit_for_fees, stake},
@@ -386,8 +386,13 @@ impl Genesis {
 
         let staking_state = staking::state::Staking::new();
 
+        let hyllar_register = HyllarRegisterAction {
+            initial_supply: 100_000_000_000,
+            faucet_id: "faucet.hydentity".to_string(),
+        };
+
         let ctx = TxExecutorBuilder::new(States {
-            hyllar: hyllar::Hyllar::new(100_000_000_000, "faucet.hydentity".to_string()),
+            hyllar: hyllar::Hyllar::register(hyllar_register.clone()),
             hydentity: hydentity_state,
             staking: staking_state,
         })
@@ -412,6 +417,7 @@ impl Genesis {
             "blst".into(),
             NativeVerifiers::Blst.into(),
             StateDigest::default(),
+            BlobData::default(),
         )
         .expect("register blst");
 
@@ -421,6 +427,7 @@ impl Genesis {
             "sha3_256".into(),
             NativeVerifiers::Sha3_256.into(),
             StateDigest::default(),
+            BlobData::default(),
         )
         .expect("register sha3_256");
 
@@ -430,6 +437,7 @@ impl Genesis {
             "risc0".into(),
             staking_program_id.clone().into(),
             ctx.staking.as_digest(),
+            BlobData::default(),
         )
         .expect("register staking");
 
@@ -439,6 +447,9 @@ impl Genesis {
             "risc0".into(),
             hyllar_program_id.clone().into(),
             ctx.hyllar.as_digest(),
+            hyllar_register
+                .as_blob_data()
+                .expect("failed serializing hyllar register"),
         )
         .expect("register hyllar");
 
@@ -448,6 +459,7 @@ impl Genesis {
             "risc0".into(),
             hydentity_program_id.clone().into(),
             ctx.hydentity.as_digest(),
+            BlobData(ctx.hydentity.as_digest().0),
         )
         .expect("register hydentity");
 
@@ -457,6 +469,7 @@ impl Genesis {
             "risc0".into(),
             hyle_contracts::RISC0_RECURSION_ID.to_vec().into(),
             StateDigest::default(),
+            BlobData::default(),
         )
         .expect("register risc0-recursion");
 
