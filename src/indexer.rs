@@ -305,10 +305,7 @@ impl Indexer {
                         parent_data_proposal_hash_db,
                     )
                     .await
-                    .log_warn(
-                        module_path!(),
-                        "Inserting tx data at status 'waiting dissemination'",
-                    );
+                    .log_warn("Inserting tx data at status 'waiting dissemination'");
             }
 
             MempoolStatusEvent::DataProposalCreated {

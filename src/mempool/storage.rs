@@ -142,7 +142,7 @@ pub trait Storage {
         signatures: Vec<SignedByValidator<MempoolNetMessage>>,
     ) -> Result<()> {
         match self.get_by_hash(validator, data_proposal_hash).log_warn(
-            module_path!(),
+
             "Received PoDA update for unknown DataProposal",
         )? {
             Some(mut lane_entry) => {

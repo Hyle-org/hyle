@@ -534,10 +534,7 @@ impl Mempool {
             && self
                 .bus
                 .send(MempoolBlockEvent::StartedBuildingBlocks(BlockHeight(slot)))
-                .log_error(
-                    module_path!(),
-                    format!("Sending StartedBuilding event at height {}", slot),
-                )
+                .log_error(format!("Sending StartedBuilding event at height {}", slot))
                 .is_ok()
         {
             self.buc_build_start_height = Some(slot);

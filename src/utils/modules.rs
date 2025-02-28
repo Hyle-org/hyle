@@ -41,10 +41,7 @@ where
             Ok(mut reader) => {
                 info!("Loaded data from disk {}", file.to_string_lossy());
                 borsh::from_reader(&mut reader)
-                    .log_error(
-                        module_path!(),
-                        format!("Loading and decoding {}", file.to_string_lossy()),
-                    )
+                    .log_error(format!("Loading and decoding {}", file.to_string_lossy()))
                     .ok()
             }
             Err(_) => {
@@ -86,10 +83,10 @@ where
             BufWriter::new(fs::File::create(tmp.as_path()).log_error("Create file")?);
         borsh::to_writer(&mut buf_writer, store).log_error("Serializing Ctx chain")?;
 
-        buf_writer.flush().log_error(
-            module_path!(),
-            format!("Flushing Buffer writer for store {}", type_name::<S>()),
-        )?;
+        buf_writer.flush().log_error(format!(
+            "Flushing Buffer writer for store {}",
+            type_name::<S>()
+        ))?;
         debug!("Renaming {:?} to {:?}", &tmp, &file);
         fs::rename(tmp, file).log_error("Rename file")?;
         Ok(())

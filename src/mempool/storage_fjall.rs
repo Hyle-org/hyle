@@ -87,10 +87,10 @@ impl Storage for LanesStorage {
         let item = self
             .by_hash
             .get(format!("{}:{}", validator_key, dp_hash))
-            .log_warn(
-                module_path!(),
-                format!("Can't find DP {} for validator {}", dp_hash, validator_key),
-            )?;
+            .log_warn(format!(
+                "Can't find DP {} for validator {}",
+                dp_hash, validator_key
+            ))?;
         item.map(decode_from_item).transpose()
     }
 
