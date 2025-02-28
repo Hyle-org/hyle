@@ -19,7 +19,7 @@ mod e2e_amm {
         helpers::risc0::Risc0Prover,
         transaction_builder::{ProvableBlobTx, TxExecutorBuilder},
     };
-    use fixtures::{proofs::generate_recursive_proof};
+    use fixtures::proofs::generate_recursive_proof;
     use hydentity::{
         client::{register_identity, verify_identity},
         Hydentity,

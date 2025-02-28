@@ -6,7 +6,6 @@ mod fixtures;
 
 mod e2e_consensus {
 
-    
     use client_sdk::helpers::risc0::Risc0Prover;
     use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutorBuilder};
     use fixtures::test_helpers::send_transaction;
