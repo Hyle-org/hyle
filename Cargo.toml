@@ -108,7 +108,7 @@ opentelemetry-prometheus = { version = "0.28.0" }
 opentelemetry_sdk = "0.28.0"
 paste = { version = "1.0.15" }
 prometheus = { version = "0.13.4" }
-quote = { version = "1.0.38" }
+quote = { version = "1.0.39" }
 rand = { version = "0.9" }
 ron = { version = "0.8.1" }
 sqlx = { version = "0.8.3", features = [
