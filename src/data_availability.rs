@@ -325,7 +325,7 @@ impl DataAvailability {
 
         if block.height().0 % 10 == 0 || block.has_txs() {
             info!(
-                "new block #{} 0x{} with {} txs",
+                "new block #{} {} with {} txs",
                 block.height(),
                 block.hashed(),
                 block.count_txs(),

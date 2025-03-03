@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use strum::IntoDiscriminant;
@@ -69,7 +70,7 @@ pub struct APIBlock {
     feature = "sqlx",
     sqlx(type_name = "transaction_type", rename_all = "snake_case")
 )]
-#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Display, Serialize, Deserialize, ToSchema, Clone, PartialEq, Eq)]
 pub enum TransactionTypeDb {
     BlobTransaction,
     ProofTransaction,
