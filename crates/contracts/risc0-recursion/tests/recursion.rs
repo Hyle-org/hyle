@@ -87,13 +87,13 @@ async fn test_recursion() {
 
     assert_eq!(outputs.first().unwrap().0, hyle_contracts::HYDENTITY_ID,);
     assert_eq!(
-        outputs.first().unwrap().1.program_outputs,
-        b"Successfully registered identity for account: bob.hydentity".to_vec()
+        String::from_utf8(outputs.first().unwrap().1.program_outputs.clone()).unwrap(),
+        "Successfully registered identity for account: bob.hydentity:f7b8be921888c7144023f86a6564ec282de0b18a2407d994f5d962b79afe25db"
     );
     assert_eq!(outputs.last().unwrap().0, hyle_contracts::HYDENTITY_ID,);
     assert_eq!(
-        outputs.last().unwrap().1.program_outputs,
-        b"Successfully registered identity for account: alice.hydentity".to_vec()
+        String::from_utf8(outputs.last().unwrap().1.program_outputs.clone()).unwrap(),
+        "Successfully registered identity for account: alice.hydentity:a57d2f2aab5d16e86f7c6df0af27724798aa52517943b5f96aebd8b9e40a6d1b"
     );
 
     assert_eq!(outputs.len(), 2);

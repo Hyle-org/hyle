@@ -48,14 +48,10 @@ impl ContractHandler for Hydentity {
 
         match action {
             IdentityAction::RegisterIdentity { account } => {
-                state.identities.insert(
-                    account.to_string(),
-                    AccountInfo {
-                        // CSI can't compute hash as it doesn't have the private input
-                        hash: "".into(),
-                        nonce: 0,
-                    },
-                );
+                let (name, hash) = Hydentity::parse_id(&account)?;
+                state
+                    .identities
+                    .insert(name, AccountInfo { hash, nonce: 0 });
             }
             IdentityAction::VerifyIdentity { account, nonce: _ } => {
                 if let Some(id) = state.identities.get_mut(&account) {

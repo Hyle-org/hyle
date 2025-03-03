@@ -1,3 +1,4 @@
+use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::{utils::parse_raw_contract_input, ContractInput};
 use serde::{Deserialize, Serialize};
@@ -48,6 +49,30 @@ impl Hydentity {
         Ok(state.nonce)
     }
 
+    pub fn build_id(account: &str, private_input: &str) -> String {
+        let id = format!("{account}:{private_input}");
+
+        let mut hasher = Sha256::new();
+        hasher.update(id.as_bytes());
+        let hash_bytes = hasher.finalize();
+        let hash = hex::encode(hash_bytes);
+
+        format!("{account}:{hash}")
+    }
+
+    pub fn parse_id(id: &str) -> anyhow::Result<(String, String)> {
+        let mut split = id.split(':');
+        let name = split
+            .next()
+            .context("No account name found in registration")?
+            .to_string();
+        let hash = split
+            .next()
+            .context("No hash found in registration")?
+            .to_string();
+        Ok((name, hash))
+    }
+
     pub fn as_bytes(&self) -> anyhow::Result<Vec<u8>> {
         borsh::to_vec(self).map_err(|_| anyhow::anyhow!("Failed to serialize"))
     }
@@ -56,10 +81,16 @@ impl Hydentity {
 impl IdentityVerification for Hydentity {
     fn register_identity(
         &mut self,
-        account: &str,
+        registration: &str,
         private_input: &str,
     ) -> Result<(), &'static str> {
-        let id = format!("{account}:{private_input}");
+        let mut split = registration.split(':');
+        let name = split
+            .next()
+            .ok_or("No account name found in registration")?;
+        let hash = split.next().ok_or("No hash found in registratio")?;
+
+        let id = format!("{name}:{private_input}");
         let mut hasher = Sha256::new();
         hasher.update(id.as_bytes());
         let hash_bytes = hasher.finalize();
@@ -67,10 +98,12 @@ impl IdentityVerification for Hydentity {
             hash: hex::encode(hash_bytes),
             nonce: 0,
         };
-
+        if !hash.eq(&account_info.hash) {
+            return Err("Invalid hash or password");
+        }
         if self
             .identities
-            .insert(account.to_string(), account_info)
+            .insert(name.to_string(), account_info)
             .is_some()
         {
             return Err("Identity already exists");
@@ -133,8 +166,9 @@ mod tests {
         let mut hydentity = Hydentity::default();
         let account = "test_account";
         let private_input = "test_input";
+        let id = &Hydentity::build_id("test_account", private_input);
 
-        assert!(hydentity.register_identity(account, private_input).is_ok());
+        assert!(hydentity.register_identity(id, private_input).is_ok());
 
         let id = format!("{account}:{private_input}");
         let mut hasher = Sha256::new();
@@ -150,11 +184,11 @@ mod tests {
     #[test]
     fn test_register_identity_that_already_exists() {
         let mut hydentity = Hydentity::default();
-        let account = "test_account";
         let private_input = "test_input";
+        let id = &Hydentity::build_id("test_account", private_input);
 
-        assert!(hydentity.register_identity(account, private_input).is_ok());
-        assert!(hydentity.register_identity(account, private_input).is_err());
+        assert!(hydentity.register_identity(id, private_input).is_ok());
+        assert!(hydentity.register_identity(id, private_input).is_err());
     }
 
     #[test]
@@ -162,8 +196,9 @@ mod tests {
         let mut hydentity = Hydentity::default();
         let account = "test_account";
         let private_input = "test_input";
+        let id = &Hydentity::build_id("test_account", private_input);
 
-        hydentity.register_identity(account, private_input).unwrap();
+        hydentity.register_identity(id, private_input).unwrap();
 
         assert!(hydentity
             .verify_identity(account, 1, private_input)
@@ -188,7 +223,8 @@ mod tests {
         let account = "test_account";
         let private_input = "test_input";
 
-        hydentity.register_identity(account, private_input).unwrap();
+        let id = &Hydentity::build_id("test_account", private_input);
+        hydentity.register_identity(id, private_input).unwrap();
 
         let id = format!("{account}:{private_input}");
         let mut hasher = Sha256::new();

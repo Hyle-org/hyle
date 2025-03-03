@@ -383,7 +383,10 @@ impl Genesis {
 
         let mut hydentity_state = hydentity::Hydentity::default();
         hydentity_state
-            .register_identity(FAUCET_ID, &self.config.faucet_password)
+            .register_identity(
+                &hydentity::Hydentity::build_id(FAUCET_ID, &self.config.faucet_password),
+                "password",
+            )
             .expect("faucet must register");
 
         let staking_state = staking::state::Staking::new();

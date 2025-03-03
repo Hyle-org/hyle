@@ -1,1 +1,5 @@
+<<<<<<< HEAD
 c4db168039f1c600580361ca00ea7e547f59c95b1a5904831bb50dfc666bdbb5
+=======
+64bcb5eeb8cd5edfbd5399a882dc304fdb1fa9d330d804c56def767db4450e81
+>>>>>>> 7facc40 (Add account hash in register action for indexer)
