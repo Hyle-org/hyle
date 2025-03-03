@@ -41,13 +41,11 @@ impl<State> Default for ContractStateStore<State> {
 
 pub trait ContractHandler
 where
-    Self: Sized + HyleContract + BorshSerialize + BorshDeserialize + Digestable + 'static,
+    Self: Sized + Default + HyleContract + BorshSerialize + BorshDeserialize + Digestable + 'static,
 {
     fn api(
         store: ContractHandlerStore<Self>,
     ) -> impl std::future::Future<Output = (Router<()>, OpenApi)> + std::marker::Send;
-
-    fn init_state(register: sdk::BlobData) -> Result<Self>;
 
     fn handle(
         tx: &BlobTransaction,

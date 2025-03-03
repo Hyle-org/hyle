@@ -271,7 +271,6 @@ impl NodeState {
                                 verifier: reg.parameters.verifier,
                                 program_id: reg.parameters.program_id,
                                 state_digest: reg.parameters.state_digest,
-                                register_action: reg.parameters.register_action,
                             }],
                             ..HyleOutput::default()
                         };
@@ -906,7 +905,6 @@ pub mod test {
                 program_id: ProgramId(vec![]),
                 state_digest: StateDigest(vec![0, 1, 2, 3]),
                 contract_name: name,
-                register_action: BlobData::default(),
             }
             .as_blob("hyle".into(), None, None)],
         )
@@ -918,7 +916,6 @@ pub mod test {
             program_id: ProgramId(vec![]),
             state_digest: StateDigest(vec![0, 1, 2, 3]),
             contract_name,
-            register_action: BlobData::default(),
         }
     }
 
@@ -1835,7 +1832,6 @@ pub mod test {
                     program_id: ProgramId(vec![]),
                     state_digest: StateDigest(vec![0, 1, 2, 3]),
                     contract_name: name,
-                    register_action: BlobData::default(),
                 }
                 .as_blob(tld, None, None)],
             )
@@ -1938,7 +1934,6 @@ pub mod test {
                         program_id: ProgramId(vec![]),
                         state_digest: StateDigest(vec![0, 1, 2, 3]),
                         contract_name: "c1".into(),
-                        register_action: BlobData::default(),
                     }
                     .as_blob("hyle".into(), None, None),
                     Blob {

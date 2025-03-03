@@ -33,10 +33,6 @@ impl ContractHandler for Hydentity {
         (router.with_state(store), api)
     }
 
-    fn init_state(register: sdk::BlobData) -> Result<Self> {
-        borsh::from_slice(&register.0).map_err(|_| anyhow!("Failed to parse register action"))
-    }
-
     fn handle(
         tx: &BlobTransaction,
         index: BlobIndex,

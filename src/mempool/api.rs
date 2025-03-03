@@ -156,7 +156,6 @@ pub async fn register_contract(
             program_id: payload.program_id,
             state_digest: payload.state_digest,
             contract_name: payload.contract_name,
-            register_action: payload.register_action,
         }
         .as_blob(owner, None, None)],
     );

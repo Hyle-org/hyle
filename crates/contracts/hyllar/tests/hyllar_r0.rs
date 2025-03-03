@@ -1,6 +1,6 @@
 use core::str;
 
-use hyllar::Hyllar;
+use hyllar::{Hyllar, FAUCET_ID};
 use sdk::{
     erc20::ERC20Action, BlobIndex, ContractAction, ContractInput, ContractName, HyleOutput, TxHash,
 };
@@ -23,7 +23,7 @@ fn execute(inputs: ContractInput) -> HyleOutput {
 
 #[test]
 fn execute_transfer_from() {
-    let state = Hyllar::new(1000, "faucet".to_string());
+    let state = Hyllar::default();
     let output = execute(ContractInput {
         state: borsh::to_vec(&state).unwrap(),
         identity: "caller".into(),
@@ -31,7 +31,7 @@ fn execute_transfer_from() {
         tx_ctx: None,
         private_input: vec![],
         blobs: vec![ERC20Action::TransferFrom {
-            owner: "faucet".into(),
+            owner: FAUCET_ID.into(),
             recipient: "amm".into(),
             amount: 100,
         }
@@ -42,6 +42,6 @@ fn execute_transfer_from() {
     assert!(!output.success);
     assert_eq!(
         str::from_utf8(&output.program_outputs).unwrap(),
-        "Allowance exceeded for spender=caller owner=faucet allowance=0"
+        "Allowance exceeded for spender=caller owner=faucet.hydentity allowance=0"
     );
 }

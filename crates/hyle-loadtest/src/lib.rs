@@ -10,7 +10,7 @@ use hyle_contract_sdk::{guest, ContractInput, ContractName, HyleOutput};
 use hyle_contract_sdk::{Blob, BlobData, ContractAction, RegisterContractAction};
 use hyle_contract_sdk::{Digestable, TcpServerNetMessage};
 use hyllar::client::transfer;
-use hyllar::{Hyllar, HyllarRegisterAction};
+use hyllar::Hyllar;
 use tokio::task::JoinSet;
 use tracing::info;
 
@@ -22,18 +22,9 @@ contract_states!(
     }
 );
 
-pub fn setup_hyllar(_users: u32) -> Result<(HyllarRegisterAction, Hyllar)> {
-    let register = HyllarRegisterAction {
-        initial_supply: 0,
-        faucet_id: "faucet.hyllar_test".into(),
-    };
-    let hyllar = Hyllar::register(register.clone());
-    Ok((register, hyllar))
-}
-
 /// Create a new contract "hyllar_test" that already contains entries for each users
-pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
-    let (register, hyllar) = setup_hyllar(users)?;
+pub async fn setup(url: String, verifier: String) -> Result<()> {
+    let hyllar = Hyllar::default();
 
     let tx = BlobTransaction::new(
         Identity::new("hyle.hyle"),
@@ -42,7 +33,6 @@ pub async fn setup(url: String, users: u32, verifier: String) -> Result<()> {
             verifier: verifier.into(),
             program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
             state_digest: hyllar.as_digest(),
-            register_action: register.as_blob_data()?,
         }
         .as_blob("hyle".into(), None, None)],
     );

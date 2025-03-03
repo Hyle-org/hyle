@@ -31,7 +31,6 @@ pub trait E2EContract {
     fn verifier() -> Verifier;
     fn program_id() -> ProgramId;
     fn state_digest() -> StateDigest;
-    fn register_action() -> BlobData;
 }
 
 pub struct E2ECtx {
@@ -246,7 +245,6 @@ impl E2ECtx {
             program_id: Contract::program_id(),
             state_digest: Contract::state_digest(),
             contract_name: name.into(),
-            register_action: Contract::register_action(),
         }
         .as_blob("hyle".into(), None, None)];
 

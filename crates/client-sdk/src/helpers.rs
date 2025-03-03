@@ -2,7 +2,7 @@ use std::pin::Pin;
 
 use anyhow::Result;
 use sdk::{
-    flatten_blobs, BlobData, ContractInput, ContractName, HyleOutput, ProgramId, ProofData,
+    flatten_blobs, ContractInput, ContractName, HyleOutput, ProgramId, ProofData,
     RegisterContractAction, StateDigest, Verifier,
 };
 
@@ -14,7 +14,6 @@ pub fn register_hyle_contract(
     verifier: Verifier,
     program_id: ProgramId,
     state_digest: StateDigest,
-    register_action: BlobData,
 ) -> anyhow::Result<()> {
     builder.add_action(
         "hyle".into(),
@@ -23,7 +22,6 @@ pub fn register_hyle_contract(
             verifier,
             program_id,
             state_digest,
-            register_action,
         },
         None,
         None,

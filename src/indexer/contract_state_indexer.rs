@@ -199,7 +199,7 @@ where
     }
 
     async fn handle_register_contract(&self, contract: RegisterContractEffect) -> Result<()> {
-        let state = State::init_state(contract.register_action)?;
+        let state = State::default();
         tracing::info!(cn = %self.contract_name, "📝 Registered suppored contract '{}' with initial state '{state:?}'", contract.contract_name);
         self.store.write().await.state = Some(state);
         Ok(())
@@ -285,10 +285,6 @@ mod tests {
         async fn api(_store: Arc<RwLock<ContractStateStore<Self>>>) -> (axum::Router<()>, OpenApi) {
             (axum::Router::new(), OpenApi::default())
         }
-
-        fn init_state(register: hyle_contract_sdk::BlobData) -> Result<Self> {
-            Ok(MockState(register.0))
-        }
     }
 
     async fn build_indexer(contract_name: ContractName) -> ContractStateIndexer<MockState> {
@@ -314,7 +310,6 @@ mod tests {
             state_digest,
             verifier: "test".into(),
             program_id: ProgramId(vec![]),
-            register_action: BlobData(vec![]),
         };
         indexer.handle_register_contract(rce).await.unwrap();
     }

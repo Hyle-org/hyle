@@ -1572,7 +1572,6 @@ pub mod test {
                 program_id: ProgramId(vec![]),
                 state_digest: StateDigest(vec![0, 1, 2, 3]),
                 contract_name: name,
-                register_action: BlobData::default(),
             }
             .as_blob("hyle".into(), None, None)],
         )

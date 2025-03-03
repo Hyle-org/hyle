@@ -17,7 +17,7 @@ mod e2e_consensus {
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF, STAKING_ELF};
     use hyle_model::{ContractName, StateDigest};
     use hyllar::client::transfer;
-    use hyllar::Hyllar;
+    use hyllar::{Hyllar, FAUCET_ID};
     use staking::client::{delegate, stake};
     use staking::state::Staking;
     use tracing::info;
@@ -104,7 +104,7 @@ mod e2e_consensus {
             tracing::warn!("Register TX Hash: {:?}", tx_hash);
         }
         {
-            let mut transaction = ProvableBlobTx::new("faucet.hydentity".into());
+            let mut transaction = ProvableBlobTx::new(FAUCET_ID.into());
 
             verify_identity(
                 &mut transaction,

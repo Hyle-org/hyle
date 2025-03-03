@@ -169,7 +169,6 @@ impl MockWorkflowHandler {
                 program_id: ProgramId(vec![]),
                 state_digest: StateDigest(vec![]),
                 contract_name: ContractName::new("contract"),
-                register_action: BlobData::default(),
             }
             .as_blob("hyle".into(), None, None)],
         );

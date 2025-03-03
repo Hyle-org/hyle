@@ -2,9 +2,7 @@ use hyle_contract_sdk::Digestable;
 use hyle_contract_sdk::ProgramId;
 use hyle_contract_sdk::StateDigest;
 use hyle_contract_sdk::Verifier;
-use hyle_model::BlobData;
 use hyllar::Hyllar;
-use hyllar::HyllarRegisterAction;
 
 use super::ctx::E2EContract;
 
@@ -27,10 +25,6 @@ impl E2EContract for ERC20TestContract {
             179, 249, 104, 59, 167, 110, 11, 204, 99, 126, 181, 96, 47, 61,
         ])
     }
-
-    fn register_action() -> hyle_model::BlobData {
-        BlobData::default()
-    }
 }
 
 pub struct HydentityTestContract {}
@@ -47,17 +41,13 @@ impl E2EContract for HydentityTestContract {
     fn state_digest() -> StateDigest {
         hydentity::Hydentity::default().as_digest()
     }
-
-    fn register_action() -> hyle_model::BlobData {
-        BlobData::default()
-    }
 }
 
 pub struct HyllarTestContract {}
 
 impl HyllarTestContract {
     pub fn init_state() -> Hyllar {
-        hyllar::Hyllar::new(1_000_000_000, "faucet.hydentity".to_string())
+        hyllar::Hyllar::default()
     }
 }
 
@@ -72,15 +62,6 @@ impl E2EContract for HyllarTestContract {
 
     fn state_digest() -> StateDigest {
         HyllarTestContract::init_state().as_digest()
-    }
-
-    fn register_action() -> hyle_model::BlobData {
-        HyllarRegisterAction {
-            initial_supply: 1_000_000_000,
-            faucet_id: "faucet.hydentity".to_string(),
-        }
-        .as_blob_data()
-        .expect("Failed to encode HyllarRegisterAction")
     }
 }
 
@@ -97,9 +78,5 @@ impl E2EContract for AmmTestContract {
 
     fn state_digest() -> StateDigest {
         amm::Amm::default().as_digest()
-    }
-
-    fn register_action() -> hyle_model::BlobData {
-        BlobData::default()
     }
 }

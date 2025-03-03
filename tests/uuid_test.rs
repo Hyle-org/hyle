@@ -13,7 +13,6 @@ use hyle_contract_sdk::{
     StateDigest, Verifier,
 };
 use hyle_contracts::{HYDENTITY_ELF, UUID_TLD_ELF, UUID_TLD_ID};
-use hyle_model::BlobData;
 use uuid_tld::{UuidTld, UuidTldAction};
 
 contract_states!(
@@ -35,10 +34,6 @@ impl E2EContract for UuidContract {
     }
     fn state_digest() -> StateDigest {
         UuidTld::default().as_digest()
-    }
-
-    fn register_action() -> hyle_model::BlobData {
-        BlobData::default()
     }
 }
 

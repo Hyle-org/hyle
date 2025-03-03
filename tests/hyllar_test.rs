@@ -18,7 +18,7 @@ mod e2e_hyllar {
     };
     use hyle_contract_sdk::{erc20::ERC20, guest, ContractInput, ContractName, HyleOutput};
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF};
-    use hyllar::{client::transfer, Hyllar};
+    use hyllar::{client::transfer, Hyllar, FAUCET_ID};
 
     use super::*;
 
@@ -63,7 +63,7 @@ mod e2e_hyllar {
 
         info!("➡️  Sending blob to transfer 25 tokens from faucet to bob");
 
-        let mut tx = ProvableBlobTx::new("faucet.hydentity".into());
+        let mut tx = ProvableBlobTx::new(FAUCET_ID.into());
 
         verify_identity(
             &mut tx,
