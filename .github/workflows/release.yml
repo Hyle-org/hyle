@@ -8,7 +8,7 @@ permissions:
 on:
   push:
     tags:
-      - '*'
+      - 'v*.*'
 
 jobs:
   generate-release:
@@ -32,6 +32,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          prerelease: "${{ contains(github.ref_name, 'rc') }}"
           body_path: RELEASE_NOTES.md
 
 
