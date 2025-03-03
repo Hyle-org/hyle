@@ -5,7 +5,7 @@ pub mod contract_state_indexer;
 pub mod da_listener;
 
 use crate::log_me_impl;
-log_me_impl!(Result<T, Error>);
+log_me_impl!();
 
 use crate::mempool::MempoolStatusEvent;
 use crate::model::*;

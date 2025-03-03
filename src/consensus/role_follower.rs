@@ -1,5 +1,5 @@
 use crate::log_me_impl;
-log_me_impl!(Result<T, Error>);
+log_me_impl!();
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use tracing::{debug, info, trace, warn};
@@ -9,7 +9,7 @@ use crate::{
     consensus::StateTag,
     mempool::MempoolNetMessage,
     model::{Hashed, Signed, ValidatorPublicKey},
-    utils::{crypto::BlstCrypto, logger::LogMe},
+    utils::crypto::BlstCrypto,
 };
 use anyhow::{bail, Result};
 use hyle_model::{

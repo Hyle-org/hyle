@@ -1,5 +1,5 @@
 use crate::log_me_impl;
-log_me_impl!(Result<T, Error>);
+log_me_impl!();
 
 use anyhow::{anyhow, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -16,7 +16,7 @@ use crate::{
     model::{Blob, BlobTransaction, Block, CommonRunContext, Hashed, Transaction, TransactionData},
     module_handle_messages,
     node_state::module::NodeStateEvent,
-    utils::{conf::Conf, logger::LogMe, modules::Module},
+    utils::{conf::Conf, modules::Module},
 };
 
 use super::indexer_bus_client::IndexerBusClient;

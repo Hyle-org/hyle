@@ -1,5 +1,5 @@
 use crate::log_me_impl;
-log_me_impl!(Result<T, Error>);
+log_me_impl!();
 
 use std::time::Duration;
 use std::time::SystemTime;

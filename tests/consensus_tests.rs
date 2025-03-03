@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use hyle::log_me_impl;
-log_me_impl!(Result<T, Error>);
+log_me_impl!();
 
 use anyhow::Result;
 use fixtures::ctx::E2ECtx;

@@ -1,6 +1,4 @@
 use anyhow::Result;
-use std::fmt::Display;
-// use tracing::{error, warn};
 use tracing::{level_filters::LevelFilter, Subscriber};
 use tracing_subscriber::{
     fmt::{format, FormatEvent, FormatFields},
@@ -12,7 +10,7 @@ use tracing_subscriber::{
 // Consolidated LogMe trait
 #[macro_export]
 macro_rules! log_me_impl {
-  ($t: ty) => {
+  () => {
   // Will log a warning in case of error
   // WARN {context_msg}: {cause}
   trait LogMe<T> {
@@ -20,7 +18,7 @@ macro_rules! log_me_impl {
      fn log_error<C: std::fmt::Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T>;
   }
   impl<T, Error: Into<anyhow::Error> + std::fmt::Display + Send + Sync + 'static> LogMe<T>
-    for $t {
+    for Result<T, Error> {
       fn log_warn<C: std::fmt::Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T> {
           match self {
               Err(e) => {

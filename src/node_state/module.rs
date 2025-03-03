@@ -1,7 +1,7 @@
 //! State required for participation in consensus by the node.
 
 use crate::log_me_impl;
-log_me_impl!(Result<T, Error>);
+log_me_impl!();
 
 use super::NodeState;
 use crate::bus::{command_response::Query, BusClientSender, BusMessage};

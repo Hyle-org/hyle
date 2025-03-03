@@ -1,13 +1,13 @@
 //! Handles all consensus logic up to block commitment.
 
 use crate::log_me_impl;
-log_me_impl!(Result<T, Error>);
+log_me_impl!();
 
+use crate::bus::BusClientSender;
 use crate::model::*;
 use crate::module_handle_messages;
 use crate::node_state::module::NodeStateEvent;
 use crate::utils::modules::module_bus_client;
-use crate::{bus::BusClientSender, utils::logger::LogMe};
 use crate::{
     bus::{command_response::Query, BusMessage},
     genesis::GenesisEvent,

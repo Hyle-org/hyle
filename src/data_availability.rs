@@ -6,7 +6,7 @@ mod blocks_fjall;
 mod blocks_memory;
 
 use crate::log_me_impl;
-log_me_impl!(Result<T, Error>);
+log_me_impl!();
 
 // Pick one of the two implementations
 use blocks_fjall::Blocks;
@@ -26,7 +26,6 @@ use crate::{
     tcp::{TcpCommand, TcpEvent},
     utils::{
         conf::SharedConf,
-        logger::LogMe,
         modules::{module_bus_client, Module},
     },
 };

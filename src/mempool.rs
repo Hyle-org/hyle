@@ -1,7 +1,7 @@
 //! Mempool logic & pending transaction management.
 
 use crate::log_me_impl;
-log_me_impl!(Result<T, Error>);
+log_me_impl!();
 
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
