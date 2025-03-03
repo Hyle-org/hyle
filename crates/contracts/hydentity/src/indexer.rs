@@ -18,7 +18,7 @@ use client_sdk::contract_indexer::{
 };
 use sdk::{
     identity_provider::{IdentityAction, IdentityVerification},
-    Blob, BlobIndex, BlobTransaction, Identity, TxContext,
+    info, Blob, BlobIndex, BlobTransaction, Identity, TxContext,
 };
 use serde::Serialize;
 
@@ -40,7 +40,7 @@ impl ContractHandler for Hydentity {
         _tx_context: TxContext,
     ) -> Result<Self> {
         let Blob {
-            contract_name: _,
+            contract_name,
             data,
         } = tx.blobs.get(index.0).context("Failed to get blob")?;
 
@@ -49,6 +49,7 @@ impl ContractHandler for Hydentity {
         match action {
             IdentityAction::RegisterIdentity { account } => {
                 let (name, hash) = Hydentity::parse_id(&account)?;
+                info!("🚀 Executed {contract_name}: {name} registered");
                 state
                     .identities
                     .insert(name, AccountInfo { hash, nonce: 0 });

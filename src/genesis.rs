@@ -17,7 +17,7 @@ use hydentity::{
     client::{register_identity, verify_identity},
     Hydentity,
 };
-use hyle_contract_sdk::{guest, identity_provider::IdentityVerification, Identity, StateDigest};
+use hyle_contract_sdk::{guest, Identity, StateDigest};
 use hyle_contract_sdk::{ContractName, Digestable, ProgramId};
 use hyllar::{client::transfer, Hyllar, FAUCET_ID};
 use serde::{Deserialize, Serialize};
@@ -179,7 +179,9 @@ impl Genesis {
     ) -> Result<Vec<Transaction>> {
         let (contract_program_ids, mut genesis_txs, mut tx_executor) = self.genesis_contracts_txs();
 
-        let register_txs = Self::generate_register_txs(peer_pubkey, &mut tx_executor).await?;
+        let register_txs = self
+            .generate_register_txs(peer_pubkey, &mut tx_executor)
+            .await?;
 
         let faucet_txs = self
             .generate_faucet_txs(peer_pubkey, &mut tx_executor, genesis_stake)
@@ -238,6 +240,7 @@ impl Genesis {
     }
 
     async fn generate_register_txs(
+        &self,
         peer_pubkey: &PeerPublicKeyMap,
         tx_executor: &mut TxExecutor<States>,
     ) -> Result<Vec<ProofTxBuilder>> {
@@ -247,6 +250,17 @@ impl Genesis {
         // in order to let all genesis validators to create the genesis register
 
         let mut txs = vec![];
+
+        // register faucet identity
+        let identity = Identity(FAUCET_ID.into());
+        let mut transaction = ProvableBlobTx::new(identity.clone());
+        register_identity(
+            &mut transaction,
+            ContractName::new("hydentity"),
+            self.config.faucet_password.clone(),
+        )?;
+        txs.push(tx_executor.process(transaction)?);
+
         for peer in peer_pubkey.values() {
             info!("🌱  Registering identity {peer}");
 
@@ -381,14 +395,7 @@ impl Genesis {
         let hyllar_program_id = hyle_contracts::HYLLAR_ID.to_vec();
         let hydentity_program_id = hyle_contracts::HYDENTITY_ID.to_vec();
 
-        let mut hydentity_state = hydentity::Hydentity::default();
-        hydentity_state
-            .register_identity(
-                &hydentity::Hydentity::build_id(FAUCET_ID, &self.config.faucet_password),
-                "password",
-            )
-            .expect("faucet must register");
-
+        let hydentity_state = hydentity::Hydentity::default();
         let staking_state = staking::state::Staking::new();
 
         let ctx = TxExecutorBuilder::new(States {
