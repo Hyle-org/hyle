@@ -153,11 +153,9 @@ impl Genesis {
         let mut initial_validators = self.peer_pubkey.values().cloned().collect::<Vec<_>>();
         initial_validators.sort();
 
-        let genesis_txs = match Self::generate_genesis_txs(
-            &self.peer_pubkey,
-            &self.config.consensus.genesis_stakers,
-        )
-        .await
+        let genesis_txs = match self
+            .generate_genesis_txs(&self.peer_pubkey, &self.config.consensus.genesis_stakers)
+            .await
         {
             Ok(t) => t,
             Err(e) => {
@@ -175,16 +173,17 @@ impl Genesis {
     }
 
     pub async fn generate_genesis_txs(
+        &self,
         peer_pubkey: &PeerPublicKeyMap,
         genesis_stake: &HashMap<String, u64>,
     ) -> Result<Vec<Transaction>> {
-        let (contract_program_ids, mut genesis_txs, mut tx_executor) =
-            Self::genesis_contracts_txs();
+        let (contract_program_ids, mut genesis_txs, mut tx_executor) = self.genesis_contracts_txs();
 
         let register_txs = Self::generate_register_txs(peer_pubkey, &mut tx_executor).await?;
 
-        let faucet_txs =
-            Self::generate_faucet_txs(peer_pubkey, &mut tx_executor, genesis_stake).await?;
+        let faucet_txs = self
+            .generate_faucet_txs(peer_pubkey, &mut tx_executor, genesis_stake)
+            .await?;
 
         let stake_txs =
             Self::generate_stake_txs(peer_pubkey, &mut tx_executor, genesis_stake).await?;
@@ -268,6 +267,7 @@ impl Genesis {
     }
 
     async fn generate_faucet_txs(
+        &self,
         peer_pubkey: &PeerPublicKeyMap,
         tx_executor: &mut TxExecutor<States>,
         genesis_stakers: &HashMap<String, u64>,
@@ -289,7 +289,7 @@ impl Genesis {
                 &mut transaction,
                 ContractName::new("hydentity"),
                 &tx_executor.hydentity,
-                "password".to_string(),
+                self.config.faucet_password.clone(),
             )?;
 
             // Transfer
@@ -370,7 +370,9 @@ impl Genesis {
         Ok(txs)
     }
 
-    fn genesis_contracts_txs() -> (
+    fn genesis_contracts_txs(
+        &self,
+    ) -> (
         BTreeMap<ContractName, ProgramId>,
         Vec<Transaction>,
         TxExecutor<States>,
@@ -381,7 +383,7 @@ impl Genesis {
 
         let mut hydentity_state = hydentity::Hydentity::default();
         hydentity_state
-            .register_identity("faucet.hydentity", "password")
+            .register_identity("faucet.hydentity", &self.config.faucet_password)
             .expect("faucet must register");
 
         let staking_state = staking::state::Staking::new();

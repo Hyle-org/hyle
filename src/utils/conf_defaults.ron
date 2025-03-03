@@ -45,5 +45,7 @@ Config(
   p2p: (
     /// Interval the p2p layer does a ping to check aliveness of other peers.
     ping_interval: 10
-  )
+  ),
+  /// Faucet configuration
+  faucet_password: "password",
 )
