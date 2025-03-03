@@ -32,8 +32,10 @@ mod e2e_hyllar {
     async fn scenario_hyllar(ctx: E2ECtx) -> Result<E2ECtx> {
         info!("➡️  Setting up the executor with the initial state");
 
-        let contract = ctx.get_contract("hydentity").await?;
-        let hydentity: hydentity::Hydentity = contract.state.try_into()?;
+        let hydentity: hydentity::Hydentity = ctx
+            .indexer_client()
+            .fetch_current_state(&"hydentity".into())
+            .await?;
         let hyllar: Hyllar = ctx
             .indexer_client()
             .fetch_current_state(&"hyllar".into())

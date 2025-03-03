@@ -56,15 +56,10 @@ mod e2e_consensus {
             .await
             .log_error("fetch state failed")
             .unwrap();
-        let hydentity: Hydentity = StateDigest(
-            ctx.indexer_client()
-                .get_indexer_contract(&"hydentity".into())
-                .await
-                .unwrap()
-                .state_digest,
-        )
-        .try_into()
-        .unwrap();
+        let hydentity: Hydentity = ctx
+            .indexer_client()
+            .fetch_current_state(&"hydentity".into())
+            .await?;
 
         let staking_state: StateDigest = StateDigest(
             ctx.indexer_client()
