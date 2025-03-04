@@ -5,7 +5,10 @@ use client_sdk::transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutor};
 use hyle::{
     model::BlobTransaction,
     rest::client::NodeApiHttpClient,
-    utils::conf::{Conf, Consensus},
+    utils::{
+        conf::{Conf, Consensus},
+        crypto::BlstCrypto,
+    },
 };
 use hyle_model::TxHash;
 use rand::Rng;
@@ -108,6 +111,10 @@ impl TestProcess {
         ron::ser::to_writer(std::fs::File::create(&conf_file).unwrap(), &conf).unwrap();
 
         cmd.env("RISC0_DEV_MODE", "1");
+
+        let secret = BlstCrypto::secret_from_name(&conf.id);
+        cmd.env("HYLE_VALIDATOR_SECRET", hex::encode(secret));
+
         Self {
             conf,
             dir: tmpdir,

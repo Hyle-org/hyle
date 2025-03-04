@@ -1241,7 +1241,7 @@ pub mod test {
         }
 
         pub async fn new(name: &str) -> Self {
-            let crypto = BlstCrypto::new(name.into()).unwrap();
+            let crypto = BlstCrypto::new(name).unwrap();
             let shared_bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
 
             let out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
@@ -1628,10 +1628,10 @@ pub mod test {
 
         // Adding 4 other validators
         // Total voting_power = 500; f = 167 --> You need at least 2 signatures to send PoDAUpdate
-        let crypto2 = BlstCrypto::new("validator2".into()).unwrap();
-        let crypto3 = BlstCrypto::new("validator3".into()).unwrap();
-        let crypto4 = BlstCrypto::new("validator4".into()).unwrap();
-        let crypto5 = BlstCrypto::new("validator5".into()).unwrap();
+        let crypto2 = BlstCrypto::new("validator2").unwrap();
+        let crypto3 = BlstCrypto::new("validator3").unwrap();
+        let crypto4 = BlstCrypto::new("validator4").unwrap();
+        let crypto5 = BlstCrypto::new("validator5").unwrap();
         ctx.setup_node(&[pubkey, crypto2.clone(), crypto3.clone(), crypto4, crypto5]);
 
         let register_tx = make_register_contract_tx(ContractName::new("test1"));
@@ -1670,7 +1670,7 @@ pub mod test {
         ctx.setup_node(&[pubkey]);
 
         // Adding new validator
-        let temp_crypto = BlstCrypto::new("validator1".into()).unwrap();
+        let temp_crypto = BlstCrypto::new("validator1").unwrap();
         ctx.add_trusted_validator(temp_crypto.validator_pubkey());
 
         // Sending transaction to mempool as RestApiMessage
@@ -1766,7 +1766,7 @@ pub mod test {
         );
         let size = LaneBytesSize(data_proposal.estimate_size() as u64);
 
-        let temp_crypto = BlstCrypto::new("temp_crypto".into()).unwrap();
+        let temp_crypto = BlstCrypto::new("temp_crypto").unwrap();
         let signed_msg =
             temp_crypto.sign(MempoolNetMessage::DataVote(data_proposal.hashed(), size))?;
         assert!(ctx
@@ -1799,7 +1799,7 @@ pub mod test {
         ctx.make_data_proposal_with_pending_txs()?;
 
         // Add new validator
-        let crypto2 = BlstCrypto::new("2".into()).unwrap();
+        let crypto2 = BlstCrypto::new("2").unwrap();
         ctx.add_trusted_validator(crypto2.validator_pubkey());
 
         let signed_msg = crypto2.sign(MempoolNetMessage::DataVote(
@@ -1835,7 +1835,7 @@ pub mod test {
         ctx.make_data_proposal_with_pending_txs()?;
 
         // Add new validator
-        let crypto2 = BlstCrypto::new("2".into()).unwrap();
+        let crypto2 = BlstCrypto::new("2").unwrap();
         ctx.add_trusted_validator(crypto2.validator_pubkey());
 
         let signed_msg = crypto2.sign(MempoolNetMessage::DataVote(
@@ -1850,7 +1850,7 @@ pub mod test {
     #[test_log::test(tokio::test)]
     async fn test_sending_sync_request() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
-        let crypto2 = BlstCrypto::new("2".into()).unwrap();
+        let crypto2 = BlstCrypto::new("2").unwrap();
         let pubkey2 = crypto2.validator_pubkey();
 
         ctx.handle_consensus_event(ConsensusProposal {
@@ -1891,7 +1891,7 @@ pub mod test {
             ctx.last_validator_lane_entry(ctx.validator_pubkey());
 
         // Add new validator
-        let crypto2 = BlstCrypto::new("2".into()).unwrap();
+        let crypto2 = BlstCrypto::new("2").unwrap();
         ctx.add_trusted_validator(crypto2.validator_pubkey());
 
         let signed_msg = crypto2.sign(MempoolNetMessage::SyncRequest(
@@ -1937,8 +1937,8 @@ pub mod test {
         ) = ctx.last_validator_lane_entry(ctx.validator_pubkey());
 
         // Add new validator
-        let crypto2 = BlstCrypto::new("2".into()).unwrap();
-        let crypto3 = BlstCrypto::new("3".into()).unwrap();
+        let crypto2 = BlstCrypto::new("2").unwrap();
+        let crypto3 = BlstCrypto::new("3").unwrap();
 
         ctx.add_trusted_validator(crypto2.validator_pubkey());
 

@@ -1,6 +1,6 @@
 use core::str;
 
-use hyllar::Hyllar;
+use hyle_hyllar::Hyllar;
 use sdk::{
     erc20::ERC20Action, BlobIndex, ContractAction, ContractInput, ContractName, HyleOutput, TxHash,
 };
@@ -15,7 +15,7 @@ fn execute(inputs: ContractInput) -> HyleOutput {
         .unwrap();
     let prover = risc0_zkvm::default_executor();
     let execute_info = prover
-        .execute(env, hyllar::client::metadata::HYLLAR_ELF)
+        .execute(env, hyle_hyllar::client::metadata::HYLLAR_ELF)
         .unwrap();
 
     execute_info.journal.decode::<sdk::HyleOutput>().unwrap()

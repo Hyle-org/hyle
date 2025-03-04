@@ -633,7 +633,7 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_put_contains_get() {
-        let crypto = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto = crypto::BlstCrypto::new("1").unwrap();
         let pubkey = crypto.validator_pubkey();
         let mut storage = setup_storage(pubkey);
 
@@ -656,7 +656,7 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_update() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
         let pubkey = crypto.validator_pubkey();
         let mut storage = setup_storage(pubkey);
         let data_proposal = DataProposal::new(None, vec![]);
@@ -682,10 +682,10 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_on_data_proposal() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
         let pubkey = crypto.validator_pubkey();
 
-        let crypto2: BlstCrypto = crypto::BlstCrypto::new("2".to_owned()).unwrap();
+        let crypto2: BlstCrypto = crypto::BlstCrypto::new("2").unwrap();
         let pubkey2 = crypto2.validator_pubkey();
 
         let mut storage = setup_storage(pubkey);
@@ -711,10 +711,10 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_on_data_proposal_fork() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
         let pubkey = crypto.validator_pubkey();
 
-        let crypto2: BlstCrypto = crypto::BlstCrypto::new("2".to_owned()).unwrap();
+        let crypto2: BlstCrypto = crypto::BlstCrypto::new("2").unwrap();
         let pubkey2 = crypto2.validator_pubkey();
 
         let mut storage = setup_storage(pubkey);
@@ -741,11 +741,11 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_on_data_vote() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
         let pubkey = crypto.validator_pubkey();
         let mut storage = setup_storage(pubkey);
 
-        let crypto2: BlstCrypto = crypto::BlstCrypto::new("2".to_owned()).unwrap();
+        let crypto2: BlstCrypto = crypto::BlstCrypto::new("2").unwrap();
 
         let data_proposal = DataProposal::new(None, vec![]);
         // 1 creates a DP
@@ -769,13 +769,13 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_on_poda_update() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
         let pubkey = crypto.validator_pubkey();
         let mut storage = setup_storage(pubkey);
 
-        let crypto2: BlstCrypto = crypto::BlstCrypto::new("2".to_owned()).unwrap();
+        let crypto2: BlstCrypto = crypto::BlstCrypto::new("2").unwrap();
         let pubkey2 = crypto2.validator_pubkey();
-        let crypto3: BlstCrypto = crypto::BlstCrypto::new("3".to_owned()).unwrap();
+        let crypto3: BlstCrypto = crypto::BlstCrypto::new("3").unwrap();
 
         let dp = DataProposal::new(None, vec![]);
 
@@ -802,7 +802,7 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_get_lane_entries_between_hashes() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
         let pubkey = crypto.validator_pubkey();
         let mut storage = setup_storage(pubkey);
         let dp1 = DataProposal::new(None, vec![]);
@@ -865,7 +865,7 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_new_data_proposal() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
         let pubkey = crypto.validator_pubkey();
         let mut storage = setup_storage(pubkey);
 
@@ -885,7 +885,7 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_new_data_proposal_empty() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
         let pubkey = crypto.validator_pubkey();
         let mut storage = setup_storage(pubkey);
 
@@ -901,7 +901,7 @@ mod tests {
 
     #[test_log::test]
     fn test_lane_size() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
         let pubkey = crypto.validator_pubkey();
         let mut storage = setup_storage(pubkey);
 
@@ -932,7 +932,7 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_get_lane_pending_entries() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
         let pubkey = crypto.validator_pubkey();
         let mut storage = setup_storage(pubkey);
         let data_proposal = DataProposal::new(None, vec![]);
@@ -949,7 +949,7 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_get_latest_car_and_new_cut() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1".to_owned()).unwrap();
+        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
         let pubkey = crypto.validator_pubkey();
         let mut storage = setup_storage(pubkey);
         let staking = Staking::new();

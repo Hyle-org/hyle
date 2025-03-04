@@ -1,5 +1,6 @@
 [package]
-name = "amm"
+name = "hyle-amm"
+description = "Hyle Smart Contract"
 version = { workspace = true }
 edition = { workspace = true }
 # license = { workspace = true }
@@ -9,11 +10,12 @@ rust-version = "1.81"
 
 [[bin]]
 name = "amm"
+path = "src/main.rs"
 required-features = ["risc0"]
 test = false
 
 [dependencies]
-sdk = { path = "../../contract-sdk", package = "hyle-contract-sdk" }
+sdk = { workspace = true }
 serde = { version = "1.0", default-features = false, features = [
     "derive",
     "alloc",
@@ -24,11 +26,9 @@ borsh = { version = "1.5.5", features = ["derive"] }
 risc0-zkvm = { version = "1.2.4", default-features = false, optional = true, features = [
     'std',
 ] }
-client_sdk = { path = "../../client-sdk", package = "client-sdk", features = [
-    "risc0",
-], optional = true }
+client-sdk = { workspace = true, features = ["risc0"], optional = true }
 
 [features]
 default = []
-client = ["dep:client_sdk"]
+client = ["dep:client-sdk"]
 risc0 = ["dep:risc0-zkvm", "sdk/risc0"]
