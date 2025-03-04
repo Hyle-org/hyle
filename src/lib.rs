@@ -29,5 +29,4 @@ pub mod utils;
 pub mod tests;
 
 pub mod model;
-pub mod tcp;
 pub mod tools;

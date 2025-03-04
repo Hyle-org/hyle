@@ -1,11 +1,9 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use client_sdk::tcp::tcp_client_server;
+use hyle_model::{BlockHeight, MempoolStatusEvent, SignedBlock};
 
-use crate::{
-    mempool::MempoolStatusEvent,
-    model::{BlockHeight, SignedBlock},
-    tcp::tcp_client_server,
-};
-
+// Da Listener
+//
 #[derive(BorshDeserialize, BorshSerialize, Clone, Debug, PartialEq, Eq)]
 pub struct DataAvailabilityRequest(pub BlockHeight);
 

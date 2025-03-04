@@ -1,14 +1,14 @@
 use anyhow::Result;
 use client_sdk::contract_states;
 use client_sdk::helpers::test::TestProver;
-use client_sdk::tcp_client::NodeTcpClient;
+use client_sdk::tcp::{codec_tcp_server, TcpServerMessage};
 use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutorBuilder};
 use hydentity::Hydentity;
-use hyle_contract_sdk::BlobTransaction;
+use hyle_contract_sdk::Digestable;
 use hyle_contract_sdk::Identity;
 use hyle_contract_sdk::{guest, ContractInput, ContractName, HyleOutput};
 use hyle_contract_sdk::{Blob, BlobData, ContractAction, RegisterContractAction};
-use hyle_contract_sdk::{Digestable, TcpServerNetMessage};
+use hyle_contract_sdk::{BlobTransaction, Transaction};
 use hyllar::client::transfer;
 use hyllar::Hyllar;
 use tokio::task::JoinSet;
@@ -37,20 +37,25 @@ pub async fn setup(url: String, verifier: String) -> Result<()> {
         .as_blob("hyle".into(), None, None)],
     );
 
-    let mut client = NodeTcpClient::new(url).await.unwrap();
-    client.send_transaction(tx.into()).await.unwrap();
+    let mut client = codec_tcp_server::connect("loadtest_client".to_string(), url)
+        .await
+        .unwrap();
+    client
+        .send(TcpServerMessage::NewTx(tx.into()))
+        .await
+        .unwrap();
 
     Ok(())
 }
 
-pub async fn generate(users: u32, states: States) -> Result<(Vec<Vec<u8>>, Vec<Vec<u8>>)> {
+pub async fn generate(users: u32, states: States) -> Result<(Vec<Transaction>, Vec<Transaction>)> {
     let blob_txs = generate_blobs_txs(users).await?;
     let proof_txs = generate_proof_txs(users, states).await?;
 
     Ok((blob_txs, proof_txs))
 }
 
-pub async fn generate_blobs_txs(users: u32) -> Result<Vec<Vec<u8>>> {
+pub async fn generate_blobs_txs(users: u32) -> Result<Vec<Transaction>> {
     let mut blob_txs = vec![];
     let mut tasks = JoinSet::new();
     let number_of_tasks = 100;
@@ -84,8 +89,8 @@ pub async fn generate_blobs_txs(users: u32) -> Result<Vec<Vec<u8>>> {
                 let identity = transaction.identity;
                 let blobs = transaction.blobs;
 
-                let msg: TcpServerNetMessage = BlobTransaction::new(identity, blobs).into();
-                local_blob_txs.push(msg.to_binary()?);
+                let msg: Transaction = BlobTransaction::new(identity, blobs).into();
+                local_blob_txs.push(msg);
             }
 
             Ok::<_, anyhow::Error>(local_blob_txs)
@@ -104,7 +109,7 @@ pub async fn generate_blobs_txs(users: u32) -> Result<Vec<Vec<u8>>> {
     Ok(blob_txs)
 }
 
-pub async fn generate_proof_txs(users: u32, state: States) -> Result<Vec<Vec<u8>>> {
+pub async fn generate_proof_txs(users: u32, state: States) -> Result<Vec<Transaction>> {
     let mut proof_txs = vec![];
     let mut tasks = JoinSet::new();
     let number_of_tasks = 100;
@@ -141,8 +146,7 @@ pub async fn generate_proof_txs(users: u32, state: States) -> Result<Vec<Vec<u8>
 
                 for proof in provable_tx.iter_prove() {
                     let tx = proof.await.unwrap();
-                    let msg: TcpServerNetMessage = tx.into();
-                    local_proof_txs.push(msg.to_binary()?);
+                    local_proof_txs.push(tx.into());
                 }
             }
 
@@ -164,31 +168,35 @@ pub async fn generate_proof_txs(users: u32, state: States) -> Result<Vec<Vec<u8>
     Ok(proof_txs)
 }
 
-pub async fn send(url: String, blob_txs: Vec<Vec<u8>>, proof_txs: Vec<Vec<u8>>) -> Result<()> {
+pub async fn send(
+    url: String,
+    blob_txs: Vec<Transaction>,
+    proof_txs: Vec<Transaction>,
+) -> Result<()> {
     send_blob_txs(url.clone(), blob_txs).await?;
     send_proof_txs(url, proof_txs).await?;
     Ok(())
 }
 
-pub fn load_blob_txs(users: u32) -> Result<Vec<Vec<u8>>> {
+pub fn load_blob_txs(users: u32) -> Result<Vec<Transaction>> {
     info!("Loading blob transactions");
-    let blob_txs: Vec<Vec<u8>> =
+    let blob_txs: Vec<Transaction> =
         borsh::from_slice(&std::fs::read(format!("blob_txs.{users}.bin"))?)
             .expect("failed to decode blob_txs.bin");
 
     Ok(blob_txs)
 }
 
-pub fn load_proof_txs(users: u32) -> Result<Vec<Vec<u8>>> {
+pub fn load_proof_txs(users: u32) -> Result<Vec<Transaction>> {
     info!("Loading proof transactions");
-    let proof_txs: Vec<Vec<u8>> =
+    let proof_txs: Vec<Transaction> =
         borsh::from_slice(&std::fs::read(format!("proof_txs.{users}.bin"))?)
             .expect("failed to decode proof_txs.bin");
 
     Ok(proof_txs)
 }
 
-pub async fn send_blob_txs(url: String, blob_txs: Vec<Vec<u8>>) -> Result<()> {
+pub async fn send_blob_txs(url: String, blob_txs: Vec<Transaction>) -> Result<()> {
     info!("Sending blob transactions");
 
     // Spin out a few tasks to send the transactions in parallel
@@ -199,10 +207,12 @@ pub async fn send_blob_txs(url: String, blob_txs: Vec<Vec<u8>>) -> Result<()> {
         let chunk = chunk.to_vec();
         let url = url.clone();
         tasks.spawn(async move {
-            let mut client = NodeTcpClient::new(url).await.unwrap();
-            for encoded_blob_tx in chunk.iter() {
+            let mut client = codec_tcp_server::connect("loadtest-blob-client".to_string(), url)
+                .await
+                .unwrap();
+            for blob_tx in chunk.iter() {
                 client
-                    .send_encoded_message_no_response(encoded_blob_tx.to_vec())
+                    .send(TcpServerMessage::NewTx(blob_tx.clone()))
                     .await
                     .unwrap();
             }
@@ -217,10 +227,9 @@ pub async fn send_blob_txs(url: String, blob_txs: Vec<Vec<u8>>) -> Result<()> {
     Ok(())
 }
 
-pub async fn send_proof_txs(url: String, proof_txs: Vec<Vec<u8>>) -> Result<()> {
+pub async fn send_proof_txs(url: String, proof_txs: Vec<Transaction>) -> Result<()> {
     info!("Sending proof transactions");
 
-    // Spin out a few tasks to send the transactions in parallel
     let mut tasks = tokio::task::JoinSet::new();
     let number_of_tasks = 20;
     let chunk_size = proof_txs.len().div_ceil(number_of_tasks);
@@ -228,17 +237,20 @@ pub async fn send_proof_txs(url: String, proof_txs: Vec<Vec<u8>>) -> Result<()> 
         let chunk = chunk.to_vec();
         let url = url.clone();
         tasks.spawn(async move {
-            let mut client = NodeTcpClient::new(url).await.unwrap();
-            for encoded_proof_tx in chunk.iter() {
+            let mut client = codec_tcp_server::connect("loadtest-proof-client".to_string(), url)
+                .await
+                .unwrap();
+            for blob_tx in chunk.iter() {
                 client
-                    .send_encoded_message_no_response(encoded_proof_tx.to_vec())
+                    .send(TcpServerMessage::NewTx(blob_tx.clone()))
                     .await
                     .unwrap();
             }
             tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-            info!("Transactions sent: {:?}", chunk.len());
+            info!("Blob transactions sent: {:?}", chunk.len());
         });
     }
+
     tasks.join_all().await;
 
     info!("Proof transactions sent: {:?} total", proof_txs.len());
@@ -267,15 +279,16 @@ pub async fn send_massive_blob(users: u32, url: String) -> Result<()> {
                 data: BlobData(user_data),
             }],
         );
-        let msg: TcpServerNetMessage = tx.into();
-        let encoded_blob_tx = msg.to_binary()?;
-        txs.push(encoded_blob_tx);
+        let msg: Transaction = tx.into();
+        txs.push(msg);
     }
 
-    let mut client = NodeTcpClient::new(url).await.unwrap();
-    for encoded_blob_tx in txs.iter() {
+    let mut client = codec_tcp_server::connect("loadtest-massive-client".to_string(), url)
+        .await
+        .unwrap();
+    for encoded_blob_tx in txs.into_iter() {
         client
-            .send_encoded_message_no_response(encoded_blob_tx.to_vec())
+            .send(TcpServerMessage::NewTx(encoded_blob_tx))
             .await
             .unwrap();
     }
