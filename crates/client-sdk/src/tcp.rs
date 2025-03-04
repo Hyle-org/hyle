@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytes::BytesMut;
@@ -6,7 +9,6 @@ use futures::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
-use model::utils::get_current_timestamp;
 use sdk::Transaction;
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -17,6 +19,13 @@ use tokio_util::codec::{Decoder, Encoder, Framed, LengthDelimitedCodec};
 
 use anyhow::{anyhow, bail, Context, Result};
 use tracing::{debug, error, info, trace, warn};
+
+pub fn get_current_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs()
+}
 
 #[derive(Debug, Clone, BorshDeserialize, BorshSerialize, PartialEq)]
 pub enum TcpMessage<Data: Clone> {
@@ -490,7 +499,7 @@ pub mod tests {
     use anyhow::Result;
     use borsh::{BorshDeserialize, BorshSerialize};
     use futures::TryStreamExt;
-    use model::{BlockHeight, SignedBlock};
+    use sdk::{BlockHeight, SignedBlock};
 
     #[derive(BorshDeserialize, BorshSerialize, Clone, Debug, PartialEq, Eq)]
     pub struct DataAvailabilityRequest(pub BlockHeight);

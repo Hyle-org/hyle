@@ -2594,7 +2594,6 @@ dependencies = [
  "futures",
  "hyle-bonsai-runner",
  "hyle-contract-sdk",
- "hyle-model",
  "paste",
  "reqwest",
  "risc0-zkvm",
