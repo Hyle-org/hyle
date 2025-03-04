@@ -97,6 +97,7 @@ impl BlstCrypto {
     /// Load the secret key from the keyring. If the key does not exist, a new random one is generated.
     #[cfg(not(test))]
     fn load_from_keyring(validator_name: &str) -> Result<SecretKey> {
+        println!("Loading secret key from keyring...");
         let user = whoami::username();
         let entry = keyring::Entry::new_with_target("hyle", validator_name, &user)?;
 
