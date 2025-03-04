@@ -13,7 +13,7 @@ use codec::{codec_data_availability, DataAvailabilityEvent};
 
 use crate::{
     bus::{BusClientSender, BusMessage},
-    consensus::{ConsensusCommand, ConsensusEvent},
+    consensus::ConsensusCommand,
     genesis::GenesisEvent,
     indexer::da_listener::RawDAListener,
     model::*,
@@ -46,7 +46,6 @@ struct DABusClient {
     sender(OutboundMessage),
     sender(DataEvent),
     sender(ConsensusCommand),
-    receiver(ConsensusEvent),
     receiver(MempoolBlockEvent),
     receiver(MempoolStatusEvent),
     receiver(GenesisEvent),
