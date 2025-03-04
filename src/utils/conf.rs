@@ -39,6 +39,7 @@ pub struct Conf {
     pub tcp_server_address: Option<String>,
     pub log_format: String,
     pub single_node: Option<bool>,
+    pub faucet_password: String,
 }
 
 impl Conf {
