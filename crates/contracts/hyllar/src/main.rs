@@ -3,7 +3,7 @@
 
 extern crate alloc;
 
-use hyllar::Hyllar;
+use hyle_hyllar::Hyllar;
 use sdk::guest::{execute, GuestEnv, Risc0Env};
 
 risc0_zkvm::guest::entry!(main);

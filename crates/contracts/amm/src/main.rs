@@ -3,7 +3,7 @@
 
 extern crate alloc;
 
-use amm::Amm;
+use hyle_amm::Amm;
 use sdk::guest::{execute, GuestEnv, Risc0Env};
 
 risc0_zkvm::guest::entry!(main);

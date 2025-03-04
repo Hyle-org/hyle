@@ -3,8 +3,8 @@
 
 extern crate alloc;
 
+use hyle_staking::state::Staking;
 use sdk::guest::{execute, GuestEnv, Risc0Env};
-use staking::state::Staking;
 
 risc0_zkvm::guest::entry!(main);
 

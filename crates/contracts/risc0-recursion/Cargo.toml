@@ -1,5 +1,6 @@
 [package]
-name = "risc0-recursion"
+name = "hyle-risc0-recursion"
+description = "Hyle Smart Contract"
 version = { workspace = true }
 edition = { workspace = true }
 # license = { workspace = true }
@@ -18,7 +19,7 @@ name = "risc0-recursion-runner"
 path = "examples/host.rs"
 
 [dependencies]
-sdk = { path = "../../contract-sdk", package = "hyle-contract-sdk" }
+sdk = { workspace = true }
 serde = { version = "1.0.218", features = ["derive"] }
 
 risc0-zkvm = { version = "1.2.4", default-features = false, optional = true, features = [
@@ -27,17 +28,16 @@ risc0-zkvm = { version = "1.2.4", default-features = false, optional = true, fea
 
 [dev-dependencies]
 # Activate client in examples.
-risc0-recursion = { path = ".", features = ["client"] }
+hyle-risc0-recursion = { path = ".", features = ["client"] }
+
+client-sdk = { workspace = true }
+sdk = { workspace = true, features = ["full-model"] }
 
 anyhow = "1.0.96"
 borsh = "1.5.5"
 hex = "0.4.3"
-hydentity = { path = "../hydentity", features = ["client"] }
+hydentity = { workspace = true, features = ["client"] }
 hyle-contracts = { path = ".." }
-client-sdk = { path = "../../client-sdk" }
-sdk = { path = "../../contract-sdk", package = "hyle-contract-sdk", features = [
-    "full-model",
-] }
 tokio = { version = "1.42.0" }
 risc0-zkvm = { version = "1.2.4", default-features = false, features = [
     'std',
