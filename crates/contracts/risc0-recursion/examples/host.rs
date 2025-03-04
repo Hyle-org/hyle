@@ -1,6 +1,6 @@
 use std::fs;
 
-use risc0_recursion::ProofInput;
+use hyle_risc0_recursion::ProofInput;
 
 fn main() {
     // Collect command line arguments
@@ -45,12 +45,12 @@ fn main() {
     let env = env.build().unwrap();
 
     let receipt = risc0_zkvm::default_prover()
-        .prove(env, risc0_recursion::metadata::RISC0_RECURSION_ELF)
+        .prove(env, hyle_risc0_recursion::metadata::RISC0_RECURSION_ELF)
         .unwrap()
         .receipt;
 
     receipt
-        .verify(risc0_recursion::metadata::PROGRAM_ID)
+        .verify(hyle_risc0_recursion::metadata::PROGRAM_ID)
         .unwrap();
 
     println!("Proof generated successfully, writing to recursed_proof.proof");

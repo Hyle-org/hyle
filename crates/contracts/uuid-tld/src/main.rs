@@ -3,8 +3,8 @@
 
 extern crate alloc;
 
+use hyle_uuid_tld::UuidTld;
 use sdk::guest::{execute, GuestEnv, Risc0Env};
-use uuid_tld::UuidTld;
 
 risc0_zkvm::guest::entry!(main);
 

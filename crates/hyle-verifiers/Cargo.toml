@@ -1,5 +1,6 @@
 [package]
 name = "hyle-verifiers"
+description = "Hyle verifiers"
 version = { workspace = true }
 edition = { workspace = true }
 # license = { workspace = true }
@@ -8,7 +9,7 @@ repository = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-hyle-model = { path = "../hyle-model" }
+hyle-model = { workspace = true }
 
 anyhow = "1.0.96"
 borsh = "1.5.5"

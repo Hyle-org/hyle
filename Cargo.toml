@@ -33,8 +33,24 @@ repository = "https://github.com/Hyle-org/hyle/"
 rust-version = "1.84"
 # licence = ""
 
+[workspace.dependencies]
+bonsai-runner = { version = "0.12.0", default-features = false, path = "crates/bonsai-runner", package = "hyle-bonsai-runner" }
+sdk = { version = "0.12.0", default-features = false, path = "crates/contract-sdk", package = "hyle-contract-sdk" }
+hyle-contract-sdk = { version = "0.12.0", default-features = false, path = "crates/contract-sdk", package = "hyle-contract-sdk" }
+client-sdk = { version = "0.12.0", default-features = false, path = "crates/client-sdk", package = "hyle-client-sdk" }
+hyle-contracts = { version = "0.12.0", default-features = false, path = "crates/contracts", package = "hyle-contracts" }
+hyle-model = { version = "0.12.0", default-features = false, path = "crates/hyle-model", package = "hyle-model" }
+hyle-verifiers = { version = "0.12.0", default-features = false, path = "crates/hyle-verifiers", package = "hyle-verifiers" }
+risc0-recursion = { version = "0.12.0", default-features = false, path = "crates/contracts/risc0-recursion", package = "hyle-risc0-recursion" }
+hydentity = { version = "0.12.0", default-features = false, path = "crates/contracts/hydentity", package = "hyle-hydentity" }
+hyllar = { version = "0.12.0", default-features = false, path = "crates/contracts/hyllar", package = "hyle-hyllar" }
+staking = { version = "0.12.0", default-features = false, path = "crates/contracts/staking", package = "hyle-staking" }
+amm = { version = "0.12.0", default-features = false, path = "crates/contracts/amm", package = "hyle-amm" }
+uuid-tld = { version = "0.12.0", default-features = false, path = "crates/contracts/uuid-tld", package = "hyle-uuid-tld" }
+
 [package]
 name = "hyle"
+description = "Hyle node"
 version = { workspace = true }
 edition = { workspace = true }
 # license = { workspace = true }
@@ -42,7 +58,6 @@ homepage = { workspace = true }
 repository = { workspace = true }
 rust-version = { workspace = true }
 default-run = "hyle"
-
 
 [[bin]]
 name = "hyle"
@@ -58,26 +73,25 @@ indexing_slicing = "warn"
 
 [dependencies]
 # Public dependencies
-hyle-contract-sdk = { path = "./crates/contract-sdk", default-features = false, features = [
+hyle-contract-sdk = { workspace = true, default-features = false, features = [
     "tracing",
 ] }
-staking = { path = "./crates/contracts/staking", default-features = false, features = [
+staking = { workspace = true, default-features = false, features = [
     "client",
 ] }
-client-sdk = { path = "./crates/client-sdk", default-features = false, features = [
-    "rest",
+client-sdk = { workspace = true, features = [
+  "rest",
     "tcp",
     "indexer"
 ] }
-hyle-model = { path = "./crates/hyle-model", default-features = false, features = [
+hyle-model = { workspace = true, default-features = false, features = [
     "full",
     "sqlx",
 ] }
-hydentity = { path = "./crates/contracts/hydentity", features = ["client"] }
-hyllar = { path = "./crates/contracts/hyllar", features = ["client"] }
-risc0-recursion = { path = "./crates/contracts/risc0-recursion" }
-
-hyle-verifiers = { path = "crates/hyle-verifiers" }
+hydentity = { workspace = true, features = ["client"] }
+hyllar = { workspace = true, features = ["client"] }
+risc0-recursion = { workspace = true }
+hyle-verifiers = { workspace = true }
 
 
 anyhow = "1.0.96"
@@ -100,7 +114,7 @@ bytes = { version = "1.10.0" }
 clap = { version = "4.5.31", features = ["derive"] }
 config = { version = "=0.15.0", default-features = false, features = ["ron"] }
 futures = { version = "0.3.31" }
-hyle-contracts = { path = "./crates/contracts", package = "hyle-contracts" }
+hyle-contracts = { workspace = true }
 indexmap = { version = "2.7.1", features = ["serde"] }
 # opentelemetry and axum-otel-metrics must be updated together (so that there is only one opentelemetry version)
 opentelemetry = { version = "0.28" }
@@ -136,10 +150,13 @@ testcontainers-modules = { version = "0.11.6", features = ["postgres"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 whoami = "1.5.2"
 
+[patch.crates-io]
+sha2 = { git = "https://github.com/risc0/RustCrypto-hashes", tag = "sha2-v0.10.8-risczero.0" }
+
 [dev-dependencies]
-amm = { path = "./crates/contracts/amm", features = ["client"] }
-uuid-tld = { path = "./crates/contracts/uuid-tld", features = ["client"] }
-client-sdk = { path = "./crates/client-sdk", default-features = false, features = [
+amm = { workspace = true, features = ["client"] }
+uuid-tld = { workspace = true, features = ["client"] }
+client-sdk = { workspace = true, default-features = false, features = [
     "rest",
     "tcp",
     "risc0",
@@ -157,7 +174,7 @@ test-log = { version = "0.2.17", features = [
 tokio-stream = "0.1.17"
 tempfile = "3.17.1"
 assert-json-diff = "2.0.2"
-risc0-recursion = { path = "./crates/contracts/risc0-recursion" }
+risc0-recursion = { workspace = true }
 risc0-zkvm = { version = "1.2.4", default-features = false, features = [
     "client",
 ] }
