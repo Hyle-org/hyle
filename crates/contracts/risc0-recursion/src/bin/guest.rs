@@ -4,13 +4,13 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use hyle_risc0_recursion::{Risc0Journal, Risc0ProgramId};
+use hyle_risc0_recursion::{ProofInput, Risc0Journal, Risc0ProgramId};
 use risc0_zkvm::guest::env;
 
 risc0_zkvm::guest::entry!(main);
 
 fn main() {
-    let mut input: Vec<risc0_recursion::ProofInput> = env::read();
+    let mut input: Vec<ProofInput> = env::read();
     let mut outputs: Vec<(Risc0ProgramId, Risc0Journal)> = Vec::new();
     input.iter_mut().for_each(|input| {
         risc0_zkvm::guest::env::verify(input.image_id, &input.journal)
