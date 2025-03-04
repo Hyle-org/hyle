@@ -17,7 +17,8 @@
 //!
 //! This module load the private key seed from the environment variable `HYLE_VALIDATOR_SECRET`.
 //! The content of the variable must be a hexadecimal string.
-//! If the variable is not set, it tries to load the key from the keyring.
+//! If the variable is not set but HYLE_USE_KEYRING is set to 'true', it tries to load the key from the keyring.
+//! Otherwise it generates a private key from the validator name, which is highly unsecure.
 //!
 //! Note: you can use tools like seahorse (https://wiki.gnome.org/Apps/Seahorse) to manage your keyring
 //!
