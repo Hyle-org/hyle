@@ -3,9 +3,8 @@ use clap::{Parser, Subcommand};
 use hydentity::Hydentity;
 use hyle_loadtest::{
     generate, generate_blobs_txs, generate_proof_txs, load_blob_txs, load_proof_txs, send,
-    send_blob_txs, send_massive_blob, send_proof_txs, setup, States,
+    send_blob_txs, send_massive_blob, send_proof_txs, setup, setup_hyllar, States,
 };
-use hyllar::Hyllar;
 use tracing::Level;
 
 /// A cli to interact with hyle node
@@ -72,12 +71,12 @@ async fn main() -> Result<(), Error> {
     let verifier = args.verifier;
 
     let states = States {
-        hyllar_test: Hyllar::default(),
+        hyllar_test: setup_hyllar(users).await?,
         hydentity: Hydentity::default(),
     };
 
     match args.command {
-        SendCommands::Setup => setup(url, verifier).await?,
+        SendCommands::Setup => setup(states.hyllar_test, url, verifier).await?,
         SendCommands::GenerateBlobTransactions => {
             generate_blobs_txs(users).await?;
         }
@@ -101,7 +100,7 @@ async fn main() -> Result<(), Error> {
             send(url, blob_txs, proof_txs).await?
         }
         SendCommands::LoadTest => {
-            setup(url.clone(), verifier).await?;
+            setup(states.hyllar_test.clone(), url.clone(), verifier).await?;
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             let (blob_txs, proof_txs) = generate(users, states).await?;
             send(url, blob_txs, proof_txs).await?;
