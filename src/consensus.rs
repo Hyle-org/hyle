@@ -1166,7 +1166,7 @@ pub mod test {
         }
 
         async fn new_node(name: &str) -> Self {
-            let crypto = crypto::BlstCrypto::new(name.into()).unwrap();
+            let crypto = crypto::BlstCrypto::new(name).unwrap();
             Self::new(name, crypto.clone()).await
         }
 
