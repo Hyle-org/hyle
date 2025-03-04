@@ -6,8 +6,8 @@ use strum::IntoDiscriminant;
 use utoipa::ToSchema;
 
 use crate::{
-    BlockHash, BlockHeight, ConsensusProposalHash, ContractName, DataProposalHash,
-    Identity, LaneBytesSize, ProgramId, StateDigest, Transaction, TransactionKind, TxHash,
+    BlockHash, BlockHeight, ConsensusProposalHash, ContractName, DataProposalHash, Identity,
+    LaneBytesSize, ProgramId, StateDigest, Transaction, TransactionKind, TxHash,
     ValidatorPublicKey, Verifier,
 };
 

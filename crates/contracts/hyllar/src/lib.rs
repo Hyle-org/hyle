@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::erc20::ERC20;
 use sdk::utils::parse_contract_input;
