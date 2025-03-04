@@ -30,20 +30,6 @@ pub struct Hyllar {
     allowances: BTreeMap<(String, String), u128>, // Allowances (owner, spender)
 }
 
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone)]
-pub struct HyllarRegisterAction {
-    pub initial_supply: u128,
-    pub faucet_id: String,
-}
-
-impl HyllarRegisterAction {
-    pub fn as_blob_data(&self) -> anyhow::Result<sdk::BlobData> {
-        Ok(sdk::BlobData(
-            borsh::to_vec(self).context("Failed to encode HyllarRegisterAction")?,
-        ))
-    }
-}
-
 impl Default for Hyllar {
     fn default() -> Self {
         let mut balances = BTreeMap::new();
