@@ -4,6 +4,7 @@ use client_sdk::helpers::test::TestProver;
 use client_sdk::tcp::{codec_tcp_server, TcpServerMessage};
 use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutorBuilder};
 use hydentity::Hydentity;
+use hyle_contract_sdk::Digestable;
 use hyle_contract_sdk::Identity;
 use hyle_contract_sdk::{guest, ContractInput, ContractName, HyleOutput};
 use hyle_contract_sdk::{Blob, BlobData, ContractAction, RegisterContractAction};
