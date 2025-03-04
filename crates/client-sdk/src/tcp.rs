@@ -6,7 +6,8 @@ use futures::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
-use hyle_model::utils::get_current_timestamp;
+use model::utils::get_current_timestamp;
+use sdk::{BlockHeight, MempoolStatusEvent, SignedBlock, Transaction};
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::mpsc::{Receiver, Sender},
@@ -16,8 +17,6 @@ use tokio_util::codec::{Decoder, Encoder, Framed, LengthDelimitedCodec};
 
 use anyhow::{anyhow, bail, Context, Result};
 use tracing::{debug, error, info, trace, warn};
-
-use crate::utils::logger::LogMe;
 
 #[derive(Debug, Clone, BorshDeserialize, BorshSerialize, PartialEq)]
 pub enum TcpMessage<Data: Clone> {
@@ -134,10 +133,10 @@ where
         tokio::task::Builder::new()
             .name("tcp-connection-pool-loop")
             .spawn(async move {
-                _ = self
-                    .run(out_receiver, in_sender)
+                self.run(out_receiver, in_sender)
                     .await
-                    .log_error("Running connection pool loop");
+                    .context("Running connection pool loop")?;
+                anyhow::Ok(())
             })?;
 
         Ok((out_sender, in_receiver))
@@ -161,7 +160,9 @@ where
                 }
 
                 Some(to_send) = pool_recv.recv() => {
-                    _ = self.send(to_send).await.log_error("Sending message");
+                    if let Err(e) = self.send(to_send).await {
+                        error!("Sending message to pool {}: {:?}", self.pool_name, e)
+                    }
                 }
 
                 Some(peer_id) = ping_receiver.recv() => {
@@ -460,6 +461,40 @@ macro_rules! tcp_client_server {
 
 pub(crate) use tcp_client_server;
 
+// Client - servers
+//
+// TCP Client
+
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
+pub enum TcpServerMessage {
+    NewTx(Transaction),
+}
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
+pub struct TcpServerResponse;
+
+tcp_client_server! {
+    pub TcpServer,
+    request: TcpServerMessage,
+    response: TcpServerResponse
+}
+
+// Da Listener
+//
+#[derive(BorshDeserialize, BorshSerialize, Clone, Debug, PartialEq, Eq)]
+pub struct DataAvailabilityRequest(pub BlockHeight);
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub enum DataAvailabilityEvent {
+    SignedBlock(SignedBlock),
+    MempoolStatusEvent(MempoolStatusEvent),
+}
+
+tcp_client_server! {
+    pub DataAvailability,
+    request: DataAvailabilityRequest,
+    response: DataAvailabilityEvent
+}
+
 #[cfg(test)]
 pub mod tests {
     use std::time::Duration;
@@ -469,7 +504,7 @@ pub mod tests {
     use anyhow::Result;
     use borsh::{BorshDeserialize, BorshSerialize};
     use futures::TryStreamExt;
-    use hyle_model::{BlockHeight, SignedBlock};
+    use model::{BlockHeight, SignedBlock};
 
     #[derive(BorshDeserialize, BorshSerialize, Clone, Debug, PartialEq, Eq)]
     pub struct DataAvailabilityRequest(pub BlockHeight);
@@ -485,7 +520,7 @@ pub mod tests {
         response: DataAvailabilityEvent
     }
 
-    #[test_log::test(tokio::test)]
+    #[tokio::test]
     async fn tcp_test() -> Result<()> {
         let (sender, mut receiver) =
             codec_data_availability::create_server("0.0.0.0:2345".to_string())

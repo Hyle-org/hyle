@@ -7,20 +7,17 @@ mod blocks_memory;
 
 // Pick one of the two implementations
 use blocks_fjall::Blocks;
+use client_sdk::tcp::{codec_data_availability, DataAvailabilityEvent, TcpCommand, TcpEvent};
 //use blocks_memory::Blocks;
-
-use codec::{codec_data_availability, DataAvailabilityEvent};
 
 use crate::{
     bus::{BusClientSender, BusMessage},
     consensus::{ConsensusCommand, ConsensusEvent},
     genesis::GenesisEvent,
     indexer::da_listener::RawDAListener,
-    mempool::{MempoolBlockEvent, MempoolStatusEvent},
     model::*,
     module_handle_messages,
     p2p::network::{OutboundMessage, PeerEvent},
-    tcp::{TcpCommand, TcpEvent},
     utils::{
         conf::SharedConf,
         logger::LogMe,
@@ -436,13 +433,10 @@ impl DataAvailability {
 pub mod tests {
     #![allow(clippy::indexing_slicing)]
 
-    use crate::data_availability::codec::{DataAvailabilityEvent, DataAvailabilityRequest};
     use crate::model::ValidatorPublicKey;
-    use crate::tcp::TcpCommand;
     use crate::{
         bus::BusClientSender,
         consensus::CommittedConsensusProposal,
-        mempool::MempoolBlockEvent,
         model::*,
         node_state::{
             module::{NodeStateBusClient, NodeStateEvent},
@@ -450,10 +444,12 @@ pub mod tests {
         },
         utils::{conf::Conf, integration_test::find_available_port},
     };
+    use client_sdk::tcp::{
+        codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequest, TcpCommand,
+    };
     use staking::state::Staking;
     use tokio::sync::mpsc::{channel, Sender};
 
-    use super::codec::codec_data_availability;
     use super::module_bus_client;
     use super::Blocks;
     use anyhow::Result;

@@ -8,7 +8,6 @@ use crate::{
     module_handle_messages,
     node_state::module::NodeStateEvent,
     p2p::network::OutboundMessage,
-    tcp_server::TcpServerMessage,
     utils::{
         conf::SharedConf,
         crypto::{BlstCrypto, SharedBlstCrypto},
@@ -22,6 +21,7 @@ use crate::{
 use anyhow::{bail, Context, Result};
 use api::RestApiMessage;
 use borsh::{BorshDeserialize, BorshSerialize};
+use client_sdk::tcp::TcpServerMessage;
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
@@ -160,25 +160,7 @@ impl Display for MempoolNetMessage {
 }
 
 impl BusMessage for MempoolNetMessage {}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub enum MempoolBlockEvent {
-    BuiltSignedBlock(SignedBlock),
-    StartedBuildingBlocks(BlockHeight),
-}
 impl BusMessage for MempoolBlockEvent {}
-
-#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-pub enum MempoolStatusEvent {
-    WaitingDissemination {
-        parent_data_proposal_hash: DataProposalHash,
-        tx: Transaction,
-    },
-    DataProposalCreated {
-        data_proposal_hash: DataProposalHash,
-        txs_metadatas: Vec<TransactionMetadata>,
-    },
-}
 impl BusMessage for MempoolStatusEvent {}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

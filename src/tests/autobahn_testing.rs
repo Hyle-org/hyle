@@ -214,9 +214,7 @@ use crate::consensus::test::ConsensusTestCtx;
 use crate::consensus::ConsensusEvent;
 use crate::handle_messages;
 use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
-use crate::mempool::{
-    InternalMempoolEvent, MempoolBlockEvent, MempoolNetMessage, MempoolStatusEvent, QueryNewCut,
-};
+use crate::mempool::{InternalMempoolEvent, MempoolNetMessage, QueryNewCut};
 use crate::model::*;
 use crate::node_state::module::NodeStateEvent;
 use crate::p2p::network::OutboundMessage;

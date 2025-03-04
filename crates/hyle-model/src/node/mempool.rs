@@ -6,6 +6,24 @@ use std::{fmt::Display, sync::RwLock};
 
 use crate::*;
 
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub enum MempoolStatusEvent {
+    WaitingDissemination {
+        parent_data_proposal_hash: DataProposalHash,
+        tx: Transaction,
+    },
+    DataProposalCreated {
+        data_proposal_hash: DataProposalHash,
+        txs_metadatas: Vec<TransactionMetadata>,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub enum MempoolBlockEvent {
+    BuiltSignedBlock(SignedBlock),
+    StartedBuildingBlocks(BlockHeight),
+}
+
 #[derive(Debug, Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[readonly::make]
 pub struct DataProposal {

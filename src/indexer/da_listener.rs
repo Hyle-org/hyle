@@ -4,14 +4,12 @@ use std::{
 };
 
 use anyhow::{bail, Result};
+use client_sdk::tcp::{codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequest};
 use hyle_model::Hashed;
 use tracing::{debug, info};
 
 use crate::{
     bus::BusClientSender,
-    data_availability::codec::{
-        codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequest,
-    },
     model::{BlockHeight, CommonRunContext},
     module_handle_messages,
     node_state::{module::NodeStateEvent, NodeState},
