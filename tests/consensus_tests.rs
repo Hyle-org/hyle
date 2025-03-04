@@ -17,7 +17,7 @@ mod e2e_consensus {
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF, STAKING_ELF};
     use hyle_model::{ContractName, StateDigest};
     use hyllar::client::transfer;
-    use hyllar::Hyllar;
+    use hyllar::{Hyllar, FAUCET_ID};
     use staking::client::{delegate, stake};
     use staking::state::Staking;
     use tracing::info;
@@ -56,16 +56,22 @@ mod e2e_consensus {
             .await
             .log_error("fetch state failed")
             .unwrap();
-        let hydentity: Hydentity = ctx
-            .indexer_client()
-            .fetch_current_state(&"hydentity".into())
-            .await
-            .unwrap();
+        let hydentity: Hydentity = StateDigest(
+            ctx.indexer_client()
+                .get_indexer_contract(&"hydentity".into())
+                .await
+                .unwrap()
+                .state_digest,
+        )
+        .try_into()
+        .unwrap();
 
-        let staking_state: StateDigest = ctx
-            .indexer_client()
-            .fetch_current_state(&"staking".into())
-            .await?;
+        let staking_state: StateDigest = StateDigest(
+            ctx.indexer_client()
+                .get_indexer_contract(&"staking".into())
+                .await?
+                .state_digest,
+        );
 
         let staking: Staking = ctx
             .client()
@@ -98,21 +104,23 @@ mod e2e_consensus {
             tracing::warn!("Register TX Hash: {:?}", tx_hash);
         }
         {
-            let mut transaction = ProvableBlobTx::new("faucet.hydentity".into());
+            let mut transaction = ProvableBlobTx::new(FAUCET_ID.into());
 
             verify_identity(
                 &mut transaction,
                 "hydentity".into(),
                 &tx_ctx.hydentity,
                 "password".to_string(),
-            )?;
+            )
+            .expect("verify_identity failed");
 
             transfer(
                 &mut transaction,
                 "hyllar".into(),
                 node_identity.0.clone(),
                 stake_amount,
-            )?;
+            )
+            .expect("transfer failed");
 
             let tx_hash = send_transaction(ctx.client(), transaction, &mut tx_ctx).await;
             tracing::warn!("Transfer TX Hash: {:?}", tx_hash);

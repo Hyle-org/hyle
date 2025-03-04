@@ -19,7 +19,7 @@ use hydentity::{
 };
 use hyle_contract_sdk::{guest, identity_provider::IdentityVerification, Identity, StateDigest};
 use hyle_contract_sdk::{ContractName, Digestable, ProgramId};
-use hyllar::{client::transfer, Hyllar};
+use hyllar::{client::transfer, Hyllar, FAUCET_ID};
 use serde::{Deserialize, Serialize};
 use staking::{
     client::{delegate, deposit_for_fees, stake},
@@ -281,7 +281,7 @@ impl Genesis {
 
             info!("🌱  Fauceting {genesis_faucet} hyllar to {peer}");
 
-            let identity = Identity::new("faucet.hydentity");
+            let identity = Identity::new(FAUCET_ID);
             let mut transaction = ProvableBlobTx::new(identity.clone());
 
             // Verify identity
@@ -383,13 +383,13 @@ impl Genesis {
 
         let mut hydentity_state = hydentity::Hydentity::default();
         hydentity_state
-            .register_identity("faucet.hydentity", &self.config.faucet_password)
+            .register_identity(FAUCET_ID, &self.config.faucet_password)
             .expect("faucet must register");
 
         let staking_state = staking::state::Staking::new();
 
         let ctx = TxExecutorBuilder::new(States {
-            hyllar: hyllar::Hyllar::new(100_000_000_000, "faucet.hydentity".to_string()),
+            hyllar: hyllar::Hyllar::default(),
             hydentity: hydentity_state,
             staking: staking_state,
         })

@@ -2,6 +2,7 @@ use hyle_contract_sdk::Digestable;
 use hyle_contract_sdk::ProgramId;
 use hyle_contract_sdk::StateDigest;
 use hyle_contract_sdk::Verifier;
+use hyllar::Hyllar;
 
 use super::ctx::E2EContract;
 
@@ -44,6 +45,12 @@ impl E2EContract for HydentityTestContract {
 
 pub struct HyllarTestContract {}
 
+impl HyllarTestContract {
+    pub fn init_state() -> Hyllar {
+        hyllar::Hyllar::default()
+    }
+}
+
 impl E2EContract for HyllarTestContract {
     fn verifier() -> Verifier {
         "risc0".into()
@@ -54,7 +61,7 @@ impl E2EContract for HyllarTestContract {
     }
 
     fn state_digest() -> StateDigest {
-        hyllar::Hyllar::new(1_000_000_000, "faucet.hydentity".to_string()).as_digest()
+        HyllarTestContract::init_state().as_digest()
     }
 }
 

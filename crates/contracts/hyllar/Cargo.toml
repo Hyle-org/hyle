@@ -21,6 +21,7 @@ serde = { version = "1.0", default-features = false, features = [
     "alloc",
 ] }
 anyhow = "1.0.96"
+sha2 = { git = "https://github.com/risc0/RustCrypto-hashes", tag = "sha2-v0.10.8" }
 borsh = { version = "1.5.5", features = ["derive"] }
 serde_with = "3.12.0"
 

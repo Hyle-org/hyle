@@ -525,6 +525,7 @@ impl Indexer {
                 .clone()
                 .into();
             let serialized_events = serde_json::to_string(&events)?;
+            info!("Inserting transaction state event {tx_hash:?}: {serialized_events}");
 
             sqlx::query(
                 "INSERT INTO transaction_state_events (block_hash, index, tx_hash, parent_dp_hash, events)

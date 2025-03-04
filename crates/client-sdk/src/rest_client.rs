@@ -3,7 +3,7 @@ use reqwest::Url;
 
 use sdk::{
     api::*, BlobIndex, BlobTransaction, BlockHash, BlockHeight, ConsensusInfo, Contract,
-    ContractName, ProofTransaction, StateDigest, TxHash, UnsettledBlobTransaction,
+    ContractName, ProofTransaction, TxHash, UnsettledBlobTransaction,
 };
 
 pub struct NodeApiHttpClient {
@@ -144,13 +144,13 @@ impl IndexerApiHttpClient {
 
     pub async fn fetch_current_state<State>(&self, contract_name: &ContractName) -> Result<State>
     where
-        State: TryFrom<StateDigest>,
+        State: serde::de::DeserializeOwned,
     {
-        let resp = self.get_indexer_contract(contract_name).await?;
-
-        StateDigest(resp.state_digest)
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("Failed to convert state digest"))
+        self.get::<State>(
+            &format!("v1/indexer/contract/{contract_name}/state"),
+            &format!("getting contract {contract_name} state"),
+        )
+        .await
     }
 
     pub async fn get_blocks(&self) -> Result<Vec<APIBlock>> {

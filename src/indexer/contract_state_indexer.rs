@@ -41,7 +41,6 @@ pub struct ContractStateIndexerCtx {
 impl<State> Module for ContractStateIndexer<State>
 where
     State: Serialize
-        + TryFrom<hyle_contract_sdk::StateDigest, Error = Error>
         + Clone
         + Sync
         + Send
@@ -111,7 +110,6 @@ where
 impl<State> ContractStateIndexer<State>
 where
     State: Serialize
-        + TryFrom<hyle_contract_sdk::StateDigest, Error = Error>
         + Clone
         + Sync
         + Send
@@ -201,8 +199,8 @@ where
     }
 
     async fn handle_register_contract(&self, contract: RegisterContractEffect) -> Result<()> {
-        let state = contract.state_digest.try_into()?;
-        debug!(cn = %self.contract_name, "📝 Registered suppored contract '{}' with initial state '{state:?}'", contract.contract_name);
+        let state = State::default();
+        tracing::info!(cn = %self.contract_name, "📝 Registered suppored contract '{}' with initial state '{state:?}'", contract.contract_name);
         self.store.write().await.state = Some(state);
         Ok(())
     }
