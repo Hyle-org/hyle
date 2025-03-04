@@ -1,5 +1,6 @@
 [package]
-name = "hydentity"
+name = "hyle-hydentity"
+description = "Hyle Smart Contract"
 version = { workspace = true }
 edition = { workspace = true }
 # license = { workspace = true }
@@ -9,6 +10,7 @@ rust-version = "1.81"
 
 [[bin]]
 name = "hydentity"
+path = "src/main.rs"
 required-features = ["risc0"]
 test = false
 
@@ -17,36 +19,27 @@ name = "hydentity-runner"
 path = "examples/host.rs"
 
 [dependencies]
-sdk = { path = "../../contract-sdk", package = "hyle-contract-sdk" }
+sdk = { workspace = true }
 serde_json = "1.0"
 serde = { version = "1.0", default-features = false, features = [
     "derive",
     "alloc",
 ] }
 anyhow = "1.0.96"
-sha2 = { git = "https://github.com/risc0/RustCrypto-hashes", tag = "sha2-v0.10.8" }
 borsh = { version = "1.5.5", features = ["derive"] }
 hex = "0.4.3"
 
 risc0-zkvm = { version = "1.2.4", default-features = false, optional = true, features = [
     'std',
 ] }
-client_sdk = { path = "../../client-sdk", package = "client-sdk", features = [
-    "risc0",
-], optional = true }
+client-sdk = { workspace = true, features = ["risc0"], optional = true }
+sha2 = "=0.10.8" # precompile patched at workspace root
 
 [dev-dependencies]
 # Activate client in examples.
-sdk = { path = "../../contract-sdk", features = [
-    "full-model",
-    "tracing",
-], package = "hyle-contract-sdk" }
-hydentity = { path = ".", features = ["client"] }
-client_sdk = { path = "../../client-sdk", package = "client-sdk", features = [
-    "risc0",
-    "rest",
-    "indexer",
-] }
+sdk = { workspace = true, features = ["full-model", "tracing"] }
+hyle-hydentity = { path = ".", features = ["client"] }
+client-sdk = { workspace = true, features = ["risc0", "rest", "indexer"] }
 
 clap = { version = "4.5", features = ["derive"] }
 tokio = { version = "1.42.0", features = ["full", "tracing"] }
@@ -54,5 +47,5 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [features]
 default = []
-client = ["dep:client_sdk"]
+client = ["dep:client-sdk"]
 risc0 = ["dep:risc0-zkvm", "sdk/risc0"]

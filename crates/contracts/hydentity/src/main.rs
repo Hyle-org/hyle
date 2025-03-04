@@ -3,7 +3,7 @@
 
 extern crate alloc;
 
-use hydentity::Hydentity;
+use hyle_hydentity::Hydentity;
 use sdk::guest::{execute, GuestEnv, Risc0Env};
 
 risc0_zkvm::guest::entry!(main);
