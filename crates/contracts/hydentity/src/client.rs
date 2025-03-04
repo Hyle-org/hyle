@@ -1,10 +1,9 @@
+use crate::Hydentity;
 use client_sdk::{
     helpers::risc0::Risc0Prover,
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
 use sdk::{identity_provider::IdentityAction, ContractName};
-
-use crate::Hydentity;
 
 pub mod metadata {
     pub const HYDENTITY_ELF: &[u8] = include_bytes!("../hydentity.img");
@@ -52,14 +51,13 @@ pub fn register_identity(
     contract_name: ContractName,
     password: String,
 ) -> anyhow::Result<()> {
-    let password = password.into_bytes().to_vec();
+    let name = builder.identity.0.clone();
+    let account = Hydentity::build_id(&name, &password);
 
     builder.add_action(
         contract_name,
-        IdentityAction::RegisterIdentity {
-            account: builder.identity.0.clone(),
-        },
-        Some(password),
+        IdentityAction::RegisterIdentity { account },
+        Some(password.into_bytes().to_vec()),
         None,
         None,
     )?;

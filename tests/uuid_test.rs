@@ -41,20 +41,20 @@ impl E2EContract for UuidContract {
 async fn test_uuid_registration() {
     std::env::set_var("RISC0_DEV_MODE", "1");
 
-    let ctx = E2ECtx::new_single(500).await.unwrap();
+    let ctx = E2ECtx::new_multi_with_indexer(2, 500).await.unwrap();
     ctx.register_contract::<UuidContract>("hyle.hyle".into(), "uuid")
+        .await
+        .unwrap();
+
+    let hydentity: Hydentity = ctx
+        .indexer_client()
+        .fetch_current_state(&"hydentity".into())
         .await
         .unwrap();
 
     let mut executor = TxExecutorBuilder::new(States {
         uuid: UuidTld::default(),
-        hydentity: ctx
-            .get_contract("hydentity")
-            .await
-            .unwrap()
-            .state
-            .try_into()
-            .unwrap(),
+        hydentity,
     })
     .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
     .with_prover("uuid".into(), Risc0Prover::new(UUID_TLD_ELF))

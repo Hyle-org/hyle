@@ -65,6 +65,7 @@ impl Default for ConfMaker {
                 stakers
             },
         };
+        default.faucet_password = "password".into();
         info!("Default conf: {:?}", default);
         Self {
             i: 0,
