@@ -12,6 +12,7 @@ members = [
     "crates/client-sdk",
     "crates/contract-sdk",
     "crates/hyle-loadtest",
+    "crates/hyle-ctl",
     "crates/hyle-model",
     "crates/hyle-verifiers",
     ".",
@@ -20,6 +21,7 @@ default-members = [
     "crates/contracts",
     "crates/contracts/hydentity",
     "crates/hyle-loadtest",
+    "crates/hyle-ctl",
     "crates/hyle-model",
     ".",
 ]
@@ -133,7 +135,6 @@ utoipa = { version = "5.3.1", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "9.0.0", features = ["axum"] }
 utoipa-axum = { version = "0.2.0" }
 testcontainers-modules = { version = "0.11.6", features = ["postgres"] }
-termion = "4.0.4"
 
 [dev-dependencies]
 amm = { path = "./crates/contracts/amm", features = ["client"] }
@@ -180,10 +181,6 @@ incremental = true
 inherits = "release"
 debug = true         # Keep debug info for profiling
 strip = "none"
-
-# Optimize the following crates for development builds so tests are faster
-[profile.dev.package.risc0-binfmt]
-opt-level = 3
 
 [profile.dev.package.sha2]
 opt-level = 3

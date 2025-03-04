@@ -2583,7 +2583,6 @@ dependencies = [
  "strum_macros 0.27.1",
  "syn 2.0.99",
  "tempfile",
- "termion",
  "test-log",
  "testcontainers-modules",
  "tokio",
@@ -2618,6 +2617,20 @@ version = "0.12.0"
 dependencies = [
  "hyle-contract-sdk",
  "risc0-build",
+]
+
+[[package]]
+name = "hyle-ctl"
+version = "0.12.0"
+dependencies = [
+ "anyhow",
+ "borsh",
+ "clap",
+ "client-sdk",
+ "hyle-contract-sdk",
+ "hyle-model",
+ "termion",
+ "tokio",
 ]
 
 [[package]]

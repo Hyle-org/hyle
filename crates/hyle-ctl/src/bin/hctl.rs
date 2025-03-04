@@ -2,7 +2,6 @@ use anyhow::Result;
 use borsh::BorshDeserialize;
 use clap::{Parser, Subcommand};
 use client_sdk::rest_client::IndexerApiHttpClient;
-use hyle::utils::logger::{setup_tracing, TracingMode};
 use hyle_contract_sdk::{erc20::ERC20Action, identity_provider::IdentityAction};
 use hyle_model::{
     api::{APIBlob, APITransaction},
@@ -31,11 +30,9 @@ enum Commands {
     },
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     let args = Args::parse();
-
-    setup_tracing(TracingMode::Full, "hctl".into())?;
 
     let indexer = IndexerApiHttpClient::new(args.host)?;
 
