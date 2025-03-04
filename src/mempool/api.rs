@@ -123,7 +123,9 @@ pub async fn send_proof_transaction(
     State(state): State<RouterState>,
     Json(payload): Json<ProofTransaction>,
 ) -> Result<impl IntoResponse, AppError> {
-    info!("Got proof transaction {}", payload.hashed());
+    // Don't display hash here as it will not match
+    // VerifiedProofTransaction hash
+    info!("Got proof transaction");
     handle_send(state, TransactionData::Proof(payload)).await
 }
 

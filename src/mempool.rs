@@ -968,6 +968,7 @@ impl Mempool {
                 tokio::task::spawn_blocking(move || {
                     let tx =
                         Self::process_proof_tx(kc, tx).log_error("Error processing proof tx")?;
+                    info!("Got proof transaction {}", tx.hashed());
                     sender
                         .send(InternalMempoolEvent::OnProcessedNewTx(tx))
                         .log_warn("sending processed TX")

@@ -1,0 +1,21 @@
+[package]
+name = "hyle-ctl"
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "hctl"
+
+[dependencies]
+tokio = { version = "1.42", features = ["rt", "macros"] }
+hyle-model = { path = "../hyle-model", package = "hyle-model", features = ["full"] }
+hyle-contract-sdk = { path = "../contract-sdk" }
+client-sdk = { path = "../client-sdk", features = ["rest"] }
+
+anyhow = "1.0.96"
+borsh = "1.5.5"
+clap = { version = "4.5.31", features = ["derive"] }
+termion = "4.0.4"
