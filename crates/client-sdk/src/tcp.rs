@@ -7,7 +7,7 @@ use futures::{
     SinkExt, StreamExt,
 };
 use model::utils::get_current_timestamp;
-use sdk::{BlockHeight, MempoolStatusEvent, SignedBlock, Transaction};
+use sdk::Transaction;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::mpsc::{Receiver, Sender},
@@ -390,6 +390,7 @@ where
     }
 }
 
+#[macro_export]
 macro_rules! implem_tcp_codec {
     ($codec:ident, decode: $in:ty, encode: $out:ty) => {
         #[derive(Default, Debug)]
@@ -424,8 +425,10 @@ macro_rules! implem_tcp_codec {
         }
     };
 }
-pub(super) use implem_tcp_codec;
 
+pub use implem_tcp_codec;
+
+#[macro_export]
 macro_rules! tcp_client_server {
     ($vis:vis $name:ident, request: $req:ty, response: $res:ty) => {
         paste::paste! {
@@ -434,32 +437,32 @@ macro_rules! tcp_client_server {
             pub use super::$req;
             pub use super::$res;
             use anyhow::{Context, Result};
-            crate::tcp::implem_tcp_codec!{
+            $crate::tcp::implem_tcp_codec!{
                 ClientCodec,
                 decode: $res,
                 encode: $req
             }
-            crate::tcp::implem_tcp_codec!{
+            $crate::tcp::implem_tcp_codec!{
                 ServerCodec,
                 decode: $req,
                 encode: $res
             }
 
-            pub type Client = crate::tcp::TcpClient<ClientCodec, $req, $res>;
-            pub type Server = crate::tcp::TcpServer<ServerCodec, $req, $res>;
+            pub type Client = $crate::tcp::TcpClient<ClientCodec, $req, $res>;
+            pub type Server = $crate::tcp::TcpServer<ServerCodec, $req, $res>;
 
             pub fn create_server(addr: String) -> Server {
-                crate::tcp::TcpServer::<ServerCodec, $req, $res>::create(addr, stringify!($name))
+                $crate::tcp::TcpServer::<ServerCodec, $req, $res>::create(addr, stringify!($name))
             }
             pub async fn connect(id: String, addr: String) -> Result<Client> {
-                crate::tcp::TcpClient::<ClientCodec, $req, $res>::connect(id, addr).await
+                $crate::tcp::TcpClient::<ClientCodec, $req, $res>::connect(id, addr).await
             }
         }
         }
     };
 }
 
-pub(crate) use tcp_client_server;
+pub use tcp_client_server;
 
 // Client - servers
 //
@@ -476,23 +479,6 @@ tcp_client_server! {
     pub TcpServer,
     request: TcpServerMessage,
     response: TcpServerResponse
-}
-
-// Da Listener
-//
-#[derive(BorshDeserialize, BorshSerialize, Clone, Debug, PartialEq, Eq)]
-pub struct DataAvailabilityRequest(pub BlockHeight);
-
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-pub enum DataAvailabilityEvent {
-    SignedBlock(SignedBlock),
-    MempoolStatusEvent(MempoolStatusEvent),
-}
-
-tcp_client_server! {
-    pub DataAvailability,
-    request: DataAvailabilityRequest,
-    response: DataAvailabilityEvent
 }
 
 #[cfg(test)]

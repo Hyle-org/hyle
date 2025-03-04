@@ -7,7 +7,8 @@ mod blocks_memory;
 
 // Pick one of the two implementations
 use blocks_fjall::Blocks;
-use client_sdk::tcp::{codec_data_availability, DataAvailabilityEvent, TcpCommand, TcpEvent};
+use client_sdk::tcp::{TcpCommand, TcpEvent};
+use codec::{codec_data_availability, DataAvailabilityEvent};
 //use blocks_memory::Blocks;
 
 use crate::{
@@ -433,6 +434,7 @@ impl DataAvailability {
 pub mod tests {
     #![allow(clippy::indexing_slicing)]
 
+    use crate::data_availability::codec::{codec_data_availability, DataAvailabilityRequest};
     use crate::model::ValidatorPublicKey;
     use crate::{
         bus::BusClientSender,
@@ -444,12 +446,11 @@ pub mod tests {
         },
         utils::{conf::Conf, integration_test::find_available_port},
     };
-    use client_sdk::tcp::{
-        codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequest, TcpCommand,
-    };
+    use client_sdk::tcp::TcpCommand;
     use staking::state::Staking;
     use tokio::sync::mpsc::{channel, Sender};
 
+    use super::codec::DataAvailabilityEvent;
     use super::module_bus_client;
     use super::Blocks;
     use anyhow::Result;

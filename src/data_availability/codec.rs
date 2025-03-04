@@ -1,9 +1,30 @@
+use borsh::{BorshDeserialize, BorshSerialize};
+use client_sdk::tcp::tcp_client_server;
+use hyle_model::{BlockHeight, MempoolStatusEvent, SignedBlock};
+
+// Da Listener
+//
+#[derive(BorshDeserialize, BorshSerialize, Clone, Debug, PartialEq, Eq)]
+pub struct DataAvailabilityRequest(pub BlockHeight);
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub enum DataAvailabilityEvent {
+    SignedBlock(SignedBlock),
+    MempoolStatusEvent(MempoolStatusEvent),
+}
+
+tcp_client_server! {
+    pub DataAvailability,
+    request: DataAvailabilityRequest,
+    response: DataAvailabilityEvent
+}
+
 #[cfg(test)]
 mod test {
     use bytes::BytesMut;
-    use client_sdk::tcp::codec_data_availability;
     use tokio_util::codec::{Decoder, Encoder};
 
+    use crate::data_availability::codec::codec_data_availability;
     use crate::model::{AggregateSignature, ConsensusProposal};
     use crate::model::{BlockHeight, SignedBlock};
 
