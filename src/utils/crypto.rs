@@ -60,8 +60,20 @@ impl BlstCrypto {
     #[cfg(not(test))]
     pub fn new(validator_name: &str) -> Result<Self> {
         let sk = Self::load_from_env().or_else(|err| {
-            println!("Could not load secret from env: {}", err);
-            Self::load_from_keyring(validator_name)
+            if let Ok(use_keyring) = std::env::var("HYLE_USE_KEYRING") {
+                if use_keyring == "true" {
+                    return Self::load_from_keyring(validator_name);
+                }
+            }
+            println!("---------------------- 🚨 SECURITY 🚨  ------------------------------ ");
+            println!();
+            println!("WARN SAFETY: Could not load secret from env: '{}' and HYLE_USE_KEYRING != true, generating secret from validator name.", err);
+            println!("Note: this is fine during local development phase, but a critical issue in production");
+            println!();
+            println!("---------------------- 🚨 SECURITY 🚨  ------------------------------ ");
+            let ikm = Self::secret_from_name(validator_name);
+
+            SecretKey::key_gen(&ikm, &[]).map_err(|e| anyhow!("Could not generate key: {:?}", e))
         })?;
 
         let validator_pubkey = as_validator_pubkey(sk.sk_to_pk());
