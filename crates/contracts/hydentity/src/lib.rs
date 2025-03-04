@@ -1,3 +1,4 @@
+use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::{utils::parse_raw_contract_input, ContractInput};
 use serde::{Deserialize, Serialize};
@@ -47,15 +48,49 @@ impl Hydentity {
             serde_json::from_str(&info).map_err(|_| "Failed to parse accounf info")?;
         Ok(state.nonce)
     }
+
+    pub fn build_id(account: &str, private_input: &str) -> String {
+        let id = format!("{account}:{private_input}");
+
+        let mut hasher = Sha256::new();
+        hasher.update(id.as_bytes());
+        let hash_bytes = hasher.finalize();
+        let hash = hex::encode(hash_bytes);
+
+        format!("{account}:{hash}")
+    }
+
+    pub fn parse_id(id: &str) -> anyhow::Result<(String, String)> {
+        let mut split = id.split(':');
+        let name = split
+            .next()
+            .context("No account name found in registration")?
+            .to_string();
+        let hash = split
+            .next()
+            .context("No hash found in registration")?
+            .to_string();
+        Ok((name, hash))
+    }
+
+    pub fn as_bytes(&self) -> anyhow::Result<Vec<u8>> {
+        borsh::to_vec(self).map_err(|_| anyhow::anyhow!("Failed to serialize"))
+    }
 }
 
 impl IdentityVerification for Hydentity {
     fn register_identity(
         &mut self,
-        account: &str,
+        registration: &str,
         private_input: &str,
     ) -> Result<(), &'static str> {
-        let id = format!("{account}:{private_input}");
+        let mut split = registration.split(':');
+        let name = split
+            .next()
+            .ok_or("No account name found in registration")?;
+        let hash = split.next().ok_or("No hash found in registratio")?;
+
+        let id = format!("{name}:{private_input}");
         let mut hasher = Sha256::new();
         hasher.update(id.as_bytes());
         let hash_bytes = hasher.finalize();
@@ -63,10 +98,12 @@ impl IdentityVerification for Hydentity {
             hash: hex::encode(hash_bytes),
             nonce: 0,
         };
-
+        if !hash.eq(&account_info.hash) {
+            return Err("Invalid hash or password");
+        }
         if self
             .identities
-            .insert(account.to_string(), account_info)
+            .insert(name.to_string(), account_info)
             .is_some()
         {
             return Err("Identity already exists");
@@ -109,15 +146,13 @@ impl IdentityVerification for Hydentity {
 
 impl Digestable for Hydentity {
     fn as_digest(&self) -> sdk::StateDigest {
-        sdk::StateDigest(self.to_bytes())
-    }
-}
-
-impl TryFrom<sdk::StateDigest> for Hydentity {
-    type Error = anyhow::Error;
-
-    fn try_from(state: sdk::StateDigest) -> Result<Self, Self::Error> {
-        borsh::from_slice(&state.0).map_err(|_| anyhow::anyhow!("Could not decode hydentity state"))
+        let mut hasher = Sha256::new();
+        for (account, info) in &self.identities {
+            hasher.update(account.as_bytes());
+            hasher.update(info.hash.as_bytes());
+            hasher.update(info.nonce.to_be_bytes());
+        }
+        sdk::StateDigest(hasher.finalize().to_vec())
     }
 }
 
@@ -131,8 +166,9 @@ mod tests {
         let mut hydentity = Hydentity::default();
         let account = "test_account";
         let private_input = "test_input";
+        let id = &Hydentity::build_id("test_account", private_input);
 
-        assert!(hydentity.register_identity(account, private_input).is_ok());
+        assert!(hydentity.register_identity(id, private_input).is_ok());
 
         let id = format!("{account}:{private_input}");
         let mut hasher = Sha256::new();
@@ -148,11 +184,11 @@ mod tests {
     #[test]
     fn test_register_identity_that_already_exists() {
         let mut hydentity = Hydentity::default();
-        let account = "test_account";
         let private_input = "test_input";
+        let id = &Hydentity::build_id("test_account", private_input);
 
-        assert!(hydentity.register_identity(account, private_input).is_ok());
-        assert!(hydentity.register_identity(account, private_input).is_err());
+        assert!(hydentity.register_identity(id, private_input).is_ok());
+        assert!(hydentity.register_identity(id, private_input).is_err());
     }
 
     #[test]
@@ -160,8 +196,9 @@ mod tests {
         let mut hydentity = Hydentity::default();
         let account = "test_account";
         let private_input = "test_input";
+        let id = &Hydentity::build_id("test_account", private_input);
 
-        hydentity.register_identity(account, private_input).unwrap();
+        hydentity.register_identity(id, private_input).unwrap();
 
         assert!(hydentity
             .verify_identity(account, 1, private_input)
@@ -186,7 +223,8 @@ mod tests {
         let account = "test_account";
         let private_input = "test_input";
 
-        hydentity.register_identity(account, private_input).unwrap();
+        let id = &Hydentity::build_id("test_account", private_input);
+        hydentity.register_identity(id, private_input).unwrap();
 
         let id = format!("{account}:{private_input}");
         let mut hasher = Sha256::new();
@@ -203,35 +241,5 @@ mod tests {
             expected_info.unwrap()
         );
         assert!(hydentity.get_identity_info("nonexistent_account").is_err());
-    }
-
-    #[test]
-    fn test_as_digest() {
-        let mut hydentity = Hydentity::default();
-        hydentity
-            .register_identity("test_account", "test_input")
-            .unwrap();
-        let digest = hydentity.as_digest();
-
-        let encoded = borsh::to_vec(&hydentity).expect("Failed to encode Hydentity");
-        assert_eq!(digest.0, encoded);
-    }
-
-    #[test]
-    fn test_try_from_state_digest() {
-        let mut hydentity = Hydentity::default();
-        hydentity
-            .register_identity("test_account", "test_input")
-            .unwrap();
-
-        let digest = hydentity.as_digest();
-
-        let decoded_hydentity: Hydentity =
-            Hydentity::try_from(digest.clone()).expect("Failed to decode state digest");
-        assert_eq!(decoded_hydentity.identities, hydentity.identities);
-
-        let invalid_digest = sdk::StateDigest(vec![5, 5, 5]);
-        let result = Hydentity::try_from(invalid_digest);
-        assert!(result.is_err());
     }
 }

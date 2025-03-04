@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use client_sdk::contract_states;
+use client_sdk::rest_client::IndexerApiHttpClient;
 use client_sdk::rest_client::NodeApiHttpClient;
 use client_sdk::transaction_builder::ProvableBlobTx;
 use client_sdk::transaction_builder::TxExecutor;
@@ -39,14 +40,11 @@ contract_states!(
     }
 );
 
-async fn build_ctx(client: &NodeApiHttpClient) -> TxExecutor<States> {
+async fn build_ctx(client: &IndexerApiHttpClient) -> TxExecutor<States> {
     // Fetch the initial state from the node
     let initial_state: Hydentity = client
-        .get_contract(&"hydentity".into())
+        .fetch_current_state(&"hydentity".into())
         .await
-        .unwrap()
-        .state
-        .try_into()
         .unwrap();
 
     TxExecutorBuilder::new(States {
@@ -64,9 +62,10 @@ async fn main() {
 
     let cli = Cli::parse();
 
-    let client = client_sdk::rest_client::NodeApiHttpClient::new(cli.host).unwrap();
+    let node = NodeApiHttpClient::new(cli.host.clone()).unwrap();
+    let indexer = IndexerApiHttpClient::new(cli.host).unwrap();
 
-    let mut ctx = build_ctx(&client).await;
+    let mut ctx = build_ctx(&indexer).await;
 
     match cli.command {
         Commands::RegisterIdentity { identity, password } => {
@@ -86,10 +85,7 @@ async fn main() {
             let transaction = ctx.process(transaction).unwrap();
 
             // Send the blob transaction
-            let blob_tx_hash = client
-                .send_tx_blob(&transaction.to_blob_tx())
-                .await
-                .unwrap();
+            let blob_tx_hash = node.send_tx_blob(&transaction.to_blob_tx()).await.unwrap();
             println!("✅ Blob tx sent. Tx hash: {}", blob_tx_hash);
 
             // ----
@@ -97,7 +93,7 @@ async fn main() {
             // ----
             for proof in transaction.iter_prove() {
                 let tx = proof.await.unwrap();
-                client.send_tx_proof(&tx).await.unwrap();
+                node.send_tx_proof(&tx).await.unwrap();
                 println!(
                     "✅ Proof tx sent for {}. Tx hash: {}",
                     tx.contract_name,
@@ -132,10 +128,7 @@ async fn main() {
             let transaction = ctx.process(transaction).unwrap();
 
             // Send the blob transaction
-            let blob_tx_hash = client
-                .send_tx_blob(&transaction.to_blob_tx())
-                .await
-                .unwrap();
+            let blob_tx_hash = node.send_tx_blob(&transaction.to_blob_tx()).await.unwrap();
             println!("✅ Blob tx sent. Tx hash: {}", blob_tx_hash);
 
             // ----
@@ -143,7 +136,7 @@ async fn main() {
             // ----
             for proof in transaction.iter_prove() {
                 let tx = proof.await.unwrap();
-                client.send_tx_proof(&tx).await.unwrap();
+                node.send_tx_proof(&tx).await.unwrap();
                 println!(
                     "✅ Proof tx sent for {}. Tx hash: {}",
                     tx.contract_name,
