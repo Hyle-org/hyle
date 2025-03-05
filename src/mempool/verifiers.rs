@@ -45,7 +45,7 @@ pub fn verify_proof(
                 }
             })
         }
-        hyle_verifiers::versions::NOIR_0_58 => noir_proof_verifier(&proof.0, &program_id.0),
+        hyle_verifiers::versions::NOIR => noir_proof_verifier(&proof.0, &program_id.0),
         #[cfg(feature = "sp1")]
         hyle_verifiers::versions::SP1_4 => {
             hyle_verifiers::sp1_proof_verifier(&proof.0, &program_id.0)
