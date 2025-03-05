@@ -37,8 +37,8 @@ struct SettledTxOutput {
 // Similar to OnchainEffect but slightly more adapted to nodestate settlement
 enum SideEffect {
     Register(Contract),
-    // Similar to register but the contract already existed
-    Update(Contract),
+    // Pass a full Contract because it's simpler in the settlement logic
+    UpdateState(Contract),
     Delete(ContractName),
 }
 
@@ -46,8 +46,10 @@ impl SideEffect {
     fn apply(&mut self, other_effect: SideEffect) {
         tracing::trace!("Applying side effect: {:?} -> {:?}", self, other_effect);
         match (self, other_effect) {
-            (SideEffect::Register(reg), SideEffect::Update(contract)) => reg.state = contract.state,
-            (SideEffect::Delete(_), SideEffect::Update(_)) => {}
+            (SideEffect::Register(reg), SideEffect::UpdateState(contract)) => {
+                reg.state = contract.state
+            }
+            (SideEffect::Delete(_), SideEffect::UpdateState(_)) => {}
             (me, other) => *me = other,
         }
     }
@@ -550,7 +552,7 @@ impl NodeState {
             .get(contract_name)
             .and_then(|c| match c {
                 SideEffect::Register(c) => Some(c),
-                SideEffect::Update(c) => Some(c),
+                SideEffect::UpdateState(c) => Some(c),
                 _ => None,
             })
             .or(contracts.get(contract_name))
@@ -736,7 +738,7 @@ impl NodeState {
                 }
                 // clippy lint set here because setting it on expressions is experimental
                 #[allow(clippy::unwrap_used, reason = "we check existence before get_mut")]
-                SideEffect::Update(contract) => {
+                SideEffect::UpdateState(contract) => {
                     if !self.contracts.contains_key(&contract.name) {
                         // We presume this was because it's been deleted so everything is OK.
                         debug!(
@@ -872,7 +874,7 @@ impl NodeState {
         }
 
         // Apply the generic state updates
-        let update = SideEffect::Update(Contract {
+        let update = SideEffect::UpdateState(Contract {
             state: proof_metadata.1.next_state.clone(),
             ..contract.clone()
         });
