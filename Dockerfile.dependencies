@@ -2,6 +2,7 @@ FROM rust:alpine AS chef
 RUN apk add pkgconfig openssl-dev gcc musl-dev
 RUN apk add --no-cache openssl-libs-static
 RUN apk add curl bash
+RUN apk add dbus-dev
 RUN cargo install cargo-chef 
 WORKDIR /usr/src/hyle
 
