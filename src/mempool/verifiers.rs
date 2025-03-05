@@ -72,7 +72,7 @@ pub fn verify_recursive_proof(
     use risc0_recursion::{Risc0Journal, Risc0ProgramId};
 
     let outputs = match verifier.0.as_str() {
-        "risc0" => {
+        hyle_verifiers::versions::RISC0_1 => {
             let journal = risc0_proof_verifier(&proof.0, &program_id.0)?;
             let mut output = journal
                 .decode::<Vec<(Risc0ProgramId, Risc0Journal)>>()
@@ -177,9 +177,9 @@ pub fn verify_native_impl(
 
 pub fn validate_program_id(verifier: &Verifier, program_id: &ProgramId) -> Result<()> {
     match verifier.0.as_str() {
-        "risc0" => validate_risc0_program_id(program_id),
+        hyle_verifiers::versions::RISC0_1 => validate_risc0_program_id(program_id),
         #[cfg(feature = "sp1")]
-        "sp1" => hyle_verifiers::validate_sp1_program_id(program_id),
+        hyle_verifiers::versions::SP1_4 => hyle_verifiers::validate_sp1_program_id(program_id),
         _ => Ok(()),
     }
 }
