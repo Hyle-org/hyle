@@ -139,7 +139,7 @@ pub fn verify_native(
         success,
         tx_hash,
         tx_ctx: None,
-        registered_contracts: vec![],
+        onchain_effects: vec![],
         program_outputs: vec![],
     }
 }

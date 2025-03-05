@@ -116,7 +116,7 @@ pub fn as_hyle_output<State: Digestable + BorshDeserialize>(
     res: &mut crate::RunResult,
 ) -> HyleOutput {
     match res {
-        Ok((ref mut program_output, execution_context, ref mut registered_contracts)) => {
+        Ok((ref mut program_output, execution_context, ref mut onchain_effects)) => {
             if !execution_context.callees_blobs.is_empty() {
                 return fail(
                     contract_input,
@@ -137,7 +137,7 @@ pub fn as_hyle_output<State: Digestable + BorshDeserialize>(
                 success: true,
                 tx_hash: contract_input.tx_hash,
                 tx_ctx: contract_input.tx_ctx,
-                registered_contracts: core::mem::take(registered_contracts),
+                onchain_effects: core::mem::take(onchain_effects),
                 program_outputs: core::mem::take(program_output).into_bytes(),
             }
         }
