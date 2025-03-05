@@ -1203,7 +1203,6 @@ pub mod test {
         pub out_receiver: Receiver<OutboundMessage>,
         pub mempool_event_receiver: Receiver<MempoolBlockEvent>,
         pub mempool_status_event_receiver: Receiver<MempoolStatusEvent>,
-        pub mempool_internal_event_receiver: Receiver<InternalMempoolEvent>,
         pub mempool: Mempool,
     }
 
@@ -1235,8 +1234,6 @@ pub mod test {
             let mempool_event_receiver = get_receiver::<MempoolBlockEvent>(&shared_bus).await;
             let mempool_status_event_receiver =
                 get_receiver::<MempoolStatusEvent>(&shared_bus).await;
-            let mempool_internal_event_receiver =
-                get_receiver::<InternalMempoolEvent>(&shared_bus).await;
 
             let mempool = Self::build_mempool(&shared_bus, crypto).await;
 
@@ -1245,7 +1242,6 @@ pub mod test {
                 out_receiver,
                 mempool_event_receiver,
                 mempool_status_event_receiver,
-                mempool_internal_event_receiver,
                 mempool,
             }
         }
@@ -1308,9 +1304,12 @@ pub mod test {
 
         pub async fn handle_processed_data_proposals(&mut self) {
             let event = self
-                .mempool_internal_event_receiver
-                .recv()
+                .mempool
+                .blocker
+                .join_next()
                 .await
+                .expect("No event received")
+                .expect("No event received")
                 .expect("No event received");
             self.mempool
                 .handle_internal_event(event)

@@ -214,7 +214,7 @@ use crate::consensus::test::ConsensusTestCtx;
 use crate::consensus::ConsensusEvent;
 use crate::handle_messages;
 use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
-use crate::mempool::{InternalMempoolEvent, MempoolNetMessage, QueryNewCut};
+use crate::mempool::{MempoolNetMessage, QueryNewCut};
 use crate::model::*;
 use crate::node_state::module::NodeStateEvent;
 use crate::p2p::network::OutboundMessage;
@@ -243,8 +243,6 @@ impl AutobahnTestCtx {
         let mempool_out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
         let mempool_event_receiver = get_receiver::<MempoolBlockEvent>(&shared_bus).await;
         let mempool_status_event_receiver = get_receiver::<MempoolStatusEvent>(&shared_bus).await;
-        let mempool_internal_event_receiver =
-            get_receiver::<InternalMempoolEvent>(&shared_bus).await;
 
         let consensus = ConsensusTestCtx::build_consensus(&shared_bus, crypto.clone()).await;
         let mempool = MempoolTestCtx::build_mempool(&shared_bus, crypto).await;
@@ -263,7 +261,6 @@ impl AutobahnTestCtx {
                 out_receiver: mempool_out_receiver,
                 mempool_event_receiver,
                 mempool_status_event_receiver,
-                mempool_internal_event_receiver,
                 mempool,
             },
         }
