@@ -98,6 +98,16 @@ impl Default for NodeState {
 
 impl NodeState {
     pub fn handle_signed_block(&mut self, signed_block: &SignedBlock) -> Block {
+        let next_block = self.current_height + 1 == signed_block.height();
+        let initial_block = self.current_height.0 == 0 && signed_block.height().0 == 0;
+        if !next_block && !initial_block {
+            error!(
+                "Handling signed block of height {} while current height is {}",
+                signed_block.height(),
+                self.current_height
+            );
+        }
+
         self.current_height = signed_block.height();
 
         let mut block_under_construction = Block {

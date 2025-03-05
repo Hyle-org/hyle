@@ -14,7 +14,6 @@ use crate::{
         logger::LogMe,
         modules::{module_bus_client, Module},
         serialize::arc_rwlock_borsh,
-        static_type_map::Pick,
     },
 };
 
@@ -34,6 +33,7 @@ use std::{
     sync::Arc,
 };
 use storage::{DataProposalVerdict, LaneEntry, Storage};
+use tokio::task::JoinSet;
 // Pick one of the two implementations
 // use storage_memory::LanesStorage;
 use storage_fjall::LanesStorage;
@@ -82,8 +82,6 @@ struct MempoolBusClient {
     sender(OutboundMessage),
     sender(MempoolBlockEvent),
     sender(MempoolStatusEvent),
-    sender(InternalMempoolEvent),
-    receiver(InternalMempoolEvent),
     receiver(SignedByValidator<MempoolNetMessage>),
     receiver(RestApiMessage),
     receiver(TcpServerMessage),
@@ -112,6 +110,7 @@ pub struct MempoolStore {
 pub struct Mempool {
     bus: MempoolBusClient,
     file: Option<PathBuf>,
+    running_tasks: JoinSet<Result<InternalMempoolEvent>>,
     conf: SharedConf,
     crypto: SharedBlstCrypto,
     metrics: MempoolMetrics,
@@ -217,6 +216,7 @@ impl Module for Mempool {
             bus,
             file: Some(ctx.common.config.data_directory.clone()),
             conf: ctx.common.config.clone(),
+            running_tasks: JoinSet::new(),
             metrics,
             crypto: Arc::clone(&ctx.node.crypto),
             lanes: LanesStorage::new(
@@ -244,6 +244,9 @@ impl Mempool {
 
         module_handle_messages! {
             on_bus self.bus,
+            delay_shutdown_until {
+                self.running_tasks.is_empty()
+            },
             listen<SignedByValidator<MempoolNetMessage>> cmd => {
                 let _ = self.handle_net_message(cmd)
                     .log_error("Handling MempoolNetMessage in Mempool");
@@ -253,10 +256,6 @@ impl Mempool {
             }
             listen<TcpServerMessage> cmd => {
                 let _ = self.handle_tcp_server_message(cmd).log_error("Handling TCP Server message in Mempool");
-            }
-            listen<InternalMempoolEvent> event => {
-                let _ = self.handle_internal_event(event)
-                    .log_error("Handling InternalMempoolEvent in Mempool");
             }
             listen<ConsensusEvent> cmd => {
                 let _ = self.handle_consensus_event(cmd)
@@ -270,6 +269,12 @@ impl Mempool {
             }
             command_response<QueryNewCut, Cut> staking => {
                 self.handle_querynewcut(staking)
+            }
+            Some(event) = self.running_tasks.join_next() => {
+                if let Ok(Ok(event)) = event.log_error("Processing InternalMempoolEvent from Blocker Joinset") {
+                    let _ = self.handle_internal_event(event)
+                        .log_error("Handling InternalMempoolEvent in Mempool");
+                }
             }
             _ = interval.tick() => {
                 let _ = self.handle_data_proposal_management()
@@ -356,7 +361,10 @@ impl Mempool {
     }
 
     fn handle_data_proposal_management(&mut self) -> Result<()> {
-        trace!("🌝 Handling DataProposal management");
+        debug!(
+            "🌝 Handling DataProposal management with {} txs",
+            self.waiting_dissemination_txs.len()
+        );
         // Create new DataProposal with pending txs
         let crypto = self.crypto.clone();
         let new_txs = std::mem::take(&mut self.waiting_dissemination_txs);
@@ -863,12 +871,10 @@ impl Mempool {
             DataProposalVerdict::Process => {
                 trace!("Further processing for DataProposal");
                 let kc = self.known_contracts.clone();
-                let sender: &tokio::sync::broadcast::Sender<InternalMempoolEvent> = self.bus.get();
-                let sender = sender.clone();
                 let validator = validator.clone();
-                tokio::task::spawn_blocking(move || {
+                self.running_tasks.spawn_blocking(move || {
                     let decision = LanesStorage::process_data_proposal(&mut data_proposal, kc);
-                    sender.send(InternalMempoolEvent::OnProcessedDataProposal((
+                    Ok(InternalMempoolEvent::OnProcessedDataProposal((
                         validator,
                         decision,
                         data_proposal,
@@ -929,6 +935,9 @@ impl Mempool {
     fn on_new_tx(&mut self, tx: Transaction) -> Result<()> {
         // TODO: Verify fees ?
 
+        let tx_type: &'static str = (&tx.transaction_data).into();
+        trace!("Tx {} received in mempool", tx_type);
+
         let tx_hash = tx.hashed();
 
         match tx.transaction_data {
@@ -945,15 +954,12 @@ impl Mempool {
                     proof_tx.contract_name
                 );
                 let kc = self.known_contracts.clone();
-                let sender: &tokio::sync::broadcast::Sender<InternalMempoolEvent> = self.bus.get();
-                let sender = sender.clone();
-                tokio::task::spawn_blocking(move || {
+                self.running_tasks.spawn_blocking(move || {
                     let tx =
-                        Self::process_proof_tx(kc, tx).log_error("Error processing proof tx")?;
-                    sender
-                        .send(InternalMempoolEvent::OnProcessedNewTx(tx))
-                        .log_warn("sending processed TX")
+                        Self::process_proof_tx(kc, tx).context("Processing proof tx in blocker")?;
+                    Ok(InternalMempoolEvent::OnProcessedNewTx(tx))
                 });
+
                 return Ok(());
             }
             TransactionData::VerifiedProof(ref proof_tx) => {
@@ -1197,7 +1203,6 @@ pub mod test {
         pub out_receiver: Receiver<OutboundMessage>,
         pub mempool_event_receiver: Receiver<MempoolBlockEvent>,
         pub mempool_status_event_receiver: Receiver<MempoolStatusEvent>,
-        pub mempool_internal_event_receiver: Receiver<InternalMempoolEvent>,
         pub mempool: Mempool,
     }
 
@@ -1213,6 +1218,7 @@ pub mod test {
                 bus,
                 file: None,
                 conf: SharedConf::default(),
+                running_tasks: JoinSet::new(),
                 crypto: Arc::new(crypto),
                 metrics: MempoolMetrics::global("id".to_string()),
                 lanes,
@@ -1228,8 +1234,6 @@ pub mod test {
             let mempool_event_receiver = get_receiver::<MempoolBlockEvent>(&shared_bus).await;
             let mempool_status_event_receiver =
                 get_receiver::<MempoolStatusEvent>(&shared_bus).await;
-            let mempool_internal_event_receiver =
-                get_receiver::<InternalMempoolEvent>(&shared_bus).await;
 
             let mempool = Self::build_mempool(&shared_bus, crypto).await;
 
@@ -1238,7 +1242,6 @@ pub mod test {
                 out_receiver,
                 mempool_event_receiver,
                 mempool_status_event_receiver,
-                mempool_internal_event_receiver,
                 mempool,
             }
         }
@@ -1301,9 +1304,12 @@ pub mod test {
 
         pub async fn handle_processed_data_proposals(&mut self) {
             let event = self
-                .mempool_internal_event_receiver
-                .recv()
+                .mempool
+                .running_tasks
+                .join_next()
                 .await
+                .expect("No event received")
+                .expect("No event received")
                 .expect("No event received");
             self.mempool
                 .handle_internal_event(event)

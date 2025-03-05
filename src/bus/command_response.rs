@@ -132,29 +132,6 @@ macro_rules! handle_messages {
             }
         }
         }
-        // When the loop breaks, there may be remaining messages to consume in channels
-        // That is the purpose of this try_recv loop, empty the topic
-        while let Ok(_raw_query) = $index.try_recv() {
-            receive_bus_metrics::<Query<$command, $response>,_>(&mut $bus);
-            if let Ok(mut _value) = _raw_query.take() {
-                let $res = &mut _value.data;
-                let res: Result<$response> = $handler;
-                match res {
-                    Ok(res) => {
-                        if let Err(e) = _value.answer(res) {
-                            tracing::error!("Error while answering query: {}", e);
-                        }
-                    }
-                    Err(e) => {
-                        if let Err(e) = _value.bail(e) {
-                            tracing::error!("Error while answering query: {}", e);
-                        }
-                    }
-                }
-            } else {
-                tracing::error!("Query already answered");
-            }
-        };
     };
 
     (bus($bus:expr) index($index:ident) listen<$message:ty> $res:pat => $handler:block $($rest:tt)*) => {
@@ -168,10 +145,8 @@ macro_rules! handle_messages {
             }
         }
         }
-        while let Ok($res) = $index.try_recv() {
-            receive_bus_metrics::<$message, _>(&mut $bus);
-            $handler;
-        };
+
+        tracing::trace!("Remaining messages in topic {}: {}", stringify!($message), $index.len());
     };
 
     // Fallback to else case
