@@ -14,7 +14,6 @@ use crate::{
         logger::LogMe,
         modules::{module_bus_client, Module},
         serialize::arc_rwlock_borsh,
-        static_type_map::Pick,
     },
 };
 
@@ -83,7 +82,6 @@ struct MempoolBusClient {
     sender(OutboundMessage),
     sender(MempoolBlockEvent),
     sender(MempoolStatusEvent),
-    sender(InternalMempoolEvent),
     receiver(SignedByValidator<MempoolNetMessage>),
     receiver(RestApiMessage),
     receiver(TcpServerMessage),
@@ -91,7 +89,6 @@ struct MempoolBusClient {
     receiver(GenesisEvent),
     receiver(NodeStateEvent),
     receiver(Query<QueryNewCut, Cut>),
-    receiver(InternalMempoolEvent),
 }
 }
 
@@ -113,7 +110,7 @@ pub struct MempoolStore {
 pub struct Mempool {
     bus: MempoolBusClient,
     file: Option<PathBuf>,
-    blocker: JoinSet<Result<()>>,
+    blocker: JoinSet<Result<InternalMempoolEvent>>,
     conf: SharedConf,
     crypto: SharedBlstCrypto,
     metrics: MempoolMetrics,
@@ -260,10 +257,6 @@ impl Mempool {
             listen<TcpServerMessage> cmd => {
                 let _ = self.handle_tcp_server_message(cmd).log_error("Handling TCP Server message in Mempool");
             }
-            listen<InternalMempoolEvent> event => {
-                let _ = self.handle_internal_event(event)
-                    .log_error("Handling InternalMempoolEvent in Mempool");
-            }
             listen<ConsensusEvent> cmd => {
                 let _ = self.handle_consensus_event(cmd)
                     .log_error("Handling ConsensusEvent in Mempool");
@@ -276,6 +269,12 @@ impl Mempool {
             }
             command_response<QueryNewCut, Cut> staking => {
                 self.handle_querynewcut(staking)
+            }
+            Some(event) = self.blocker.join_next() => {
+                if let Ok(Ok(event)) = event.log_error("Processing InternalMempoolEvent from Blocker Joinset") {
+                    let _ = self.handle_internal_event(event)
+                        .log_error("Handling InternalMempoolEvent in Mempool");
+                }
             }
             _ = interval.tick() => {
                 let _ = self.handle_data_proposal_management()
@@ -872,12 +871,10 @@ impl Mempool {
             DataProposalVerdict::Process => {
                 trace!("Further processing for DataProposal");
                 let kc = self.known_contracts.clone();
-                let sender: &tokio::sync::broadcast::Sender<InternalMempoolEvent> = self.bus.get();
-                let sender = sender.clone();
                 let validator = validator.clone();
-                tokio::task::spawn_blocking(move || {
+                self.blocker.spawn_blocking(move || {
                     let decision = LanesStorage::process_data_proposal(&mut data_proposal, kc);
-                    sender.send(InternalMempoolEvent::OnProcessedDataProposal((
+                    Ok(InternalMempoolEvent::OnProcessedDataProposal((
                         validator,
                         decision,
                         data_proposal,
@@ -957,15 +954,10 @@ impl Mempool {
                     proof_tx.contract_name
                 );
                 let kc = self.known_contracts.clone();
-                let sender: &tokio::sync::broadcast::Sender<InternalMempoolEvent> = self.bus.get();
-                let sender = sender.clone();
                 self.blocker.spawn_blocking(move || {
-                    let tx = Self::process_proof_tx(kc, tx)
-                        .log_error("Processing proof tx in blocker")?;
-                    sender
-                        .send(InternalMempoolEvent::OnProcessedNewTx(tx))
-                        .log_warn("sending processed TX")?;
-                    Ok(())
+                    let tx =
+                        Self::process_proof_tx(kc, tx).context("Processing proof tx in blocker")?;
+                    Ok(InternalMempoolEvent::OnProcessedNewTx(tx))
                 });
 
                 return Ok(());

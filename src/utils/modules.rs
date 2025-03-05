@@ -148,7 +148,7 @@ macro_rules! module_handle_messages {
                 $($rest)*
                 Ok(_) = $crate::utils::modules::signal::async_receive_shutdown::<Self>(&mut should_shutdown, &mut shutdown_receiver) => {
                     let res = $shutdow_when;
-                    if res && should_shutdown {
+                    if res {
                         break;
                     }
                 }
@@ -164,7 +164,6 @@ macro_rules! module_handle_messages {
                 on_bus $bus,
                 $($rest)*
                 Ok(_) = $crate::utils::modules::signal::async_receive_shutdown::<Self>(&mut should_shutdown, &mut shutdown_receiver) => {
-                    tracing::debug!("Break signal received for module {}", std::any::type_name::<Self>());
                     break;
                 }
             }
