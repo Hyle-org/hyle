@@ -110,7 +110,7 @@ pub struct MempoolStore {
 pub struct Mempool {
     bus: MempoolBusClient,
     file: Option<PathBuf>,
-    blocker: JoinSet<Result<InternalMempoolEvent>>,
+    running_tasks: JoinSet<Result<InternalMempoolEvent>>,
     conf: SharedConf,
     crypto: SharedBlstCrypto,
     metrics: MempoolMetrics,
@@ -216,7 +216,7 @@ impl Module for Mempool {
             bus,
             file: Some(ctx.common.config.data_directory.clone()),
             conf: ctx.common.config.clone(),
-            blocker: JoinSet::new(),
+            running_tasks: JoinSet::new(),
             metrics,
             crypto: Arc::clone(&ctx.node.crypto),
             lanes: LanesStorage::new(
@@ -245,7 +245,7 @@ impl Mempool {
         module_handle_messages! {
             on_bus self.bus,
             shutdown_when {
-                self.blocker.is_empty()
+                self.running_tasks.is_empty()
             },
             listen<SignedByValidator<MempoolNetMessage>> cmd => {
                 let _ = self.handle_net_message(cmd)
@@ -270,7 +270,7 @@ impl Mempool {
             command_response<QueryNewCut, Cut> staking => {
                 self.handle_querynewcut(staking)
             }
-            Some(event) = self.blocker.join_next() => {
+            Some(event) = self.running_tasks.join_next() => {
                 if let Ok(Ok(event)) = event.log_error("Processing InternalMempoolEvent from Blocker Joinset") {
                     let _ = self.handle_internal_event(event)
                         .log_error("Handling InternalMempoolEvent in Mempool");
@@ -872,7 +872,7 @@ impl Mempool {
                 trace!("Further processing for DataProposal");
                 let kc = self.known_contracts.clone();
                 let validator = validator.clone();
-                self.blocker.spawn_blocking(move || {
+                self.running_tasks.spawn_blocking(move || {
                     let decision = LanesStorage::process_data_proposal(&mut data_proposal, kc);
                     Ok(InternalMempoolEvent::OnProcessedDataProposal((
                         validator,
@@ -954,7 +954,7 @@ impl Mempool {
                     proof_tx.contract_name
                 );
                 let kc = self.known_contracts.clone();
-                self.blocker.spawn_blocking(move || {
+                self.running_tasks.spawn_blocking(move || {
                     let tx =
                         Self::process_proof_tx(kc, tx).context("Processing proof tx in blocker")?;
                     Ok(InternalMempoolEvent::OnProcessedNewTx(tx))
@@ -1218,7 +1218,7 @@ pub mod test {
                 bus,
                 file: None,
                 conf: SharedConf::default(),
-                blocker: JoinSet::new(),
+                running_tasks: JoinSet::new(),
                 crypto: Arc::new(crypto),
                 metrics: MempoolMetrics::global("id".to_string()),
                 lanes,
@@ -1305,7 +1305,7 @@ pub mod test {
         pub async fn handle_processed_data_proposals(&mut self) {
             let event = self
                 .mempool
-                .blocker
+                .running_tasks
                 .join_next()
                 .await
                 .expect("No event received")
