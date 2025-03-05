@@ -247,16 +247,8 @@ impl Mempool {
 
         module_handle_messages! {
             on_bus self.bus,
-            on_shutdown {
-                // Flush RestApi topic to fill join_set with last tasks
-                let recv_rest_api: *mut tokio::sync::broadcast::Receiver<RestApiMessage> = unsafe { self.bus.splitting_get_mut() };
-                while let Ok(cmd) = unsafe { (*recv_rest_api).try_recv() } {
-                    let _ = self.handle_api_message(cmd).log_error("Handling API Message in Mempool");
-                }
-                // Waiting all proof txs being processed
-                let mut join_set: JoinSet<Result<()>> = JoinSet::new();
-                std::mem::swap(&mut self.blocker, &mut join_set);
-                join_set.join_all().await;
+            shutdown_when {
+                self.blocker.is_empty()
             },
             listen<SignedByValidator<MempoolNetMessage>> cmd => {
                 let _ = self.handle_net_message(cmd)

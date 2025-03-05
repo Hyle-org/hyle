@@ -116,11 +116,17 @@ pub mod signal {
         >,
     ) -> anyhow::Result<()> {
         if *should_shutdown {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
             return Ok(());
         }
         while let Ok(shutdown_event) = shutdown_receiver.recv().await {
             if shutdown_event.module == std::any::type_name::<T>() {
+                tracing::debug!(
+                    "Break signal received for module {}",
+                    std::any::type_name::<T>()
+                );
                 *should_shutdown = true;
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                 return Ok(());
             }
         }
@@ -133,7 +139,7 @@ pub mod signal {
 
 #[macro_export]
 macro_rules! module_handle_messages {
-    (on_bus $bus:expr, on_shutdown $on_shutdown:block, $($rest:tt)*) => {
+    (on_bus $bus:expr, shutdown_when $shutdow_when:block, $($rest:tt)*) => {
         {
             let mut shutdown_receiver = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$crate::utils::modules::signal::ShutdownModule>>::splitting_get_mut(&mut $bus) };
             let mut should_shutdown = false;
@@ -141,9 +147,10 @@ macro_rules! module_handle_messages {
                 on_bus $bus,
                 $($rest)*
                 Ok(_) = $crate::utils::modules::signal::async_receive_shutdown::<Self>(&mut should_shutdown, &mut shutdown_receiver) => {
-                    tracing::debug!("Break signal received for module {}", std::any::type_name::<Self>());
-                    $on_shutdown;
-                    break;
+                    let res = $shutdow_when;
+                    if res && should_shutdown {
+                        break;
+                    }
                 }
             }
             should_shutdown
