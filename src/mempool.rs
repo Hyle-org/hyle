@@ -244,7 +244,7 @@ impl Mempool {
 
         module_handle_messages! {
             on_bus self.bus,
-            shutdown_when {
+            delay_shutdown_until {
                 self.running_tasks.is_empty()
             },
             listen<SignedByValidator<MempoolNetMessage>> cmd => {

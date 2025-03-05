@@ -139,7 +139,7 @@ pub mod signal {
 
 #[macro_export]
 macro_rules! module_handle_messages {
-    (on_bus $bus:expr, shutdown_when $shutdow_when:block, $($rest:tt)*) => {
+    (on_bus $bus:expr, delay_shutdown_until  $lay_shutdow_until:block, $($rest:tt)*) => {
         {
             let mut shutdown_receiver = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$crate::utils::modules::signal::ShutdownModule>>::splitting_get_mut(&mut $bus) };
             let mut should_shutdown = false;
@@ -147,7 +147,7 @@ macro_rules! module_handle_messages {
                 on_bus $bus,
                 $($rest)*
                 Ok(_) = $crate::utils::modules::signal::async_receive_shutdown::<Self>(&mut should_shutdown, &mut shutdown_receiver) => {
-                    let res = $shutdow_when;
+                    let res = $lay_shutdow_until;
                     if res {
                         break;
                     }
