@@ -16,6 +16,12 @@ pub mod risc0 {
     pub use risc0_zkvm::serde::from_slice;
 }
 
+pub mod versions {
+    pub const RISC0_1: &str = "risc0-1";
+    pub const NOIR: &str = "noir";
+    pub const SP1_4: &str = "sp1-4";
+}
+
 pub fn risc0_proof_verifier(
     encoded_receipt: &[u8],
     image_id: &[u8],

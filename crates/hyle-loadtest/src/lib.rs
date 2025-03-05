@@ -4,13 +4,14 @@ use client_sdk::helpers::test::TestProver;
 use client_sdk::tcp::{codec_tcp_server, TcpServerMessage};
 use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutorBuilder};
 use hydentity::Hydentity;
+use hyle_contract_sdk::erc20::ERC20;
 use hyle_contract_sdk::Digestable;
 use hyle_contract_sdk::Identity;
 use hyle_contract_sdk::{guest, ContractInput, ContractName, HyleOutput};
 use hyle_contract_sdk::{Blob, BlobData, ContractAction, RegisterContractAction};
 use hyle_contract_sdk::{BlobTransaction, Transaction};
 use hyllar::client::transfer;
-use hyllar::Hyllar;
+use hyllar::{Hyllar, FAUCET_ID};
 use tokio::task::JoinSet;
 use tracing::info;
 
@@ -22,10 +23,21 @@ contract_states!(
     }
 );
 
-/// Create a new contract "hyllar_test" that already contains entries for each users
-pub async fn setup(url: String, verifier: String) -> Result<()> {
-    let hyllar = Hyllar::default();
+pub async fn setup_hyllar(users: u32) -> Result<Hyllar> {
+    let mut hyllar = Hyllar::default();
 
+    // Create an entry for each users
+    for n in 0..users {
+        let ident = &format!("{n}.hyllar_test");
+        hyllar
+            .transfer(FAUCET_ID, ident, 0)
+            .map_err(|e| anyhow::anyhow!(e))?;
+    }
+    Ok(hyllar)
+}
+
+/// Create a new contract "hyllar_test" that already contains entries for each users
+pub async fn setup(hyllar: Hyllar, url: String, verifier: String) -> Result<()> {
     let tx = BlobTransaction::new(
         Identity::new("hyle.hyle"),
         vec![RegisterContractAction {

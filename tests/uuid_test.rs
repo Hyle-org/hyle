@@ -27,7 +27,7 @@ mod fixtures;
 struct UuidContract {}
 impl E2EContract for UuidContract {
     fn verifier() -> Verifier {
-        Verifier("risc0".into())
+        Verifier(hyle_verifiers::versions::RISC0_1.to_string())
     }
     fn program_id() -> ProgramId {
         ProgramId(UUID_TLD_ID.to_vec())
@@ -102,7 +102,7 @@ async fn test_uuid_registration() {
 
     let outputs = verify_proof(
         &uuid_proof.proof,
-        &Verifier("risc0".into()),
+        &Verifier(hyle_verifiers::versions::RISC0_1.to_string()),
         &ProgramId(UUID_TLD_ID.to_vec()),
     )
     .expect("Must validate proof");
