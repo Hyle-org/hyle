@@ -26,7 +26,7 @@ pub fn verify_proof(
             tracing::info!("Woke up from sleep");
             Ok(serde_json::from_slice(&proof.0)?)
         }
-        "risc0" => {
+        hyle_verifiers::versions::RISC0_1 => {
             let journal = risc0_proof_verifier(&proof.0, &program_id.0)?;
             // First try to decode it as a single HyleOutput
             Ok(match journal.decode::<HyleOutput>() {
@@ -45,9 +45,11 @@ pub fn verify_proof(
                 }
             })
         }
-        "noir" => noir_proof_verifier(&proof.0, &program_id.0),
+        hyle_verifiers::versions::NOIR_0_58 => noir_proof_verifier(&proof.0, &program_id.0),
         #[cfg(feature = "sp1")]
-        "sp1" => hyle_verifiers::sp1_proof_verifier(&proof.0, &program_id.0),
+        hyle_verifiers::versions::SP1_4 => {
+            hyle_verifiers::sp1_proof_verifier(&proof.0, &program_id.0)
+        }
         _ => Err(anyhow::anyhow!("{} verifier not implemented yet", verifier)),
     }?;
     hyle_outputs.iter().for_each(|hyle_output| {
