@@ -7,10 +7,10 @@
 //! The function `new` is used to initialize a `BlstCrypto` instance. The behavior of this function depends on the environment:
 //!
 //! ```rust
-//! use crate::utils::crypto::BlstCrypto;
+//! use hyle::utils::crypto::BlstCrypto;
 //!
 //! let validator_name = String::from("validator_name");
-//! let crypto = BlstCrypto::new(validator_name).expect("Failed to initialize BlstCrypto");
+//! let crypto = BlstCrypto::new(&validator_name).expect("Failed to initialize BlstCrypto");
 //! ```
 //!
 //! ### Non-Test Environment
