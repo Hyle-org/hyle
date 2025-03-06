@@ -1,4 +1,4 @@
-/// from https://users.rust-lang.org/t/how-to-serialize-deserialize-an-async-std-rwlock-t-where-t-serialize-deserialize/37407
+/// from <https://users.rust-lang.org/t/how-to-serialize-deserialize-an-async-std-rwlock-t-where-t-serialize-deserialize/37407>
 pub mod arc_rwlock_serde {
     use serde::de::Deserializer;
     use serde::ser::Serializer;

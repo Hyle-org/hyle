@@ -37,6 +37,10 @@ pub trait DataSized {
     fn estimate_size(&self) -> usize;
 }
 
+/// This trait is used by the SDK to build the on-chain state commitment of the contract
+/// It can compute a state hash, or a merkle root of the state, or any other commitment.
+/// The [StateDigest] will be stored on chain, and will be used as initial_state for
+/// next contract execution.
 pub trait Digestable {
     fn as_digest(&self) -> StateDigest;
 }
@@ -52,6 +56,7 @@ pub struct ContractInput {
     pub private_input: Vec<u8>,
 }
 
+/// State commitment of the contract.
 #[derive(
     Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize,
 )]
@@ -139,26 +144,99 @@ impl std::fmt::Debug for BlobData {
     }
 }
 
+/**
+This struct allows to define cross-contract calls (aka contract composition).
+A contract `A` can "call" an other contract `B` by being it's "caller":
+
+Blob for contract `A` has to be a `StructuredBlobData` with callees vec including the blob index of
+contract `B`.
+
+Blob for contract `B` has to be a `StructuredBlobData` with caller = the blob index of contract
+`A`.
+
+## When to use cross-contract calls ?
+
+When a contract needs to do an operation on an other one. Like transfering funds from
+contract's wallet to the user doing the transaction.
+
+### Example: Bob Swap 2 USDC to 2 USDT
+
+A swap contract can use transactions with 4 blobs:
+
+```text
+┌─ Blob 0
+│  Identity verification for user Bob
+└─────
+┌─ Blob 1 - Contract = "amm"
+│  Swap action
+│  callees = vec![2]
+└─────
+┌─ Blob 2 - Contract = "usdt"
+│  Transfer action of 2 USDT to "Bob"
+│  caller = 1
+└─────
+┌─ Blob 3 - Contract = "usdc"
+│  Transfer action of 2 USDC to "amm"
+└─────
+```
+
+Blob 2 will do various checks on the swap to ensure its validity (correct transfer amounts...)
+
+As Blob 2 has a "caller", the identity used by the contract will be "amm", thus the
+transfer of USDT will be done FROM "amm" TO Bob
+
+And as Blob 3 has no "caller", the identity used by the contract will be the same as the
+transaction identity, i.e: Bob.
+
+
+An alternative way that is more evm-like with an token approve would look like:
+```text
+┌─ Blob 0
+│  Identity verification for user Bob
+└─────
+┌─ Blob 1 - Contract = "usdc"
+│  Approve action of 2 USDC for "amm"
+└─────
+┌─ Blob 2 - Contract = "amm"
+│  Swap action
+│  callees = vec![3, 4]
+└─────
+┌─ Blob 3 - Contract = "usdt"
+│  Transfer action of 2 USDT to "Bob"
+│  caller = 2
+└─────
+┌─ Blob 4 - Contract = "usdc"
+│  TransferFrom action from "Bob" of 2 USDC to "amm"
+│  caller = 2
+└─────
+```
+
+As Blob 4 now has a "caller", the identity used by the contract will be "amm" and not "Bob".
+Note that here we are using a TransferFrom in blob 4, contract "amm" got the approval from Bob
+to initate a transfer on its behalf with blob 1.
+
+You can find an example of this implementation in our [amm contract](https://github.com/Hyle-org/hyle/tree/main/crates/contracts/amm/src/lib.rs)
+*/
 #[derive(Debug, BorshSerialize)]
-pub struct StructuredBlobData<Parameters> {
+pub struct StructuredBlobData<Action> {
     pub caller: Option<BlobIndex>,
     pub callees: Option<Vec<BlobIndex>>,
-    pub parameters: Parameters,
+    pub parameters: Action,
 }
 
 /// Struct used to be able to deserialize a StructuredBlobData
-/// without knowing the concrete type of Parameters
+/// without knowing the concrete type of `Action`
 /// warning: this will drop the end of the reader, thus, you can't
-/// deserialize a structure that contains a StructuredBlobData<DropEndOfReader>
+/// deserialize a structure that contains a `StructuredBlobData<DropEndOfReader>`
 /// Unless this struct is at the end of your data structure.
 /// It's not meant to be used outside the sdk internal logic.
 pub struct DropEndOfReader;
 
-impl<Parameters: BorshDeserialize> BorshDeserialize for StructuredBlobData<Parameters> {
+impl<Action: BorshDeserialize> BorshDeserialize for StructuredBlobData<Action> {
     fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
         let caller = Option::<BlobIndex>::deserialize_reader(reader)?;
         let callees = Option::<Vec<BlobIndex>>::deserialize_reader(reader)?;
-        let parameters = Parameters::deserialize_reader(reader)?;
+        let parameters = Action::deserialize_reader(reader)?;
         Ok(StructuredBlobData {
             caller,
             callees,
@@ -181,15 +259,15 @@ impl BorshDeserialize for StructuredBlobData<DropEndOfReader> {
     }
 }
 
-impl<Parameters: BorshSerialize> From<StructuredBlobData<Parameters>> for BlobData {
-    fn from(val: StructuredBlobData<Parameters>) -> Self {
+impl<Action: BorshSerialize> From<StructuredBlobData<Action>> for BlobData {
+    fn from(val: StructuredBlobData<Action>) -> Self {
         BlobData(borsh::to_vec(&val).expect("failed to encode BlobData"))
     }
 }
-impl<Parameters: BorshDeserialize> TryFrom<BlobData> for StructuredBlobData<Parameters> {
+impl<Action: BorshDeserialize> TryFrom<BlobData> for StructuredBlobData<Action> {
     type Error = std::io::Error;
 
-    fn try_from(val: BlobData) -> Result<StructuredBlobData<Parameters>, Self::Error> {
+    fn try_from(val: BlobData) -> Result<StructuredBlobData<Action>, Self::Error> {
         borsh::from_slice(&val.0)
     }
 }
@@ -220,13 +298,13 @@ pub struct Blob {
 }
 
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
-pub struct StructuredBlob<Parameters> {
+pub struct StructuredBlob<Action> {
     pub contract_name: ContractName,
-    pub data: StructuredBlobData<Parameters>,
+    pub data: StructuredBlobData<Action>,
 }
 
-impl<Parameters: BorshSerialize> From<StructuredBlob<Parameters>> for Blob {
-    fn from(val: StructuredBlob<Parameters>) -> Self {
+impl<Action: BorshSerialize> From<StructuredBlob<Action>> for Blob {
+    fn from(val: StructuredBlob<Action>) -> Self {
         Blob {
             contract_name: val.contract_name,
             data: BlobData::from(val.data),
@@ -234,10 +312,10 @@ impl<Parameters: BorshSerialize> From<StructuredBlob<Parameters>> for Blob {
     }
 }
 
-impl<Parameters: BorshDeserialize> TryFrom<Blob> for StructuredBlob<Parameters> {
+impl<Action: BorshDeserialize> TryFrom<Blob> for StructuredBlob<Action> {
     type Error = std::io::Error;
 
-    fn try_from(val: Blob) -> Result<StructuredBlob<Parameters>, Self::Error> {
+    fn try_from(val: Blob) -> Result<StructuredBlob<Action>, Self::Error> {
         let data = borsh::from_slice(&val.data.0)?;
         Ok(StructuredBlob {
             contract_name: val.contract_name,
@@ -327,6 +405,8 @@ pub enum OnchainEffect {
     DeleteContract(ContractName),
 }
 
+/// This struct has to be the zkvm committed output. It will be used by
+/// hyle node to verify & settle the blob transaction.
 #[derive(
     Default,
     Serialize,
