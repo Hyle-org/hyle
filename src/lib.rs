@@ -7,10 +7,16 @@
 //!
 //! **Current status**: Work in progress
 //!
+//! ## Shortcuts to important pages
+//!
+//! * [Hyle contract sdk](../hyle_contract_sdk)
+//!
 //! ## Useful links
 //!
 //! * [Hylé website](https://www.hyle.eu/)
 //! * [Hylé documentation](https://docs.hyle.eu)
+//!
+//!
 
 pub mod bus;
 pub mod consensus;
