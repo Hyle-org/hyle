@@ -19,6 +19,9 @@ struct Args {
     #[arg(long, default_value = "127.0.0.1")]
     pub host: String,
 
+    #[arg(long, default_value = "127.0.0.1")]
+    pub host_indexer: String,
+
     #[arg(long, default_value = "1414")]
     pub tcp_port: u32,
 
@@ -130,9 +133,13 @@ async fn main() -> Result<(), Error> {
             send_massive_blob(users, url).await?;
         }
         SendCommands::LongRunningTest => {
-            let url = format!("{}:{}", args.host, args.port);
-            info!("Starting long running test on {}", url);
-            long_running_test(url).await?;
+            let url = format!("{}:{}/", args.host, args.port);
+            let indexer_url = format!("{}:{}/", args.host_indexer, args.port);
+            info!(
+                "Starting long running test on {} (indexer: {})",
+                url, indexer_url
+            );
+            long_running_test(url, indexer_url).await?;
         }
     }
 
