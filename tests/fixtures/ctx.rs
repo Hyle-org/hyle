@@ -81,6 +81,7 @@ impl E2ECtx {
             let client = NodeApiHttpClient {
                 url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
                 reqwest_client: Client::new(),
+                api_key: None,
             };
             nodes.push(node);
             clients.push(client);
@@ -106,6 +107,7 @@ impl E2ECtx {
         let client = NodeApiHttpClient {
             url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
             reqwest_client: Client::new(),
+            api_key: None,
         };
 
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
@@ -145,6 +147,7 @@ impl E2ECtx {
         let client = NodeApiHttpClient {
             url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
             reqwest_client: Client::new(),
+            api_key: None,
         };
 
         // Start indexer
@@ -206,6 +209,7 @@ impl E2ECtx {
         let client = NodeApiHttpClient {
             url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
             reqwest_client: Client::new(),
+            api_key: None,
         };
         wait_height(&client, 1).await?;
         self.nodes.push(node);
