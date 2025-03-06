@@ -330,13 +330,10 @@ pub async fn send_transaction<S: StateUpdater>(
     tx_hash
 }
 
-pub async fn long_running_test(url: String) -> Result<()> {
-    std::env::set_var("RISC0_DEV_MODE", "true");
-    // let mut client = NodeApiHttpClient::new("http://rest-api.devnet.hyle.eu".to_string())?;
-    // let indexer = IndexerApiHttpClient::new("http://rest-api.devnet.hyle.eu".to_string())?;
-    let mut client = NodeApiHttpClient::new(url.clone())?;
+pub async fn long_running_test(node_url: String, indexer_url: String) -> Result<()> {
+    let mut client = NodeApiHttpClient::new(node_url.clone())?;
     client.api_key = Some("KEY_LOADTEST".to_string());
-    let indexer = IndexerApiHttpClient::new(url)?;
+    let indexer = IndexerApiHttpClient::new(indexer_url)?;
 
     let mut users: Vec<u64> = vec![];
 
