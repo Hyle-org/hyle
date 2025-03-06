@@ -130,7 +130,7 @@ async fn main() -> Result<(), Error> {
             send_massive_blob(users, url).await?;
         }
         SendCommands::LongRunningTest => {
-            let url = format!("http://{}", args.host);
+            let url = format!("{}:{}", args.host, args.port);
             info!("Starting long running test on {}", url);
             long_running_test(url).await?;
         }
