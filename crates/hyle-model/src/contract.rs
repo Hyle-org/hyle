@@ -405,7 +405,7 @@ pub enum OnchainEffect {
     DeleteContract(ContractName),
 }
 
-/// This scruct has to be the zkvm commited output. It will be used by
+/// This struct has to be the zkvm committed output. It will be used by
 /// hyle node to verify & settle the blob transaction.
 #[derive(
     Default,
