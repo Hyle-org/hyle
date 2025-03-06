@@ -660,8 +660,8 @@ async fn mempool_fail_to_vote_on_fork() {
     );
 
     // FORK with already registered id
-    // dp1(1) <- dp2(2)
-    //        <- dp3(2)
+    // dp1 <- dp2
+    //     <- dp3
     // Remove data proposal id 1 from node 1, to recreate one on top of data proposal id 0, and create a fork
 
     node1.mempool_ctx.pop_data_proposal();
