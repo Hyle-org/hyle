@@ -1,7 +1,6 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
-use client_sdk::contract_states;
 use client_sdk::helpers::risc0::Risc0Prover;
 use client_sdk::helpers::test::TestProver;
 use client_sdk::rest_client::{IndexerApiHttpClient, NodeApiHttpClient};
@@ -9,6 +8,7 @@ use client_sdk::tcp::{codec_tcp_server, TcpServerMessage};
 use client_sdk::transaction_builder::{
     ProvableBlobTx, StateUpdater, TxExecutor, TxExecutorBuilder,
 };
+use client_sdk::{contract_states, transaction_builder};
 use hydentity::client::{register_identity, verify_identity};
 use hydentity::Hydentity;
 use hyle_contract_sdk::erc20::ERC20;
@@ -32,13 +32,72 @@ contract_states!(
         pub hyllar_test: Hyllar,
     }
 );
-contract_states!(
-    #[derive(Debug, Clone)]
-    pub struct CanonicalStates {
-        pub hydentity: Hydentity,
-        pub hyllar: Hyllar,
+
+pub struct CanonicalStates {
+    pub hydentity: Hydentity,
+    pub hyllar: Hyllar,
+    pub hyllar_name: ContractName,
+}
+
+impl transaction_builder::StateUpdater for CanonicalStates {
+    fn setup(&self, ctx: &mut TxExecutorBuilder<Self>) {
+        self.hydentity.setup_builder("hydentity".into(), ctx);
+        self.hyllar.setup_builder(self.hyllar_name.clone(), ctx);
     }
-);
+
+    fn update(
+        &mut self,
+        contract_name: &ContractName,
+        new_state: &mut dyn std::any::Any,
+    ) -> anyhow::Result<()> {
+        if contract_name.0.as_str() == "hydentity" {
+            let Some(st) = new_state.downcast_mut::<Hydentity>() else {
+                anyhow::bail!(
+                    "Incorrect state data passed for contract '{}'",
+                    contract_name
+                );
+            };
+            std::mem::swap(&mut self.hydentity, st);
+        } else if contract_name == &self.hyllar_name {
+            let Some(st) = new_state.downcast_mut::<Hyllar>() else {
+                anyhow::bail!(
+                    "Incorrect state data passed for contract '{}'",
+                    contract_name
+                );
+            };
+            std::mem::swap(&mut self.hyllar, st);
+        } else {
+            anyhow::bail!("Unknown contract name: {contract_name}");
+        }
+        Ok(())
+    }
+
+    fn get(&self, contract_name: &ContractName) -> anyhow::Result<Vec<u8>> {
+        if contract_name.0.as_str() == "hydentity" {
+            Ok(borsh::to_vec(&self.hydentity).map_err(|e| anyhow::anyhow!(e))?)
+        } else if contract_name == &self.hyllar_name {
+            Ok(borsh::to_vec(&self.hyllar).map_err(|e| anyhow::anyhow!(e))?)
+        } else {
+            anyhow::bail!("Unknown contract name: {contract_name}");
+        }
+    }
+
+    fn execute(
+        &self,
+        contract_name: &ContractName,
+        contract_input: &ContractInput,
+    ) -> anyhow::Result<(Box<dyn std::any::Any>, HyleOutput)> {
+        if contract_name.0.as_str() == "hydentity" {
+            let (state, output) = guest::execute::<Hydentity>(contract_input);
+            Ok((Box::new(state) as Box<dyn std::any::Any>, output))
+        } else if contract_name == &self.hyllar_name {
+            let (state, output) = guest::execute::<Hyllar>(contract_input);
+            Ok((Box::new(state) as Box<dyn std::any::Any>, output))
+        } else {
+            anyhow::bail!("Unknown contract name: {contract_name}");
+        }
+    }
+}
 
 pub async fn setup_hyllar(users: u32) -> Result<Hyllar> {
     let mut hyllar = Hyllar::default();
@@ -335,6 +394,22 @@ pub async fn long_running_test(node_url: String, indexer_url: String) -> Result<
     client.api_key = Some("KEY_LOADTEST".to_string());
     let indexer = IndexerApiHttpClient::new(indexer_url)?;
 
+    // Setup random hyllar contract
+    let random_hyllar_contract: ContractName =
+        format!("hyllar_{}", get_current_timestamp_ms() % 100000).into();
+    let tx = BlobTransaction::new(
+        Identity::new("hyle.hyle"),
+        vec![RegisterContractAction {
+            contract_name: random_hyllar_contract.clone(),
+            verifier: hyle_contract_sdk::Verifier("test".to_string()),
+            program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
+            state_digest: Hyllar::default().as_digest(),
+        }
+        .as_blob("hyle".into(), None, None)],
+    );
+
+    client.send_tx_blob(&tx).await?;
+
     let mut users: Vec<u64> = vec![];
 
     let hyllar: Hyllar = indexer
@@ -344,11 +419,15 @@ pub async fn long_running_test(node_url: String, indexer_url: String) -> Result<
         .fetch_current_state(&ContractName::new("hydentity"))
         .await?;
 
-    let mut tx_ctx = TxExecutorBuilder::new(CanonicalStates { hydentity, hyllar })
-        // Replace prover binaries for non-reproducible mode.
-        .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
-        .with_prover("hyllar".into(), Risc0Prover::new(HYLLAR_ELF))
-        .build();
+    let mut tx_ctx = TxExecutorBuilder::new(CanonicalStates {
+        hydentity,
+        hyllar,
+        hyllar_name: random_hyllar_contract.clone(),
+    })
+    // Replace prover binaries for non-reproducible mode.
+    .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
+    .with_prover(random_hyllar_contract.clone(), Risc0Prover::new(HYLLAR_ELF))
+    .build();
 
     let mut i = 0;
     loop {
@@ -383,7 +462,12 @@ pub async fn long_running_test(node_url: String, indexer_url: String) -> Result<
                 "password".to_string(),
             )?;
 
-            transfer(&mut transaction, "hyllar".into(), ident.0.clone(), 100)?;
+            transfer(
+                &mut transaction,
+                random_hyllar_contract.clone(),
+                ident.0.clone(),
+                100,
+            )?;
 
             let tx_hash = send_transaction(&client, transaction, &mut tx_ctx).await;
             tracing::info!("Transfer TX Hash: {:?}", tx_hash);
@@ -454,7 +538,7 @@ pub async fn long_running_test(node_url: String, indexer_url: String) -> Result<
         )?;
         transfer(
             &mut transaction,
-            "hyllar".into(),
+            random_hyllar_contract.clone(),
             guy_2_id.clone(),
             amount as u128,
         )?;
