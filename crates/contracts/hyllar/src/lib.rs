@@ -31,17 +31,20 @@ pub struct Hyllar {
 
 impl Default for Hyllar {
     fn default() -> Self {
+        Self::custom(FAUCET_ID.to_string())
+    }
+}
+
+impl Hyllar {
+    pub fn custom(faucet_id: String) -> Self {
         let mut balances = BTreeMap::new();
-        balances.insert(FAUCET_ID.into(), TOTAL_SUPPLY); // Assign initial supply to faucet
+        balances.insert(faucet_id, TOTAL_SUPPLY); // Assign initial supply to faucet
         Hyllar {
             total_supply: TOTAL_SUPPLY,
             balances,
             allowances: BTreeMap::new(),
         }
     }
-}
-
-impl Hyllar {
     pub fn to_bytes(&self) -> Vec<u8> {
         borsh::to_vec(self).expect("Failed to encode Balances")
     }

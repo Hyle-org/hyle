@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::Result;
 use client_sdk::helpers::risc0::Risc0Prover;
 use client_sdk::helpers::test::TestProver;
-use client_sdk::rest_client::{IndexerApiHttpClient, NodeApiHttpClient};
+use client_sdk::rest_client::NodeApiHttpClient;
 use client_sdk::tcp::{codec_tcp_server, TcpServerMessage};
 use client_sdk::transaction_builder::{
     ProvableBlobTx, StateUpdater, TxExecutor, TxExecutorBuilder,
@@ -35,13 +35,15 @@ contract_states!(
 
 pub struct CanonicalStates {
     pub hydentity: Hydentity,
+    pub hydentity_name: ContractName,
     pub hyllar: Hyllar,
     pub hyllar_name: ContractName,
 }
 
 impl transaction_builder::StateUpdater for CanonicalStates {
     fn setup(&self, ctx: &mut TxExecutorBuilder<Self>) {
-        self.hydentity.setup_builder("hydentity".into(), ctx);
+        self.hydentity
+            .setup_builder(self.hydentity_name.clone(), ctx);
         self.hyllar.setup_builder(self.hyllar_name.clone(), ctx);
     }
 
@@ -50,7 +52,7 @@ impl transaction_builder::StateUpdater for CanonicalStates {
         contract_name: &ContractName,
         new_state: &mut dyn std::any::Any,
     ) -> anyhow::Result<()> {
-        if contract_name.0.as_str() == "hydentity" {
+        if contract_name == &self.hydentity_name {
             let Some(st) = new_state.downcast_mut::<Hydentity>() else {
                 anyhow::bail!(
                     "Incorrect state data passed for contract '{}'",
@@ -73,7 +75,7 @@ impl transaction_builder::StateUpdater for CanonicalStates {
     }
 
     fn get(&self, contract_name: &ContractName) -> anyhow::Result<Vec<u8>> {
-        if contract_name.0.as_str() == "hydentity" {
+        if contract_name == &self.hydentity_name {
             Ok(borsh::to_vec(&self.hydentity).map_err(|e| anyhow::anyhow!(e))?)
         } else if contract_name == &self.hyllar_name {
             Ok(borsh::to_vec(&self.hyllar).map_err(|e| anyhow::anyhow!(e))?)
@@ -87,7 +89,7 @@ impl transaction_builder::StateUpdater for CanonicalStates {
         contract_name: &ContractName,
         contract_input: &ContractInput,
     ) -> anyhow::Result<(Box<dyn std::any::Any>, HyleOutput)> {
-        if contract_name.0.as_str() == "hydentity" {
+        if contract_name == &self.hydentity_name {
             let (state, output) = guest::execute::<Hydentity>(contract_input);
             Ok((Box::new(state) as Box<dyn std::any::Any>, output))
         } else if contract_name == &self.hyllar_name {
@@ -389,14 +391,15 @@ pub async fn send_transaction<S: StateUpdater>(
     tx_hash
 }
 
-pub async fn long_running_test(node_url: String, indexer_url: String) -> Result<()> {
+pub async fn long_running_test(node_url: String, _indexer_url: String) -> Result<()> {
     let mut client = NodeApiHttpClient::new(node_url.clone())?;
     client.api_key = Some("KEY_LOADTEST".to_string());
-    let indexer = IndexerApiHttpClient::new(indexer_url)?;
+    // let indexer = IndexerApiHttpClient::new(indexer_url)?;
 
     // Setup random hyllar contract
-    let random_hyllar_contract: ContractName =
-        format!("hyllar_{}", get_current_timestamp_ms() % 100000).into();
+    let rand = get_current_timestamp_ms() % 100000;
+    let random_hyllar_contract: ContractName = format!("hyllar_{}", rand).into();
+    let random_hydentity_contract: ContractName = format!("hydentity_{}", rand).into();
     let tx = BlobTransaction::new(
         Identity::new("hyle.hyle"),
         vec![RegisterContractAction {
@@ -410,24 +413,50 @@ pub async fn long_running_test(node_url: String, indexer_url: String) -> Result<
 
     client.send_tx_blob(&tx).await?;
 
+    let tx = BlobTransaction::new(
+        Identity::new("hyle.hyle"),
+        vec![RegisterContractAction {
+            contract_name: random_hydentity_contract.clone(),
+            verifier: hyle_contract_sdk::Verifier("test".to_string()),
+            program_id: hyle_contracts::HYDENTITY_ID.to_vec().into(),
+            state_digest: Hydentity::default().as_digest(),
+        }
+        .as_blob("hyle".into(), None, None)],
+    );
+
+    client.send_tx_blob(&tx).await?;
+
+    tokio::time::sleep(Duration::from_millis(5000)).await;
+
     let mut users: Vec<u64> = vec![];
 
-    let hyllar: Hyllar = indexer
-        .fetch_current_state(&ContractName::new("hyllar"))
-        .await?;
-    let hydentity: Hydentity = indexer
-        .fetch_current_state(&ContractName::new("hydentity"))
-        .await?;
-
     let mut tx_ctx = TxExecutorBuilder::new(CanonicalStates {
-        hydentity,
-        hyllar,
+        hydentity: Hydentity::default(),
+        hydentity_name: random_hydentity_contract.clone(),
+        hyllar: Hyllar::custom(format!("faucet.{}", random_hydentity_contract)),
         hyllar_name: random_hyllar_contract.clone(),
     })
     // Replace prover binaries for non-reproducible mode.
-    .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
+    .with_prover(
+        random_hydentity_contract.clone(),
+        Risc0Prover::new(HYDENTITY_ELF),
+    )
     .with_prover(random_hyllar_contract.clone(), Risc0Prover::new(HYLLAR_ELF))
     .build();
+
+    let ident = Identity(format!("faucet.{}", random_hydentity_contract.0));
+
+    // Register faucet identity
+    let mut transaction = ProvableBlobTx::new(ident.clone());
+
+    _ = register_identity(
+        &mut transaction,
+        random_hydentity_contract.clone(),
+        "password".to_owned(),
+    );
+
+    let tx_hash = send_transaction(&client, transaction, &mut tx_ctx).await;
+    tracing::info!("Register TX Hash: {}", tx_hash);
 
     let mut i = 0;
     loop {
@@ -437,7 +466,7 @@ pub async fn long_running_test(node_url: String, indexer_url: String) -> Result<
 
         // Create a new user
         if now % 5 == 0 || users.len() < 2 {
-            let ident = Identity(format!("{}.hydentity", now));
+            let ident = Identity(format!("{}.{}", now, random_hydentity_contract.0));
             users.push(now);
 
             tracing::info!("Creating identity with 100 tokens: {}", ident);
@@ -445,19 +474,29 @@ pub async fn long_running_test(node_url: String, indexer_url: String) -> Result<
             // Register new identity
             let mut transaction = ProvableBlobTx::new(ident.clone());
 
-            _ = register_identity(&mut transaction, "hydentity".into(), "password".to_owned());
+            _ = register_identity(
+                &mut transaction,
+                random_hydentity_contract.clone(),
+                "password".to_owned(),
+            );
 
             let tx_hash = send_transaction(&client, transaction, &mut tx_ctx).await;
-            tracing::info!("Register TX Hash: {:?}", tx_hash);
+            tracing::info!("Register TX Hash: {}", tx_hash);
+
+            dbg!(&tx_ctx.hydentity);
+            dbg!(&tx_ctx.hydentity_name);
+            dbg!(&tx_ctx.hyllar);
+            dbg!(&tx_ctx.hyllar_name);
 
             // Feed with some token
             tracing::info!("Feeding identity {} with tokens", ident);
 
-            let mut transaction = ProvableBlobTx::new("faucet.hydentity".into());
+            let mut transaction =
+                ProvableBlobTx::new(format!("faucet.{}", random_hydentity_contract.0).into());
 
             verify_identity(
                 &mut transaction,
-                "hydentity".into(),
+                random_hydentity_contract.clone(),
                 &tx_ctx.hydentity,
                 "password".to_string(),
             )?;
@@ -470,7 +509,7 @@ pub async fn long_running_test(node_url: String, indexer_url: String) -> Result<
             )?;
 
             let tx_hash = send_transaction(&client, transaction, &mut tx_ctx).await;
-            tracing::info!("Transfer TX Hash: {:?}", tx_hash);
+            tracing::info!("Transfer TX Hash: {}", tx_hash);
 
             continue;
         }
@@ -500,8 +539,8 @@ pub async fn long_running_test(node_url: String, indexer_url: String) -> Result<
             continue;
         }
 
-        let guy_1_id = format!("{}.hydentity", guy_1_id);
-        let guy_2_id = format!("{}.hydentity", guy_2_id);
+        let guy_1_id = format!("{}.{}", guy_1_id, random_hydentity_contract.0);
+        let guy_2_id = format!("{}.{}", guy_2_id, random_hydentity_contract.0);
 
         info!("Getting balances for {} and {}", guy_1_id, guy_2_id);
 
@@ -532,7 +571,7 @@ pub async fn long_running_test(node_url: String, indexer_url: String) -> Result<
         let mut transaction = ProvableBlobTx::new(Identity(guy_1_id.clone()));
         verify_identity(
             &mut transaction,
-            "hydentity".into(),
+            random_hydentity_contract.clone(),
             &tx_ctx.hydentity,
             "password".to_string(),
         )?;
@@ -552,7 +591,7 @@ pub async fn long_running_test(node_url: String, indexer_url: String) -> Result<
         );
 
         let tx_hash = send_transaction(&client, transaction, &mut tx_ctx).await;
-        tracing::info!("Transfer TX Hash: {:?}", tx_hash);
+        tracing::info!("Transfer TX Hash: {}", tx_hash);
     }
 }
 
