@@ -17,6 +17,7 @@ WORKDIR /hyle
 
 COPY --from=builder /usr/src/hyle/target/release/hyle ./
 COPY --from=builder /usr/src/hyle/target/release/indexer ./
+COPY --from=builder /usr/src/hyle/target/release/hyle-loadtest ./
 
 
 VOLUME /hyle/data
