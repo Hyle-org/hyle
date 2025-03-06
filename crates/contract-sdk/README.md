@@ -35,11 +35,11 @@ pub struct ContractInput {
 In `guest.rs` you will find 2 functions that are entry points of smart contracts. You should call at least one of them at the beginning of your contract.
 
 ```rust 
-pub fn init_raw<Parameters>(input: ContractInput) -> (ContractInput, Parameters)
+pub fn init_raw<Action>(input: ContractInput) -> (ContractInput, Action)
 
-pub fn init_with_caller<Parameters>(
+pub fn init_with_caller<Action>(
     input: ContractInput,
-) -> Result<(ContractInput, StructuredBlob<Parameters>, Identity), String>
+) -> Result<(ContractInput, StructuredBlob<Action>, Identity), String>
 ```
 
 At the end of your contract, you need to output a `HyleOutput`, you can use the helper in `utils.rs`:

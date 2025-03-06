@@ -1,3 +1,13 @@
+//! # Hylé Contract SDK
+//!
+//! This crate contains some tools to be used in smart contracts.
+//!
+//! ## Shortcuts to important pages
+//!
+//! * [Guest module for contract zkvm entrypoint](crate::guest) -> zkvm entrypoint
+//! * [HyleContract trait](trait@crate::HyleContract) -> Contract entrypoint
+//! * [Contract composition](StructuredBlobData) -> Cross contract calls
+//!
 #![cfg_attr(not(test), no_std)]
 
 extern crate alloc;
@@ -46,6 +56,45 @@ macro_rules! info {
 
 pub type RunResult = Result<(String, ExecutionContext, Vec<OnchainEffect>), String>;
 
+/**
+This trait is used to define the contract's entrypoint.
+By using it and the [execute](function@crate::guest::execute) function, you let the sdk
+generate for you the [HyleOutput] struct with correct fields.
+Your Contract struct, also needs to implement the [Digestable] trait.
+
+The [ContractInput] struct is built by the application backend and given as input to
+the zkvm.
+
+The first step that the contract might need to do in this function, is to call either
+[utils::parse_raw_contract_input] or [utils::parse_contract_input]
+
+## Example of execute implementation:
+
+```rust
+struct MyContract{}
+enum MyContractAction{
+    DoSomething
+}
+
+impl HyleContract for MyContract {
+    fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
+        let (action, exec_ctx) = parse_raw_contract_input(contract_input)?;
+
+        let output = self.execute_action(action)?;
+
+        Ok((output, exec_ctx, vec![]))
+    }
+}
+
+impl MyContract {
+    fn execute_action(action: MyContractAction) -> Result<String, String> {
+        /// Execute contract's logic
+        Ok("Done.")
+    }
+}
+
+```
+*/
 pub trait HyleContract {
     fn execute(&mut self, contract_input: &ContractInput) -> RunResult;
 }

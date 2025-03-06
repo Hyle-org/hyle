@@ -5,12 +5,18 @@
 //! Repository for the [Hylé](https://hyle.eu) chain. This repository is for the work-in-progress rust client.
 //! The older (but still maintained) Cosmos SDK based client can be found at [hyle-cosmos](https://github.com/Hyle-org/hyle-cosmos).
 //!
-//! **Current status**: Initial commit.
+//! **Current status**: Work in progress
+//!
+//! ## Shortcuts to important pages
+//!
+//! * [Hyle contract sdk](../hyle_contract_sdk)
 //!
 //! ## Useful links
 //!
 //! * [Hylé website](https://www.hyle.eu/)
 //! * [Hylé documentation](https://docs.hyle.eu)
+//!
+//!
 
 pub mod bus;
 pub mod consensus;

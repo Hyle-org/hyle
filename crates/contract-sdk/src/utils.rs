@@ -13,11 +13,17 @@ use hyle_model::{
     StateDigest, StructuredBlob,
 };
 
-pub fn parse_raw_contract_input<Parameters>(
+/// This function is used to parse the contract input blob data into a given template `Action`
+/// It assumes that the blob data is the `Action` serialized with borsh.
+/// It returns a tuple with the parsed `Action` and an [ExecutionContext] that can be used
+/// by the contract, and will be needed by the sdk to build the [HyleOutput].
+///
+/// Alternative: [parse_contract_input]
+pub fn parse_raw_contract_input<Action>(
     input: &ContractInput,
-) -> Result<(Parameters, ExecutionContext), String>
+) -> Result<(Action, ExecutionContext), String>
 where
-    Parameters: BorshDeserialize,
+    Action: BorshDeserialize,
 {
     let blobs = &input.blobs;
     let index = &input.index;
@@ -29,7 +35,7 @@ where
         }
     };
 
-    let Ok(parameters) = borsh::from_slice::<Parameters>(blob.data.0.as_slice()) else {
+    let Ok(parameters) = borsh::from_slice::<Action>(blob.data.0.as_slice()) else {
         return Err(format!("Could not deserialize Blob at index {index}"));
     };
 
@@ -37,17 +43,26 @@ where
     Ok((parameters, exec_ctx))
 }
 
-pub fn parse_contract_input<Parameters>(
+/// This function is used to parse the contract input blob data.
+/// It assumes that the blob data is a [StructuredBlobData] serialized with borsh.
+/// It returns a tuple with the parsed `Action` and an [ExecutionContext] that can be used
+/// by the contract, and will be needed by the sdk to build the [HyleOutput].
+///
+/// The [ExecutionContext] will holds the caller/callees information.
+/// See [StructuredBlobData] page for more information on caller/callees.
+///
+/// Alternative: [parse_raw_contract_input]
+pub fn parse_contract_input<Action>(
     input: &ContractInput,
-) -> Result<(Parameters, ExecutionContext), String>
+) -> Result<(Action, ExecutionContext), String>
 where
-    Parameters: BorshSerialize + BorshDeserialize,
+    Action: BorshSerialize + BorshDeserialize,
 {
-    let parsed_blob = parse_structured_blob::<Parameters>(&input.blobs, &input.index);
+    let parsed_blob = parse_structured_blob::<Action>(&input.blobs, &input.index);
 
     let parsed_blob = parsed_blob.ok_or("Failed to parse input blob".to_string())?;
 
-    let caller = check_caller_callees::<Parameters>(input, &parsed_blob)?;
+    let caller = check_caller_callees::<Action>(input, &parsed_blob)?;
 
     let mut callees_blobs = vec::Vec::new();
     for blob in input.blobs.clone().into_iter() {
@@ -68,9 +83,9 @@ where
     Ok((parsed_blob.data.parameters, ctx))
 }
 
-pub fn parse_blob<Parameters>(blobs: &[Blob], index: &BlobIndex) -> Option<Parameters>
+pub fn parse_blob<Action>(blobs: &[Blob], index: &BlobIndex) -> Option<Action>
 where
-    Parameters: BorshDeserialize,
+    Action: BorshDeserialize,
 {
     let blob = match blobs.get(index.0) {
         Some(v) => v,
@@ -79,19 +94,19 @@ where
         }
     };
 
-    let Ok(parameters) = borsh::from_slice::<Parameters>(blob.data.0.as_slice()) else {
+    let Ok(parameters) = borsh::from_slice::<Action>(blob.data.0.as_slice()) else {
         return None;
     };
 
     Some(parameters)
 }
 
-pub fn parse_structured_blob<Parameters>(
+pub fn parse_structured_blob<Action>(
     blobs: &[Blob],
     index: &BlobIndex,
-) -> Option<StructuredBlob<Parameters>>
+) -> Option<StructuredBlob<Action>>
 where
-    Parameters: BorshDeserialize,
+    Action: BorshDeserialize,
 {
     let blob = match blobs.get(index.0) {
         Some(v) => v,
@@ -100,7 +115,7 @@ where
         }
     };
 
-    let parsed_blob: StructuredBlob<Parameters> = match StructuredBlob::try_from(blob.clone()) {
+    let parsed_blob: StructuredBlob<Action> = match StructuredBlob::try_from(blob.clone()) {
         Ok(v) => v,
         Err(_) => {
             return None;
