@@ -34,7 +34,7 @@ use std::ops::DerefMut;
 use std::{collections::HashMap, sync::Arc};
 use tokio::select;
 use tokio::sync::{broadcast, mpsc};
-use tracing::{error, info, trace};
+use tracing::{debug, error, info, trace};
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -513,18 +513,18 @@ impl Indexer {
         }
 
         for (i, (tx_hash, events)) in (0..).zip(block.transactions_events.into_iter()) {
-            let tx_hash: &TxHashDb = &tx_hash.into();
+            let tx_hash_db: &TxHashDb = &tx_hash.clone().into();
             let parent_data_proposal_hash: DataProposalHashDb = block
                 .dp_hashes
-                .get(&tx_hash.0)
+                .get(&tx_hash)
                 .context(format!(
                     "No parent data proposal hash present for tx {}",
-                    tx_hash.0
+                    &tx_hash
                 ))?
                 .clone()
                 .into();
             let serialized_events = serde_json::to_string(&events)?;
-            info!("Inserting transaction state event {tx_hash:?}: {serialized_events}");
+            debug!("Inserting transaction state event {tx_hash}: {serialized_events}");
 
             sqlx::query(
                 "INSERT INTO transaction_state_events (block_hash, index, tx_hash, parent_dp_hash, events)
@@ -532,7 +532,7 @@ impl Indexer {
             )
             .bind(block.hash.clone())
             .bind(i)
-            .bind(tx_hash)
+            .bind(tx_hash_db)
             .bind(parent_data_proposal_hash)
             .bind(serialized_events)
             .execute(&mut *transaction)
