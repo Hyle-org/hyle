@@ -22,6 +22,7 @@ use tracing::{debug, error, info, trace};
 
 mod api;
 mod hyle_tld;
+mod metrics;
 pub mod module;
 mod ordered_tx_map;
 mod timeouts;
