@@ -1047,7 +1047,7 @@ mod test {
         let parent_data_proposal = DataProposal::new(None, txs);
         let mut signed_block = SignedBlock::default();
         signed_block.data_proposals.push((
-            ValidatorPublicKey("ttt".into()),
+            LaneId(ValidatorPublicKey("ttt".into())),
             vec![parent_data_proposal.clone()],
         ));
         let block = node_state.handle_signed_block(&signed_block);
@@ -1198,9 +1198,10 @@ mod test {
         let mut signed_block = SignedBlock::default();
         signed_block.consensus_proposal.timestamp = 1234;
         signed_block.consensus_proposal.slot = 2;
-        signed_block
-            .data_proposals
-            .push((ValidatorPublicKey("ttt".into()), vec![data_proposal]));
+        signed_block.data_proposals.push((
+            LaneId(ValidatorPublicKey("ttt".into())),
+            vec![data_proposal],
+        ));
         let block = node_state.handle_signed_block(&signed_block);
 
         indexer

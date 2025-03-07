@@ -367,7 +367,7 @@ async fn autobahn_basic_flow() {
 
     let data_proposal_hash_node1 = node1
         .mempool_ctx
-        .current_hash(node1.mempool_ctx.validator_pubkey())
+        .current_hash(&node1.mempool_ctx.own_lane())
         .expect("Current hash should be there");
     let node1_l_size = node1.mempool_ctx.current_size().unwrap();
 
@@ -391,10 +391,10 @@ async fn autobahn_basic_flow() {
                     .cut
                     .clone()
                     .iter()
-                    .find(|(validator, _hash, _size, _poda)|
-                        validator == &node1.consensus_ctx.pubkey()
+                    .find(|(lane_id, _hash, _size, _poda)|
+                        lane_id == &node1.mempool_ctx.own_lane()
                     ),
-                Some((node1.consensus_ctx.pubkey(), data_proposal_hash_node1, node1_l_size, poda.signature)).as_ref()
+                Some((node1.mempool_ctx.own_lane(), data_proposal_hash_node1, node1_l_size, poda.signature)).as_ref()
             );
         }
     };
@@ -647,21 +647,21 @@ async fn mempool_fail_to_vote_on_fork() {
     assert_ne!(
         node2
             .mempool_ctx
-            .last_validator_lane_entry(node1.mempool_ctx.validator_pubkey())
+            .last_lane_entry(&node1.mempool_ctx.own_lane())
             .1,
         dp_fork_3.hashed()
     );
     assert_ne!(
         node3
             .mempool_ctx
-            .last_validator_lane_entry(node1.mempool_ctx.validator_pubkey())
+            .last_lane_entry(&node1.mempool_ctx.own_lane())
             .1,
         dp_fork_3.hashed()
     );
     assert_ne!(
         node4
             .mempool_ctx
-            .last_validator_lane_entry(node1.mempool_ctx.validator_pubkey())
+            .last_lane_entry(&node1.mempool_ctx.own_lane())
             .1,
         dp_fork_3.hashed()
     );
@@ -859,7 +859,7 @@ async fn protocol_fees() {
     assert_eq!(
         node1
             .mempool_ctx
-            .current_size_of(node2.mempool_ctx.validator_pubkey()),
+            .current_size_of(&node2.mempool_ctx.own_lane()),
         None
     );
 
@@ -867,19 +867,19 @@ async fn protocol_fees() {
     assert_eq!(
         node2
             .mempool_ctx
-            .current_size_of(node1.mempool_ctx.validator_pubkey()),
+            .current_size_of(&node1.mempool_ctx.own_lane()),
         Some(dp_size_1)
     );
     assert_eq!(
         node3
             .mempool_ctx
-            .current_size_of(node1.mempool_ctx.validator_pubkey()),
+            .current_size_of(&node1.mempool_ctx.own_lane()),
         Some(dp_size_1)
     );
     assert_eq!(
         node4
             .mempool_ctx
-            .current_size_of(node1.mempool_ctx.validator_pubkey()),
+            .current_size_of(&node1.mempool_ctx.own_lane()),
         Some(dp_size_1)
     );
 
@@ -929,7 +929,7 @@ async fn protocol_fees() {
     assert_eq!(
         node2
             .mempool_ctx
-            .current_size_of(node1.mempool_ctx.validator_pubkey()),
+            .current_size_of(&node1.mempool_ctx.own_lane()),
         Some(dp_size_1)
     );
 
@@ -937,20 +937,20 @@ async fn protocol_fees() {
     assert_eq!(
         node1
             .mempool_ctx
-            .current_size_of(node2.mempool_ctx.validator_pubkey()),
+            .current_size_of(&node2.mempool_ctx.own_lane()),
         Some(dp_size_2)
     );
 
     assert_eq!(
         node3
             .mempool_ctx
-            .current_size_of(node1.mempool_ctx.validator_pubkey()),
+            .current_size_of(&node1.mempool_ctx.own_lane()),
         Some(dp_size_1)
     );
     assert_eq!(
         node3
             .mempool_ctx
-            .current_size_of(node2.mempool_ctx.validator_pubkey()),
+            .current_size_of(&node2.mempool_ctx.own_lane()),
         Some(dp_size_2)
     );
 
@@ -975,14 +975,14 @@ async fn protocol_fees() {
     assert_eq!(
         cp.staking_actions[0],
         ConsensusStakingAction::PayFeesForDaDi {
-            disseminator: node2.mempool_ctx.validator_pubkey().clone(),
+            lane_id: node2.mempool_ctx.own_lane(),
             cumul_size: dp_size_2
         }
     );
     assert_eq!(
         cp.staking_actions[1],
         ConsensusStakingAction::PayFeesForDaDi {
-            disseminator: node1.mempool_ctx.validator_pubkey().clone(),
+            lane_id: node1.mempool_ctx.own_lane(),
             cumul_size: dp_size_1
         }
     );

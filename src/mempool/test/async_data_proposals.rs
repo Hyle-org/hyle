@@ -54,7 +54,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
 
     node_client.send(GenesisEvent::GenesisBlock(SignedBlock {
         data_proposals: vec![(
-            node_modules.crypto.validator_pubkey().clone(),
+            LaneId(node_modules.crypto.validator_pubkey().clone()),
             vec![DataProposal::new(
                 None,
                 vec![BlobTransaction::new(

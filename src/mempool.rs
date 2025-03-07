@@ -94,7 +94,7 @@ struct MempoolBusClient {
 #[derive(Default, BorshSerialize, BorshDeserialize)]
 pub struct MempoolStore {
     waiting_dissemination_txs: Vec<Transaction>,
-    buffered_proposals: BTreeMap<ValidatorPublicKey, Vec<DataProposal>>,
+    buffered_proposals: BTreeMap<LaneId, Vec<DataProposal>>,
     last_ccp: Option<CommittedConsensusProposal>,
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
     buc_build_start_height: Option<u64>,
@@ -164,7 +164,7 @@ impl BusMessage for MempoolStatusEvent {}
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum InternalMempoolEvent {
     OnProcessedNewTx(Transaction),
-    OnProcessedDataProposal((ValidatorPublicKey, DataProposalVerdict, DataProposal)),
+    OnProcessedDataProposal((LaneId, DataProposalVerdict, DataProposal)),
 }
 impl BusMessage for InternalMempoolEvent {}
 
@@ -192,7 +192,7 @@ impl Module for Mempool {
         .unwrap_or_default();
 
         let lanes_tip =
-            Self::load_from_disk::<HashMap<ValidatorPublicKey, (DataProposalHash, LaneBytesSize)>>(
+            Self::load_from_disk::<BTreeMap<LaneId, (DataProposalHash, LaneBytesSize)>>(
                 ctx.common
                     .config
                     .data_directory
@@ -220,7 +220,7 @@ impl Module for Mempool {
             crypto: Arc::clone(&ctx.node.crypto),
             lanes: LanesStorage::new(
                 &ctx.common.config.data_directory,
-                ctx.node.crypto.validator_pubkey().clone(),
+                LaneId(ctx.node.crypto.validator_pubkey().clone()),
                 lanes_tip,
             )?,
             inner: attributes,
@@ -339,8 +339,8 @@ impl Mempool {
             InternalMempoolEvent::OnProcessedNewTx(tx) => {
                 self.on_new_tx(tx).context("Processing new tx")
             }
-            InternalMempoolEvent::OnProcessedDataProposal((validator, verdict, data_proposal)) => {
-                self.on_processed_data_proposal(validator, verdict, data_proposal)
+            InternalMempoolEvent::OnProcessedDataProposal((lane_id, verdict, data_proposal)) => {
+                self.on_processed_data_proposal(lane_id, verdict, data_proposal)
                     .context("Processing data proposal")
             }
         }
@@ -359,7 +359,7 @@ impl Mempool {
         // Check for each pending DataProposal if it has enough signatures
         let entries = self
             .lanes
-            .get_lane_pending_entries(&self.lanes.id, last_cut)?;
+            .get_lane_pending_entries(self.lanes.own_lane_id(), last_cut)?;
 
         for lane_entry in entries {
             // If there's only 1 signature (=own signature), broadcast it to everyone
@@ -419,23 +419,23 @@ impl Mempool {
     fn try_get_full_data_for_signed_block(
         &self,
         buc: &BlockUnderConstruction,
-    ) -> Result<Vec<(ValidatorPublicKey, Vec<DataProposal>)>> {
+    ) -> Result<Vec<(LaneId, Vec<DataProposal>)>> {
         debug!("Handling Block Under Construction {:?}", buc.clone());
 
-        let mut result: Vec<(ValidatorPublicKey, Vec<DataProposal>)> = vec![];
+        let mut result = vec![];
         // Try to return the asked data proposals between the last_processed_cut and the one being handled
-        for (validator, to_hash, _, _) in buc.ccp.consensus_proposal.cut.iter() {
+        for (lane_id, to_hash, _, _) in buc.ccp.consensus_proposal.cut.iter() {
             // FIXME: use from : &Cut instead of Option
             let from_hash = buc
                 .from
                 .as_ref()
-                .and_then(|f| f.iter().find(|el| &el.0 == validator))
+                .and_then(|f| f.iter().find(|el| &el.0 == lane_id))
                 .map(|el| &el.1);
 
             let entries = self
                 .lanes
                 .get_lane_entries_between_hashes(
-                    validator, // get start hash for validator
+                    lane_id, // get start hash for validator
                     from_hash,
                     Some(to_hash),
                 )
@@ -445,7 +445,7 @@ impl Mempool {
                 ))?;
 
             result.push((
-                validator.clone(),
+                lane_id.clone(),
                 entries.into_iter().map(|e| e.data_proposal).collect(),
             ))
         }
@@ -580,12 +580,12 @@ impl Mempool {
 
     /// Requests all DP between the previous Cut and the new Cut.
     fn clean_and_update_lanes(&mut self, cut: &Cut, previous_cut: &Option<Cut>) -> Result<()> {
-        for (validator, data_proposal_hash, cumul_size, _) in cut.iter() {
-            if !self.lanes.contains(validator, data_proposal_hash) {
+        for (lane_id, data_proposal_hash, cumul_size, _) in cut.iter() {
+            if !self.lanes.contains(lane_id, data_proposal_hash) {
                 // We want to start from the lane tip, and remove all DP until we find the data proposal of the previous cut
                 let previous_committed_dp_hash = previous_cut
                     .as_ref()
-                    .and_then(|cut| cut.iter().find(|(v, _, _, _)| v == validator))
+                    .and_then(|cut| cut.iter().find(|(v, _, _, _)| v == lane_id))
                     .map(|(_, h, _, _)| h);
                 if previous_committed_dp_hash == Some(data_proposal_hash) {
                     // No cut have been made for this validator; we keep the DPs
@@ -593,7 +593,7 @@ impl Mempool {
                 }
                 // Removes all DP after the previous cut & update lane_tip with new cut
                 self.lanes.clean_and_update_lane(
-                    validator,
+                    lane_id,
                     previous_committed_dp_hash,
                     data_proposal_hash,
                     cumul_size,
@@ -601,7 +601,7 @@ impl Mempool {
 
                 // Send SyncRequest for all data proposals between previous cut and new one
                 self.send_sync_request(
-                    validator,
+                    lane_id,
                     previous_committed_dp_hash,
                     Some(data_proposal_hash),
                 )
@@ -631,13 +631,15 @@ impl Mempool {
 
         match msg.msg {
             MempoolNetMessage::DataProposal(data_proposal) => {
-                self.on_data_proposal(validator, data_proposal)?;
+                let lane_id = self.get_lane(validator);
+                self.on_data_proposal(&lane_id, data_proposal)?;
             }
             MempoolNetMessage::DataVote(ref data_proposal_hash, lane_size) => {
                 self.on_data_vote(&msg, data_proposal_hash, lane_size)?;
             }
             MempoolNetMessage::PoDAUpdate(data_proposal_hash, signatures) => {
-                self.on_poda_update(validator, &data_proposal_hash, signatures)?
+                let lane_id = self.get_lane(validator);
+                self.on_poda_update(&lane_id, &data_proposal_hash, signatures)?
             }
             MempoolNetMessage::SyncRequest(from_data_proposal_hash, to_data_proposal_hash) => {
                 self.on_sync_request(
@@ -655,10 +657,14 @@ impl Mempool {
 
     fn on_sync_reply(
         &mut self,
-        validator: &ValidatorPublicKey,
+        sender_validator: &ValidatorPublicKey,
         missing_lane_entries: Vec<LaneEntry>,
     ) -> Result<()> {
-        info!("{} SyncReply from validator {validator}", self.lanes.id);
+        info!("SyncReply from validator {sender_validator}");
+
+        // TODO: this isn't necessarily the case - another validator could have sent us data for this lane.
+        let lane_id = &LaneId(sender_validator.clone());
+        let lane_operator = self.get_lane_operator(lane_id);
 
         // Ensure all lane entries are signed by the validator.
         if missing_lane_entries.iter().any(|lane_entry| {
@@ -670,11 +676,11 @@ impl Mempool {
             !lane_entry
                 .signatures
                 .iter()
-                .any(|s| &s.signature.validator == validator && s.msg == expected_message)
+                .any(|s| &s.signature.validator == lane_operator && s.msg == expected_message)
         }) {
             bail!(
                 "At least one lane entry is missing signature from {}",
-                validator
+                lane_operator
             );
         }
 
@@ -685,7 +691,7 @@ impl Mempool {
 
         // Add missing lanes to the validator's lane
         debug!(
-            "Filling hole with {} entries for {validator}",
+            "Filling hole with {} entries for {lane_id}",
             missing_lane_entries.len()
         );
 
@@ -703,20 +709,20 @@ impl Mempool {
         // SyncReply only comes for missing data proposals. We should NEVER update the lane tip
         for lane_entry in missing_lane_entries {
             self.lanes
-                .put_no_verification(validator.clone(), lane_entry)?;
+                .put_no_verification(lane_id.clone(), lane_entry)?;
         }
 
-        let mut waiting_proposals = match self.buffered_proposals.get_mut(validator) {
+        let mut waiting_proposals = match self.buffered_proposals.get_mut(lane_id) {
             Some(waiting_proposals) => std::mem::take(waiting_proposals),
             None => vec![],
         };
 
         // TODO: retry remaining wp when one succeeds to be processed
         for wp in waiting_proposals.iter_mut() {
-            if self.lanes.contains(validator, &wp.hashed()) {
+            if self.lanes.contains(lane_id, &wp.hashed()) {
                 continue;
             }
-            self.on_data_proposal(validator, std::mem::take(wp))
+            self.on_data_proposal(lane_id, std::mem::take(wp))
                 .context("Consuming waiting data proposal")?;
         }
 
@@ -734,17 +740,21 @@ impl Mempool {
     ) -> Result<()> {
         info!(
             "{} SyncRequest received from validator {validator} for last_data_proposal_hash {:?}",
-            self.lanes.id, to_data_proposal_hash
+            self.lanes.own_lane_id(),
+            to_data_proposal_hash
         );
 
         let missing_lane_entries = self.lanes.get_lane_entries_between_hashes(
-            &self.lanes.id,
+            self.lanes.own_lane_id(),
             from_data_proposal_hash,
             to_data_proposal_hash,
         );
 
         match missing_lane_entries {
-            Err(e) => info!("Can't send sync reply as there are no missing data proposals found between {:?} and {:?} for {}: {}", to_data_proposal_hash, from_data_proposal_hash, self.lanes.id, e),
+            Err(e) => info!(
+                "Can't send sync reply as there are no missing data proposals found between {:?} and {:?} for {}: {}",
+                to_data_proposal_hash, from_data_proposal_hash, self.lanes.own_lane_id(), e
+            ),
             Ok(lane_entries) => {
                 debug!(
                     "Missing data proposals on {} are {:?}",
@@ -763,7 +773,11 @@ impl Mempool {
         new_lane_size: LaneBytesSize,
     ) -> Result<()> {
         let validator = &msg.signature.validator;
-        debug!("{} Vote from {}", self.lanes.id, validator);
+        debug!(
+            "Vote from {} on own lane {}",
+            validator,
+            self.lanes.own_lane_id()
+        );
         let (data_proposal_hash, signatures) =
             self.lanes
                 .on_data_vote(msg, data_proposal_hash, new_lane_size)?;
@@ -799,55 +813,59 @@ impl Mempool {
 
     fn on_poda_update(
         &mut self,
-        validator: &ValidatorPublicKey,
+        lane_id: &LaneId,
         data_proposal_hash: &DataProposalHash,
         signatures: Vec<SignedByValidator<MempoolNetMessage>>,
     ) -> Result<()> {
         debug!(
-            "Received {} signatures for DataProposal {} of validator {}",
+            "Received {} signatures for DataProposal {} of lane {}",
             signatures.len(),
             data_proposal_hash,
-            validator
+            lane_id
         );
         self.lanes
-            .on_poda_update(validator, data_proposal_hash, signatures)
+            .on_poda_update(lane_id, data_proposal_hash, signatures)
     }
 
     fn on_data_proposal(
         &mut self,
-        validator: &ValidatorPublicKey,
+        lane_id: &LaneId,
         mut data_proposal: DataProposal,
     ) -> Result<()> {
         debug!(
-            "Received DataProposal {:?} from {} ({} txs, {})",
+            "Received DataProposal {:?} on lane {} ({} txs, {})",
             data_proposal.hashed(),
-            validator,
+            lane_id,
             data_proposal.txs.len(),
             data_proposal.estimate_size()
         );
         let data_proposal_hash = data_proposal.hashed();
-        let (verdict, lane_size) = self.lanes.on_data_proposal(validator, &data_proposal)?;
+        let (verdict, lane_size) = self.lanes.on_data_proposal(lane_id, &data_proposal)?;
         match verdict {
             DataProposalVerdict::Empty => {
                 warn!(
-                    "received empty DataProposal from {}, ignoring...",
-                    validator
+                    "received empty DataProposal on lane {}, ignoring...",
+                    lane_id
                 );
             }
             DataProposalVerdict::Vote => {
                 // Normal case, we receive a proposal we already have the parent in store
                 trace!("Send vote for DataProposal");
                 #[allow(clippy::unwrap_used, reason = "we always have a size for Vote")]
-                self.send_vote(validator, data_proposal_hash, lane_size.unwrap())?;
+                self.send_vote(
+                    self.get_lane_operator(lane_id),
+                    data_proposal_hash,
+                    lane_size.unwrap(),
+                )?;
             }
             DataProposalVerdict::Process => {
                 trace!("Further processing for DataProposal");
                 let kc = self.known_contracts.clone();
-                let validator = validator.clone();
+                let lane_id = lane_id.clone();
                 self.running_tasks.spawn_blocking(move || {
                     let decision = LanesStorage::process_data_proposal(&mut data_proposal, kc);
                     Ok(InternalMempoolEvent::OnProcessedDataProposal((
-                        validator,
+                        lane_id,
                         decision,
                         data_proposal,
                     )))
@@ -856,7 +874,7 @@ impl Mempool {
             DataProposalVerdict::Wait => {
                 // Push the data proposal in the waiting list
                 self.buffered_proposals
-                    .entry(validator.clone())
+                    .entry(lane_id.clone())
                     .or_default()
                     .push(data_proposal);
             }
@@ -869,14 +887,14 @@ impl Mempool {
 
     fn on_processed_data_proposal(
         &mut self,
-        validator: ValidatorPublicKey,
+        lane_id: LaneId,
         verdict: DataProposalVerdict,
         data_proposal: DataProposal,
     ) -> Result<()> {
         debug!(
-            "Handling processed DataProposal {:?} from {} ({} txs)",
+            "Handling processed DataProposal {:?} one lane {} ({} txs)",
             data_proposal.hashed(),
-            validator,
+            lane_id,
             data_proposal.txs.len()
         );
         match verdict {
@@ -894,14 +912,22 @@ impl Mempool {
                 let crypto = self.crypto.clone();
                 let (hash, size) =
                     self.lanes
-                        .store_data_proposal(&crypto, &validator, data_proposal)?;
-                self.send_vote(&validator, hash, size)?;
+                        .store_data_proposal(&crypto, &lane_id, data_proposal)?;
+                self.send_vote(self.get_lane_operator(&lane_id), hash, size)?;
             }
             DataProposalVerdict::Refuse => {
                 debug!("Refuse vote for DataProposal");
             }
         }
         Ok(())
+    }
+
+    fn get_lane(&self, validator: &ValidatorPublicKey) -> LaneId {
+        LaneId(validator.clone())
+    }
+
+    fn get_lane_operator<'a>(&self, lane_id: &'a LaneId) -> &'a ValidatorPublicKey {
+        &lane_id.0
     }
 
     fn send_vote(
@@ -922,10 +948,12 @@ impl Mempool {
 
     fn send_sync_request(
         &mut self,
-        validator: &ValidatorPublicKey,
+        lane_id: &LaneId,
         from_data_proposal_hash: Option<&DataProposalHash>,
         to_data_proposal_hash: Option<&DataProposalHash>,
     ) -> Result<()> {
+        // TODO: use a more clever targeting system.
+        let validator = &lane_id.0;
         debug!(
             "🔍 Sending SyncRequest to {} for DataProposal from {:?} to {:?}",
             validator, from_data_proposal_hash, to_data_proposal_hash
@@ -1045,7 +1073,8 @@ pub mod test {
         pub async fn build_mempool(shared_bus: &SharedMessageBus, crypto: BlstCrypto) -> Mempool {
             let pubkey = crypto.validator_pubkey();
             let tmp_dir = tempfile::tempdir().unwrap().into_path();
-            let lanes = LanesStorage::new(&tmp_dir, pubkey.clone(), HashMap::default()).unwrap();
+            let lanes =
+                LanesStorage::new(&tmp_dir, LaneId(pubkey.clone()), BTreeMap::default()).unwrap();
             let bus = MempoolBusClient::new_from_bus(shared_bus.new_handle()).await;
 
             // Initialize Mempool
@@ -1085,6 +1114,11 @@ pub mod test {
             for other_crypto in cryptos.iter() {
                 self.add_trusted_validator(other_crypto.validator_pubkey());
             }
+        }
+
+        pub fn own_lane(&self) -> LaneId {
+            self.mempool
+                .get_lane(self.mempool.crypto.validator_pubkey())
         }
 
         pub fn validator_pubkey(&self) -> &ValidatorPublicKey {
@@ -1260,34 +1294,31 @@ pub mod test {
                 .expect("should handle net msg");
         }
 
-        pub fn current_hash(&self, validator: &ValidatorPublicKey) -> Option<DataProposalHash> {
+        pub fn current_hash(&self, lane_id: &LaneId) -> Option<DataProposalHash> {
             self.mempool
                 .lanes
                 .lanes_tip
-                .get(validator)
+                .get(lane_id)
                 .cloned()
                 .map(|(h, _)| h)
         }
 
         #[track_caller]
-        pub fn current_size_of(&self, validator: &ValidatorPublicKey) -> Option<LaneBytesSize> {
+        pub fn current_size_of(&self, lane_id: &LaneId) -> Option<LaneBytesSize> {
             self.mempool
                 .lanes
                 .lanes_tip
-                .get(validator)
+                .get(lane_id)
                 .cloned()
                 .map(|(_, s)| s)
         }
 
-        pub fn last_validator_lane_entry(
-            &self,
-            validator: &ValidatorPublicKey,
-        ) -> (LaneEntry, DataProposalHash) {
-            let last_dp_hash = self.current_hash(validator).unwrap();
+        pub fn last_lane_entry(&self, lane_id: &LaneId) -> (LaneEntry, DataProposalHash) {
+            let last_dp_hash = self.current_hash(lane_id).unwrap();
             let last_dp = self
                 .mempool
                 .lanes
-                .get_by_hash(validator, &last_dp_hash)
+                .get_by_hash(lane_id, &last_dp_hash)
                 .unwrap()
                 .unwrap();
 
@@ -1295,25 +1326,25 @@ pub mod test {
         }
 
         pub fn current_size(&self) -> Option<LaneBytesSize> {
-            let validator = self.validator_pubkey();
-            self.current_size_of(validator)
+            let lane_id = LaneId(self.validator_pubkey().clone());
+            self.current_size_of(&lane_id)
         }
 
         pub fn pop_data_proposal(&mut self) -> (DataProposal, DataProposalHash, LaneBytesSize) {
-            let pub_key = self.validator_pubkey().clone();
-            self.pop_validator_data_proposal(&pub_key)
+            let lane_id = LaneId(self.validator_pubkey().clone());
+            self.pop_lane_data_proposal(&lane_id)
         }
 
-        pub fn pop_validator_data_proposal(
+        pub fn pop_lane_data_proposal(
             &mut self,
-            validator: &ValidatorPublicKey,
+            lane_id: &LaneId,
         ) -> (DataProposal, DataProposalHash, LaneBytesSize) {
             // Get the latest lane entry
-            let latest_data_proposal_hash = self.current_hash(validator).unwrap();
+            let latest_data_proposal_hash = self.current_hash(lane_id).unwrap();
             let latest_lane_entry = self
                 .mempool
                 .lanes
-                .get_by_hash(validator, &latest_data_proposal_hash)
+                .get_by_hash(lane_id, &latest_data_proposal_hash)
                 .unwrap()
                 .unwrap();
 
@@ -1324,17 +1355,17 @@ pub mod test {
                 .as_ref()
             {
                 self.mempool.lanes.lanes_tip.insert(
-                    validator.clone(),
+                    lane_id.clone(),
                     (parent_dp_hash.clone(), latest_lane_entry.cumul_size),
                 );
             } else {
-                self.mempool.lanes.lanes_tip.remove(validator);
+                self.mempool.lanes.lanes_tip.remove(lane_id);
             }
 
             // Remove the lane entry from db
             self.mempool
                 .lanes
-                .remove_lane_entry(validator, &latest_data_proposal_hash);
+                .remove_lane_entry(lane_id, &latest_data_proposal_hash);
 
             (
                 latest_lane_entry.data_proposal,
@@ -1344,14 +1375,14 @@ pub mod test {
         }
 
         pub fn push_data_proposal(&mut self, dp: DataProposal) {
-            let key = self.validator_pubkey().clone();
+            let lane_id = LaneId(self.validator_pubkey().clone());
 
             let lane_size = self.current_size().unwrap();
             let size = lane_size + dp.estimate_size();
             self.mempool
                 .lanes
                 .put_no_verification(
-                    key,
+                    lane_id,
                     LaneEntry {
                         data_proposal: dp,
                         cumul_size: size,
@@ -1390,7 +1421,7 @@ pub mod test {
         pub fn process_new_data_proposal(&mut self, dp: DataProposal) -> Result<()> {
             self.mempool.lanes.store_data_proposal(
                 &self.mempool.crypto,
-                self.mempool.crypto.validator_pubkey(),
+                &LaneId(self.mempool.crypto.validator_pubkey().clone()),
                 dp,
             )?;
             Ok(())
@@ -1404,7 +1435,7 @@ pub mod test {
             slot: u64,
         ) -> Result<Cut> {
             let cut = vec![(
-                leader.clone(),
+                LaneId(leader.clone()),
                 dp_hash.clone(),
                 cumul_size,
                 AggregateSignature::default(),
@@ -1583,7 +1614,7 @@ pub mod test {
                 signatures: sig, ..
             },
             _,
-        ) = ctx.last_validator_lane_entry(ctx.validator_pubkey());
+        ) = ctx.last_lane_entry(&LaneId(ctx.validator_pubkey().clone()));
 
         assert_eq!(sig.len(), 2);
         Ok(())
@@ -1614,7 +1645,7 @@ pub mod test {
 
         ctx.handle_consensus_event(ConsensusProposal {
             cut: vec![(
-                pubkey2.clone(),
+                LaneId(pubkey2.clone()),
                 DataProposalHash("dp_hash_in_cut".to_owned()),
                 LaneBytesSize::default(),
                 PoDA::default(),
@@ -1645,7 +1676,7 @@ pub mod test {
         // Since mempool is alone, no broadcast
 
         let (LaneEntry { data_proposal, .. }, _) =
-            ctx.last_validator_lane_entry(ctx.validator_pubkey());
+            ctx.last_lane_entry(&LaneId(ctx.validator_pubkey().clone()));
 
         // Add new validator
         let crypto2 = BlstCrypto::new("2").unwrap();
@@ -1823,10 +1854,10 @@ pub mod test {
         assert_ok!(handle, "Should handle net message");
 
         // Assert that the lane entry was added
-        assert!(ctx
-            .mempool
-            .lanes
-            .contains(crypto2.validator_pubkey(), &data_proposal.hashed()));
+        assert!(ctx.mempool.lanes.contains(
+            &ctx.mempool.get_lane(crypto2.validator_pubkey()),
+            &data_proposal.hashed()
+        ));
 
         Ok(())
     }
@@ -1860,7 +1891,7 @@ pub mod test {
                 assert_eq!(sb.consensus_proposal.cut, cut);
                 assert_eq!(
                     sb.data_proposals,
-                    vec![(key.clone(), vec![dp_orig])]
+                    vec![(LaneId(key.clone()), vec![dp_orig])]
                 );
             }
         );
@@ -1931,13 +1962,13 @@ pub mod test {
         // This simulates a cut where we somehow don't have our own DP and another DP (they also happen to be the same hash)
         let cut1 = vec![
             (
-                ctx.validator_pubkey().clone(),
+                ctx.mempool.get_lane(ctx.validator_pubkey()),
                 dp1_hash.clone(),
                 dp1_size,
                 AggregateSignature::default(),
             ),
             (
-                crypto2.validator_pubkey().clone(),
+                ctx.mempool.get_lane(crypto2.validator_pubkey()),
                 dp1b_hash.clone(),
                 dp1b_size,
                 AggregateSignature::default(),
@@ -1976,13 +2007,13 @@ pub mod test {
         // Now handle a second cut, one dp down
         let cut2 = vec![
             (
-                ctx.validator_pubkey().clone(),
+                ctx.mempool.get_lane(ctx.validator_pubkey()),
                 dp2_hash.clone(),
                 dp2_size,
                 AggregateSignature::default(),
             ),
             (
-                crypto2.validator_pubkey().clone(),
+                ctx.mempool.get_lane(crypto2.validator_pubkey()),
                 dp2_hash.clone(),
                 dp2_size,
                 AggregateSignature::default(),
@@ -2090,7 +2121,10 @@ pub mod test {
                 assert_eq!(sb.consensus_proposal.cut, cut1);
                 assert_eq!(
                     sb.data_proposals,
-                    vec![(ctx.validator_pubkey().clone(), vec![dp1.clone()]), (crypto2.validator_pubkey().clone(), vec![dp1b.clone()])]
+                    vec![
+                        (ctx.mempool.get_lane(ctx.validator_pubkey()), vec![dp1.clone()]),
+                        (ctx.mempool.get_lane(crypto2.validator_pubkey()), vec![dp1b.clone()]
+                    )]
                 );
             }
         );

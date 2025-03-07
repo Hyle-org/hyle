@@ -69,7 +69,7 @@ impl PartialOrd for Block {
 #[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Display)]
 #[display("")]
 pub struct SignedBlock {
-    pub data_proposals: Vec<(ValidatorPublicKey, Vec<DataProposal>)>,
+    pub data_proposals: Vec<(LaneId, Vec<DataProposal>)>,
     pub certificate: AggregateSignature,
     pub consensus_proposal: ConsensusProposal,
 }

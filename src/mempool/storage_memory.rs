@@ -1,23 +1,27 @@
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::Path,
+};
 
 use anyhow::{bail, Result};
-use hyle_model::LaneBytesSize;
+use hyle_model::{LaneBytesSize, LaneId};
 use tracing::info;
 
 use super::storage::{CanBePutOnTop, LaneEntry, Storage};
-use crate::model::{DataProposalHash, Hashed, ValidatorPublicKey};
+use crate::model::{DataProposalHash, Hashed};
 
 pub struct LanesStorage {
-    pub id: ValidatorPublicKey,
-    pub lanes_tip: HashMap<ValidatorPublicKey, (DataProposalHash, LaneBytesSize)>,
-    pub by_hash: HashMap<ValidatorPublicKey, HashMap<DataProposalHash, LaneEntry>>,
+    pub own_lane_id: LaneId,
+    pub lanes_tip: BTreeMap<LaneId, (DataProposalHash, LaneBytesSize)>,
+    // NB: do not iterate on this one as it's unordered
+    pub by_hash: HashMap<LaneId, HashMap<DataProposalHash, LaneEntry>>,
 }
 
 impl Storage for LanesStorage {
     fn new(
         _path: &Path,
-        id: ValidatorPublicKey,
-        lanes_tip: HashMap<ValidatorPublicKey, (DataProposalHash, LaneBytesSize)>,
+        own_lane_id: LaneId,
+        lanes_tip: BTreeMap<LaneId, (DataProposalHash, LaneBytesSize)>,
     ) -> Result<Self> {
         // FIXME: load from disk
         let by_hash = HashMap::default();
@@ -25,18 +29,22 @@ impl Storage for LanesStorage {
         info!("{} DP(s) available", by_hash.len());
 
         Ok(LanesStorage {
-            id,
+            own_lane_id,
             lanes_tip,
             by_hash,
         })
     }
 
-    fn id(&self) -> &ValidatorPublicKey {
-        &self.id
+    fn own_lane_id(&self) -> &LaneId {
+        &self.own_lane_id
     }
 
-    fn contains(&self, validator_key: &ValidatorPublicKey, dp_hash: &DataProposalHash) -> bool {
-        if let Some(lane) = self.by_hash.get(validator_key) {
+    fn persist(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn contains(&self, lane_id: &LaneId, dp_hash: &DataProposalHash) -> bool {
+        if let Some(lane) = self.by_hash.get(lane_id) {
             return lane.contains_key(dp_hash);
         }
         false
@@ -44,19 +52,16 @@ impl Storage for LanesStorage {
 
     fn get_by_hash(
         &self,
-        validator_key: &ValidatorPublicKey,
+        lane_id: &LaneId,
         dp_hash: &DataProposalHash,
     ) -> Result<Option<LaneEntry>> {
-        if let Some(lane) = self.by_hash.get(validator_key) {
+        if let Some(lane) = self.by_hash.get(lane_id) {
             return Ok(lane.get(dp_hash).cloned());
         }
-        bail!("Can't find validator {}", validator_key)
+        bail!("Can't find validator {}", lane_id)
     }
 
-    fn pop(
-        &mut self,
-        validator: ValidatorPublicKey,
-    ) -> Result<Option<(DataProposalHash, LaneEntry)>> {
+    fn pop(&mut self, validator: LaneId) -> Result<Option<(DataProposalHash, LaneEntry)>> {
         if let Some((lane_tip, _)) = self.lanes_tip.get(&validator).cloned() {
             if let Some(lane) = self.by_hash.get_mut(&validator) {
                 if let Some(lane_entry) = lane.remove(&lane_tip) {
@@ -72,13 +77,13 @@ impl Storage for LanesStorage {
         Ok(None)
     }
 
-    fn put(&mut self, validator: ValidatorPublicKey, lane_entry: LaneEntry) -> Result<()> {
+    fn put(&mut self, lane_id: LaneId, lane_entry: LaneEntry) -> Result<()> {
         let dp_hash = lane_entry.data_proposal.hashed();
-        if self.contains(&validator, &dp_hash) {
+        if self.contains(&lane_id, &dp_hash) {
             bail!("DataProposal {} was already in lane", dp_hash);
         }
         match self.can_be_put_on_top(
-            &validator,
+            &lane_id,
             lane_entry.data_proposal.parent_data_proposal_hash.as_ref(),
         ) {
             CanBePutOnTop::No => bail!(
@@ -89,17 +94,17 @@ impl Storage for LanesStorage {
                 // Add DataProposal to validator's lane
                 let size = lane_entry.cumul_size;
                 self.by_hash
-                    .entry(validator.clone())
+                    .entry(lane_id.clone())
                     .or_default()
                     .insert(dp_hash.clone(), lane_entry);
 
                 // Validatoupdate_lane_tipr's lane tip is only updated if DP-chain is respected
-                self.update_lane_tip(validator, dp_hash, size);
+                self.update_lane_tip(lane_id, dp_hash, size);
 
                 Ok(())
             }
             CanBePutOnTop::Fork => {
-                let last_known_hash = self.lanes_tip.get(&validator);
+                let last_known_hash = self.lanes_tip.get(&lane_id);
                 bail!(
                     "DataProposal cannot be put in lane because it creates a fork: last dp hash {:?} while proposed parent_data_proposal_hash: {:?}",
                     last_known_hash,
@@ -109,58 +114,39 @@ impl Storage for LanesStorage {
         }
     }
 
-    fn put_no_verification(
-        &mut self,
-        validator_key: ValidatorPublicKey,
-        lane_entry: LaneEntry,
-    ) -> Result<()> {
+    fn put_no_verification(&mut self, lane_id: LaneId, lane_entry: LaneEntry) -> Result<()> {
         let dp_hash = lane_entry.data_proposal.hashed();
         self.by_hash
-            .entry(validator_key)
+            .entry(lane_id)
             .or_default()
             .insert(dp_hash, lane_entry);
         Ok(())
     }
 
-    fn update(&mut self, validator_key: ValidatorPublicKey, lane_entry: LaneEntry) -> Result<()> {
-        let dp_hash = lane_entry.data_proposal.hashed();
-
-        if !self.contains(&validator_key, &dp_hash) {
-            bail!("LaneEntry does not exist");
-        }
-
-        self.by_hash
-            .entry(validator_key)
-            .or_default()
-            .insert(dp_hash, lane_entry);
-
-        Ok(())
+    fn get_lane_ids(&self) -> impl Iterator<Item = &LaneId> {
+        self.lanes_tip.keys()
     }
 
-    fn persist(&self) -> Result<()> {
-        Ok(())
+    fn get_lane_hash_tip(&self, lane_id: &LaneId) -> Option<&DataProposalHash> {
+        self.lanes_tip.get(lane_id).map(|(hash, _)| hash)
     }
 
-    fn get_lane_hash_tip(&self, validator: &ValidatorPublicKey) -> Option<&DataProposalHash> {
-        self.lanes_tip.get(validator).map(|(hash, _)| hash)
-    }
-
-    fn get_lane_size_tip(&self, validator: &ValidatorPublicKey) -> Option<&LaneBytesSize> {
-        self.lanes_tip.get(validator).map(|(_, size)| size)
+    fn get_lane_size_tip(&self, lane_id: &LaneId) -> Option<&LaneBytesSize> {
+        self.lanes_tip.get(lane_id).map(|(_, size)| size)
     }
 
     fn update_lane_tip(
         &mut self,
-        validator: ValidatorPublicKey,
+        lane_id: LaneId,
         dp_hash: DataProposalHash,
         size: LaneBytesSize,
     ) -> Option<(DataProposalHash, LaneBytesSize)> {
-        self.lanes_tip.insert(validator, (dp_hash, size))
+        self.lanes_tip.insert(lane_id, (dp_hash, size))
     }
 
     #[cfg(test)]
-    fn remove_lane_entry(&mut self, validator: &ValidatorPublicKey, dp_hash: &DataProposalHash) {
-        if let Some(lane) = self.by_hash.get_mut(validator) {
+    fn remove_lane_entry(&mut self, lane_id: &LaneId, dp_hash: &DataProposalHash) {
+        if let Some(lane) = self.by_hash.get_mut(lane_id) {
             lane.remove(dp_hash);
         }
     }

@@ -491,7 +491,7 @@ impl Genesis {
             .clone();
 
         SignedBlock {
-            data_proposals: vec![(round_leader.clone(), vec![dp.clone()])],
+            data_proposals: vec![(LaneId(round_leader.clone()), vec![dp.clone()])],
             certificate: AggregateSignature {
                 signature: Signature("fake".into()),
                 validators: initial_validators.clone(),
