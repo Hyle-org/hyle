@@ -53,9 +53,7 @@ impl TcpServer {
             .as_ref()
             .context("tcp_server_address not specified in conf file. Not Starting module.")?;
 
-        let (_, mut receiver) = codec_tcp_server::create_server(tcp_server_address.clone())
-            .run_in_background()
-            .await?;
+        let mut server = codec_tcp_server::start_server(tcp_server_address.clone()).await?;
 
         info!(
             "📡  Starting TcpServer module, listening for stream requests on {}",
@@ -64,7 +62,7 @@ impl TcpServer {
 
         module_handle_messages! {
             on_bus self.bus,
-            Some(res) = receiver.recv() => {
+            Some(res) = server.listen_next() => {
                 _ = log_error!(self.bus.send(*res.data), "Sending message on TcpServerMessage topic from connection pool");
             }
         };
