@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    net::SocketAddr,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -112,8 +113,12 @@ pub struct TcpServer<Codec, Req: Clone, Res: Clone + std::fmt::Debug>
 where
     Codec: Decoder<Item = Req> + Encoder<Res> + Default,
 {
-    addr: String,
     pool_name: &'static str,
+    tcp_listener: TcpListener,
+    pool_sender: Sender<TcpEvent<Req>>,
+    pool_receiver: Receiver<TcpEvent<Req>>,
+    ping_sender: Sender<String>,
+    ping_receiver: Receiver<String>,
     peers: HashMap<String, PeerStream<Codec, Req, Res>>,
 }
 
@@ -125,56 +130,33 @@ where
     Req: BorshDeserialize + Clone + Send + 'static + std::fmt::Debug,
     Res: BorshSerialize + Clone + Send + 'static + std::fmt::Debug,
 {
-    pub fn create(addr: String, pool_name: &'static str) -> Self {
-        TcpServer::<Codec, Req, Res> {
-            peers: HashMap::new(),
-            pool_name,
-            addr,
-        }
-    }
-
-    pub async fn run_in_background(
-        mut self,
-    ) -> Result<(Sender<TcpCommand<Res>>, Receiver<TcpEvent<Req>>)> {
-        let (out_sender, out_receiver) = tokio::sync::mpsc::channel(100);
-        let (in_sender, in_receiver) = tokio::sync::mpsc::channel(100);
-
-        tokio::task::Builder::new()
-            .name("tcp-connection-pool-loop")
-            .spawn(async move {
-                self.run(out_receiver, in_sender)
-                    .await
-                    .context("Running connection pool loop")?;
-                anyhow::Ok(())
-            })?;
-
-        Ok((out_sender, in_receiver))
-    }
-
-    async fn run(
-        &mut self,
-        mut pool_recv: Receiver<TcpCommand<Res>>,
-        pool_sender: Sender<TcpEvent<Req>>,
-    ) -> Result<()> {
+    pub async fn start(addr: String, pool_name: &'static str) -> Result<Self> {
+        let tcp_listener = TcpListener::bind(&addr).await?;
+        let (pool_sender, pool_receiver) = tokio::sync::mpsc::channel(100);
+        let (ping_sender, ping_receiver) = tokio::sync::mpsc::channel(100);
         info!(
             "📡  Starting Tcp Connection Pool {}, listening for stream requests on {}",
-            self.pool_name, self.addr
+            &pool_name, &addr
         );
-        let new_peer_listener = TcpListener::bind(&self.addr).await?;
-        let (ping_sender, mut ping_receiver) = tokio::sync::mpsc::channel(100);
+        Ok(TcpServer::<Codec, Req, Res> {
+            peers: HashMap::new(),
+            tcp_listener,
+            pool_sender,
+            pool_receiver,
+            ping_sender,
+            ping_receiver,
+            pool_name,
+        })
+    }
+
+    async fn select(&mut self, tcp_listener: TcpListener) -> Result<()> {
         loop {
             tokio::select! {
-                Ok((stream, addr)) = new_peer_listener.accept() => {
-                    _  = self.setup_peer(ping_sender.clone(), pool_sender.clone(), stream, &addr.ip().to_string());
+                Ok((stream, addr)) = tcp_listener.accept() => {
+                    _  = self.setup_peer(stream, &addr.ip().to_string());
                 }
 
-                Some(to_send) = pool_recv.recv() => {
-                    if let Err(e) = self.send(to_send).await {
-                        error!("Sending message to pool {}: {:?}", self.pool_name, e)
-                    }
-                }
-
-                Some(peer_id) = ping_receiver.recv() => {
+                Some(peer_id) = self.ping_receiver.recv() => {
                     if let Some(peer) = self.peers.get_mut(&peer_id) {
                         peer.last_ping = get_current_timestamp();
                     }
@@ -234,8 +216,6 @@ where
 
     fn setup_peer(
         &mut self,
-        ping_sender: Sender<String>,
-        sender_received_messages: Sender<TcpEvent<Req>>,
         tcp_stream: TcpStream,
         // FIXME: Use something safer to identify a peer. For now its ok to use its ip
         peer_ip: &String,
@@ -245,6 +225,8 @@ where
         // Start a task to process pings from the peer.
         // We do the processing in the main select! loop to keep things synchronous.
         // This makes it easier to store data in the same struct without mutexing.
+        let ping_sender = self.ping_sender.clone();
+        let pool_sender = self.pool_sender.clone();
         let cloned_peer_ip = peer_ip.clone();
         let abort = tokio::task::Builder::new()
             .name("peer-stream-abort")
@@ -256,7 +238,7 @@ where
                             _ = ping_sender.send(cloned_peer_ip.clone()).await;
                         }
                         Ok(TcpMessage::Data(data)) => {
-                            _ = sender_received_messages
+                            _ = pool_sender
                                 .send(TcpEvent {
                                     dest: cloned_peer_ip.clone(),
                                     data: Box::new(data),
@@ -460,8 +442,8 @@ macro_rules! tcp_client_server {
             pub type Client = $crate::tcp::TcpClient<ClientCodec, $req, $res>;
             pub type Server = $crate::tcp::TcpServer<ServerCodec, $req, $res>;
 
-            pub fn create_server(addr: String) -> Server {
-                $crate::tcp::TcpServer::<ServerCodec, $req, $res>::create(addr, stringify!($name))
+            pub async fn start_server(addr: String) -> Result<Server> {
+                $crate::tcp::TcpServer::<ServerCodec, $req, $res>::start(addr, stringify!($name)).await
             }
             pub async fn connect(id: String, addr: String) -> Result<Client> {
                 $crate::tcp::TcpClient::<ClientCodec, $req, $res>::connect(id, addr).await
@@ -518,7 +500,8 @@ pub mod tests {
     #[tokio::test]
     async fn tcp_test() -> Result<()> {
         let (sender, mut receiver) =
-            codec_data_availability::create_server("0.0.0.0:2345".to_string())
+            codec_data_availability::start_server("0.0.0.0:2345".to_string())
+                .await?
                 .run_in_background()
                 .await?;
 
