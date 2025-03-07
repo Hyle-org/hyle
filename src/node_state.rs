@@ -13,10 +13,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_contract_sdk::{utils::parse_structured_blob, BlobIndex, HyleOutput, TxHash};
 use hyle_tld::handle_blob_for_hyle_tld;
 use ordered_tx_map::OrderedTxMap;
-use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
-    sync::Arc,
-};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use timeouts::Timeouts;
 use tracing::{debug, error, info, trace};
 
@@ -135,29 +132,37 @@ impl NodeState {
             deleted_contracts: vec![],
             updated_states: BTreeMap::new(),
             transactions_events: BTreeMap::new(),
-            dp_hashes: BTreeMap::new(),
+            dp_parent_hashes: BTreeMap::new(),
+            lane_ids: BTreeMap::new(),
         };
-
-        // We'll need to remember some data to validate transactions proofs.
-        let tx_context = Arc::new(TxContext {
-            block_hash: block_under_construction.hash.clone(),
-            block_height: block_under_construction.block_height,
-            timestamp: signed_block.consensus_proposal.timestamp.into(),
-            chain_id: HYLE_TESTNET_CHAIN_ID,
-        });
 
         self.clear_timeouts(&mut block_under_construction);
 
         let mut next_unsettled_txs = BTreeSet::new();
         // Handle all transactions
-        for (tx_id, tx) in signed_block.iter_txs_with_id() {
+        for (lane_id, tx_id, tx) in signed_block.iter_txs_with_id() {
+            // TODO: make this more efficient
+            info!("TX {} on lane {}", tx_id.1, lane_id);
             block_under_construction
-                .dp_hashes
+                .lane_ids
+                .insert(tx_id.1.clone(), lane_id.clone());
+            block_under_construction
+                .dp_parent_hashes
                 .insert(tx_id.1.clone(), tx_id.0.clone());
 
             match &tx.transaction_data {
                 TransactionData::Blob(blob_transaction) => {
-                    match self.handle_blob_tx(tx_id.0, blob_transaction, tx_context.clone()) {
+                    match self.handle_blob_tx(
+                        tx_id.0.clone(),
+                        blob_transaction,
+                        TxContext {
+                            lane_id,
+                            block_hash: block_under_construction.hash.clone(),
+                            block_height: block_under_construction.block_height,
+                            timestamp: signed_block.consensus_proposal.timestamp.into(),
+                            chain_id: HYLE_TESTNET_CHAIN_ID,
+                        },
+                    ) {
                         Ok(Some(tx_hash)) => {
                             let mut blob_tx_to_try_and_settle = BTreeSet::new();
                             blob_tx_to_try_and_settle.insert(tx_hash);
@@ -183,7 +188,7 @@ impl NodeState {
                                 .entry(tx_id.1.clone())
                                 .or_default()
                                 .push(TransactionStateEvent::Error(err));
-                            block_under_construction.failed_txs.push(tx_id.1);
+                            block_under_construction.failed_txs.push(tx_id.1.clone());
                         }
                     }
                 }
@@ -200,10 +205,8 @@ impl NodeState {
                         .filter_map(|blob_proof_data| {
                             match self.handle_blob_proof(
                                 tx_id.1.clone(),
-                                &mut block_under_construction.dp_hashes,
-                                &mut block_under_construction.blob_proof_outputs,
-                                &mut block_under_construction.transactions_events,
                                 blob_proof_data,
+                                &mut block_under_construction,
                             ) {
                                 Ok(maybe_tx_hash) => maybe_tx_hash,
                                 Err(err) => {
@@ -238,8 +241,8 @@ impl NodeState {
                 }
             }
             next_unsettled_txs.clear();
+            block_under_construction.txs.push((tx_id, tx.clone()));
         }
-        block_under_construction.txs = signed_block.iter_clone_txs_with_id().collect();
         block_under_construction
     }
 
@@ -262,7 +265,7 @@ impl NodeState {
         &mut self,
         parent_dp_hash: DataProposalHash,
         tx: &BlobTransaction,
-        tx_context: Arc<TxContext>,
+        tx_context: TxContext,
     ) -> Result<Option<TxHash>, Error> {
         let tx_hash = tx.hashed();
         debug!("Handle blob tx: {:?} (hash: {})", tx, tx_hash);
@@ -336,10 +339,8 @@ impl NodeState {
     fn handle_blob_proof(
         &mut self,
         proof_tx_hash: TxHash,
-        dp_hashes: &mut BTreeMap<TxHash, DataProposalHash>,
-        blob_proof_outputs: &mut Vec<HandledBlobProofOutput>,
-        tx_events: &mut BTreeMap<TxHash, Vec<TransactionStateEvent>>,
         blob_proof_data: &BlobProofOutput,
+        block_under_construction: &mut Block,
     ) -> Result<Option<TxHash>, Error> {
         let blob_tx_hash = blob_proof_data.blob_tx_hash.clone();
         // Find the blob being proven and whether we should try to settle the TX.
@@ -350,9 +351,13 @@ impl NodeState {
             bail!("BlobTx {} not found", &blob_tx_hash);
         };
 
-        dp_hashes.insert(
+        block_under_construction.dp_parent_hashes.insert(
             unsettled_tx.hash.clone(),
             unsettled_tx.parent_dp_hash.clone(),
+        );
+        block_under_construction.lane_ids.insert(
+            unsettled_tx.hash.clone(),
+            unsettled_tx.tx_context.lane_id.clone(),
         );
 
         // TODO: add diverse verifications ? (without the inital state checks!).
@@ -376,7 +381,8 @@ impl NodeState {
             "Saving a hyle_output for BlobTx {} index {}",
             blob_proof_data.hyle_output.tx_hash.0, blob_proof_data.hyle_output.index
         );
-        tx_events
+        block_under_construction
+            .transactions_events
             .entry(blob_tx_hash.clone())
             .or_default()
             .push(TransactionStateEvent::NewProof {
@@ -391,18 +397,20 @@ impl NodeState {
 
         let unsettled_tx_hash = unsettled_tx.hash.clone();
 
-        blob_proof_outputs.push(HandledBlobProofOutput {
-            proof_tx_hash,
-            blob_tx_hash: unsettled_tx_hash.clone(),
-            blob_index: blob_proof_data.hyle_output.index,
-            blob_proof_output_index: blob.possible_proofs.len() - 1,
-            #[allow(clippy::indexing_slicing, reason = "Guaranteed to exist by the above")]
-            contract_name: unsettled_tx.blobs[blob_proof_data.hyle_output.index.0]
-                .blob
-                .contract_name
-                .clone(),
-            hyle_output: blob_proof_data.hyle_output.clone(),
-        });
+        block_under_construction
+            .blob_proof_outputs
+            .push(HandledBlobProofOutput {
+                proof_tx_hash,
+                blob_tx_hash: unsettled_tx_hash.clone(),
+                blob_index: blob_proof_data.hyle_output.index,
+                blob_proof_output_index: blob.possible_proofs.len() - 1,
+                #[allow(clippy::indexing_slicing, reason = "Guaranteed to exist by the above")]
+                contract_name: unsettled_tx.blobs[blob_proof_data.hyle_output.index.0]
+                    .blob
+                    .contract_name
+                    .clone(),
+                hyle_output: blob_proof_data.hyle_output.clone(),
+            });
 
         Ok(match should_settle_tx {
             true => Some(unsettled_tx_hash),
@@ -638,7 +646,7 @@ impl NodeState {
 
         // Insert dp hash of the tx, whether its a success or not
         block_under_construction
-            .dp_hashes
+            .dp_parent_hashes
             .insert(settled_tx.hash, settled_tx.parent_dp_hash);
 
         // If it's a failed settlement, mark it so and move on.
@@ -803,7 +811,7 @@ impl NodeState {
         }
 
         if let Some(tx_ctx) = &hyle_output.tx_ctx {
-            if *tx_ctx != *unsettled_tx.tx_context {
+            if *tx_ctx != unsettled_tx.tx_context {
                 bail!(
                     "Proof tx_context '{:?}' does not correspond to BlobTx tx_context '{:?}'.",
                     tx_ctx,
@@ -914,7 +922,9 @@ impl NodeState {
                     .entry(hash.clone())
                     .or_default()
                     .push(TransactionStateEvent::TimedOut);
-                block_under_construction.dp_hashes.insert(hash, parent_hash);
+                block_under_construction
+                    .dp_parent_hashes
+                    .insert(hash, parent_hash);
 
                 // Attempt to settle following transactions
                 let mut blob_tx_to_try_and_settle = BTreeSet::new();
@@ -1064,13 +1074,14 @@ pub mod test {
         }
     }
 
-    fn bogus_tx_context() -> Arc<TxContext> {
-        Arc::new(TxContext {
+    fn bogus_tx_context() -> TxContext {
+        TxContext {
+            lane_id: LaneId::default(),
             block_hash: ConsensusProposalHash("0xfedbeef".to_owned()),
             block_height: BlockHeight(133),
             timestamp: get_current_timestamp_ms().into(),
             chain_id: HYLE_TESTNET_CHAIN_ID,
-        })
+        }
     }
 
     #[test_log::test(tokio::test)]
@@ -1091,10 +1102,10 @@ pub mod test {
             .unwrap();
 
         let mut hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(0));
-        hyle_output.tx_ctx = Some((*ctx).clone());
+        hyle_output.tx_ctx = Some(ctx.clone());
         let verified_proof = new_proof_tx(&c1, &hyle_output, &blob_tx_id);
         // Modify something so it would fail.
-        let mut ctx = (*ctx).clone();
+        let mut ctx = ctx.clone();
         ctx.timestamp = 1234;
         hyle_output.tx_ctx = Some(ctx);
         let verified_proof_bad = new_proof_tx(&c1, &hyle_output, &blob_tx_id);
@@ -2049,7 +2060,7 @@ pub mod test {
         }
 
         fn check_block_is_ok(block: &Block) {
-            let dp_hashes: Vec<TxHash> = block.dp_hashes.clone().into_keys().collect();
+            let dp_hashes: Vec<TxHash> = block.dp_parent_hashes.clone().into_keys().collect();
 
             for tx_hash in block.successful_txs.iter() {
                 assert!(dp_hashes.contains(tx_hash));

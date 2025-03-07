@@ -126,6 +126,23 @@ impl std::fmt::Display for ValidatorPublicKey {
     }
 }
 
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    PartialEq,
+    Eq,
+    Hash,
+    Ord,
+    PartialOrd,
+)]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
+pub struct LaneId(pub ValidatorPublicKey);
+
 // Cumulative size of the lane from the beginning
 #[derive(
     Debug,

@@ -592,7 +592,7 @@ pub async fn long_running_test(node_url: String, _indexer_url: String) -> Result
 }
 
 pub async fn send_massive_blob(users: u32, url: String) -> Result<()> {
-    let ident = Identity::new("test.hydentity");
+    let ident = Identity::new("test3.hydentity");
 
     let mut data = vec![];
 
