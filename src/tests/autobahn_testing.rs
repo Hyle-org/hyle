@@ -331,13 +331,14 @@ async fn autobahn_basic_flow() {
     let register_tx = make_register_contract_tx(ContractName::new("test1"));
     let register_tx_2 = make_register_contract_tx(ContractName::new("test2"));
 
-    node1.mempool_ctx.submit_tx(&register_tx);
-    node1.mempool_ctx.submit_tx(&register_tx_2);
-
+    let dp = node1
+        .mempool_ctx
+        .create_data_proposal(None, &[register_tx, register_tx_2]);
     node1
         .mempool_ctx
-        .make_data_proposal_with_pending_txs()
-        .expect("Should create data proposal");
+        .process_new_data_proposal(dp.clone())
+        .unwrap();
+    node1.mempool_ctx.timer_tick().unwrap();
 
     broadcast! {
         description: "Disseminate Tx",
@@ -458,13 +459,14 @@ async fn mempool_broadcast_multiple_data_proposals() {
     let register_tx = make_register_contract_tx(ContractName::new("test1"));
     let register_tx_2 = make_register_contract_tx(ContractName::new("test2"));
 
-    node1.mempool_ctx.submit_tx(&register_tx);
-    node1.mempool_ctx.submit_tx(&register_tx_2);
-
+    let dp = node1
+        .mempool_ctx
+        .create_data_proposal(None, &[register_tx, register_tx_2]);
     node1
         .mempool_ctx
-        .make_data_proposal_with_pending_txs()
-        .expect("Should create data proposal");
+        .process_new_data_proposal(dp.clone())
+        .unwrap();
+    node1.mempool_ctx.timer_tick().unwrap();
 
     broadcast! {
         description: "Disseminate Tx",
@@ -497,13 +499,14 @@ async fn mempool_broadcast_multiple_data_proposals() {
     let register_tx = make_register_contract_tx(ContractName::new("test3"));
     let register_tx_2 = make_register_contract_tx(ContractName::new("test4"));
 
-    node1.mempool_ctx.submit_tx(&register_tx);
-    node1.mempool_ctx.submit_tx(&register_tx_2);
-
+    let dp = node1
+        .mempool_ctx
+        .create_data_proposal(Some(dp.hashed()), &[register_tx, register_tx_2]);
     node1
         .mempool_ctx
-        .make_data_proposal_with_pending_txs()
-        .expect("Should create data proposal");
+        .process_new_data_proposal(dp.clone())
+        .unwrap();
+    node1.mempool_ctx.timer_tick().unwrap();
 
     broadcast! {
         description: "Disseminate Tx",
@@ -540,23 +543,26 @@ async fn mempool_fail_to_vote_on_fork() {
     let register_tx = make_register_contract_tx(ContractName::new("test1"));
     let register_tx_2 = make_register_contract_tx(ContractName::new("test2"));
 
-    node1.mempool_ctx.submit_tx(&register_tx);
-    node1.mempool_ctx.submit_tx(&register_tx_2);
-
+    let dp1 = node1
+        .mempool_ctx
+        .create_data_proposal(None, &[register_tx, register_tx_2]);
     node1
         .mempool_ctx
-        .make_data_proposal_with_pending_txs()
-        .expect("Should create data proposal");
+        .process_new_data_proposal(dp1.clone())
+        .unwrap();
+    node1.mempool_ctx.timer_tick().unwrap();
 
-    let dp1;
+    let dp1_check;
 
     broadcast! {
         description: "Disseminate Tx",
         from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
         message_matches: MempoolNetMessage::DataProposal(data) => {
-            dp1 = data.clone();
+            dp1_check = data.clone();
         }
     };
+
+    assert_eq!(dp1, dp1_check);
 
     join_all(
         [
@@ -583,13 +589,14 @@ async fn mempool_fail_to_vote_on_fork() {
     let register_tx = make_register_contract_tx(ContractName::new("test3"));
     let register_tx_2 = make_register_contract_tx(ContractName::new("test4"));
 
-    node1.mempool_ctx.submit_tx(&register_tx);
-    node1.mempool_ctx.submit_tx(&register_tx_2);
-
+    let dp2 = node1
+        .mempool_ctx
+        .create_data_proposal(Some(dp1.hashed()), &[register_tx, register_tx_2]);
     node1
         .mempool_ctx
-        .make_data_proposal_with_pending_txs()
-        .expect("Should create data proposal");
+        .process_new_data_proposal(dp2.clone())
+        .unwrap();
+    node1.mempool_ctx.timer_tick().unwrap();
 
     broadcast! {
         description: "Disseminate Tx",
@@ -615,8 +622,8 @@ async fn mempool_fail_to_vote_on_fork() {
     };
 
     // BASIC FORK
-    // dp1(1) <- dp2(2)
-    //        <-        dp3(3)
+    // dp1 <- dp2
+    //     <- dp3
 
     let dp_fork_3 = DataProposal::new(Some(dp1.hashed()), vec![Transaction::default()]);
 
@@ -657,58 +664,6 @@ async fn mempool_fail_to_vote_on_fork() {
             .last_validator_lane_entry(node1.mempool_ctx.validator_pubkey())
             .1,
         dp_fork_3.hashed()
-    );
-
-    // FORK with already registered id
-    // dp1 <- dp2
-    //     <- dp3
-    // Remove data proposal id 1 from node 1, to recreate one on top of data proposal id 0, and create a fork
-
-    node1.mempool_ctx.pop_data_proposal();
-
-    let register_tx = make_register_contract_tx(ContractName::new("test5"));
-    let register_tx_2 = make_register_contract_tx(ContractName::new("test6"));
-
-    node1.mempool_ctx.submit_tx(&register_tx);
-    node1.mempool_ctx.submit_tx(&register_tx_2);
-
-    node1
-        .mempool_ctx
-        .make_data_proposal_with_pending_txs()
-        .expect("Should create data proposal");
-
-    node1.mempool_ctx.assert_broadcast("poda update");
-    node1.mempool_ctx.assert_broadcast("poda update");
-
-    let fork;
-    broadcast! {
-        description: "Disseminate Tx",
-        from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
-        message_matches: MempoolNetMessage::DataProposal(dp) => {
-            fork = dp.clone();
-        }
-    };
-
-    assert_ne!(
-        fork,
-        node2
-            .mempool_ctx
-            .pop_validator_data_proposal(node1.mempool_ctx.validator_pubkey())
-            .0
-    );
-    assert_ne!(
-        fork,
-        node3
-            .mempool_ctx
-            .pop_validator_data_proposal(node1.mempool_ctx.validator_pubkey())
-            .0
-    );
-    assert_ne!(
-        fork,
-        node4
-            .mempool_ctx
-            .pop_validator_data_proposal(node1.mempool_ctx.validator_pubkey())
-            .0
     );
 }
 
@@ -859,13 +814,14 @@ async fn protocol_fees() {
     let register_tx = make_register_contract_tx(ContractName::new("test1"));
     let register_tx_2 = make_register_contract_tx(ContractName::new("test2"));
 
-    node1.mempool_ctx.submit_tx(&register_tx);
-    node1.mempool_ctx.submit_tx(&register_tx_2);
-
+    let dp = node1
+        .mempool_ctx
+        .create_data_proposal(None, &[register_tx, register_tx_2]);
     node1
         .mempool_ctx
-        .make_data_proposal_with_pending_txs()
-        .expect("Should create data proposal");
+        .process_new_data_proposal(dp.clone())
+        .unwrap();
+    node1.mempool_ctx.timer_tick().unwrap();
 
     let msg = broadcast! {
         description: "Disseminate Tx",
@@ -932,15 +888,14 @@ async fn protocol_fees() {
     let register_tx = make_register_contract_tx(ContractName::new("test3"));
     let register_tx_2 = make_register_contract_tx(ContractName::new("test4"));
     let register_tx_3 = make_register_contract_tx(ContractName::new("test5"));
-
-    node2.mempool_ctx.submit_tx(&register_tx);
-    node2.mempool_ctx.submit_tx(&register_tx_2);
-    node2.mempool_ctx.submit_tx(&register_tx_3);
-
+    let dp = node2
+        .mempool_ctx
+        .create_data_proposal(None, &[register_tx, register_tx_2, register_tx_3]);
     node2
         .mempool_ctx
-        .make_data_proposal_with_pending_txs()
-        .expect("Should create data proposal");
+        .process_new_data_proposal(dp.clone())
+        .unwrap();
+    node2.mempool_ctx.timer_tick().unwrap();
 
     let msg = broadcast! {
         description: "Disseminate Tx",

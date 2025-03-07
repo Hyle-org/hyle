@@ -2,12 +2,12 @@ use anyhow::{bail, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_model::{
     ContractName, DataSized, ProgramId, RegisterContractAction, Signed, StructuredBlobData,
-    TransactionMetadata, ValidatorSignature, Verifier,
+    ValidatorSignature, Verifier,
 };
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
 use std::{collections::HashMap, path::Path, sync::Arc, vec};
-use tracing::{debug, error, warn};
+use tracing::{error, warn};
 
 use crate::{
     model::{
@@ -495,44 +495,6 @@ pub trait Storage {
         )
     }
 
-    /// Creates and saves a new DataProposal if there are pending transactions
-    fn new_data_proposal(
-        &mut self,
-        crypto: &BlstCrypto,
-        txs: Vec<Transaction>,
-    ) -> Result<Option<(DataProposalHash, Vec<TransactionMetadata>)>> {
-        if txs.is_empty() {
-            return Ok(None);
-        }
-
-        let validator_key = self.id().clone();
-        let current_dp_hash = self.get_lane_hash_tip(&validator_key).cloned();
-
-        // Create new data proposal
-        let data_proposal = DataProposal::new(current_dp_hash, txs);
-
-        debug!(
-            "Creating new DataProposal in local lane ({}) with {} transactions",
-            validator_key,
-            data_proposal.txs.len()
-        );
-
-        let parent_data_proposal = data_proposal
-            .parent_data_proposal_hash
-            .clone()
-            .unwrap_or_default();
-
-        let tx_metadatas = data_proposal
-            .txs
-            .iter()
-            .map(|tx| tx.metadata(parent_data_proposal.clone()))
-            .collect();
-
-        let (hash, _) = self.store_data_proposal(crypto, &validator_key, data_proposal)?;
-
-        Ok(Some((hash, tx_metadatas)))
-    }
-
     fn get_lane_pending_entries(
         &self,
         validator: &ValidatorPublicKey,
@@ -858,42 +820,6 @@ mod tests {
             .get_lane_entries_between_hashes(pubkey, Some(&dp1.hashed()), Some(&dp1.hashed()))
             .unwrap();
         assert_eq!(0, entries_from_1_to_1.len());
-    }
-
-    #[test_log::test(tokio::test)]
-    async fn test_new_data_proposal() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
-        let pubkey = crypto.validator_pubkey();
-        let mut storage = setup_storage(pubkey);
-
-        let txs = vec![Transaction::default()];
-
-        let Some((hash, txs_metadatas)) = storage.new_data_proposal(&crypto, txs.clone()).unwrap()
-        else {
-            panic!("Wrong data proposal creation");
-        };
-
-        let tip = storage.get_lane_hash_tip(pubkey);
-        assert!(tip.is_some());
-
-        assert_eq!(txs.len(), txs_metadatas.len());
-        assert_eq!(hash, DataProposal::new(None, txs).hashed());
-    }
-
-    #[test_log::test(tokio::test)]
-    async fn test_new_data_proposal_empty() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
-        let pubkey = crypto.validator_pubkey();
-        let mut storage = setup_storage(pubkey);
-
-        let txs = vec![];
-
-        let data_creation_result = storage.new_data_proposal(&crypto, txs).unwrap();
-
-        assert_eq!(data_creation_result, None);
-
-        let tip = storage.get_lane_hash_tip(pubkey);
-        assert!(tip.is_none());
     }
 
     #[test_log::test]

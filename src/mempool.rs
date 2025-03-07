@@ -40,10 +40,9 @@ use storage_fjall::LanesStorage;
 use strum_macros::IntoStaticStr;
 use tracing::{debug, error, info, trace, warn};
 
-use verifiers::{verify_proof, verify_recursive_proof};
-
 pub mod api;
 pub mod metrics;
+pub mod new_tx;
 pub mod storage;
 pub mod storage_fjall;
 pub mod storage_memory;
@@ -94,8 +93,8 @@ struct MempoolBusClient {
 
 #[derive(Default, BorshSerialize, BorshDeserialize)]
 pub struct MempoolStore {
-    buffered_proposals: BTreeMap<ValidatorPublicKey, Vec<DataProposal>>,
     waiting_dissemination_txs: Vec<Transaction>,
+    buffered_proposals: BTreeMap<ValidatorPublicKey, Vec<DataProposal>>,
     last_ccp: Option<CommittedConsensusProposal>,
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
     buc_build_start_height: Option<u64>,
@@ -335,23 +334,10 @@ impl Mempool {
         self.lanes.new_cut(&staking.0, &previous_cut)
     }
 
-    fn handle_api_message(&mut self, command: RestApiMessage) -> Result<()> {
-        match command {
-            RestApiMessage::NewTx(tx) => self.on_new_tx(tx).context("New Tx"),
-        }
-    }
-
-    fn handle_tcp_server_message(&mut self, command: TcpServerMessage) -> Result<()> {
-        match command {
-            TcpServerMessage::NewTx(tx) => self.on_new_tx(tx).context("New Tx"),
-        }
-    }
-
     fn handle_internal_event(&mut self, event: InternalMempoolEvent) -> Result<()> {
         match event {
             InternalMempoolEvent::OnProcessedNewTx(tx) => {
-                _ = self.on_new_tx(tx).context("Handling internal event");
-                Ok(())
+                self.on_new_tx(tx).context("Processing new tx")
             }
             InternalMempoolEvent::OnProcessedDataProposal((validator, verdict, data_proposal)) => {
                 self.on_processed_data_proposal(validator, verdict, data_proposal)
@@ -361,20 +347,15 @@ impl Mempool {
     }
 
     fn handle_data_proposal_management(&mut self) -> Result<()> {
-        debug!(
-            "🌝 Handling DataProposal management with {} txs",
-            self.waiting_dissemination_txs.len()
-        );
-        // Create new DataProposal with pending txs
-        let crypto = self.crypto.clone();
-        let new_txs = std::mem::take(&mut self.waiting_dissemination_txs);
-        // TODO: copy crypto in storage
-        let data_proposal_creation = self.lanes.new_data_proposal(&crypto, new_txs)?;
+        trace!("🌝 Handling DataProposal management");
+
+        self.create_new_dp_if_pending()?;
 
         let last_cut = self
             .last_ccp
             .as_ref()
             .map(|ccp| ccp.consensus_proposal.cut.clone());
+
         // Check for each pending DataProposal if it has enough signatures
         let entries = self
             .lanes
@@ -428,15 +409,6 @@ impl Mempool {
                     MempoolNetMessage::DataProposal(lane_entry.data_proposal.clone()),
                 )?;
             }
-        }
-
-        if let Some((data_proposal_hash, txs_metadatas)) = data_proposal_creation {
-            self.bus
-                .send(MempoolStatusEvent::DataProposalCreated {
-                    data_proposal_hash,
-                    txs_metadatas,
-                })
-                .context("Sending MempoolStatusEvent DataProposalCreated")?;
         }
 
         Ok(())
@@ -932,143 +904,6 @@ impl Mempool {
         Ok(())
     }
 
-    fn on_new_tx(&mut self, tx: Transaction) -> Result<()> {
-        // TODO: Verify fees ?
-
-        let tx_type: &'static str = (&tx.transaction_data).into();
-        trace!("Tx {} received in mempool", tx_type);
-
-        let tx_hash = tx.hashed();
-
-        match tx.transaction_data {
-            TransactionData::Blob(ref blob_tx) => {
-                debug!("Got new blob tx {}", tx_hash);
-                // TODO: we should check if the registration handler contract exists.
-                // TODO: would be good to not need to clone here.
-                self.handle_hyle_contract_registration(blob_tx);
-            }
-            TransactionData::Proof(ref proof_tx) => {
-                debug!(
-                    "Got new proof tx {} for {}",
-                    tx.hashed(),
-                    proof_tx.contract_name
-                );
-                let kc = self.known_contracts.clone();
-                self.running_tasks.spawn_blocking(move || {
-                    let tx =
-                        Self::process_proof_tx(kc, tx).context("Processing proof tx in blocker")?;
-                    Ok(InternalMempoolEvent::OnProcessedNewTx(tx))
-                });
-
-                return Ok(());
-            }
-            TransactionData::VerifiedProof(ref proof_tx) => {
-                debug!(
-                    "Got verified proof tx {} for {}",
-                    tx_hash,
-                    proof_tx.contract_name.clone()
-                );
-            }
-        }
-
-        let tx_type: &'static str = (&tx.transaction_data).into();
-
-        self.metrics.add_api_tx(tx_type);
-        self.waiting_dissemination_txs.push(tx.clone());
-        self.metrics
-            .snapshot_pending_tx(self.waiting_dissemination_txs.len());
-
-        let (parent_data_proposal_hash, _) = self
-            .lanes
-            .lanes_tip
-            .get(self.crypto.validator_pubkey())
-            .cloned()
-            // TODO: may be a new validator should first emit an empty data proposal with its validator pubkey inside
-            // Genesis parent hash ?
-            .unwrap_or((
-                DataProposalHash(self.crypto.validator_pubkey().to_string()),
-                LaneBytesSize(0),
-            ));
-
-        let status_event = MempoolStatusEvent::WaitingDissemination {
-            parent_data_proposal_hash: parent_data_proposal_hash.clone(),
-            tx,
-        };
-
-        self.bus
-            .send(status_event)
-            .context(format!("Sending Status event for TX {}", tx_hash))?;
-
-        Ok(())
-    }
-
-    fn process_proof_tx(
-        known_contracts: Arc<std::sync::RwLock<KnownContracts>>,
-        mut tx: Transaction,
-    ) -> Result<Transaction> {
-        let TransactionData::Proof(proof_transaction) = tx.transaction_data else {
-            bail!("Can only process ProofTx");
-        };
-        // Verify and extract proof
-        #[allow(clippy::expect_used, reason = "not held across await")]
-        let (verifier, program_id) = known_contracts
-            .read()
-            .expect("logic error")
-            .0
-            .get(&proof_transaction.contract_name)
-            .context("Contract unknown")?
-            .clone();
-
-        let is_recursive = proof_transaction.contract_name.0 == "risc0-recursion";
-
-        let (hyle_outputs, program_ids) = if is_recursive {
-            let (program_ids, hyle_outputs) =
-                verify_recursive_proof(&proof_transaction.proof, &verifier, &program_id)
-                    .context("verify_rec_proof")?;
-            (hyle_outputs, program_ids)
-        } else {
-            let hyle_outputs = verify_proof(&proof_transaction.proof, &verifier, &program_id)
-                .context("verify_proof")?;
-            (hyle_outputs, vec![program_id.clone()])
-        };
-
-        let tx_hashes = hyle_outputs
-            .iter()
-            .map(|ho| ho.tx_hash.clone())
-            .collect::<Vec<_>>();
-
-        std::iter::zip(&tx_hashes, std::iter::zip(&hyle_outputs, &program_ids)).for_each(
-            |(blob_tx_hash, (hyle_output, program_id))| {
-                debug!(
-                    "Blob tx hash {} verified with hyle output {:?} and program id {}",
-                    blob_tx_hash,
-                    hyle_output,
-                    hex::encode(&program_id.0)
-                );
-            },
-        );
-
-        tx.transaction_data = TransactionData::VerifiedProof(VerifiedProofTransaction {
-            proof_hash: proof_transaction.proof.hashed(),
-            proof_size: proof_transaction.estimate_size(),
-            proof: Some(proof_transaction.proof),
-            contract_name: proof_transaction.contract_name.clone(),
-            is_recursive,
-            proven_blobs: std::iter::zip(tx_hashes, std::iter::zip(hyle_outputs, program_ids))
-                .map(
-                    |(blob_tx_hash, (hyle_output, program_id))| BlobProofOutput {
-                        original_proof_hash: ProofDataHash("todo?".to_owned()),
-                        blob_tx_hash: blob_tx_hash.clone(),
-                        hyle_output,
-                        program_id,
-                    },
-                )
-                .collect(),
-        });
-
-        Ok(tx)
-    }
-
     fn send_vote(
         &mut self,
         validator: &ValidatorPublicKey,
@@ -1283,14 +1118,8 @@ pub mod test {
                 .unwrap()
         }
 
-        pub fn make_data_proposal_with_pending_txs(&mut self) -> Result<()> {
+        pub fn timer_tick(&mut self) -> Result<()> {
             self.mempool.handle_data_proposal_management()
-        }
-
-        pub fn submit_tx(&mut self, tx: &Transaction) {
-            self.mempool
-                .handle_api_message(RestApiMessage::NewTx(tx.clone()))
-                .unwrap();
         }
 
         pub fn handle_poda_update(
@@ -1532,13 +1361,6 @@ pub mod test {
                 .unwrap();
         }
 
-        pub fn submit_contract_tx(&mut self, contract_name: &'static str) {
-            let tx = make_register_contract_tx(ContractName(contract_name.to_string()));
-            self.mempool
-                .handle_api_message(RestApiMessage::NewTx(tx))
-                .unwrap();
-        }
-
         pub fn handle_consensus_event(&mut self, consensus_proposal: ConsensusProposal) {
             self.mempool
                 .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
@@ -1549,6 +1371,63 @@ pub mod test {
                     },
                 ))
                 .expect("Error while handling consensus event");
+        }
+
+        pub fn submit_tx(&mut self, tx: &Transaction) {
+            self.mempool
+                .handle_api_message(RestApiMessage::NewTx(tx.clone()))
+                .unwrap();
+        }
+
+        pub fn create_data_proposal(
+            &self,
+            parent_hash: Option<DataProposalHash>,
+            txs: &[Transaction],
+        ) -> DataProposal {
+            DataProposal::new(parent_hash, txs.to_vec())
+        }
+
+        pub fn process_new_data_proposal(&mut self, dp: DataProposal) -> Result<()> {
+            self.mempool.lanes.store_data_proposal(
+                &self.mempool.crypto,
+                self.mempool.crypto.validator_pubkey(),
+                dp,
+            )?;
+            Ok(())
+        }
+
+        pub fn process_cut_with_dp(
+            &mut self,
+            leader: &ValidatorPublicKey,
+            dp_hash: &DataProposalHash,
+            cumul_size: LaneBytesSize,
+            slot: u64,
+        ) -> Result<Cut> {
+            let cut = vec![(
+                leader.clone(),
+                dp_hash.clone(),
+                cumul_size,
+                AggregateSignature::default(),
+            )];
+
+            self.mempool
+                .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
+                    CommittedConsensusProposal {
+                        staking: self.mempool.staking.clone(),
+                        consensus_proposal: model::ConsensusProposal {
+                            slot,
+                            view: 0,
+                            round_leader: leader.clone(),
+                            cut: cut.clone(),
+                            staking_actions: vec![],
+                            timestamp: 777,
+                            parent_hash: ConsensusProposalHash("test".to_string()),
+                        },
+                        certificate: AggregateSignature::default(),
+                    },
+                ))?;
+
+            Ok(cut)
         }
     }
 
@@ -1567,47 +1446,6 @@ pub mod test {
     }
 
     #[test_log::test(tokio::test)]
-    async fn test_single_mempool_receiving_new_tx() -> Result<()> {
-        let mut ctx = MempoolTestCtx::new("mempool").await;
-
-        // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName::new("test1"));
-
-        ctx.submit_tx(&register_tx);
-
-        assert_chanmsg_matches!(
-            ctx.mempool_status_event_receiver,
-            MempoolStatusEvent::WaitingDissemination { parent_data_proposal_hash, tx } => {
-                assert_eq!(parent_data_proposal_hash, DataProposalHash(ctx.mempool.crypto.validator_pubkey().to_string()));
-                assert_eq!(tx,register_tx);
-            }
-        );
-
-        ctx.mempool.handle_data_proposal_management()?;
-        let (
-            LaneEntry {
-                data_proposal: dp, ..
-            },
-            _,
-        ) = ctx.last_validator_lane_entry(ctx.validator_pubkey());
-
-        assert_eq!(dp.txs, vec![register_tx.clone()]);
-
-        // Assert that pending_tx has been flushed
-        assert!(ctx.mempool.waiting_dissemination_txs.is_empty());
-
-        assert_chanmsg_matches!(
-            ctx.mempool_status_event_receiver,
-            MempoolStatusEvent::DataProposalCreated { data_proposal_hash, txs_metadatas } => {
-                assert_eq!(data_proposal_hash, dp.hashed());
-                assert_eq!(txs_metadatas.len(), dp.txs.len());
-            }
-        );
-
-        Ok(())
-    }
-
-    #[test_log::test(tokio::test)]
     async fn test_send_poda_update() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
         let pubkey = (*ctx.mempool.crypto).clone();
@@ -1621,8 +1459,9 @@ pub mod test {
         ctx.setup_node(&[pubkey, crypto2.clone(), crypto3.clone(), crypto4, crypto5]);
 
         let register_tx = make_register_contract_tx(ContractName::new("test1"));
-        ctx.submit_tx(&register_tx);
-        ctx.mempool.handle_data_proposal_management()?;
+        let dp = ctx.create_data_proposal(None, &[register_tx]);
+        ctx.process_new_data_proposal(dp)?;
+        ctx.timer_tick()?;
 
         let data_proposal = match ctx.assert_broadcast("DataProposal").msg {
             MempoolNetMessage::DataProposal(dp) => dp,
@@ -1649,63 +1488,14 @@ pub mod test {
 
         Ok(())
     }
-    #[test_log::test(tokio::test)]
-    async fn test_pair_mempool_receiving_new_tx() -> Result<()> {
-        let mut ctx = MempoolTestCtx::new("mempool").await;
-        let pubkey = (*ctx.mempool.crypto).clone();
-        ctx.setup_node(&[pubkey]);
-
-        // Adding new validator
-        let temp_crypto = BlstCrypto::new("validator1").unwrap();
-        ctx.add_trusted_validator(temp_crypto.validator_pubkey());
-
-        // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName::new("test1"));
-
-        ctx.mempool
-            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
-            .unwrap();
-
-        ctx.mempool.handle_data_proposal_management()?;
-
-        let data_proposal = match ctx.assert_broadcast("DataProposal").msg {
-            MempoolNetMessage::DataProposal(dp) => dp,
-            _ => panic!("oops"),
-        };
-        let size = LaneBytesSize(data_proposal.estimate_size() as u64);
-
-        let signed_msg =
-            temp_crypto.sign(MempoolNetMessage::DataVote(data_proposal.hashed(), size))?;
-        let _ = ctx.mempool.handle_net_message(SignedByValidator {
-            msg: MempoolNetMessage::DataVote(data_proposal.hashed(), size),
-            signature: signed_msg.signature,
-        });
-
-        // Adding new validator
-        ctx.add_trusted_validator(&ValidatorPublicKey(
-            "validator2".to_owned().as_bytes().to_vec(),
-        ));
-
-        ctx.make_data_proposal_with_pending_txs()?;
-        let data_proposal = match ctx.assert_broadcast_only_for("DataProposal").msg {
-            MempoolNetMessage::DataProposal(data_proposal) => data_proposal,
-            _ => panic!("Expected DataProposal message"),
-        };
-        assert_eq!(data_proposal.txs, vec![register_tx]);
-
-        // Assert that pending_tx is still flushed
-        assert!(ctx.mempool.waiting_dissemination_txs.is_empty());
-
-        Ok(())
-    }
 
     #[test_log::test(tokio::test)]
     async fn test_receiving_data_proposal() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
-        let data_proposal = DataProposal::new(
+        let data_proposal = ctx.create_data_proposal(
             None,
-            vec![make_register_contract_tx(ContractName::new("test1"))],
+            &[make_register_contract_tx(ContractName::new("test1"))],
         );
         let size = LaneBytesSize(data_proposal.estimate_size() as u64);
 
@@ -1741,14 +1531,9 @@ pub mod test {
     async fn test_receiving_data_proposal_vote_from_unexpected_validator() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
-        // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName::new("test1"));
-
-        ctx.submit_tx(&register_tx);
-
-        let data_proposal = DataProposal::new(
+        let data_proposal = ctx.create_data_proposal(
             None,
-            vec![make_register_contract_tx(ContractName::new("test1"))],
+            &[make_register_contract_tx(ContractName::new("test1"))],
         );
         let size = LaneBytesSize(data_proposal.estimate_size() as u64);
 
@@ -1770,19 +1555,14 @@ pub mod test {
     async fn test_receiving_data_proposal_vote() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
-        // Sending transaction to mempool as RestApiMessage
+        // Store the DP locally.
         let register_tx = make_register_contract_tx(ContractName::new("test1"));
+        let data_proposal = ctx.create_data_proposal(None, &[register_tx.clone()]);
+        ctx.process_new_data_proposal(data_proposal.clone())?;
 
-        ctx.submit_tx(&register_tx);
-
-        let data_proposal = DataProposal::new(
-            None,
-            vec![make_register_contract_tx(ContractName::new("test1"))],
-        );
+        // Then make another validator vote on it.
         let size = LaneBytesSize(data_proposal.estimate_size() as u64);
         let data_proposal_hash = data_proposal.hashed();
-
-        ctx.make_data_proposal_with_pending_txs()?;
 
         // Add new validator
         let crypto2 = BlstCrypto::new("2").unwrap();
@@ -1812,13 +1592,6 @@ pub mod test {
     #[test_log::test(tokio::test)]
     async fn test_receiving_vote_for_unknown_data_proposal() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
-
-        // Sending transaction to mempool as RestApiMessage
-        let register_tx = make_register_contract_tx(ContractName::new("test1"));
-
-        ctx.submit_tx(&register_tx);
-
-        ctx.make_data_proposal_with_pending_txs()?;
 
         // Add new validator
         let crypto2 = BlstCrypto::new("2").unwrap();
@@ -1864,12 +1637,10 @@ pub mod test {
     async fn test_receiving_sync_request() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
-        // Sending transaction to mempool as RestApiMessage
+        // Store the DP locally.
         let register_tx = make_register_contract_tx(ContractName::new("test1"));
-
-        ctx.submit_tx(&register_tx);
-
-        ctx.make_data_proposal_with_pending_txs()?;
+        let data_proposal = ctx.create_data_proposal(None, &[register_tx.clone()]);
+        ctx.process_new_data_proposal(data_proposal.clone())?;
 
         // Since mempool is alone, no broadcast
 
@@ -1904,23 +1675,10 @@ pub mod test {
     async fn test_receiving_sync_reply() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
-        // Sending transaction to mempool as RestApiMessage
+        // Create a DP and simulate we requested it.
         let register_tx = make_register_contract_tx(ContractName::new("test1"));
-
-        ctx.submit_tx(&register_tx);
-
-        ctx.make_data_proposal_with_pending_txs()?;
-
-        // Since mempool is alone, no broadcast.
-        // Take this as an example data proposal.
-        let (
-            LaneEntry {
-                data_proposal,
-                cumul_size,
-                ..
-            },
-            _,
-        ) = ctx.last_validator_lane_entry(ctx.validator_pubkey());
+        let data_proposal = ctx.create_data_proposal(None, &[register_tx.clone()]);
+        let cumul_size = LaneBytesSize(data_proposal.estimate_size() as u64);
 
         // Add new validator
         let crypto2 = BlstCrypto::new("2").unwrap();
@@ -2077,49 +1835,17 @@ pub mod test {
     async fn test_basic_signed_block() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
-        // Sending transaction to mempool as RestApiMessage
+        // Store a DP, process the commit message for the cut containing it.
         let register_tx = make_register_contract_tx(ContractName::new("test1"));
-
-        ctx.mempool
-            .handle_api_message(RestApiMessage::NewTx(register_tx.clone()))
-            .unwrap();
-
-        ctx.mempool.handle_data_proposal_management()?;
+        let dp_orig = ctx.create_data_proposal(None, &[register_tx.clone()]);
+        ctx.process_new_data_proposal(dp_orig.clone())?;
+        let cumul_size = LaneBytesSize(dp_orig.estimate_size() as u64);
+        let dp_hash = dp_orig.hashed();
 
         let key = ctx.validator_pubkey().clone();
-        let (
-            LaneEntry {
-                data_proposal: dp_orig,
-                cumul_size,
-                ..
-            },
-            dp_hash,
-        ) = ctx.last_validator_lane_entry(&key);
-        let cut = vec![(
-            key.clone(),
-            dp_hash,
-            cumul_size,
-            AggregateSignature::default(),
-        )];
-
         ctx.add_trusted_validator(&key);
 
-        ctx.mempool
-            .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
-                CommittedConsensusProposal {
-                    staking: ctx.mempool.staking.clone(),
-                    consensus_proposal: model::ConsensusProposal {
-                        slot: 1,
-                        view: 0,
-                        round_leader: key.clone(),
-                        cut: cut.clone(),
-                        staking_actions: vec![],
-                        timestamp: 777,
-                        parent_hash: ConsensusProposalHash("test".to_string()),
-                    },
-                    certificate: AggregateSignature::default(),
-                },
-            ))?;
+        let cut = ctx.process_cut_with_dp(&key, &dp_hash, cumul_size, 1)?;
 
         assert_chanmsg_matches!(
             ctx.mempool_event_receiver,
@@ -2139,7 +1865,6 @@ pub mod test {
             }
         );
 
-        assert!(ctx.mempool.waiting_dissemination_txs.is_empty());
         Ok(())
     }
 
@@ -2147,110 +1872,41 @@ pub mod test {
     async fn test_signed_block_start_building_later() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
-        // Sending transaction to mempool as RestApiMessage
-        ctx.submit_contract_tx("test1");
+        let dp2_size = LaneBytesSize(20);
+        let dp2_hash = DataProposalHash("dp2".to_string());
+        let dp5_size = LaneBytesSize(50);
+        let dp5_hash = DataProposalHash("dp5".to_string());
+        let dp6_size = LaneBytesSize(60);
+        let dp6_hash = DataProposalHash("dp6".to_string());
 
-        ctx.mempool.handle_data_proposal_management()?;
-        ctx.add_trusted_validator(&ctx.validator_pubkey().clone());
+        let ctx_key = ctx.validator_pubkey().clone();
+        let expect_nothing = |ctx: &mut MempoolTestCtx| {
+            ctx.mempool_event_receiver
+                .try_recv()
+                .expect_err("Should not build signed block");
+        };
 
-        let key = ctx.validator_pubkey();
-        let (LaneEntry { cumul_size, .. }, dp_hash) = ctx.last_validator_lane_entry(key);
-        let cut = vec![(
-            key.clone(),
-            dp_hash,
-            cumul_size,
-            AggregateSignature::default(),
-        )];
+        ctx.process_cut_with_dp(&ctx_key, &dp2_hash, dp2_size, 2)?;
+        expect_nothing(&mut ctx);
 
-        ctx.mempool
-            .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
-                CommittedConsensusProposal {
-                    staking: ctx.mempool.staking.clone(),
-                    consensus_proposal: model::ConsensusProposal {
-                        slot: 5,
-                        view: 0,
-                        round_leader: key.clone(),
-                        cut: cut.clone(),
-                        staking_actions: vec![],
-                        timestamp: 777,
-                        parent_hash: ConsensusProposalHash("test".to_string()),
-                    },
-                    certificate: AggregateSignature::default(),
-                },
-            ))?;
+        ctx.process_cut_with_dp(&ctx_key, &dp5_hash, dp5_size, 5)?;
+        expect_nothing(&mut ctx);
 
-        assert!(ctx.mempool_event_receiver.try_recv().is_err());
+        // Process it twice to check idempotency
+        ctx.process_cut_with_dp(&ctx_key, &dp5_hash, dp5_size, 5)?;
+        expect_nothing(&mut ctx);
 
-        ctx.submit_contract_tx("test2");
-        ctx.mempool.handle_data_proposal_management()?;
-        let key = ctx.validator_pubkey().clone();
-        let (
-            LaneEntry {
-                data_proposal: dp_orig1,
-                cumul_size,
-                ..
-            },
-            dp_hash1,
-        ) = ctx.last_validator_lane_entry(&key);
-        let cut = vec![(
-            key.clone(),
-            dp_hash1,
-            cumul_size,
-            AggregateSignature::default(),
-        )];
+        // Process the old one again as well
+        ctx.process_cut_with_dp(&ctx_key, &dp2_hash, dp2_size, 2)?;
+        expect_nothing(&mut ctx);
 
-        ctx.mempool
-            .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
-                CommittedConsensusProposal {
-                    staking: ctx.mempool.staking.clone(),
-                    consensus_proposal: model::ConsensusProposal {
-                        slot: 3,
-                        view: 0,
-                        round_leader: key.clone(),
-                        cut: cut.clone(),
-                        staking_actions: vec![],
-                        timestamp: 777,
-                        parent_hash: ConsensusProposalHash("test".to_string()),
-                    },
-                    certificate: AggregateSignature::default(),
-                },
-            ))?;
-
-        assert!(ctx.mempool_event_receiver.try_recv().is_err());
-
-        ctx.mempool
-            .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
-                CommittedConsensusProposal {
-                    staking: ctx.mempool.staking.clone(),
-                    consensus_proposal: model::ConsensusProposal {
-                        slot: 6,
-                        view: 0,
-                        round_leader: key.clone(),
-                        cut: cut.clone(),
-                        staking_actions: vec![],
-                        timestamp: 777,
-                        parent_hash: ConsensusProposalHash("test".to_string()),
-                    },
-                    certificate: AggregateSignature::default(),
-                },
-            ))?;
+        // Finally process two consecutive ones
+        ctx.process_cut_with_dp(&ctx_key, &dp6_hash, dp6_size, 6)?;
 
         assert_chanmsg_matches!(
             ctx.mempool_event_receiver,
             MempoolBlockEvent::StartedBuildingBlocks(height) => {
                 assert_eq!(height, BlockHeight(6));
-            }
-        );
-
-        assert_chanmsg_matches!(
-            ctx.mempool_event_receiver,
-            MempoolBlockEvent::BuiltSignedBlock(sb) => {
-                assert_eq!(sb.consensus_proposal.cut, cut);
-                assert_eq!(
-                    sb.data_proposals,
-                    vec![(key.clone(), vec![dp_orig1])]
-                );
-                sb.consensus_proposal.hashed()
             }
         );
 
@@ -2261,27 +1917,32 @@ pub mod test {
     async fn test_signed_block_buffer_ccp() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
-        // Sending transaction to mempool as RestApiMessage
-        ctx.submit_contract_tx("test1");
-        ctx.add_trusted_validator(&ctx.validator_pubkey().clone());
+        let dp1 = DataProposal::new(None, vec![]);
+        let dp1_size = LaneBytesSize(dp1.estimate_size() as u64);
+        let dp1_hash = dp1.hashed();
+        let dp1b = DataProposal::new(None, vec![make_register_contract_tx("toto".into())]);
+        let dp1b_size = LaneBytesSize(dp1b.estimate_size() as u64);
+        let dp1b_hash = dp1b.hashed();
+        let dp2_size = LaneBytesSize(60);
+        let dp2_hash = DataProposalHash("dp2".to_string());
 
-        ctx.mempool.handle_data_proposal_management()?;
+        let crypto2 = BlstCrypto::new("2").unwrap();
 
-        let key = ctx.validator_pubkey().clone();
-        let (
-            LaneEntry {
-                data_proposal: dp_orig,
-                cumul_size,
-                ..
-            },
-            dp_hash,
-        ) = ctx.last_validator_lane_entry(&key);
-        let cut = vec![(
-            key.clone(),
-            dp_hash.clone(),
-            cumul_size,
-            AggregateSignature::default(),
-        )];
+        // This simulates a cut where we somehow don't have our own DP and another DP (they also happen to be the same hash)
+        let cut1 = vec![
+            (
+                ctx.validator_pubkey().clone(),
+                dp1_hash.clone(),
+                dp1_size,
+                AggregateSignature::default(),
+            ),
+            (
+                crypto2.validator_pubkey().clone(),
+                dp1b_hash.clone(),
+                dp1b_size,
+                AggregateSignature::default(),
+            ),
+        ];
 
         ctx.mempool
             .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
@@ -2290,8 +1951,8 @@ pub mod test {
                     consensus_proposal: model::ConsensusProposal {
                         slot: 1,
                         view: 0,
-                        round_leader: key.clone(),
-                        cut: cut.clone(),
+                        round_leader: crypto2.validator_pubkey().clone(),
+                        cut: cut1.clone(),
                         staking_actions: vec![],
                         timestamp: 777,
                         parent_hash: ConsensusProposalHash("test".to_string()),
@@ -2300,6 +1961,7 @@ pub mod test {
                 },
             ))?;
 
+        // We've received consecutive blocks so start building
         assert_chanmsg_matches!(
             ctx.mempool_event_receiver,
             MempoolBlockEvent::StartedBuildingBlocks(height) => {
@@ -2307,33 +1969,25 @@ pub mod test {
             }
         );
 
-        let parent_hash = assert_chanmsg_matches!(
-            ctx.mempool_event_receiver,
-            MempoolBlockEvent::BuiltSignedBlock(sb) => {
-                assert_eq!(sb.consensus_proposal.cut, cut);
-                assert_eq!(
-                    sb.data_proposals,
-                    vec![(ctx.validator_pubkey().clone(), vec![dp_orig])]
-                );
-                sb.consensus_proposal.hashed()
-            }
-        );
+        ctx.mempool_event_receiver
+            .try_recv()
+            .expect_err("Should not build signed block");
 
-        assert!(ctx.mempool.waiting_dissemination_txs.is_empty());
-
-        // Second round - register a tx
-        ctx.submit_contract_tx("test2");
-
-        ctx.mempool.handle_data_proposal_management()?;
-
-        let (dp_orig2, dp_hash2, cumul_size2) = ctx.pop_data_proposal();
-
-        let cut2 = vec![(
-            key.clone(),
-            dp_hash2.clone(),
-            cumul_size2,
-            AggregateSignature::default(),
-        )];
+        // Now handle a second cut, one dp down
+        let cut2 = vec![
+            (
+                ctx.validator_pubkey().clone(),
+                dp2_hash.clone(),
+                dp2_size,
+                AggregateSignature::default(),
+            ),
+            (
+                crypto2.validator_pubkey().clone(),
+                dp2_hash.clone(),
+                dp2_size,
+                AggregateSignature::default(),
+            ),
+        ];
 
         ctx.mempool
             .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
@@ -2342,85 +1996,109 @@ pub mod test {
                     consensus_proposal: model::ConsensusProposal {
                         slot: 2,
                         view: 0,
-                        round_leader: key.clone(),
+                        round_leader: crypto2.validator_pubkey().clone(),
                         cut: cut2.clone(),
                         staking_actions: vec![],
-                        timestamp: 777,
-                        parent_hash: parent_hash.clone(),
+                        timestamp: 888,
+                        parent_hash: ConsensusProposalHash("test".to_string()),
                     },
                     certificate: AggregateSignature::default(),
                 },
             ))?;
 
-        // SyncRequest for removed DP
-        match ctx.assert_send(&key, "SyncRequest").msg {
+        // We don't have the data so we still don't send anything.
+        ctx.mempool_event_receiver
+            .try_recv()
+            .expect_err("Should not build signed block");
+
+        // We send sync requests - we don't have the data.
+        match ctx
+            .assert_send(&ctx.validator_pubkey().clone(), "SyncRequest")
+            .msg
+        {
             MempoolNetMessage::SyncRequest(from, to) => {
-                assert_eq!(from, Some(dp_hash));
-                assert_eq!(to, Some(dp_hash2));
+                assert_eq!(from, None);
+                assert_eq!(to, Some(dp1_hash.clone()));
+            }
+            _ => panic!("Expected DataProposal message"),
+        };
+        match ctx
+            .assert_send(&crypto2.validator_pubkey().clone(), "SyncRequest")
+            .msg
+        {
+            MempoolNetMessage::SyncRequest(from, to) => {
+                assert_eq!(from, None);
+                assert_eq!(to, Some(dp1b_hash.clone()));
+            }
+            _ => panic!("Expected DataProposal message"),
+        };
+        match ctx
+            .assert_send(&ctx.validator_pubkey().clone(), "SyncRequest")
+            .msg
+        {
+            MempoolNetMessage::SyncRequest(from, to) => {
+                assert_eq!(from, Some(dp1_hash.clone()));
+                assert_eq!(to, Some(dp2_hash.clone()));
+            }
+            _ => panic!("Expected DataProposal message"),
+        };
+        match ctx
+            .assert_send(&crypto2.validator_pubkey().clone(), "SyncRequest")
+            .msg
+        {
+            MempoolNetMessage::SyncRequest(from, to) => {
+                assert_eq!(from, Some(dp1b_hash.clone()));
+                assert_eq!(to, Some(dp2_hash.clone()));
             }
             _ => panic!("Expected DataProposal message"),
         };
 
-        // No data is available to process correctly the ccp, so no signed block
-        assert!(ctx.mempool_event_receiver.try_recv().is_err());
+        // Receive the two DPs.
 
-        // ccp should be buffered now, let's push back the same dp we popped previously
-        ctx.push_data_proposal(dp_orig2.clone());
+        ctx.mempool.on_sync_reply(
+            &ctx.validator_pubkey().clone(),
+            vec![LaneEntry {
+                data_proposal: dp1.clone(),
+                cumul_size: dp1_size,
+                signatures: vec![ctx
+                    .mempool
+                    .crypto
+                    .sign(MempoolNetMessage::DataVote(dp1_hash, dp1_size))
+                    .expect("should sign")],
+            }],
+        )?;
 
-        ctx.submit_contract_tx("test3");
+        // We don't have the data so we still don't send anything.
+        ctx.mempool_event_receiver
+            .try_recv()
+            .expect_err("Should not build signed block");
 
-        ctx.mempool.handle_data_proposal_management()?;
-        let (
-            LaneEntry {
-                data_proposal: dp_orig3,
-                cumul_size: cumul_size3,
-                ..
-            },
-            dp_hash3,
-        ) = ctx.last_validator_lane_entry(&key);
-
-        let cut3 = vec![(
-            key.clone(),
-            dp_hash3,
-            cumul_size3,
-            AggregateSignature::default(),
-        )];
-
-        ctx.mempool
-            .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
-                CommittedConsensusProposal {
-                    staking: ctx.mempool.staking.clone(),
-                    consensus_proposal: model::ConsensusProposal {
-                        slot: 3,
-                        view: 0,
-                        round_leader: key.clone(),
-                        cut: cut3.clone(),
-                        staking_actions: vec![],
-                        timestamp: 777,
-                        parent_hash,
-                    },
-                    certificate: AggregateSignature::default(),
-                },
-            ))?;
+        ctx.mempool.on_sync_reply(
+            &crypto2.validator_pubkey().clone(),
+            vec![LaneEntry {
+                data_proposal: dp1b.clone(),
+                cumul_size: dp1b_size,
+                signatures: vec![crypto2
+                    .sign(MempoolNetMessage::DataVote(dp1b_hash, dp1b_size))
+                    .expect("should sign")],
+            }],
+        )?;
 
         assert_chanmsg_matches!(
             ctx.mempool_event_receiver,
             MempoolBlockEvent::BuiltSignedBlock(sb) => {
-                assert_eq!(sb.consensus_proposal.cut, cut2);
-                assert_eq!(sb.data_proposals, vec![(key.clone(), vec![dp_orig2])]);
-                sb.consensus_proposal.hashed()
-            }
-        );
-        assert_chanmsg_matches!(
-            ctx.mempool_event_receiver,
-            MempoolBlockEvent::BuiltSignedBlock(sb) => {
-                assert_eq!(sb.consensus_proposal.cut, cut3);
-                assert_eq!(sb.data_proposals, vec![(key.clone(), vec![dp_orig3])]);
-                sb.consensus_proposal.hashed()
+                assert_eq!(sb.consensus_proposal.cut, cut1);
+                assert_eq!(
+                    sb.data_proposals,
+                    vec![(ctx.validator_pubkey().clone(), vec![dp1.clone()]), (crypto2.validator_pubkey().clone(), vec![dp1b.clone()])]
+                );
             }
         );
 
-        assert!(ctx.mempool_event_receiver.try_recv().is_err());
+        // We don't have the data for the second one so no further messages.
+        ctx.mempool_event_receiver
+            .try_recv()
+            .expect_err("Should not build signed block");
 
         Ok(())
     }
