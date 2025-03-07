@@ -392,206 +392,202 @@ pub async fn send_transaction<S: StateUpdater>(
 }
 
 pub async fn long_running_test(node_url: String, _indexer_url: String) -> Result<()> {
-    let mut client = NodeApiHttpClient::new(node_url.clone())?;
-    client.api_key = Some("KEY_LOADTEST".to_string());
-    // let indexer = IndexerApiHttpClient::new(indexer_url)?;
-
-    // Setup random hyllar contract
-    let rand = get_current_timestamp_ms() % 100000;
-    let random_hyllar_contract: ContractName = format!("hyllar_{}", rand).into();
-    let random_hydentity_contract: ContractName = format!("hydentity_{}", rand).into();
-    let tx = BlobTransaction::new(
-        Identity::new("hyle.hyle"),
-        vec![RegisterContractAction {
-            contract_name: random_hyllar_contract.clone(),
-            verifier: hyle_contract_sdk::Verifier("test".to_string()),
-            program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
-            state_digest: Hyllar::default().as_digest(),
-        }
-        .as_blob("hyle".into(), None, None)],
-    );
-
-    client.send_tx_blob(&tx).await?;
-
-    let tx = BlobTransaction::new(
-        Identity::new("hyle.hyle"),
-        vec![RegisterContractAction {
-            contract_name: random_hydentity_contract.clone(),
-            verifier: hyle_contract_sdk::Verifier("test".to_string()),
-            program_id: hyle_contracts::HYDENTITY_ID.to_vec().into(),
-            state_digest: Hydentity::default().as_digest(),
-        }
-        .as_blob("hyle".into(), None, None)],
-    );
-
-    client.send_tx_blob(&tx).await?;
-
-    tokio::time::sleep(Duration::from_millis(5000)).await;
-
-    let mut users: Vec<u64> = vec![];
-
-    let mut tx_ctx = TxExecutorBuilder::new(CanonicalStates {
-        hydentity: Hydentity::default(),
-        hydentity_name: random_hydentity_contract.clone(),
-        hyllar: Hyllar::custom(format!("faucet.{}", random_hydentity_contract)),
-        hyllar_name: random_hyllar_contract.clone(),
-    })
-    // Replace prover binaries for non-reproducible mode.
-    .with_prover(
-        random_hydentity_contract.clone(),
-        Risc0Prover::new(HYDENTITY_ELF),
-    )
-    .with_prover(random_hyllar_contract.clone(), Risc0Prover::new(HYLLAR_ELF))
-    .build();
-
-    let ident = Identity(format!("faucet.{}", random_hydentity_contract.0));
-
-    // Register faucet identity
-    let mut transaction = ProvableBlobTx::new(ident.clone());
-
-    _ = register_identity(
-        &mut transaction,
-        random_hydentity_contract.clone(),
-        "password".to_owned(),
-    );
-
-    let tx_hash = send_transaction(&client, transaction, &mut tx_ctx).await;
-    tracing::info!("Register TX Hash: {}", tx_hash);
-
-    let mut i = 0;
     loop {
-        i += 1;
-        info!("Iteration {}", i);
-        let now = get_current_timestamp_ms();
+        let mut client = NodeApiHttpClient::new(node_url.clone())?;
+        client.api_key = Some("KEY_LOADTEST".to_string());
+        // let indexer = IndexerApiHttpClient::new(indexer_url)?;
 
-        // Create a new user
-        if now % 5 == 0 || users.len() < 2 {
-            let ident = Identity(format!("{}.{}", now, random_hydentity_contract.0));
-            users.push(now);
+        // Generate a random number of iterations for a generated hydentity + hyllar
+        let rand_iterations = get_current_timestamp_ms() % 1000;
 
-            tracing::info!("Creating identity with 100 tokens: {}", ident);
+        // Setup random hyllar contract
+        let rand = get_current_timestamp_ms() % 100000;
+        let random_hyllar_contract: ContractName = format!("hyllar_{}", rand).into();
+        let random_hydentity_contract: ContractName = format!("hydentity_{}", rand).into();
+        let tx = BlobTransaction::new(
+            Identity::new("hyle.hyle"),
+            vec![RegisterContractAction {
+                contract_name: random_hyllar_contract.clone(),
+                verifier: hyle_contract_sdk::Verifier("test".to_string()),
+                program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
+                state_digest: Hyllar::default().as_digest(),
+            }
+            .as_blob("hyle".into(), None, None)],
+        );
 
-            // Register new identity
-            let mut transaction = ProvableBlobTx::new(ident.clone());
+        client.send_tx_blob(&tx).await?;
 
-            _ = register_identity(
-                &mut transaction,
-                random_hydentity_contract.clone(),
-                "password".to_owned(),
+        let tx = BlobTransaction::new(
+            Identity::new("hyle.hyle"),
+            vec![RegisterContractAction {
+                contract_name: random_hydentity_contract.clone(),
+                verifier: hyle_contract_sdk::Verifier("test".to_string()),
+                program_id: hyle_contracts::HYDENTITY_ID.to_vec().into(),
+                state_digest: Hydentity::default().as_digest(),
+            }
+            .as_blob("hyle".into(), None, None)],
+        );
+
+        client.send_tx_blob(&tx).await?;
+
+        let mut users: Vec<u64> = vec![];
+
+        let mut tx_ctx = TxExecutorBuilder::new(CanonicalStates {
+            hydentity: Hydentity::default(),
+            hydentity_name: random_hydentity_contract.clone(),
+            hyllar: Hyllar::custom(format!("faucet.{}", random_hydentity_contract)),
+            hyllar_name: random_hyllar_contract.clone(),
+        })
+        // Replace prover binaries for non-reproducible mode.
+        .with_prover(
+            random_hydentity_contract.clone(),
+            Risc0Prover::new(HYDENTITY_ELF),
+        )
+        .with_prover(random_hyllar_contract.clone(), Risc0Prover::new(HYLLAR_ELF))
+        .build();
+
+        let ident = Identity(format!("faucet.{}", random_hydentity_contract.0));
+
+        // Register faucet identity
+        let mut transaction = ProvableBlobTx::new(ident.clone());
+
+        _ = register_identity(
+            &mut transaction,
+            random_hydentity_contract.clone(),
+            "password".to_owned(),
+        );
+
+        let tx_hash = send_transaction(&client, transaction, &mut tx_ctx).await;
+        tracing::info!("Register TX Hash: {}", tx_hash);
+
+        for i in 1..rand_iterations {
+            info!("Iteration {}", i);
+            let now = get_current_timestamp_ms();
+
+            // Create a new user
+            if now % 5 == 0 || users.len() < 2 {
+                let ident = Identity(format!("{}.{}", now, random_hydentity_contract.0));
+                users.push(now);
+
+                tracing::info!("Creating identity with 100 tokens: {}", ident);
+
+                // Register new identity
+                let mut transaction = ProvableBlobTx::new(ident.clone());
+
+                _ = register_identity(
+                    &mut transaction,
+                    random_hydentity_contract.clone(),
+                    "password".to_owned(),
+                );
+
+                let tx_hash = send_transaction(&client, transaction, &mut tx_ctx).await;
+                tracing::info!("Register TX Hash: {}", tx_hash);
+
+                // Feed with some token
+                tracing::info!("Feeding identity {} with tokens", ident);
+
+                let mut transaction =
+                    ProvableBlobTx::new(format!("faucet.{}", random_hydentity_contract.0).into());
+
+                verify_identity(
+                    &mut transaction,
+                    random_hydentity_contract.clone(),
+                    &tx_ctx.hydentity,
+                    "password".to_string(),
+                )?;
+
+                transfer(
+                    &mut transaction,
+                    random_hyllar_contract.clone(),
+                    ident.0.clone(),
+                    100,
+                )?;
+
+                let tx_hash = send_transaction(&client, transaction, &mut tx_ctx).await;
+                tracing::info!("Transfer TX Hash: {}", tx_hash);
+
+                continue;
+            }
+
+            // pick 2 random guys and send some tokens from 1 to another
+            info!("Running a transfer between 2 buddies",);
+
+            let mut rng = rand::rng();
+
+            let (guy_1_idx, guy_2_idx): (u32, u32) = (rng.random(), rng.random());
+
+            let users_nb = users.len() as u32;
+
+            let (_, &guy_1_id) = users
+                .iter()
+                .enumerate()
+                .find(|(i, _)| *i as u32 == guy_1_idx % users_nb)
+                .unwrap();
+
+            let (_, &guy_2_id) = users
+                .iter()
+                .enumerate()
+                .find(|(i, _)| *i as u32 == (guy_2_idx % users_nb))
+                .unwrap();
+
+            if guy_1_id == guy_2_id {
+                continue;
+            }
+
+            let guy_1_id = format!("{}.{}", guy_1_id, random_hydentity_contract.0);
+            let guy_2_id = format!("{}.{}", guy_2_id, random_hydentity_contract.0);
+
+            info!("Getting balances for {} and {}", guy_1_id, guy_2_id);
+
+            let Ok(guy_1_balance) = ERC20::balance_of(&tx_ctx.hyllar, &guy_1_id.to_string()) else {
+                tracing::warn!("Balance of {} not found", guy_1_id);
+                dbg!(&tx_ctx.hyllar);
+                tokio::time::sleep(Duration::from_millis(2000)).await;
+                continue;
+            };
+            let Ok(guy_2_balance) = ERC20::balance_of(&tx_ctx.hyllar, &guy_2_id.to_string()) else {
+                tracing::warn!("Balance of {} not found", guy_2_id);
+                dbg!(&tx_ctx.hyllar);
+                tokio::time::sleep(Duration::from_millis(2000)).await;
+                continue;
+            };
+
+            if guy_1_balance < 2 {
+                continue;
+            }
+
+            let amount = rng.random_range(1..guy_1_balance);
+
+            info!(
+                "Transfering amount {} from {} to {}",
+                amount, guy_1_id, guy_2_id
             );
 
-            let tx_hash = send_transaction(&client, transaction, &mut tx_ctx).await;
-            tracing::info!("Register TX Hash: {}", tx_hash);
-
-            dbg!(&tx_ctx.hydentity);
-            dbg!(&tx_ctx.hydentity_name);
-            dbg!(&tx_ctx.hyllar);
-            dbg!(&tx_ctx.hyllar_name);
-
-            // Feed with some token
-            tracing::info!("Feeding identity {} with tokens", ident);
-
-            let mut transaction =
-                ProvableBlobTx::new(format!("faucet.{}", random_hydentity_contract.0).into());
-
+            let mut transaction = ProvableBlobTx::new(Identity(guy_1_id.clone()));
             verify_identity(
                 &mut transaction,
                 random_hydentity_contract.clone(),
                 &tx_ctx.hydentity,
                 "password".to_string(),
             )?;
-
             transfer(
                 &mut transaction,
                 random_hyllar_contract.clone(),
-                ident.0.clone(),
-                100,
+                guy_2_id.clone(),
+                amount as u128,
             )?;
+
+            info!(
+                "New balances:\n - {}: {}\n - {}: {}",
+                guy_1_id,
+                guy_1_balance - amount,
+                guy_2_id,
+                guy_2_balance + amount
+            );
 
             let tx_hash = send_transaction(&client, transaction, &mut tx_ctx).await;
             tracing::info!("Transfer TX Hash: {}", tx_hash);
-
-            continue;
         }
-
-        // pick 2 random guys and send some tokens from 1 to another
-        info!("Running a transfer between 2 buddies",);
-
-        let mut rng = rand::rng();
-
-        let (guy_1_idx, guy_2_idx): (u32, u32) = (rng.random(), rng.random());
-
-        let users_nb = users.len() as u32;
-
-        let (_, &guy_1_id) = users
-            .iter()
-            .enumerate()
-            .find(|(i, _)| *i as u32 == guy_1_idx % users_nb)
-            .unwrap();
-
-        let (_, &guy_2_id) = users
-            .iter()
-            .enumerate()
-            .find(|(i, _)| *i as u32 == (guy_2_idx % users_nb))
-            .unwrap();
-
-        if guy_1_id == guy_2_id {
-            continue;
-        }
-
-        let guy_1_id = format!("{}.{}", guy_1_id, random_hydentity_contract.0);
-        let guy_2_id = format!("{}.{}", guy_2_id, random_hydentity_contract.0);
-
-        info!("Getting balances for {} and {}", guy_1_id, guy_2_id);
-
-        let Ok(guy_1_balance) = ERC20::balance_of(&tx_ctx.hyllar, &guy_1_id.to_string()) else {
-            tracing::warn!("Balance of {} not found", guy_1_id);
-            dbg!(&tx_ctx.hyllar);
-            tokio::time::sleep(Duration::from_millis(2000)).await;
-            continue;
-        };
-        let Ok(guy_2_balance) = ERC20::balance_of(&tx_ctx.hyllar, &guy_2_id.to_string()) else {
-            tracing::warn!("Balance of {} not found", guy_2_id);
-            dbg!(&tx_ctx.hyllar);
-            tokio::time::sleep(Duration::from_millis(2000)).await;
-            continue;
-        };
-
-        if guy_1_balance < 2 {
-            continue;
-        }
-
-        let amount = rng.random_range(1..guy_1_balance);
-
-        info!(
-            "Transfering amount {} from {} to {}",
-            amount, guy_1_id, guy_2_id
-        );
-
-        let mut transaction = ProvableBlobTx::new(Identity(guy_1_id.clone()));
-        verify_identity(
-            &mut transaction,
-            random_hydentity_contract.clone(),
-            &tx_ctx.hydentity,
-            "password".to_string(),
-        )?;
-        transfer(
-            &mut transaction,
-            random_hyllar_contract.clone(),
-            guy_2_id.clone(),
-            amount as u128,
-        )?;
-
-        info!(
-            "New balances:\n - {}: {}\n - {}: {}",
-            guy_1_id,
-            guy_1_balance - amount,
-            guy_2_id,
-            guy_2_balance + amount
-        );
-
-        let tx_hash = send_transaction(&client, transaction, &mut tx_ctx).await;
-        tracing::info!("Transfer TX Hash: {}", tx_hash);
     }
 }
 
