@@ -212,6 +212,7 @@ use crate::bus::metrics::BusMetrics;
 use crate::bus::{bus_client, SharedMessageBus};
 use crate::consensus::test::ConsensusTestCtx;
 use crate::consensus::ConsensusEvent;
+use crate::data_availability::codec::codec_data_availability;
 use crate::handle_messages;
 use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
 use crate::mempool::{MempoolNetMessage, QueryNewCut};
@@ -671,7 +672,9 @@ async fn mempool_fail_to_vote_on_fork() {
 
 #[test_log::test(tokio::test)]
 async fn autobahn_rejoin_flow() {
-    let (sender, _) = tokio::sync::mpsc::channel(10);
+    let mut server = codec_data_availability::start_server("127.0.0.1:7890".to_string())
+        .await
+        .unwrap();
     let (mut node1, mut node2) = build_nodes!(2).await;
 
     // Let's setup the consensus so our joining node has some blocks to catch up.
@@ -719,7 +722,7 @@ async fn autobahn_rejoin_flow() {
 
     // Catchup up to the last block, but don't actually process the last block message yet.
     for block in blocks.get(0..blocks.len() - 1).unwrap() {
-        da.handle_signed_block(block.clone(), sender.clone()).await;
+        da.handle_signed_block(block.clone(), &mut server).await;
     }
     while let Ok(event) = ns_event_receiver.try_recv() {
         info!("{:?}", event);
@@ -746,7 +749,7 @@ async fn autobahn_rejoin_flow() {
     }
 
     // Now process block 2
-    da.handle_signed_block(blocks.get(2).unwrap().clone(), sender.clone())
+    da.handle_signed_block(blocks.get(2).unwrap().clone(), &mut server)
         .await;
     while let Ok(event) = ns_event_receiver.try_recv() {
         info!("{:?}", event);
@@ -782,7 +785,7 @@ async fn autobahn_rejoin_flow() {
                 ..ConsensusProposal::default()
             },
         };
-        da.handle_signed_block(block.clone(), sender.clone()).await;
+        da.handle_signed_block(block.clone(), &mut server).await;
         blocks.push(block);
         while let Ok(event) = ns_event_receiver.try_recv() {
             info!("{:?}", event);
