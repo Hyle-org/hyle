@@ -435,7 +435,6 @@ pub mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use crate::data_availability::codec::{codec_data_availability, DataAvailabilityRequest};
-    use crate::model::ValidatorPublicKey;
     use crate::{
         bus::BusClientSender,
         consensus::CommittedConsensusProposal,
@@ -644,7 +643,7 @@ pub mod tests {
             ccp.consensus_proposal.slot = i;
             block_sender
                 .send(MempoolBlockEvent::BuiltSignedBlock(SignedBlock {
-                    data_proposals: vec![(ValidatorPublicKey("".into()), vec![])],
+                    data_proposals: vec![(LaneId::default(), vec![])],
                     certificate: ccp.certificate.clone(),
                     consensus_proposal: ccp.consensus_proposal.clone(),
                 }))
@@ -745,7 +744,7 @@ pub mod tests {
             ccp.consensus_proposal.slot = i;
             block_sender
                 .send(MempoolBlockEvent::BuiltSignedBlock(SignedBlock {
-                    data_proposals: vec![(ValidatorPublicKey("".into()), vec![])],
+                    data_proposals: vec![(LaneId::default(), vec![])],
                     certificate: ccp.certificate.clone(),
                     consensus_proposal: ccp.consensus_proposal.clone(),
                 }))
@@ -781,7 +780,7 @@ pub mod tests {
             ccp.consensus_proposal.slot = i;
             block_sender
                 .send(MempoolBlockEvent::BuiltSignedBlock(SignedBlock {
-                    data_proposals: vec![(ValidatorPublicKey("".into()), vec![])],
+                    data_proposals: vec![(LaneId::default(), vec![])],
                     certificate: ccp.certificate.clone(),
                     consensus_proposal: ccp.consensus_proposal.clone(),
                 }))

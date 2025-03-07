@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::{
-    info, BlockHeight, Digestable, Identity, LaneBytesSize, StateDigest, ValidatorPublicKey,
+    info, BlockHeight, Digestable, Identity, LaneBytesSize, LaneId, StateDigest, ValidatorPublicKey,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -39,6 +39,10 @@ impl Staking {
             total_bond: 0,
             fees: Fees::default(),
         }
+    }
+
+    pub fn is_known(&self, key: &ValidatorPublicKey) -> bool {
+        self.bonded.iter().any(|v| v == key)
     }
 
     pub fn bonded(&self) -> &Vec<ValidatorPublicKey> {
@@ -140,10 +144,11 @@ impl Staking {
     /// This function is meant to be called by the consensus
     pub fn pay_for_dadi(
         &mut self,
-        disseminator: ValidatorPublicKey,
+        lane_id: LaneId,
         cumul_size: LaneBytesSize,
     ) -> Result<(), String> {
-        self.fees.pay_for_dadi(disseminator, cumul_size)?;
+        // TODO: allow more complex mechanisms - for now 1-1 mapping between a validator and a lane
+        self.fees.pay_for_dadi(lane_id.0, cumul_size)?;
         Ok(())
     }
 

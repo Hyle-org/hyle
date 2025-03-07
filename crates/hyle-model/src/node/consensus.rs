@@ -180,17 +180,17 @@ impl Hashed<ConsensusProposalHash> for ConsensusProposal {
         hasher.update(self.slot.to_le_bytes());
         hasher.update(self.view.to_le_bytes());
         hasher.update(&self.round_leader.0);
-        self.cut.iter().for_each(|(pubkey, hash, _, _)| {
-            hasher.update(&pubkey.0);
+        self.cut.iter().for_each(|(lane_id, hash, _, _)| {
+            hasher.update(&lane_id.0 .0);
             hasher.update(hash.0.as_bytes());
         });
         self.staking_actions.iter().for_each(|val| match val {
             ConsensusStakingAction::Bond { candidate } => hasher.update(&candidate.pubkey.0),
             ConsensusStakingAction::PayFeesForDaDi {
-                disseminator,
+                lane_id,
                 cumul_size,
             } => {
-                hasher.update(&disseminator.0);
+                hasher.update(&lane_id.0 .0);
                 hasher.update(cumul_size.0.to_le_bytes())
             }
         });
@@ -229,7 +229,7 @@ pub enum ConsensusStakingAction {
 
     /// DaDi = Data Dissemination
     PayFeesForDaDi {
-        disseminator: ValidatorPublicKey,
+        lane_id: LaneId,
         cumul_size: LaneBytesSize,
     },
 }
@@ -396,7 +396,7 @@ mod tests {
             view: 1,
             round_leader: ValidatorPublicKey(vec![1, 2, 3]),
             cut: vec![(
-                ValidatorPublicKey(vec![1]),
+                LaneId(ValidatorPublicKey(vec![1])),
                 DataProposalHash("propA".to_string()),
                 LaneBytesSize(1),
                 AggregateSignature::default(),
@@ -420,7 +420,7 @@ mod tests {
             view: 1,
             round_leader: ValidatorPublicKey(vec![1, 2, 3]),
             cut: vec![(
-                ValidatorPublicKey(vec![1]),
+                LaneId(ValidatorPublicKey(vec![1])),
                 DataProposalHash("propA".to_string()),
                 LaneBytesSize(1),
                 AggregateSignature {

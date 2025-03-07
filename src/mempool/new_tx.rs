@@ -26,7 +26,7 @@ impl super::Mempool {
 
     fn get_last_data_prop_hash_in_own_lane(&self) -> Option<DataProposalHash> {
         self.lanes
-            .get_lane_hash_tip(self.crypto.validator_pubkey())
+            .get_lane_hash_tip(self.lanes.own_lane_id())
             .cloned()
     }
 
@@ -75,7 +75,7 @@ impl super::Mempool {
 
         self.lanes.store_data_proposal(
             &self.crypto,
-            self.crypto.validator_pubkey(),
+            &self.lanes.own_lane_id().clone(),
             data_proposal,
         )?;
 
@@ -241,12 +241,12 @@ pub mod test {
         let dp_hash = ctx
             .mempool
             .lanes
-            .get_lane_hash_tip(ctx.mempool.crypto.validator_pubkey())
+            .get_lane_hash_tip(&ctx.own_lane())
             .unwrap();
         let dp = ctx
             .mempool
             .lanes
-            .get_by_hash(ctx.mempool.crypto.validator_pubkey(), dp_hash)
+            .get_by_hash(&ctx.own_lane(), dp_hash)
             .unwrap()
             .unwrap()
             .data_proposal;
