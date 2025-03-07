@@ -52,6 +52,12 @@ struct DABusClient {
 }
 }
 
+type DaTcpServer = client_sdk::tcp::TcpServer<
+    codec_data_availability::ServerCodec,
+    DataAvailabilityRequest,
+    DataAvailabilityEvent,
+>;
+
 #[derive(Debug)]
 pub struct DataAvailability {
     config: SharedConf,
@@ -99,11 +105,8 @@ impl DataAvailability {
             &self.config.da_address
         );
 
-        let mut server: client_sdk::tcp::TcpServer<
-            codec_data_availability::ServerCodec,
-            DataAvailabilityRequest,
-            DataAvailabilityEvent,
-        > = codec_data_availability::start_server(self.config.da_address.clone()).await?;
+        let mut server: DaTcpServer =
+            codec_data_availability::start_server(self.config.da_address.clone()).await?;
 
         let (catchup_block_sender, mut catchup_block_receiver) =
             tokio::sync::mpsc::channel::<SignedBlock>(100);
@@ -123,7 +126,7 @@ impl DataAvailability {
             listen<GenesisEvent> cmd => {
                 if let GenesisEvent::GenesisBlock(signed_block) = cmd {
                     debug!("🌱  Genesis block received with validators {:?}", signed_block.consensus_proposal.staking_actions.clone());
-                    let _= self.handle_signed_block_and_emit(signed_block, &mut server).await.log_error("Handling GenesisBlock Event");
+                    let _= self.handle_signed_block(signed_block, &mut server).await.log_error("Handling GenesisBlock Event");
                 } else {
                     // TODO: I think this is technically a data race with p2p ?
                     self.need_catchup = true;
@@ -143,7 +146,7 @@ impl DataAvailability {
             Some(streamed_block) = catchup_block_receiver.recv() => {
                 let height = streamed_block.height().0;
 
-                let _ = self.handle_signed_block_and_emit(streamed_block, &mut server).await.log_error(format!("Handling streamed block {height}"));
+                let _ = self.handle_signed_block(streamed_block, &mut server).await.log_error(format!("Handling streamed block {height}"));
 
                 // Stop streaming after reaching a height communicated by Mempool
                 if let Some(until_height) = self.catchup_height.as_ref() {
@@ -202,8 +205,7 @@ impl DataAvailability {
     ) -> Result<()> {
         match evt {
             MempoolBlockEvent::BuiltSignedBlock(signed_block) => {
-                self.handle_signed_block_and_emit(signed_block, tcp_server)
-                    .await?;
+                self.handle_signed_block(signed_block, tcp_server).await?;
             }
             MempoolBlockEvent::StartedBuildingBlocks(height) => {
                 self.catchup_height = Some(height - 1);
@@ -244,35 +246,11 @@ impl DataAvailability {
         Ok(())
     }
 
-    async fn handle_signed_block_and_emit(
+    async fn handle_signed_block(
         &mut self,
         block: SignedBlock,
-        tcp_server: &mut client_sdk::tcp::TcpServer<
-            codec_data_availability::ServerCodec,
-            DataAvailabilityRequest,
-            DataAvailabilityEvent,
-        >,
+        tcp_server: &mut DaTcpServer,
     ) -> Result<()> {
-        let to_send = self.handle_signed_block(block).await?;
-
-        for block in to_send.into_iter() {
-            _ = tcp_server
-                .send(TcpCommand::Broadcast(Box::new(
-                    DataAvailabilityEvent::SignedBlock(block.clone()),
-                )))
-                .await
-                .log_error("Sending block to tcp connection pool");
-            // Send the block to NodeState for processing
-            _ = self
-                .bus
-                .send(DataEvent::OrderedSignedBlock(block))
-                .log_error("Sending OrderedSignedBlock");
-        }
-
-        Ok(())
-    }
-
-    async fn handle_signed_block(&mut self, block: SignedBlock) -> Result<Vec<SignedBlock>> {
         let hash = block.hashed();
         // if new block is already handled, ignore it
         if self.blocks.contains(&hash) {
@@ -281,7 +259,7 @@ impl DataAvailability {
                 block.height(),
                 block.hashed()
             );
-            return Ok(vec![]);
+            return Ok(());
         }
         // if new block is not the next block in the chain, buffer
         if !self.blocks.is_empty() {
@@ -294,7 +272,7 @@ impl DataAvailability {
                 );
                 debug!("Buffering block {}", block.hashed());
                 self.buffered_signed_blocks.insert(block);
-                return Ok(vec![]);
+                return Ok(());
             }
         // if genesis block is missing, buffer
         } else if block.height() != BlockHeight(0) {
@@ -304,19 +282,21 @@ impl DataAvailability {
             );
             trace!("Buffering block {}", block.hashed());
             self.buffered_signed_blocks.insert(block);
-            return Ok(vec![]);
+            return Ok(());
         }
 
         // store block
-        self.add_processed_block(block.clone()).await;
-        let mut res = self.pop_buffer(hash).await;
-        res.insert(0, block);
+        self.add_processed_block(block.clone(), tcp_server).await;
+        self.pop_buffer(hash, tcp_server).await;
         self.blocks.persist().context("Persisting blocks")?;
-        Ok(res)
+        Ok(())
     }
 
-    async fn pop_buffer(&mut self, mut last_block_hash: ConsensusProposalHash) -> Vec<SignedBlock> {
-        let mut res = vec![];
+    async fn pop_buffer(
+        &mut self,
+        mut last_block_hash: ConsensusProposalHash,
+        tcp_server: &mut DaTcpServer,
+    ) {
         // Iterative loop to avoid stack overflows
         while let Some(first_buffered) = self.buffered_signed_blocks.first() {
             if first_buffered.parent_hash() != &last_block_hash {
@@ -333,14 +313,12 @@ impl DataAvailability {
             )]
             let first_buffered = self.buffered_signed_blocks.pop_first().unwrap();
             last_block_hash = first_buffered.hashed();
-            self.add_processed_block(first_buffered.clone()).await;
-            res.push(first_buffered);
+            self.add_processed_block(first_buffered.clone(), tcp_server)
+                .await;
         }
-
-        res
     }
 
-    async fn add_processed_block(&mut self, block: SignedBlock) {
+    async fn add_processed_block(&mut self, block: SignedBlock, tcp_server: &mut DaTcpServer) {
         // TODO: if we don't have streaming peers, we could just pass the block here
         // and avoid a clone + drop cost (which can be substantial for large blocks).
         if let Err(e) = self.blocks.put(block.clone()) {
@@ -374,6 +352,17 @@ impl DataAvailability {
 
         // TODO: use retain once async closures are supported ?
         //
+        _ = tcp_server
+            .send(TcpCommand::Broadcast(Box::new(
+                DataAvailabilityEvent::SignedBlock(block.clone()),
+            )))
+            .await
+            .log_error("Sending block to tcp connection pool");
+        // Send the block to NodeState for processing
+        _ = self
+            .bus
+            .send(DataEvent::OrderedSignedBlock(block))
+            .log_error("Sending OrderedSignedBlock");
     }
 
     async fn start_streaming_to_peer(
@@ -523,7 +512,7 @@ pub mod tests {
                 .log_error("Sending NodeState event");
             _ = self
                 .da
-                .handle_signed_block_and_emit(block, tcp_server)
+                .handle_signed_block(block, tcp_server)
                 .await
                 .log_error("Handling Signed Block");
         }
@@ -547,6 +536,10 @@ pub mod tests {
         let tmpdir = tempfile::tempdir().unwrap().into_path();
         let blocks = Blocks::new(&tmpdir).unwrap();
 
+        let mut server = codec_data_availability::start_server("127.0.0.1:7898".to_string())
+            .await
+            .unwrap();
+
         let bus = super::DABusClient::new_from_bus(crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
         ))
@@ -569,7 +562,7 @@ pub mod tests {
         }
         blocks.reverse();
         for block in blocks {
-            da.handle_signed_block(block).await.unwrap();
+            da.handle_signed_block(block, &mut server).await.unwrap();
         }
     }
 
