@@ -1,33 +1,19 @@
 use anyhow::{bail, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_model::{
-    ContractName, DataSized, LaneId, ProgramId, RegisterContractAction, Signed, StructuredBlobData,
-    ValidatorSignature, Verifier,
-};
+use hyle_model::{DataSized, LaneId, Signed, ValidatorSignature};
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
-use std::{collections::HashMap, sync::Arc, vec};
-use tracing::{error, warn};
+use std::vec;
+use tracing::error;
 
 use crate::{
     model::{
-        BlobProofOutput, Cut, DataProposal, DataProposalHash, Hashed, PoDA, SignedByValidator,
-        Transaction, TransactionData, ValidatorPublicKey,
+        Cut, DataProposal, DataProposalHash, Hashed, PoDA, SignedByValidator, ValidatorPublicKey,
     },
     utils::crypto::BlstCrypto,
 };
 
-use super::verifiers::{verify_proof, verify_recursive_proof};
-use super::{KnownContracts, MempoolNetMessage};
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum DataProposalVerdict {
-    Empty,
-    Wait,
-    Vote,
-    Process,
-    Refuse,
-}
+use super::MempoolNetMessage;
 
 pub use hyle_model::LaneBytesSize;
 
@@ -74,64 +60,6 @@ pub trait Storage {
     ) -> Option<(DataProposalHash, LaneBytesSize)>;
     #[cfg(test)]
     fn remove_lane_entry(&mut self, lane_id: &LaneId, dp_hash: &DataProposalHash);
-
-    fn new_cut(&self, staking: &Staking, previous_cut: &Cut) -> Result<Cut> {
-        let lane_last_cut: HashMap<LaneId, (DataProposalHash, PoDA)> = previous_cut
-            .iter()
-            .map(|(lid, dp, _, poda)| (lid.clone(), (dp.clone(), poda.clone())))
-            .collect();
-
-        // For each lane, we get the last CAR and put it in the cut
-        let mut cut: Cut = vec![];
-        for lane_id in self.get_lane_ids() {
-            if let Some((dp_hash, cumul_size, poda)) =
-                self.get_latest_car(lane_id, staking, lane_last_cut.get(lane_id))?
-            {
-                cut.push((lane_id.clone(), dp_hash, cumul_size, poda));
-            }
-        }
-        Ok(cut)
-    }
-
-    fn on_data_proposal(
-        &mut self,
-        lane_id: &LaneId,
-        data_proposal: &DataProposal,
-    ) -> Result<(DataProposalVerdict, Option<LaneBytesSize>)> {
-        // Check that data_proposal is not empty
-        if data_proposal.txs.is_empty() {
-            return Ok((DataProposalVerdict::Empty, None));
-        }
-
-        let dp_hash = data_proposal.hashed();
-
-        // ALREADY STORED
-        if self.contains(lane_id, &dp_hash) {
-            let lane_size = self.get_lane_size_at(lane_id, &dp_hash)?;
-            // just resend a vote
-            return Ok((DataProposalVerdict::Vote, Some(lane_size)));
-        }
-
-        match self.can_be_put_on_top(lane_id, data_proposal.parent_data_proposal_hash.as_ref()) {
-            // PARENT UNKNOWN
-            CanBePutOnTop::No => {
-                // Get the last known parent hash in order to get all the next ones
-                Ok((DataProposalVerdict::Wait, None))
-            }
-            // LEGIT DATA PROPOSAL
-            CanBePutOnTop::Yes => Ok((DataProposalVerdict::Process, None)),
-            CanBePutOnTop::Fork => {
-                // FORK DETECTED
-                let last_known_hash = self.get_lane_hash_tip(lane_id);
-                warn!(
-                    "DataProposal ({dp_hash}) cannot be handled because it creates a fork: last dp hash {:?} while proposed {:?}",
-                    last_known_hash,
-                    data_proposal.parent_data_proposal_hash
-                );
-                Ok((DataProposalVerdict::Refuse, None))
-            }
-        }
-    }
 
     fn get_latest_car(
         &self,
@@ -200,116 +128,6 @@ pub trait Storage {
         Ok(None)
     }
 
-    fn process_data_proposal(
-        data_proposal: &mut DataProposal,
-        known_contracts: Arc<std::sync::RwLock<KnownContracts>>,
-    ) -> DataProposalVerdict {
-        for tx in &data_proposal.txs {
-            match &tx.transaction_data {
-                TransactionData::Blob(_) => {
-                    // Accepting all blob transactions
-                    // TODO: find out what we want to do here
-                }
-                TransactionData::Proof(_) => {
-                    warn!("Refusing DataProposal: unverified recursive proof transaction");
-                    return DataProposalVerdict::Refuse;
-                }
-                TransactionData::VerifiedProof(proof_tx) => {
-                    // TODO: figure out what we want to do with the contracts.
-                    // Extract the proof
-                    let proof = match &proof_tx.proof {
-                        Some(proof) => proof,
-                        None => {
-                            warn!("Refusing DataProposal: proof is missing");
-                            return DataProposalVerdict::Refuse;
-                        }
-                    };
-                    // TODO: we could early-reject proofs where the blob
-                    // is not for the correct transaction.
-                    #[allow(clippy::expect_used, reason = "not held across await")]
-                    let (verifier, program_id) = match known_contracts
-                        .read()
-                        .expect("logic error")
-                        .0
-                        .get(&proof_tx.contract_name)
-                        .cloned()
-                    {
-                        Some((verifier, program_id)) => (verifier, program_id),
-                        None => {
-                            match Self::find_contract(data_proposal, tx, &proof_tx.contract_name) {
-                                Some((v, p)) => (v.clone(), p.clone()),
-                                None => {
-                                    warn!("Refusing DataProposal: contract not found");
-                                    return DataProposalVerdict::Refuse;
-                                }
-                            }
-                        }
-                    };
-                    // TODO: figure out how to generalize this
-                    let is_recursive = proof_tx.contract_name.0 == "risc0-recursion";
-
-                    if is_recursive {
-                        match verify_recursive_proof(proof, &verifier, &program_id) {
-                            Ok((local_program_ids, local_hyle_outputs)) => {
-                                let data_matches = local_program_ids
-                                    .iter()
-                                    .zip(local_hyle_outputs.iter())
-                                    .zip(proof_tx.proven_blobs.iter())
-                                    .all(
-                                        |(
-                                            (local_program_id, local_hyle_output),
-                                            BlobProofOutput {
-                                                program_id,
-                                                hyle_output,
-                                                ..
-                                            },
-                                        )| {
-                                            local_hyle_output == hyle_output
-                                                && local_program_id == program_id
-                                        },
-                                    );
-                                if local_program_ids.len() != proof_tx.proven_blobs.len()
-                                    || !data_matches
-                                {
-                                    warn!("Refusing DataProposal: incorrect HyleOutput in proof transaction");
-                                    return DataProposalVerdict::Refuse;
-                                }
-                            }
-                            Err(e) => {
-                                warn!("Refusing DataProposal: invalid recursive proof transaction: {}", e);
-                                return DataProposalVerdict::Refuse;
-                            }
-                        }
-                    } else {
-                        match verify_proof(proof, &verifier, &program_id) {
-                            Ok(outputs) => {
-                                // TODO: we could check the blob hash here too.
-                                if outputs.len() != proof_tx.proven_blobs.len()
-                                    && std::iter::zip(outputs.iter(), proof_tx.proven_blobs.iter())
-                                        .any(|(output, BlobProofOutput { hyle_output, .. })| {
-                                            output != hyle_output
-                                        })
-                                {
-                                    warn!("Refusing DataProposal: incorrect HyleOutput in proof transaction");
-                                    return DataProposalVerdict::Refuse;
-                                }
-                            }
-                            Err(e) => {
-                                warn!("Refusing DataProposal: invalid proof transaction: {}", e);
-                                return DataProposalVerdict::Refuse;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Remove proofs from transactions
-        Self::remove_proofs(data_proposal);
-
-        DataProposalVerdict::Vote
-    }
-
     /// Signs the data proposal before creating a new LaneEntry and puting it in the lane
     fn store_data_proposal(
         &mut self,
@@ -337,47 +155,6 @@ pub trait Storage {
             },
         )?;
         Ok((data_proposal_hash, cumul_size))
-    }
-
-    // Find the verifier and program_id for a contract name in the current lane, optimistically.
-    fn find_contract(
-        data_proposal: &DataProposal,
-        tx: &Transaction,
-        contract_name: &ContractName,
-    ) -> Option<(Verifier, ProgramId)> {
-        // Check if it's in the same data proposal.
-        // (kind of inefficient, but it's mostly to make our tests work)
-        // TODO: improve on this logic, possibly look into other data proposals / lanes.
-        #[allow(
-            clippy::unwrap_used,
-            reason = "we know position will return a valid range"
-        )]
-        data_proposal
-            .txs
-            .get(
-                0..data_proposal
-                    .txs
-                    .iter()
-                    .position(|tx2| std::ptr::eq(tx, tx2))
-                    .unwrap(),
-            )
-            .unwrap()
-            .iter()
-            .find_map(|tx| match &tx.transaction_data {
-                TransactionData::Blob(tx) => tx.blobs.iter().find_map(|blob| {
-                    if blob.contract_name.0 == "hyle" {
-                        if let Ok(tx) = StructuredBlobData::<RegisterContractAction>::try_from(
-                            blob.data.clone(),
-                        ) {
-                            if &tx.parameters.contract_name == contract_name {
-                                return Some((tx.parameters.verifier, tx.parameters.program_id));
-                            }
-                        }
-                    }
-                    None
-                }),
-                _ => None,
-            })
     }
 
     fn get_lane_entries_between_hashes(
@@ -502,11 +279,6 @@ pub trait Storage {
         // NEITHER LEGIT NOR CORRECT PARENT --> FORK
         CanBePutOnTop::Fork
     }
-
-    /// Remove proofs from all transactions in the DataProposal
-    fn remove_proofs(dp: &mut DataProposal) {
-        dp.remove_proofs();
-    }
 }
 
 #[cfg(test)]
@@ -515,10 +287,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        mempool::{storage::DataProposalVerdict, storage_memory::LanesStorage, MempoolNetMessage},
+        mempool::{storage_memory::LanesStorage, MempoolNetMessage},
         utils::crypto::{self, BlstCrypto},
     };
-    use hyle_model::{DataSized, Signature};
+    use hyle_model::{DataSized, Signature, Transaction};
     use staking::state::Staking;
 
     fn setup_storage() -> LanesStorage {
@@ -575,60 +347,6 @@ mod tests {
             .unwrap();
         let updated = storage.get_by_hash(lane_id, &dp_hash).unwrap().unwrap();
         assert_eq!(1, updated.signatures.len());
-    }
-
-    #[test_log::test(tokio::test)]
-    async fn test_on_data_proposal() {
-        let crypto2: BlstCrypto = crypto::BlstCrypto::new("2").unwrap();
-        let lane_id2 = &LaneId(crypto2.validator_pubkey().clone());
-
-        let mut storage = setup_storage();
-        let dp = DataProposal::new(None, vec![]);
-        // 2 send a DP to 1
-        let (verdict, _) = storage.on_data_proposal(lane_id2, &dp).unwrap();
-        assert_eq!(verdict, DataProposalVerdict::Empty);
-
-        let dp = DataProposal::new(None, vec![Transaction::default()]);
-        let (verdict, _) = storage.on_data_proposal(lane_id2, &dp).unwrap();
-        assert_eq!(verdict, DataProposalVerdict::Process);
-
-        let dp_unknown_parent = DataProposal::new(
-            Some(DataProposalHash::default()),
-            vec![Transaction::default()],
-        );
-        // 2 send a DP to 1
-        let (verdict, _) = storage
-            .on_data_proposal(lane_id2, &dp_unknown_parent)
-            .unwrap();
-        assert_eq!(verdict, DataProposalVerdict::Wait);
-    }
-
-    #[test_log::test(tokio::test)]
-    async fn test_on_data_proposal_fork() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
-        let crypto2: BlstCrypto = crypto::BlstCrypto::new("2").unwrap();
-        let lane_id2 = &LaneId(crypto2.validator_pubkey().clone());
-
-        let mut storage = setup_storage();
-        let dp = DataProposal::new(None, vec![Transaction::default()]);
-        let dp2 = DataProposal::new(Some(dp.hashed()), vec![Transaction::default()]);
-
-        storage
-            .store_data_proposal(&crypto, lane_id2, dp.clone())
-            .unwrap();
-        storage
-            .store_data_proposal(&crypto, lane_id2, dp2.clone())
-            .unwrap();
-
-        assert!(storage.store_data_proposal(&crypto, lane_id2, dp2).is_err());
-
-        let dp2_fork = DataProposal::new(
-            Some(dp.hashed()),
-            vec![Transaction::default(), Transaction::default()],
-        );
-
-        let (verdict, _) = storage.on_data_proposal(lane_id2, &dp2_fork).unwrap();
-        assert_eq!(verdict, DataProposalVerdict::Refuse);
     }
 
     #[test_log::test(tokio::test)]
@@ -802,7 +520,7 @@ mod tests {
     }
 
     #[test_log::test(tokio::test)]
-    async fn test_get_latest_car_and_new_cut() {
+    async fn test_get_latest_car() {
         let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
         let lane_id = &LaneId(crypto.validator_pubkey().clone());
         let mut storage = setup_storage();
@@ -817,11 +535,5 @@ mod tests {
         storage.put(lane_id.clone(), entry).unwrap();
         let latest = storage.get_latest_car(lane_id, &staking, None).unwrap();
         assert!(latest.is_none());
-
-        // Force some signature for f+1 check if needed:
-        // This requires more advanced stubbing of Staking if you want a real test.
-
-        let cut = storage.new_cut(&staking, &vec![]).unwrap();
-        assert_eq!(0, cut.len());
     }
 }
