@@ -17,7 +17,8 @@ pub struct Block {
     pub block_height: BlockHeight,
     pub block_timestamp: u64,
     pub txs: Vec<(TxId, Transaction)>,
-    pub dp_hashes: BTreeMap<TxHash, DataProposalHash>,
+    pub dp_parent_hashes: BTreeMap<TxHash, DataProposalHash>,
+    pub lane_ids: BTreeMap<TxHash, LaneId>,
     pub successful_txs: Vec<TxHash>,
     pub failed_txs: Vec<TxHash>,
     pub timed_out_txs: Vec<TxHash>,
@@ -38,19 +39,10 @@ impl Block {
 
     pub fn resolve_parent_dp_hash(&self, tx_hash: &TxHash) -> Result<DataProposalHash> {
         Ok(self
-            .dp_hashes
+            .dp_parent_hashes
             .get(tx_hash)
             .context(format!("No parent dp hash found for tx {}", tx_hash))?
             .clone())
-    }
-
-    pub fn get_context(&self) -> TxContext {
-        TxContext {
-            block_hash: self.hash.clone(),
-            block_height: self.block_height,
-            timestamp: self.block_timestamp as u128,
-            chain_id: HYLE_TESTNET_CHAIN_ID, // TODO: make it configurable
-        }
     }
 }
 
@@ -84,7 +76,7 @@ impl SignedBlock {
     }
 
     pub fn has_txs(&self) -> bool {
-        for (_, txs) in self.iter_txs() {
+        for (_, _, txs) in self.iter_txs() {
             if !txs.is_empty() {
                 return true;
             }
@@ -94,15 +86,16 @@ impl SignedBlock {
     }
 
     pub fn count_txs(&self) -> usize {
-        self.iter_txs().map(|(_, txs)| txs.len()).sum()
+        self.iter_txs().map(|(_, _, txs)| txs.len()).sum()
     }
 
-    pub fn iter_txs(&self) -> impl Iterator<Item = (DataProposalHash, &Vec<Transaction>)> {
+    pub fn iter_txs(&self) -> impl Iterator<Item = (LaneId, DataProposalHash, &Vec<Transaction>)> {
         self.data_proposals
             .iter()
-            .flat_map(|(_pub_key, dps)| dps)
-            .map(|dp| {
+            .flat_map(|(lane_id, dps)| std::iter::zip(std::iter::repeat(lane_id.clone()), dps))
+            .map(|(lane_id, dp)| {
                 (
+                    lane_id,
                     dp.parent_data_proposal_hash
                         .clone()
                         .unwrap_or(DataProposalHash("".to_string())),
@@ -111,18 +104,14 @@ impl SignedBlock {
             })
     }
 
-    pub fn iter_txs_with_id(&self) -> impl Iterator<Item = (TxId, &Transaction)> {
-        self.iter_txs().flat_map(move |(dp_hash, txs)| {
+    pub fn iter_txs_with_id(&self) -> impl Iterator<Item = (LaneId, TxId, &Transaction)> {
+        self.iter_txs().flat_map(move |(lane_id, dp_hash, txs)| {
             txs.iter()
-                .map(move |tx| (TxId(dp_hash.clone(), tx.hashed()), tx))
+                .map(move |tx| (lane_id.clone(), TxId(dp_hash.clone(), tx.hashed()), tx))
         })
     }
-
-    pub fn iter_clone_txs_with_id(&self) -> impl Iterator<Item = (TxId, Transaction)> + '_ {
-        self.iter_txs_with_id()
-            .map(|(tx_id, tx)| (tx_id, tx.clone()))
-    }
 }
+
 impl Hashed<ConsensusProposalHash> for SignedBlock {
     fn hashed(&self) -> ConsensusProposalHash {
         self.consensus_proposal.hashed()
