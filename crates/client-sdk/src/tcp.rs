@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    net::SocketAddr,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -113,7 +112,6 @@ pub struct TcpServer<Codec, Req: Clone, Res: Clone + std::fmt::Debug>
 where
     Codec: Decoder<Item = Req> + Encoder<Res> + Default,
 {
-    pool_name: &'static str,
     tcp_listener: TcpListener,
     pool_sender: Sender<TcpEvent<Req>>,
     pool_receiver: Receiver<TcpEvent<Req>>,
@@ -145,14 +143,13 @@ where
             pool_receiver,
             ping_sender,
             ping_receiver,
-            pool_name,
         })
     }
 
-    async fn select(&mut self, tcp_listener: TcpListener) -> Result<()> {
+    pub async fn listen_next(&mut self) -> Option<TcpEvent<Req>> {
         loop {
             tokio::select! {
-                Ok((stream, addr)) = tcp_listener.accept() => {
+                Ok((stream, addr)) = self.tcp_listener.accept() => {
                     _  = self.setup_peer(stream, &addr.ip().to_string());
                 }
 
@@ -161,11 +158,14 @@ where
                         peer.last_ping = get_current_timestamp();
                     }
                 }
+                message = self.pool_receiver.recv() => {
+                    return message;
+                }
             }
         }
     }
 
-    async fn send(&mut self, msg: TcpCommand<Res>) -> Result<()> {
+    pub async fn send(&mut self, msg: TcpCommand<Res>) -> Result<()> {
         match msg {
             TcpCommand::Broadcast(data) => {
                 debug!("Broadcasting data {:?} to all", data);
@@ -499,11 +499,7 @@ pub mod tests {
 
     #[tokio::test]
     async fn tcp_test() -> Result<()> {
-        let (sender, mut receiver) =
-            codec_data_availability::start_server("0.0.0.0:2345".to_string())
-                .await?
-                .run_in_background()
-                .await?;
+        let mut server = codec_data_availability::start_server("0.0.0.0:2345".to_string()).await?;
 
         let mut client =
             codec_data_availability::connect("me".to_string(), "0.0.0.0:2345".to_string()).await?;
@@ -516,13 +512,13 @@ pub mod tests {
 
         tokio::time::sleep(Duration::from_secs(1)).await;
 
-        let d = receiver.try_recv().unwrap().data;
+        let d = server.listen_next().await.unwrap().data;
 
         assert_eq!(DataAvailabilityRequest(BlockHeight(2)), *d);
-        assert!(receiver.try_recv().is_err());
+        assert!(server.pool_receiver.try_recv().is_err());
 
         // From server to client
-        _ = sender
+        _ = server
             .send(TcpCommand::Broadcast(Box::new(
                 DataAvailabilityEvent::SignedBlock(SignedBlock::default()),
             )))
