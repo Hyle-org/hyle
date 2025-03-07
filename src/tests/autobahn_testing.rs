@@ -309,15 +309,17 @@ fn create_poda(
     nodes: &[&AutobahnTestCtx],
 ) -> crypto::Signed<MempoolNetMessage, crypto::AggregateSignature> {
     let msg = MempoolNetMessage::DataVote(data_proposal_hash, line_size);
-    let signed_messages: Vec<crypto::Signed<MempoolNetMessage, crypto::ValidatorSignature>> = nodes
-        .iter()
-        .map(|node| {
-            node.mempool_ctx
-                .mempool
-                .sign_net_message(msg.clone())
-                .unwrap()
-        })
-        .collect();
+    let mut signed_messages: Vec<crypto::Signed<MempoolNetMessage, crypto::ValidatorSignature>> =
+        nodes
+            .iter()
+            .map(|node| {
+                node.mempool_ctx
+                    .mempool
+                    .sign_net_message(msg.clone())
+                    .unwrap()
+            })
+            .collect();
+    signed_messages.sort_by(|a, b| a.signature.cmp(&b.signature));
 
     let aggregates: Vec<&crypto::Signed<MempoolNetMessage, crypto::ValidatorSignature>> =
         signed_messages.iter().collect();

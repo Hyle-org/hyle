@@ -6,12 +6,7 @@ use hyle_model::{
 };
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
-use std::{
-    collections::{BTreeMap, HashMap},
-    path::Path,
-    sync::Arc,
-    vec,
-};
+use std::{collections::HashMap, sync::Arc, vec};
 use tracing::{error, warn};
 
 use crate::{
@@ -19,7 +14,7 @@ use crate::{
         BlobProofOutput, Cut, DataProposal, DataProposalHash, Hashed, PoDA, SignedByValidator,
         Transaction, TransactionData, ValidatorPublicKey,
     },
-    utils::{crypto::BlstCrypto, logger::LogMe},
+    utils::crypto::BlstCrypto,
 };
 
 use super::verifiers::{verify_proof, verify_recursive_proof};
@@ -50,14 +45,6 @@ pub struct LaneEntry {
 }
 
 pub trait Storage {
-    fn new(
-        path: &Path,
-        own_lane_id: LaneId,
-        lanes_tip: BTreeMap<LaneId, (DataProposalHash, LaneBytesSize)>,
-    ) -> Result<Self>
-    where
-        Self: std::marker::Sized;
-    fn own_lane_id(&self) -> &LaneId;
     fn persist(&self) -> Result<()>;
 
     fn contains(&self, lane_id: &LaneId, dp_hash: &DataProposalHash) -> bool;
@@ -69,6 +56,12 @@ pub trait Storage {
     fn pop(&mut self, lane_id: LaneId) -> Result<Option<(DataProposalHash, LaneEntry)>>;
     fn put(&mut self, lane_id: LaneId, lane_entry: LaneEntry) -> Result<()>;
     fn put_no_verification(&mut self, lane_id: LaneId, lane_entry: LaneEntry) -> Result<()>;
+    fn add_signatures<T: IntoIterator<Item = SignedByValidator<MempoolNetMessage>>>(
+        &mut self,
+        lane_id: &LaneId,
+        dp_hash: &DataProposalHash,
+        vote_msgs: T,
+    ) -> Result<Vec<Signed<MempoolNetMessage, ValidatorSignature>>>;
 
     fn get_lane_ids(&self) -> impl Iterator<Item = &LaneId>;
     fn get_lane_hash_tip(&self, lane_id: &LaneId) -> Option<&DataProposalHash>;
@@ -98,59 +91,6 @@ pub trait Storage {
             }
         }
         Ok(cut)
-    }
-
-    // Called by the initial data proposer to aggregate votes
-    fn on_data_vote(
-        &mut self,
-        msg: &SignedByValidator<MempoolNetMessage>,
-        data_proposal_hash: &DataProposalHash,
-        new_lane_size: LaneBytesSize,
-    ) -> Result<(
-        DataProposalHash,
-        Vec<Signed<MempoolNetMessage, ValidatorSignature>>,
-    )> {
-        let id = self.own_lane_id().clone();
-        match self.get_by_hash(&id, data_proposal_hash)? {
-            Some(mut lane_entry) => {
-                if lane_entry.cumul_size != new_lane_size {
-                    bail!("Received size {new_lane_size} does no match the actual size of the DataProposal ({})", lane_entry.cumul_size);
-                }
-                lane_entry.signatures.push(msg.clone());
-                lane_entry.signatures.dedup();
-
-                // Update LaneEntry for self
-                self.put_no_verification(self.own_lane_id().clone(), lane_entry.clone())?;
-
-                Ok((data_proposal_hash.clone(), lane_entry.signatures))
-            }
-            None => {
-                bail!("Received vote from validator {} for unknown DataProposal ({data_proposal_hash})", msg.signature.validator);
-            }
-        }
-    }
-
-    fn on_poda_update(
-        &mut self,
-        lane_id: &LaneId,
-        data_proposal_hash: &DataProposalHash,
-        signatures: Vec<SignedByValidator<MempoolNetMessage>>,
-    ) -> Result<()> {
-        match self
-            .get_by_hash(lane_id, data_proposal_hash)
-            .log_warn("Received PoDA update for unknown DataProposal")?
-        {
-            Some(mut lane_entry) => {
-                lane_entry.signatures.extend(signatures);
-                lane_entry.signatures.dedup();
-                self.put_no_verification(lane_id.clone(), lane_entry)
-            }
-            None => bail!(
-                "Received poda update for unknown DP {} for lane_id {}",
-                data_proposal_hash,
-                lane_id
-            ),
-        }
     }
 
     fn on_data_proposal(
@@ -571,6 +511,8 @@ pub trait Storage {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
     use crate::{
         mempool::{storage::DataProposalVerdict, storage_memory::LanesStorage, MempoolNetMessage},
@@ -579,16 +521,16 @@ mod tests {
     use hyle_model::{DataSized, Signature};
     use staking::state::Staking;
 
-    fn setup_storage(lane_id: &LaneId) -> LanesStorage {
+    fn setup_storage() -> LanesStorage {
         let tmp_dir = tempfile::tempdir().unwrap().into_path();
-        LanesStorage::new(&tmp_dir, lane_id.clone(), BTreeMap::default()).unwrap()
+        LanesStorage::new(&tmp_dir, BTreeMap::default()).unwrap()
     }
 
     #[test_log::test(tokio::test)]
     async fn test_put_contains_get() {
         let crypto = crypto::BlstCrypto::new("1").unwrap();
         let lane_id = &LaneId(crypto.validator_pubkey().clone());
-        let mut storage = setup_storage(lane_id);
+        let mut storage = setup_storage();
 
         let data_proposal = DataProposal::new(None, vec![]);
         let cumul_size: LaneBytesSize = LaneBytesSize(data_proposal.estimate_size() as u64);
@@ -611,7 +553,7 @@ mod tests {
     async fn test_update() {
         let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
         let lane_id = &LaneId(crypto.validator_pubkey().clone());
-        let mut storage = setup_storage(lane_id);
+        let mut storage = setup_storage();
         let data_proposal = DataProposal::new(None, vec![]);
         let cumul_size: LaneBytesSize = LaneBytesSize(data_proposal.estimate_size() as u64);
         let mut entry = LaneEntry {
@@ -637,13 +579,10 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_on_data_proposal() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
-        let lane_id = &LaneId(crypto.validator_pubkey().clone());
-
         let crypto2: BlstCrypto = crypto::BlstCrypto::new("2").unwrap();
         let lane_id2 = &LaneId(crypto2.validator_pubkey().clone());
 
-        let mut storage = setup_storage(lane_id);
+        let mut storage = setup_storage();
         let dp = DataProposal::new(None, vec![]);
         // 2 send a DP to 1
         let (verdict, _) = storage.on_data_proposal(lane_id2, &dp).unwrap();
@@ -667,12 +606,10 @@ mod tests {
     #[test_log::test(tokio::test)]
     async fn test_on_data_proposal_fork() {
         let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
-        let lane_id = &LaneId(crypto.validator_pubkey().clone());
-
         let crypto2: BlstCrypto = crypto::BlstCrypto::new("2").unwrap();
         let lane_id2 = &LaneId(crypto2.validator_pubkey().clone());
 
-        let mut storage = setup_storage(lane_id);
+        let mut storage = setup_storage();
         let dp = DataProposal::new(None, vec![Transaction::default()]);
         let dp2 = DataProposal::new(Some(dp.hashed()), vec![Transaction::default()]);
 
@@ -698,7 +635,7 @@ mod tests {
     async fn test_on_data_vote() {
         let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
         let lane_id = &LaneId(crypto.validator_pubkey().clone());
-        let mut storage = setup_storage(lane_id);
+        let mut storage = setup_storage();
 
         let crypto2: BlstCrypto = crypto::BlstCrypto::new("2").unwrap();
 
@@ -715,18 +652,16 @@ mod tests {
         let vote_msg = MempoolNetMessage::DataVote(dp_hash.clone(), cumul_size);
         let signed_msg = crypto2.sign(vote_msg).expect("Failed to sign message");
 
-        let result = storage
-            .on_data_vote(&signed_msg, &dp_hash, cumul_size)
+        let signatures = storage
+            .add_signatures(lane_id, &dp_hash, std::iter::once(signed_msg))
             .unwrap();
-        assert_eq!(result.0, dp_hash);
-        assert_eq!(2, result.1.len());
+        assert_eq!(2, signatures.len());
     }
 
     #[test_log::test(tokio::test)]
     async fn test_on_poda_update() {
         let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
-        let lane_id = &LaneId(crypto.validator_pubkey().clone());
-        let mut storage = setup_storage(lane_id);
+        let mut storage = setup_storage();
 
         let crypto2: BlstCrypto = crypto::BlstCrypto::new("2").unwrap();
         let lane_id2 = &LaneId(crypto2.validator_pubkey().clone());
@@ -743,7 +678,7 @@ mod tests {
 
         // 1 updates its lane with all signatures
         storage
-            .on_poda_update(lane_id2, &dp_hash, vec![signed_msg])
+            .add_signatures(lane_id2, &dp_hash, std::iter::once(signed_msg))
             .unwrap();
 
         let lane_entry = storage.get_by_hash(lane_id2, &dp_hash).unwrap().unwrap();
@@ -759,7 +694,7 @@ mod tests {
     async fn test_get_lane_entries_between_hashes() {
         let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
         let lane_id = &LaneId(crypto.validator_pubkey().clone());
-        let mut storage = setup_storage(lane_id);
+        let mut storage = setup_storage();
         let dp1 = DataProposal::new(None, vec![]);
         let dp2 = DataProposal::new(Some(dp1.hashed()), vec![]);
         let dp3 = DataProposal::new(Some(dp2.hashed()), vec![]);
@@ -822,7 +757,7 @@ mod tests {
     fn test_lane_size() {
         let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
         let lane_id = &LaneId(crypto.validator_pubkey().clone());
-        let mut storage = setup_storage(lane_id);
+        let mut storage = setup_storage();
 
         let dp1 = DataProposal::new(None, vec![Transaction::default()]);
 
@@ -853,7 +788,7 @@ mod tests {
     async fn test_get_lane_pending_entries() {
         let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
         let lane_id = &LaneId(crypto.validator_pubkey().clone());
-        let mut storage = setup_storage(lane_id);
+        let mut storage = setup_storage();
         let data_proposal = DataProposal::new(None, vec![]);
         let cumul_size: LaneBytesSize = LaneBytesSize(data_proposal.estimate_size() as u64);
         let entry = LaneEntry {
@@ -870,7 +805,7 @@ mod tests {
     async fn test_get_latest_car_and_new_cut() {
         let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
         let lane_id = &LaneId(crypto.validator_pubkey().clone());
-        let mut storage = setup_storage(lane_id);
+        let mut storage = setup_storage();
         let staking = Staking::new();
         let data_proposal = DataProposal::new(None, vec![]);
         let cumul_size: LaneBytesSize = LaneBytesSize(data_proposal.estimate_size() as u64);

@@ -218,11 +218,7 @@ impl Module for Mempool {
             running_tasks: JoinSet::new(),
             metrics,
             crypto: Arc::clone(&ctx.node.crypto),
-            lanes: LanesStorage::new(
-                &ctx.common.config.data_directory,
-                LaneId(ctx.node.crypto.validator_pubkey().clone()),
-                lanes_tip,
-            )?,
+            lanes: LanesStorage::new(&ctx.common.config.data_directory, lanes_tip)?,
             inner: attributes,
         })
     }
@@ -359,7 +355,7 @@ impl Mempool {
         // Check for each pending DataProposal if it has enough signatures
         let entries = self
             .lanes
-            .get_lane_pending_entries(self.lanes.own_lane_id(), last_cut)?;
+            .get_lane_pending_entries(&self.own_lane_id(), last_cut)?;
 
         for lane_entry in entries {
             // If there's only 1 signature (=own signature), broadcast it to everyone
@@ -634,8 +630,8 @@ impl Mempool {
                 let lane_id = self.get_lane(validator);
                 self.on_data_proposal(&lane_id, data_proposal)?;
             }
-            MempoolNetMessage::DataVote(ref data_proposal_hash, lane_size) => {
-                self.on_data_vote(&msg, data_proposal_hash, lane_size)?;
+            MempoolNetMessage::DataVote(ref data_proposal_hash, _) => {
+                self.on_data_vote(&msg, data_proposal_hash.clone())?;
             }
             MempoolNetMessage::PoDAUpdate(data_proposal_hash, signatures) => {
                 let lane_id = self.get_lane(validator);
@@ -660,7 +656,7 @@ impl Mempool {
         sender_validator: &ValidatorPublicKey,
         missing_lane_entries: Vec<LaneEntry>,
     ) -> Result<()> {
-        info!("SyncReply from validator {sender_validator}");
+        trace!("SyncReply from validator {sender_validator}");
 
         // TODO: this isn't necessarily the case - another validator could have sent us data for this lane.
         let lane_id = &LaneId(sender_validator.clone());
@@ -740,12 +736,12 @@ impl Mempool {
     ) -> Result<()> {
         info!(
             "{} SyncRequest received from validator {validator} for last_data_proposal_hash {:?}",
-            self.lanes.own_lane_id(),
+            &self.own_lane_id(),
             to_data_proposal_hash
         );
 
         let missing_lane_entries = self.lanes.get_lane_entries_between_hashes(
-            self.lanes.own_lane_id(),
+            &self.own_lane_id(),
             from_data_proposal_hash,
             to_data_proposal_hash,
         );
@@ -753,7 +749,7 @@ impl Mempool {
         match missing_lane_entries {
             Err(e) => info!(
                 "Can't send sync reply as there are no missing data proposals found between {:?} and {:?} for {}: {}",
-                to_data_proposal_hash, from_data_proposal_hash, self.lanes.own_lane_id(), e
+                to_data_proposal_hash, from_data_proposal_hash, self.own_lane_id(), e
             ),
             Ok(lane_entries) => {
                 debug!(
@@ -769,18 +765,17 @@ impl Mempool {
     fn on_data_vote(
         &mut self,
         msg: &SignedByValidator<MempoolNetMessage>,
-        data_proposal_hash: &DataProposalHash,
-        new_lane_size: LaneBytesSize,
+        data_proposal_hash: DataProposalHash,
     ) -> Result<()> {
         let validator = &msg.signature.validator;
-        debug!(
-            "Vote from {} on own lane {}",
-            validator,
-            self.lanes.own_lane_id()
-        );
-        let (data_proposal_hash, signatures) =
-            self.lanes
-                .on_data_vote(msg, data_proposal_hash, new_lane_size)?;
+        debug!("Vote from {} on own lane {}", validator, self.own_lane_id());
+        let lane_id = self.own_lane_id();
+
+        let signatures = self.lanes.add_signatures(
+            &lane_id,
+            &data_proposal_hash,
+            std::iter::once(msg.clone()),
+        )?;
 
         // Compute voting power of all signers to check if the DataProposal received enough votes
         let validators: Vec<ValidatorPublicKey> = signatures
@@ -824,7 +819,8 @@ impl Mempool {
             lane_id
         );
         self.lanes
-            .on_poda_update(lane_id, data_proposal_hash, signatures)
+            .add_signatures(lane_id, data_proposal_hash, signatures)?;
+        Ok(())
     }
 
     fn on_data_proposal(
@@ -1071,10 +1067,8 @@ pub mod test {
 
     impl MempoolTestCtx {
         pub async fn build_mempool(shared_bus: &SharedMessageBus, crypto: BlstCrypto) -> Mempool {
-            let pubkey = crypto.validator_pubkey();
             let tmp_dir = tempfile::tempdir().unwrap().into_path();
-            let lanes =
-                LanesStorage::new(&tmp_dir, LaneId(pubkey.clone()), BTreeMap::default()).unwrap();
+            let lanes = LanesStorage::new(&tmp_dir, BTreeMap::default()).unwrap();
             let bus = MempoolBusClient::new_from_bus(shared_bus.new_handle()).await;
 
             // Initialize Mempool
