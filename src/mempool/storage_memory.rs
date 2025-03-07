@@ -4,23 +4,24 @@ use std::{
 };
 
 use anyhow::{bail, Result};
-use hyle_model::{LaneBytesSize, LaneId};
+use hyle_model::{LaneBytesSize, LaneId, Signed, SignedByValidator, ValidatorSignature};
 use tracing::info;
 
-use super::storage::{CanBePutOnTop, LaneEntry, Storage};
+use super::{
+    storage::{CanBePutOnTop, LaneEntry, Storage},
+    MempoolNetMessage,
+};
 use crate::model::{DataProposalHash, Hashed};
 
 pub struct LanesStorage {
-    pub own_lane_id: LaneId,
     pub lanes_tip: BTreeMap<LaneId, (DataProposalHash, LaneBytesSize)>,
     // NB: do not iterate on this one as it's unordered
     pub by_hash: HashMap<LaneId, HashMap<DataProposalHash, LaneEntry>>,
 }
 
-impl Storage for LanesStorage {
-    fn new(
+impl LanesStorage {
+    pub fn new(
         _path: &Path,
-        own_lane_id: LaneId,
         lanes_tip: BTreeMap<LaneId, (DataProposalHash, LaneBytesSize)>,
     ) -> Result<Self> {
         // FIXME: load from disk
@@ -28,17 +29,11 @@ impl Storage for LanesStorage {
 
         info!("{} DP(s) available", by_hash.len());
 
-        Ok(LanesStorage {
-            own_lane_id,
-            lanes_tip,
-            by_hash,
-        })
+        Ok(LanesStorage { lanes_tip, by_hash })
     }
+}
 
-    fn own_lane_id(&self) -> &LaneId {
-        &self.own_lane_id
-    }
-
+impl Storage for LanesStorage {
     fn persist(&self) -> Result<()> {
         Ok(())
     }
@@ -121,6 +116,47 @@ impl Storage for LanesStorage {
             .or_default()
             .insert(dp_hash, lane_entry);
         Ok(())
+    }
+
+    fn add_signatures<T: IntoIterator<Item = SignedByValidator<MempoolNetMessage>>>(
+        &mut self,
+        lane_id: &LaneId,
+        dp_hash: &DataProposalHash,
+        vote_msgs: T,
+    ) -> Result<Vec<Signed<MempoolNetMessage, ValidatorSignature>>> {
+        let Some(dp) = self
+            .by_hash
+            .get_mut(lane_id)
+            .and_then(|lane| lane.get_mut(dp_hash))
+        else {
+            bail!("DataProposal {} not found in lane {}", dp_hash, lane_id);
+        };
+
+        for msg in vote_msgs {
+            let MempoolNetMessage::DataVote(dph, cumul_size) = &msg.msg else {
+                tracing::warn!(
+                    "Received a non-DataVote message in add_signatures: {:?}",
+                    msg.msg
+                );
+                continue;
+            };
+            if &dp.cumul_size != cumul_size || dp_hash != dph {
+                tracing::warn!(
+                    "Received a DataVote message with wrong hash or size: {:?}",
+                    msg.msg
+                );
+                continue;
+            }
+            // Insert the new messages if they're not already in
+            match dp
+                .signatures
+                .binary_search_by(|probe| probe.signature.cmp(&msg.signature))
+            {
+                Ok(_) => {}
+                Err(pos) => dp.signatures.insert(pos, msg),
+            }
+        }
+        Ok(dp.signatures.clone())
     }
 
     fn get_lane_ids(&self) -> impl Iterator<Item = &LaneId> {

@@ -4,7 +4,7 @@ use anyhow::{bail, Result};
 use fjall::{
     Config, Keyspace, KvSeparationOptions, PartitionCreateOptions, PartitionHandle, Slice,
 };
-use hyle_model::LaneId;
+use hyle_model::{LaneId, Signed, SignedByValidator, ValidatorSignature};
 use tracing::info;
 
 use crate::{
@@ -12,21 +12,22 @@ use crate::{
     utils::logger::LogMe,
 };
 
-use super::storage::{CanBePutOnTop, LaneEntry, Storage};
+use super::{
+    storage::{CanBePutOnTop, LaneEntry, Storage},
+    MempoolNetMessage,
+};
 
 pub use hyle_model::LaneBytesSize;
 
 pub struct LanesStorage {
-    pub own_lane_id: LaneId,
     pub lanes_tip: BTreeMap<LaneId, (DataProposalHash, LaneBytesSize)>,
     db: Keyspace,
     pub by_hash: PartitionHandle,
 }
 
-impl Storage for LanesStorage {
-    fn new(
+impl LanesStorage {
+    pub fn new(
         path: &Path,
-        own_lane_id: LaneId,
         lanes_tip: BTreeMap<LaneId, (DataProposalHash, LaneBytesSize)>,
     ) -> Result<Self> {
         let db = Config::new(path)
@@ -54,17 +55,14 @@ impl Storage for LanesStorage {
         info!("{} DP(s) available", by_hash.len()?);
 
         Ok(LanesStorage {
-            own_lane_id,
             lanes_tip,
             db,
             by_hash,
         })
     }
+}
 
-    fn own_lane_id(&self) -> &LaneId {
-        &self.own_lane_id
-    }
-
+impl Storage for LanesStorage {
     fn persist(&self) -> Result<()> {
         self.db
             .persist(fjall::PersistMode::Buffer)
@@ -153,6 +151,55 @@ impl Storage for LanesStorage {
             encode_to_item(lane_entry)?,
         )?;
         Ok(())
+    }
+
+    fn add_signatures<T: IntoIterator<Item = SignedByValidator<MempoolNetMessage>>>(
+        &mut self,
+        lane_id: &LaneId,
+        dp_hash: &DataProposalHash,
+        vote_msgs: T,
+    ) -> Result<Vec<Signed<MempoolNetMessage, ValidatorSignature>>> {
+        let key = format!("{}:{}", lane_id, dp_hash);
+        let Some(mut dp) = self
+            .by_hash
+            .get(key.clone())
+            .log_warn(format!(
+                "Can't find DP {} for validator {}",
+                dp_hash, lane_id
+            ))?
+            .map(decode_from_item)
+            .transpose()?
+        else {
+            bail!("Can't find DP {} for validator {}", dp_hash, lane_id);
+        };
+
+        for msg in vote_msgs {
+            let MempoolNetMessage::DataVote(dph, cumul_size) = &msg.msg else {
+                tracing::warn!(
+                    "Received a non-DataVote message in add_signatures: {:?}",
+                    msg.msg
+                );
+                continue;
+            };
+            if &dp.cumul_size != cumul_size || dp_hash != dph {
+                tracing::warn!(
+                    "Received a DataVote message with wrong hash or size: {:?}",
+                    msg.msg
+                );
+                continue;
+            }
+            // Insert the new messages if they're not already in
+            match dp
+                .signatures
+                .binary_search_by(|probe| probe.signature.cmp(&msg.signature))
+            {
+                Ok(_) => {}
+                Err(pos) => dp.signatures.insert(pos, msg),
+            }
+        }
+        let signatures = dp.signatures.clone();
+        self.by_hash.insert(key, encode_to_item(dp)?)?;
+        Ok(signatures)
     }
 
     fn get_lane_ids(&self) -> impl Iterator<Item = &LaneId> {

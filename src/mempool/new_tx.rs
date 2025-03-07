@@ -25,9 +25,11 @@ impl super::Mempool {
     }
 
     fn get_last_data_prop_hash_in_own_lane(&self) -> Option<DataProposalHash> {
-        self.lanes
-            .get_lane_hash_tip(self.lanes.own_lane_id())
-            .cloned()
+        self.lanes.get_lane_hash_tip(&self.own_lane_id()).cloned()
+    }
+
+    pub(super) fn own_lane_id(&self) -> LaneId {
+        LaneId(self.crypto.validator_pubkey().clone())
     }
 
     /// Creates and saves a new DataProposal if there are pending transactions
@@ -73,11 +75,8 @@ impl super::Mempool {
             })
             .context("Sending MempoolStatusEvent DataProposalCreated")?;
 
-        self.lanes.store_data_proposal(
-            &self.crypto,
-            &self.lanes.own_lane_id().clone(),
-            data_proposal,
-        )?;
+        self.lanes
+            .store_data_proposal(&self.crypto, &self.own_lane_id(), data_proposal)?;
 
         Ok(())
     }
