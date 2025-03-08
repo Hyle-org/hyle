@@ -4,6 +4,7 @@ use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{CommittedConsensusProposal, ConsensusEvent},
     genesis::GenesisEvent,
+    log_error,
     model::*,
     module_handle_messages,
     node_state::module::NodeStateEvent,
@@ -11,7 +12,6 @@ use crate::{
     utils::{
         conf::SharedConf,
         crypto::{BlstCrypto, SharedBlstCrypto},
-        logger::LogMe,
         modules::{module_bus_client, Module},
         serialize::arc_rwlock_borsh,
     },
@@ -245,18 +245,16 @@ impl Mempool {
                 self.running_tasks.is_empty()
             },
             listen<SignedByValidator<MempoolNetMessage>> cmd => {
-                let _ = self.handle_net_message(cmd)
-                    .log_error("Handling MempoolNetMessage in Mempool");
+                let _ = log_error!(self.handle_net_message(cmd), "Handling MempoolNetMessage in Mempool");
             }
             listen<RestApiMessage> cmd => {
-                let _ = self.handle_api_message(cmd).log_error("Handling API Message in Mempool");
+                let _ = log_error!(self.handle_api_message(cmd), "Handling API Message in Mempool");
             }
             listen<TcpServerMessage> cmd => {
-                let _ = self.handle_tcp_server_message(cmd).log_error("Handling TCP Server message in Mempool");
+                let _ = log_error!(self.handle_tcp_server_message(cmd), "Handling TCP Server message in Mempool");
             }
             listen<ConsensusEvent> cmd => {
-                let _ = self.handle_consensus_event(cmd)
-                    .log_error("Handling ConsensusEvent in Mempool");
+                let _ = log_error!(self.handle_consensus_event(cmd), "Handling ConsensusEvent in Mempool");
             }
             listen<NodeStateEvent> cmd => {
                 let NodeStateEvent::NewBlock(block) = cmd;
@@ -268,14 +266,13 @@ impl Mempool {
                 self.handle_querynewcut(staking)
             }
             Some(event) = self.running_tasks.join_next() => {
-                if let Ok(Ok(event)) = event.log_error("Processing InternalMempoolEvent from Blocker Joinset") {
-                    let _ = self.handle_internal_event(event)
-                        .log_error("Handling InternalMempoolEvent in Mempool");
+                if let Ok(Ok(event)) = log_error!(event, "Processing InternalMempoolEvent from Blocker Joinset") {
+                    let _ = log_error!(self.handle_internal_event(event),
+                        "Handling InternalMempoolEvent in Mempool");
                 }
             }
             _ = interval.tick() => {
-                let _ = self.handle_data_proposal_management()
-                    .log_error("Creating Data Proposal on tick");
+                let _ = log_error!(self.handle_data_proposal_management(), "Creating Data Proposal on tick");
             }
         };
 

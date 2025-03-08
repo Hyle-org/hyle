@@ -16,12 +16,12 @@ use crate::{
     bus::{BusClientSender, BusMessage},
     consensus::ConsensusCommand,
     genesis::GenesisEvent,
+    log_error,
     model::*,
     module_handle_messages,
     p2p::network::{OutboundMessage, PeerEvent},
     utils::{
         conf::SharedConf,
-        logger::LogMe,
         modules::{module_bus_client, Module},
     },
 };
@@ -113,17 +113,17 @@ impl DataAvailability {
         module_handle_messages! {
             on_bus self.bus,
             listen<MempoolBlockEvent> evt => {
-                _ = self.handle_mempool_event(evt, pool_sender.clone()).await.log_error("Handling Mempool Event");
+                _ = log_error!(self.handle_mempool_event(evt, pool_sender.clone()).await, "Handling Mempool Event");
             }
 
             listen<MempoolStatusEvent> evt => {
-                _ = self.handle_mempool_status_event(evt, pool_sender.clone()).await.log_error("Handling Mempool Event");
+                _ = log_error!(self.handle_mempool_status_event(evt, pool_sender.clone()).await, "Handling Mempool Event");
             }
 
             listen<GenesisEvent> cmd => {
                 if let GenesisEvent::GenesisBlock(signed_block) = cmd {
                     debug!("🌱  Genesis block received with validators {:?}", signed_block.consensus_proposal.staking_actions.clone());
-                    let _= self.handle_signed_block(signed_block, pool_sender.clone()).await.log_error("Handling GenesisBlock Event");
+                    let _= log_error!(self.handle_signed_block(signed_block, pool_sender.clone()).await, "Handling GenesisBlock Event");
                 } else {
                     // TODO: I think this is technically a data race with p2p ?
                     self.need_catchup = true;
@@ -143,7 +143,7 @@ impl DataAvailability {
             Some(streamed_block) = catchup_block_receiver.recv() => {
                 let height = streamed_block.height().0;
 
-                let _ = self.handle_signed_block(streamed_block, pool_sender.clone()).await.log_error(format!("Handling streamed block {height}"));
+                let _ = log_error!(self.handle_signed_block(streamed_block, pool_sender.clone()).await, format!("Handling streamed block {height}"));
 
                 // Stop streaming after reaching a height communicated by Mempool
                 if let Some(until_height) = self.catchup_height.as_ref() {
@@ -345,18 +345,20 @@ impl DataAvailability {
 
         // TODO: use retain once async closures are supported ?
         //
-        _ = pool_sender
-            .send(TcpCommand::Broadcast(Box::new(
-                DataAvailabilityEvent::SignedBlock(block.clone()),
-            )))
-            .await
-            .log_error("Sending block to tcp connection pool");
+        _ = log_error!(
+            pool_sender
+                .send(TcpCommand::Broadcast(Box::new(
+                    DataAvailabilityEvent::SignedBlock(block.clone()),
+                )))
+                .await,
+            "Sending block to tcp connection pool"
+        );
 
         // Send the block to NodeState for processing
-        _ = self
-            .bus
-            .send(DataEvent::OrderedSignedBlock(block))
-            .log_error("Sending OrderedSignedBlock");
+        _ = log_error!(
+            self.bus.send(DataEvent::OrderedSignedBlock(block)),
+            "Sending OrderedSignedBlock"
+        );
     }
 
     async fn start_streaming_to_peer(

@@ -10,10 +10,11 @@ use tracing::debug;
 
 use crate::{
     bus::BusMessage,
+    log_error,
     model::{Blob, BlobTransaction, Block, CommonRunContext, Hashed, Transaction, TransactionData},
     module_handle_messages,
     node_state::module::NodeStateEvent,
-    utils::{conf::Conf, logger::LogMe, modules::Module},
+    utils::{conf::Conf, modules::Module},
 };
 
 use super::indexer_bus_client::IndexerBusClient;
@@ -123,9 +124,9 @@ where
         module_handle_messages! {
             on_bus self.bus,
             listen<NodeStateEvent> event => {
-                _ = self.handle_node_state_event(event)
-                    .await
-                    .log_error("Handling node state event")
+                _ = log_error!(self.handle_node_state_event(event)
+                    .await,
+                    "Handling node state event")
             }
         };
 

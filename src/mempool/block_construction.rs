@@ -1,6 +1,4 @@
-use crate::{
-    bus::BusClientSender, consensus::CommittedConsensusProposal, model::*, utils::logger::LogMe,
-};
+use crate::{bus::BusClientSender, consensus::CommittedConsensusProposal, log_error, model::*};
 
 use super::storage::Storage;
 use anyhow::{Context, Result};
@@ -90,11 +88,12 @@ impl super::Mempool {
     /// Send an event if none was broadcast before
     fn set_ccp_build_start_height(&mut self, slot: Slot) {
         if self.buc_build_start_height.is_none()
-            && self
-                .bus
-                .send(MempoolBlockEvent::StartedBuildingBlocks(BlockHeight(slot)))
-                .log_error(format!("Sending StartedBuilding event at height {}", slot))
-                .is_ok()
+            && log_error!(
+                self.bus
+                    .send(MempoolBlockEvent::StartedBuildingBlocks(BlockHeight(slot))),
+                format!("Sending StartedBuilding event at height {}", slot)
+            )
+            .is_ok()
         {
             self.buc_build_start_height = Some(slot);
         }

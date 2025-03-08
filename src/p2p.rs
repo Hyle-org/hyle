@@ -1,9 +1,8 @@
 //! Networking layer
 
-use crate::utils::logger::LogMe;
 use crate::{
     bus::{BusMessage, SharedMessageBus},
-    handle_messages,
+    handle_messages, log_error,
     model::SharedRunContext,
     module_handle_messages,
     utils::{
@@ -76,46 +75,48 @@ impl P2P {
         self.peer_id += 1;
         self.connected_peers.insert(peer_address.clone());
 
-        let _ = tokio::task::Builder::new()
-            .name("connect-to-peer")
-            .spawn(async move {
-                let mut retry_count = 20;
-                while retry_count > 0 {
-                    info!("Connecting to peer #{}: {}", id, peer_address);
-                    match peer::Peer::connect(peer_address.as_str()).await {
-                        Ok(stream) => {
-                            let mut peer = peer::Peer::new(
-                                id,
-                                stream,
-                                bus.new_handle(),
-                                crypto.clone(),
-                                config.clone(),
-                            )
-                            .await;
+        let _ = log_error!(
+            tokio::task::Builder::new()
+                .name("connect-to-peer")
+                .spawn(async move {
+                    let mut retry_count = 20;
+                    while retry_count > 0 {
+                        info!("Connecting to peer #{}: {}", id, peer_address);
+                        match peer::Peer::connect(peer_address.as_str()).await {
+                            Ok(stream) => {
+                                let mut peer = peer::Peer::new(
+                                    id,
+                                    stream,
+                                    bus.new_handle(),
+                                    crypto.clone(),
+                                    config.clone(),
+                                )
+                                .await;
 
-                            if let Err(e) = peer.handshake().await {
-                                warn!("Error in handshake: {}", e);
+                                if let Err(e) = peer.handshake().await {
+                                    warn!("Error in handshake: {}", e);
+                                }
+                                trace!("Handshake done !");
+                                match peer.start().await {
+                                    Ok(_) => warn!("Peer #{} thread ended with success.", id),
+                                    Err(_) => warn!(
+                                        "Peer #{}: {} disconnected ! Retry connection",
+                                        id, peer_address
+                                    ),
+                                };
                             }
-                            trace!("Handshake done !");
-                            match peer.start().await {
-                                Ok(_) => warn!("Peer #{} thread ended with success.", id),
-                                Err(_) => warn!(
-                                    "Peer #{}: {} disconnected ! Retry connection",
-                                    id, peer_address
-                                ),
-                            };
+                            Err(e) => {
+                                warn!("Error while connecting to peer #{}: {}", id, e);
+                            }
                         }
-                        Err(e) => {
-                            warn!("Error while connecting to peer #{}: {}", id, e);
-                        }
-                    }
 
-                    retry_count -= 1;
-                    sleep(Duration::from_secs(2)).await;
-                }
-                error!("Can't reach peer #{}: {}.", id, peer_address);
-            })
-            .log_error("Failed to spawn peer thread");
+                        retry_count -= 1;
+                        sleep(Duration::from_secs(2)).await;
+                    }
+                    error!("Can't reach peer #{}: {}.", id, peer_address);
+                }),
+            "Failed to spawn peer thread"
+        );
     }
 
     fn handle_command(&mut self, cmd: P2PCommand) {
