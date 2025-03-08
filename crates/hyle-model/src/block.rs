@@ -26,6 +26,7 @@ pub struct Block {
     pub new_bounded_validators: Vec<ValidatorPublicKey>,
     pub staking_actions: Vec<(Identity, StakingAction)>,
     pub registered_contracts: Vec<(TxHash, RegisterContractEffect)>,
+    pub deleted_contracts: Vec<(TxHash, ContractName)>,
     pub updated_states: BTreeMap<ContractName, StateDigest>,
     pub transactions_events: BTreeMap<TxHash, Vec<TransactionStateEvent>>,
 }
@@ -68,7 +69,7 @@ impl PartialOrd for Block {
 #[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Display)]
 #[display("")]
 pub struct SignedBlock {
-    pub data_proposals: Vec<(ValidatorPublicKey, Vec<DataProposal>)>,
+    pub data_proposals: Vec<(LaneId, Vec<DataProposal>)>,
     pub certificate: AggregateSignature,
     pub consensus_proposal: ConsensusProposal,
 }

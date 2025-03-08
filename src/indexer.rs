@@ -4,7 +4,6 @@ mod api;
 pub mod contract_state_indexer;
 pub mod da_listener;
 
-use crate::mempool::MempoolStatusEvent;
 use crate::model::*;
 use crate::{
     log_error, log_warn, module_handle_messages,
@@ -34,7 +33,7 @@ use std::ops::DerefMut;
 use std::{collections::HashMap, sync::Arc};
 use tokio::select;
 use tokio::sync::{broadcast, mpsc};
-use tracing::{error, info, trace};
+use tracing::{debug, error, info, trace};
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -520,17 +519,18 @@ impl Indexer {
         }
 
         for (i, (tx_hash, events)) in (0..).zip(block.transactions_events.into_iter()) {
-            let tx_hash: &TxHashDb = &tx_hash.into();
+            let tx_hash_db: &TxHashDb = &tx_hash.clone().into();
             let parent_data_proposal_hash: DataProposalHashDb = block
                 .dp_hashes
-                .get(&tx_hash.0)
+                .get(&tx_hash)
                 .context(format!(
                     "No parent data proposal hash present for tx {}",
-                    tx_hash.0
+                    &tx_hash
                 ))?
                 .clone()
                 .into();
             let serialized_events = serde_json::to_string(&events)?;
+            debug!("Inserting transaction state event {tx_hash}: {serialized_events}");
 
             log_warn!(sqlx::query(
                 "INSERT INTO transaction_state_events (block_hash, index, tx_hash, parent_dp_hash, events)
@@ -538,7 +538,7 @@ impl Indexer {
             )
             .bind(block.hash.clone())
             .bind(i)
-            .bind(tx_hash)
+            .bind(tx_hash_db)
             .bind(parent_data_proposal_hash)
             .bind(serialized_events)
             .execute(&mut *transaction)
@@ -928,7 +928,7 @@ mod test {
                         index: blob_index,
                         blobs,
                         success: true,
-                        registered_contracts: vec![],
+                        onchain_effects: vec![],
                         program_outputs: vec![],
                     },
                 }],
@@ -1053,7 +1053,7 @@ mod test {
         let parent_data_proposal = DataProposal::new(None, txs);
         let mut signed_block = SignedBlock::default();
         signed_block.data_proposals.push((
-            ValidatorPublicKey("ttt".into()),
+            LaneId(ValidatorPublicKey("ttt".into())),
             vec![parent_data_proposal.clone()],
         ));
         let block = node_state.handle_signed_block(&signed_block);
@@ -1204,9 +1204,10 @@ mod test {
         let mut signed_block = SignedBlock::default();
         signed_block.consensus_proposal.timestamp = 1234;
         signed_block.consensus_proposal.slot = 2;
-        signed_block
-            .data_proposals
-            .push((ValidatorPublicKey("ttt".into()), vec![data_proposal]));
+        signed_block.data_proposals.push((
+            LaneId(ValidatorPublicKey("ttt".into())),
+            vec![data_proposal],
+        ));
         let block = node_state.handle_signed_block(&signed_block);
 
         indexer

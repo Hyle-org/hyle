@@ -1,7 +1,8 @@
 use client_sdk::rest_client::{IndexerApiHttpClient, NodeApiHttpClient};
 use hyle_model::{
-    api::APIRegisterContract, BlobTransaction, ContractAction, ContractName, Hashed, ProgramId,
-    ProofData, ProofTransaction, RegisterContractAction, RegisterContractEffect, StateDigest,
+    api::APIRegisterContract, BlobTransaction, ContractAction, ContractName, Hashed, OnchainEffect,
+    ProgramId, ProofData, ProofTransaction, RegisterContractAction, RegisterContractEffect,
+    StateDigest,
 };
 use testcontainers_modules::{
     postgres::Postgres,
@@ -374,14 +375,14 @@ async fn test_contract_upgrade() -> Result<()> {
         make_hyle_output_with_state(b2.clone(), BlobIndex(0), &[1, 2, 3], &[8, 8, 8]);
 
     hyle_output
-        .registered_contracts
-        .push(RegisterContractEffect {
+        .onchain_effects
+        .push(OnchainEffect::RegisterContract(RegisterContractEffect {
             verifier: "test".into(),
             program_id: ProgramId(vec![7, 7, 7]),
             // The state digest is ignored during the update phase.
             state_digest: StateDigest(vec![3, 3, 3]),
             contract_name: "c1.hyle".into(),
-        });
+        }));
 
     let proof_update = ProofTransaction {
         contract_name: "c1.hyle".into(),

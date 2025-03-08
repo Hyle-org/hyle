@@ -151,19 +151,6 @@ async fn main() -> Result<()> {
     };
 
     let mut handler = ModulesHandler::new(&bus).await;
-    handler.build_module::<Mempool>(ctx.clone()).await?;
-
-    handler.build_module::<Genesis>(ctx.clone()).await?;
-    if config.single_node.unwrap_or(false) {
-        handler
-            .build_module::<SingleNodeConsensus>(ctx.clone())
-            .await?;
-    } else {
-        handler.build_module::<Consensus>(ctx.clone()).await?;
-    }
-    handler
-        .build_module::<MockWorkflowHandler>(ctx.clone())
-        .await?;
 
     if run_indexer {
         handler.build_module::<Indexer>(ctx.common.clone()).await?;
@@ -186,11 +173,27 @@ async fn main() -> Result<()> {
             })
             .await?;
     }
+
+    handler
+        .build_module::<NodeStateModule>(ctx.common.clone())
+        .await?;
+
     handler
         .build_module::<DataAvailability>(ctx.clone())
         .await?;
+
+    handler.build_module::<Mempool>(ctx.clone()).await?;
+
+    handler.build_module::<Genesis>(ctx.clone()).await?;
+    if config.single_node.unwrap_or(false) {
+        handler
+            .build_module::<SingleNodeConsensus>(ctx.clone())
+            .await?;
+    } else {
+        handler.build_module::<Consensus>(ctx.clone()).await?;
+    }
     handler
-        .build_module::<NodeStateModule>(ctx.common.clone())
+        .build_module::<MockWorkflowHandler>(ctx.clone())
         .await?;
 
     handler.build_module::<P2P>(ctx.clone()).await?;

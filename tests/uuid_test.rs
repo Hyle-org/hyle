@@ -13,6 +13,7 @@ use hyle_contract_sdk::{
     StateDigest, Verifier,
 };
 use hyle_contracts::{HYDENTITY_ELF, UUID_TLD_ELF, UUID_TLD_ID};
+use hyle_model::OnchainEffect;
 use uuid_tld::{UuidTld, UuidTldAction};
 
 contract_states!(
@@ -27,7 +28,7 @@ mod fixtures;
 struct UuidContract {}
 impl E2EContract for UuidContract {
     fn verifier() -> Verifier {
-        Verifier("risc0".into())
+        Verifier(hyle_verifiers::versions::RISC0_1.to_string())
     }
     fn program_id() -> ProgramId {
         ProgramId(UUID_TLD_ID.to_vec())
@@ -41,20 +42,20 @@ impl E2EContract for UuidContract {
 async fn test_uuid_registration() {
     std::env::set_var("RISC0_DEV_MODE", "1");
 
-    let ctx = E2ECtx::new_single(500).await.unwrap();
+    let ctx = E2ECtx::new_multi_with_indexer(2, 500).await.unwrap();
     ctx.register_contract::<UuidContract>("hyle.hyle".into(), "uuid")
+        .await
+        .unwrap();
+
+    let hydentity: Hydentity = ctx
+        .indexer_client()
+        .fetch_current_state(&"hydentity".into())
         .await
         .unwrap();
 
     let mut executor = TxExecutorBuilder::new(States {
         uuid: UuidTld::default(),
-        hydentity: ctx
-            .get_contract("hydentity")
-            .await
-            .unwrap()
-            .state
-            .try_into()
-            .unwrap(),
+        hydentity,
     })
     .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
     .with_prover("uuid".into(), Risc0Prover::new(UUID_TLD_ELF))
@@ -102,7 +103,7 @@ async fn test_uuid_registration() {
 
     let outputs = verify_proof(
         &uuid_proof.proof,
-        &Verifier("risc0".into()),
+        &Verifier(hyle_verifiers::versions::RISC0_1.to_string()),
         &ProgramId(UUID_TLD_ID.to_vec()),
     )
     .expect("Must validate proof");
@@ -111,14 +112,10 @@ async fn test_uuid_registration() {
 
     let contract = loop {
         if let Ok(c) = ctx
-            .get_contract(
-                &expected_output
-                    .registered_contracts
-                    .first()
-                    .unwrap()
-                    .contract_name
-                    .0,
-            )
+            .get_contract(match expected_output.onchain_effects.first() {
+                Some(OnchainEffect::RegisterContract(e)) => &e.contract_name.0,
+                _ => panic!("Expected RegisterContractEffect"),
+            })
             .await
         {
             break c;

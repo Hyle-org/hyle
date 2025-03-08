@@ -1,6 +1,7 @@
 
 [package]
 name = "hyle-contracts"
+description = "Metadata of hyle built-in contracts"
 version = { workspace = true }
 edition = { workspace = true }
 # license = { workspace = true }

@@ -1,5 +1,7 @@
-use crate::log_error;
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytes::BytesMut;
@@ -7,7 +9,7 @@ use futures::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
-use hyle_model::utils::get_current_timestamp;
+use sdk::Transaction;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::mpsc::{Receiver, Sender},
@@ -17,6 +19,13 @@ use tokio_util::codec::{Decoder, Encoder, Framed, LengthDelimitedCodec};
 
 use anyhow::{anyhow, bail, Context, Result};
 use tracing::{debug, error, info, trace, warn};
+
+pub fn get_current_timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs()
+}
 
 #[derive(Debug, Clone, BorshDeserialize, BorshSerialize, PartialEq)]
 pub enum TcpMessage<Data: Clone> {
@@ -133,10 +142,10 @@ where
         tokio::task::Builder::new()
             .name("tcp-connection-pool-loop")
             .spawn(async move {
-                _ = log_error!(
-                    self.run(out_receiver, in_sender).await,
-                    "Running connection pool loop"
-                );
+                self.run(out_receiver, in_sender)
+                    .await
+                    .context("Running connection pool loop")?;
+                anyhow::Ok(())
             })?;
 
         Ok((out_sender, in_receiver))
@@ -160,7 +169,9 @@ where
                 }
 
                 Some(to_send) = pool_recv.recv() => {
-                    _ = log_error!(self.send(to_send).await, "Sending message");
+                    if let Err(e) = self.send(to_send).await {
+                        error!("Sending message to pool {}: {:?}", self.pool_name, e)
+                    }
                 }
 
                 Some(peer_id) = ping_receiver.recv() => {
@@ -388,6 +399,7 @@ where
     }
 }
 
+#[macro_export]
 macro_rules! implem_tcp_codec {
     ($codec:ident, decode: $in:ty, encode: $out:ty) => {
         #[derive(Default, Debug)]
@@ -422,8 +434,10 @@ macro_rules! implem_tcp_codec {
         }
     };
 }
-pub(super) use implem_tcp_codec;
 
+pub use implem_tcp_codec;
+
+#[macro_export]
 macro_rules! tcp_client_server {
     ($vis:vis $name:ident, request: $req:ty, response: $res:ty) => {
         paste::paste! {
@@ -432,32 +446,49 @@ macro_rules! tcp_client_server {
             pub use super::$req;
             pub use super::$res;
             use anyhow::{Context, Result};
-            crate::tcp::implem_tcp_codec!{
+            $crate::tcp::implem_tcp_codec!{
                 ClientCodec,
                 decode: $res,
                 encode: $req
             }
-            crate::tcp::implem_tcp_codec!{
+            $crate::tcp::implem_tcp_codec!{
                 ServerCodec,
                 decode: $req,
                 encode: $res
             }
 
-            pub type Client = crate::tcp::TcpClient<ClientCodec, $req, $res>;
-            pub type Server = crate::tcp::TcpServer<ServerCodec, $req, $res>;
+            pub type Client = $crate::tcp::TcpClient<ClientCodec, $req, $res>;
+            pub type Server = $crate::tcp::TcpServer<ServerCodec, $req, $res>;
 
             pub fn create_server(addr: String) -> Server {
-                crate::tcp::TcpServer::<ServerCodec, $req, $res>::create(addr, stringify!($name))
+                $crate::tcp::TcpServer::<ServerCodec, $req, $res>::create(addr, stringify!($name))
             }
             pub async fn connect(id: String, addr: String) -> Result<Client> {
-                crate::tcp::TcpClient::<ClientCodec, $req, $res>::connect(id, addr).await
+                $crate::tcp::TcpClient::<ClientCodec, $req, $res>::connect(id, addr).await
             }
         }
         }
     };
 }
 
-pub(crate) use tcp_client_server;
+pub use tcp_client_server;
+
+// Client - servers
+//
+// TCP Client
+
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
+pub enum TcpServerMessage {
+    NewTx(Transaction),
+}
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
+pub struct TcpServerResponse;
+
+tcp_client_server! {
+    pub TcpServer,
+    request: TcpServerMessage,
+    response: TcpServerResponse
+}
 
 #[cfg(test)]
 pub mod tests {
@@ -468,7 +499,7 @@ pub mod tests {
     use anyhow::Result;
     use borsh::{BorshDeserialize, BorshSerialize};
     use futures::TryStreamExt;
-    use hyle_model::{BlockHeight, SignedBlock};
+    use sdk::{BlockHeight, SignedBlock};
 
     #[derive(BorshDeserialize, BorshSerialize, Clone, Debug, PartialEq, Eq)]
     pub struct DataAvailabilityRequest(pub BlockHeight);
@@ -484,7 +515,7 @@ pub mod tests {
         response: DataAvailabilityEvent
     }
 
-    #[test_log::test(tokio::test)]
+    #[tokio::test]
     async fn tcp_test() -> Result<()> {
         let (sender, mut receiver) =
             codec_data_availability::create_server("0.0.0.0:2345".to_string())

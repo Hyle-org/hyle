@@ -120,11 +120,17 @@ pub mod signal {
         >,
     ) -> anyhow::Result<()> {
         if *should_shutdown {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
             return Ok(());
         }
         while let Ok(shutdown_event) = shutdown_receiver.recv().await {
             if shutdown_event.module == std::any::type_name::<T>() {
+                tracing::debug!(
+                    "Break signal received for module {}",
+                    std::any::type_name::<T>()
+                );
                 *should_shutdown = true;
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                 return Ok(());
             }
         }
@@ -137,6 +143,23 @@ pub mod signal {
 
 #[macro_export]
 macro_rules! module_handle_messages {
+    (on_bus $bus:expr, delay_shutdown_until  $lay_shutdow_until:block, $($rest:tt)*) => {
+        {
+            let mut shutdown_receiver = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$crate::utils::modules::signal::ShutdownModule>>::splitting_get_mut(&mut $bus) };
+            let mut should_shutdown = false;
+            $crate::handle_messages! {
+                on_bus $bus,
+                $($rest)*
+                Ok(_) = $crate::utils::modules::signal::async_receive_shutdown::<Self>(&mut should_shutdown, &mut shutdown_receiver) => {
+                    let res = $lay_shutdow_until;
+                    if res {
+                        break;
+                    }
+                }
+            }
+            should_shutdown
+        }
+    };
     (on_bus $bus:expr, $($rest:tt)*) => {
         {
             let mut shutdown_receiver = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$crate::utils::modules::signal::ShutdownModule>>::splitting_get_mut(&mut $bus) };
@@ -145,7 +168,6 @@ macro_rules! module_handle_messages {
                 on_bus $bus,
                 $($rest)*
                 Ok(_) = $crate::utils::modules::signal::async_receive_shutdown::<Self>(&mut should_shutdown, &mut shutdown_receiver) => {
-                    tracing::debug!("Break signal received for module {}", std::any::type_name::<Self>());
                     break;
                 }
             }
@@ -218,10 +240,10 @@ impl ModulesHandler {
             if Self::long_running_module(module.name) {
                 self.started_modules.push(module.name);
             }
-            let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
 
             debug!("Starting module {}", module.name);
 
+            let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
             let task = tokio::task::Builder::new()
                 .name(module.name)
                 .spawn(async move {
@@ -286,7 +308,6 @@ impl ModulesHandler {
         handle_messages! {
             on_bus shutdown_client,
             listen<signal::ShutdownCompleted> msg => {
-
                 if Self::long_running_module(msg.module.as_str()) && !self.shut_modules.contains(&msg.module)  {
                     self.started_modules.retain(|module| *module != msg.module.clone());
                     self.shut_modules.push(msg.module.clone());

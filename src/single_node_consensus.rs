@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use crate::bus::command_response::{CmdRespClient, Query};
 use crate::bus::BusClientSender;
 use crate::consensus::{CommittedConsensusProposal, ConsensusEvent, QueryConsensusInfo};
-use crate::data_availability::DataEvent;
 use crate::genesis::GenesisEvent;
 use crate::mempool::QueryNewCut;
 use crate::model::{utils::get_current_timestamp_ms, *};
@@ -22,7 +21,6 @@ struct SingleNodeConsensusBusClient {
     sender(ConsensusEvent),
     sender(Query<QueryNewCut, Cut>),
     receiver(Query<QueryConsensusInfo, ConsensusInfo>),
-    receiver(DataEvent),
     receiver(GenesisEvent),
 }
 }
@@ -258,7 +256,7 @@ mod tests {
                 handle_messages! {
                     on_bus new_cut_query_receiver,
                     command_response<QueryNewCut, Cut> _ => {
-                        Ok(vec![(ValidatorPublicKey::default(), DataProposalHash::default(), LaneBytesSize::default(), AggregateSignature::default())])
+                        Ok(vec![(LaneId::default(), DataProposalHash::default(), LaneBytesSize::default(), AggregateSignature::default())])
                     }
                 }
             });

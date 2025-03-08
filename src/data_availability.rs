@@ -7,27 +7,25 @@ mod blocks_memory;
 
 // Pick one of the two implementations
 use blocks_fjall::Blocks;
+use client_sdk::tcp::{TcpCommand, TcpEvent};
 //use blocks_memory::Blocks;
 
-use codec::{codec_data_availability, DataAvailabilityEvent};
+use codec::{codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequest};
 
 use crate::{
     bus::{BusClientSender, BusMessage},
-    consensus::{ConsensusCommand, ConsensusEvent},
+    consensus::ConsensusCommand,
     genesis::GenesisEvent,
-    indexer::da_listener::RawDAListener,
     log_error,
-    mempool::{MempoolBlockEvent, MempoolStatusEvent},
     model::*,
     module_handle_messages,
     p2p::network::{OutboundMessage, PeerEvent},
-    tcp::{TcpCommand, TcpEvent},
     utils::{
         conf::SharedConf,
         modules::{module_bus_client, Module},
     },
 };
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::str;
 use serde::{Deserialize, Serialize};
@@ -48,7 +46,6 @@ struct DABusClient {
     sender(OutboundMessage),
     sender(DataEvent),
     sender(ConsensusCommand),
-    receiver(ConsensusEvent),
     receiver(MempoolBlockEvent),
     receiver(MempoolStatusEvent),
     receiver(GenesisEvent),
@@ -406,12 +403,13 @@ impl DataAvailability {
             .last()
             .map(|block| block.height() + 1)
             .unwrap_or(BlockHeight(0));
-        let Ok(mut stream) = RawDAListener::new(&ip, start).await else {
-            bail!("Error occured setting up the DA listener");
-        };
+        let mut client = codec_data_availability::connect("block_catcher".to_string(), ip)
+            .await
+            .context("Error occured setting up the DA listener")?;
+        client.send(DataAvailabilityRequest(start)).await?;
         self.catchup_task = Some(tokio::spawn(async move {
             loop {
-                match stream.recv().await {
+                match client.recv().await {
                     None => {
                         break;
                     }
@@ -438,13 +436,10 @@ impl DataAvailability {
 pub mod tests {
     #![allow(clippy::indexing_slicing)]
 
-    use crate::data_availability::codec::{DataAvailabilityEvent, DataAvailabilityRequest};
-    use crate::model::ValidatorPublicKey;
-    use crate::tcp::TcpCommand;
+    use crate::data_availability::codec::{codec_data_availability, DataAvailabilityRequest};
     use crate::{
         bus::BusClientSender,
         consensus::CommittedConsensusProposal,
-        mempool::MempoolBlockEvent,
         model::*,
         node_state::{
             module::{NodeStateBusClient, NodeStateEvent},
@@ -452,10 +447,11 @@ pub mod tests {
         },
         utils::{conf::Conf, integration_test::find_available_port},
     };
+    use client_sdk::tcp::TcpCommand;
     use staking::state::Staking;
     use tokio::sync::mpsc::{channel, Sender};
 
-    use super::codec::codec_data_availability;
+    use super::codec::DataAvailabilityEvent;
     use super::module_bus_client;
     use super::Blocks;
     use anyhow::Result;
@@ -649,7 +645,7 @@ pub mod tests {
             ccp.consensus_proposal.slot = i;
             block_sender
                 .send(MempoolBlockEvent::BuiltSignedBlock(SignedBlock {
-                    data_proposals: vec![(ValidatorPublicKey("".into()), vec![])],
+                    data_proposals: vec![(LaneId::default(), vec![])],
                     certificate: ccp.certificate.clone(),
                     consensus_proposal: ccp.consensus_proposal.clone(),
                 }))
@@ -750,7 +746,7 @@ pub mod tests {
             ccp.consensus_proposal.slot = i;
             block_sender
                 .send(MempoolBlockEvent::BuiltSignedBlock(SignedBlock {
-                    data_proposals: vec![(ValidatorPublicKey("".into()), vec![])],
+                    data_proposals: vec![(LaneId::default(), vec![])],
                     certificate: ccp.certificate.clone(),
                     consensus_proposal: ccp.consensus_proposal.clone(),
                 }))
@@ -786,7 +782,7 @@ pub mod tests {
             ccp.consensus_proposal.slot = i;
             block_sender
                 .send(MempoolBlockEvent::BuiltSignedBlock(SignedBlock {
-                    data_proposals: vec![(ValidatorPublicKey("".into()), vec![])],
+                    data_proposals: vec![(LaneId::default(), vec![])],
                     certificate: ccp.certificate.clone(),
                     consensus_proposal: ccp.consensus_proposal.clone(),
                 }))

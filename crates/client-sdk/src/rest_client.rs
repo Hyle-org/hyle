@@ -1,14 +1,15 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use reqwest::Url;
 
 use sdk::{
     api::*, BlobIndex, BlobTransaction, BlockHash, BlockHeight, ConsensusInfo, Contract,
-    ContractName, ProofTransaction, StateDigest, TxHash, UnsettledBlobTransaction,
+    ContractName, ProofTransaction, TxHash, UnsettledBlobTransaction,
 };
 
 pub struct NodeApiHttpClient {
     pub url: Url,
     pub reqwest_client: reqwest::Client,
+    pub api_key: Option<String>,
 }
 
 pub struct IndexerApiHttpClient {
@@ -21,6 +22,7 @@ impl NodeApiHttpClient {
         Ok(Self {
             url: Url::parse(&url)?,
             reqwest_client: reqwest::Client::new(),
+            api_key: None,
         })
     }
 
@@ -109,16 +111,27 @@ impl NodeApiHttpClient {
         T: serde::Serialize,
         R: serde::de::DeserializeOwned,
     {
-        self.reqwest_client
+        let mut builder = self
+            .reqwest_client
             .post(format!("{}{}", self.url, endpoint))
             .body(serde_json::to_string(body)?)
-            .header("Content-Type", "application/json")
+            .header("Content-Type", "application/json");
+        if let Some(key) = self.api_key.as_ref() {
+            builder = builder.header("X-API-KEY", key.clone());
+        }
+        let response = builder
             .send()
             .await
-            .context(format!("{} request failed", context_msg))?
-            .json::<R>()
-            .await
-            .context(format!("Failed to deserialize {}", context_msg))
+            .context(format!("{} request failed", context_msg))?;
+        match response.error_for_status() {
+            Ok(res) => res
+                .json::<R>()
+                .await
+                .context(format!("Failed to deserialize {}", context_msg)),
+            Err(e) => {
+                bail!("Error {}", e);
+            }
+        }
     }
 }
 
@@ -144,13 +157,13 @@ impl IndexerApiHttpClient {
 
     pub async fn fetch_current_state<State>(&self, contract_name: &ContractName) -> Result<State>
     where
-        State: TryFrom<StateDigest>,
+        State: serde::de::DeserializeOwned,
     {
-        let resp = self.get_indexer_contract(contract_name).await?;
-
-        StateDigest(resp.state_digest)
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("Failed to convert state digest"))
+        self.get::<State>(
+            &format!("v1/indexer/contract/{contract_name}/state"),
+            &format!("getting contract {contract_name} state"),
+        )
+        .await
     }
 
     pub async fn get_blocks(&self) -> Result<Vec<APIBlock>> {

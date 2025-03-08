@@ -1,9 +1,6 @@
-use std::{
-    ops::{Deref, DerefMut},
-    sync::Arc,
-};
+use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use hyle_model::Hashed;
 use tracing::{debug, info};
 
@@ -34,24 +31,7 @@ pub struct DAListener {
     config: SharedConf,
     bus: DAListenerBusClient,
     node_state: NodeState,
-    listener: RawDAListener,
-}
-
-/// Implementation of the bit that actually listens to the data availability stream
-pub struct RawDAListener {
-    client: codec_data_availability::Client,
-}
-
-impl Deref for RawDAListener {
-    type Target = codec_data_availability::Client;
-    fn deref(&self) -> &Self::Target {
-        &self.client
-    }
-}
-impl DerefMut for RawDAListener {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.client
-    }
+    start_block: BlockHeight,
 }
 
 pub struct DAListenerCtx {
@@ -73,7 +53,6 @@ impl Module for DAListener {
 
         let start_block = ctx.start_block.unwrap_or(node_state.current_height);
 
-        let listener = RawDAListener::new(&ctx.common.config.da_address, start_block).await?;
         let bus = DAListenerBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
 
         for name in node_state.contracts.keys() {
@@ -82,7 +61,7 @@ impl Module for DAListener {
 
         Ok(DAListener {
             config: ctx.common.config.clone(),
-            listener,
+            start_block,
             bus,
             node_state,
         })
@@ -94,14 +73,32 @@ impl Module for DAListener {
 }
 
 impl DAListener {
+    async fn start_client(
+        &self,
+        block_height: BlockHeight,
+    ) -> Result<codec_data_availability::Client> {
+        let mut client = codec_data_availability::connect(
+            "raw_da_listener".to_string(),
+            self.config.da_address.to_string(),
+        )
+        .await?;
+
+        client.send(DataAvailabilityRequest(block_height)).await?;
+
+        Ok(client)
+    }
     pub async fn start(&mut self) -> Result<()> {
+        let mut client = self.start_client(self.start_block).await?;
+
         module_handle_messages! {
             on_bus self.bus,
-            frame = self.listener.recv() => {
-                let Some(streamed_signed_block) = frame else {
-                    bail!("DA stream closed");
-                };
-                log_error!(self.processing_next_frame(streamed_signed_block).await, "Consuming da stream")?;
+            frame = client.recv() => {
+                if let Some(streamed_signed_block) = frame {
+                    log_error!(self.processing_next_frame(streamed_signed_block).await, "Consuming da stream")?;
+                    client.ping().await?;
+                } else {
+                    client = self.start_client(self.node_state.current_height + 1).await?;
+                }
             }
         };
         let _ = log_error!(
@@ -131,18 +128,6 @@ impl DAListener {
             self.bus.send(NodeStateEvent::NewBlock(Box::new(block)))?;
         }
 
-        self.listener.ping().await?;
-
         Ok(())
-    }
-}
-
-impl RawDAListener {
-    pub async fn new(target: &str, height: BlockHeight) -> Result<Self> {
-        let mut client =
-            codec_data_availability::connect("raw_da_listener".to_string(), target.to_string())
-                .await?;
-        client.send(DataAvailabilityRequest(height)).await?;
-        Ok(RawDAListener { client })
     }
 }
