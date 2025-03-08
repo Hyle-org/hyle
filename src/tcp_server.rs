@@ -1,9 +1,8 @@
 use crate::{
     bus::{BusClientSender, BusMessage},
     log_error,
-    model::{SharedRunContext, Transaction},
+    model::SharedRunContext,
     module_handle_messages,
-    tcp::tcp_client_server,
     utils::{
         conf::SharedConf,
         modules::{module_bus_client, Module},
@@ -11,23 +10,10 @@ use crate::{
 };
 
 use anyhow::{Context, Result};
-use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
+use client_sdk::tcp::{codec_tcp_server, TcpServerMessage};
 use tracing::info;
 
-#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
-pub enum TcpServerMessage {
-    NewTx(Transaction),
-}
-#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
-pub struct TcpServerResponse;
 impl BusMessage for TcpServerMessage {}
-
-tcp_client_server! {
-    TcpServer,
-    request: TcpServerMessage,
-    response: TcpServerResponse
-}
 
 module_bus_client! {
 #[derive(Debug)]

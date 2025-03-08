@@ -228,10 +228,10 @@ impl Consensus {
                                 .map_err(|e| anyhow::anyhow!(e))?;
                         }
                         ConsensusStakingAction::PayFeesForDaDi {
-                            disseminator,
+                            lane_id,
                             cumul_size,
                         } => staking
-                            .pay_for_dadi(disseminator, cumul_size)
+                            .pay_for_dadi(lane_id, cumul_size)
                             .map_err(|e| anyhow::anyhow!(e))?,
                     }
                 }
@@ -289,25 +289,21 @@ impl Consensus {
                     self.verify_new_validators_to_bond(candidate)?;
                 }
                 ConsensusStakingAction::PayFeesForDaDi {
-                    disseminator,
+                    lane_id,
                     cumul_size,
-                } => Self::verify_dadi_fees(&proposal.cut, disseminator, cumul_size)?,
+                } => Self::verify_dadi_fees(&proposal.cut, lane_id, cumul_size)?,
             }
         }
         Ok(())
     }
 
     /// Verify that the fees paid by the disseminator are correct
-    fn verify_dadi_fees(
-        cut: &Cut,
-        disseminator: &ValidatorPublicKey,
-        cumul_size: &LaneBytesSize,
-    ) -> Result<()> {
+    fn verify_dadi_fees(cut: &Cut, lane_id: &LaneId, cumul_size: &LaneBytesSize) -> Result<()> {
         cut.iter()
-            .find(|l| &l.0 == disseminator && &l.2 == cumul_size)
+            .find(|l| &l.0 == lane_id && &l.2 == cumul_size)
             .map(|_| ())
             .ok_or(anyhow!(
-                "Malformed PayFeesForDadi. Not found in cut: {disseminator}, {cumul_size}"
+                "Malformed PayFeesForDadi. Not found in cut: {lane_id}, {cumul_size}"
             ))
     }
 
@@ -1514,7 +1510,7 @@ pub mod test {
                     timestamp: 123,
                     round_leader: node1.pubkey(),
                     cut: vec![(
-                        node2.pubkey(),
+                        LaneId(node2.pubkey()),
                         DataProposalHash("test".to_string()),
                         LaneBytesSize::default(),
                         AggregateSignature::default(),
@@ -1555,7 +1551,7 @@ pub mod test {
                     round_leader: node1.pubkey(),
                     timestamp: 123,
                     cut: vec![(
-                        node2.pubkey(),
+                        LaneId(node2.pubkey()),
                         DataProposalHash("test".to_string()),
                         LaneBytesSize::default(),
                         AggregateSignature::default(),
@@ -1605,7 +1601,7 @@ pub mod test {
                     timestamp: 123,
                     round_leader: node3.pubkey(),
                     cut: vec![(
-                        node2.pubkey(),
+                        LaneId(node2.pubkey()),
                         DataProposalHash("test".to_string()),
                         LaneBytesSize::default(),
                         AggregateSignature::default(),

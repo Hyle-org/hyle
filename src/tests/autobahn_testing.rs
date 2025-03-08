@@ -214,9 +214,7 @@ use crate::consensus::test::ConsensusTestCtx;
 use crate::consensus::ConsensusEvent;
 use crate::handle_messages;
 use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
-use crate::mempool::{
-    InternalMempoolEvent, MempoolBlockEvent, MempoolNetMessage, MempoolStatusEvent, QueryNewCut,
-};
+use crate::mempool::{MempoolNetMessage, QueryNewCut};
 use crate::model::*;
 use crate::node_state::module::NodeStateEvent;
 use crate::p2p::network::OutboundMessage;
@@ -245,8 +243,6 @@ impl AutobahnTestCtx {
         let mempool_out_receiver = get_receiver::<OutboundMessage>(&shared_bus).await;
         let mempool_event_receiver = get_receiver::<MempoolBlockEvent>(&shared_bus).await;
         let mempool_status_event_receiver = get_receiver::<MempoolStatusEvent>(&shared_bus).await;
-        let mempool_internal_event_receiver =
-            get_receiver::<InternalMempoolEvent>(&shared_bus).await;
 
         let consensus = ConsensusTestCtx::build_consensus(&shared_bus, crypto.clone()).await;
         let mempool = MempoolTestCtx::build_mempool(&shared_bus, crypto).await;
@@ -265,7 +261,6 @@ impl AutobahnTestCtx {
                 out_receiver: mempool_out_receiver,
                 mempool_event_receiver,
                 mempool_status_event_receiver,
-                mempool_internal_event_receiver,
                 mempool,
             },
         }
@@ -314,15 +309,17 @@ fn create_poda(
     nodes: &[&AutobahnTestCtx],
 ) -> crypto::Signed<MempoolNetMessage, crypto::AggregateSignature> {
     let msg = MempoolNetMessage::DataVote(data_proposal_hash, line_size);
-    let signed_messages: Vec<crypto::Signed<MempoolNetMessage, crypto::ValidatorSignature>> = nodes
-        .iter()
-        .map(|node| {
-            node.mempool_ctx
-                .mempool
-                .sign_net_message(msg.clone())
-                .unwrap()
-        })
-        .collect();
+    let mut signed_messages: Vec<crypto::Signed<MempoolNetMessage, crypto::ValidatorSignature>> =
+        nodes
+            .iter()
+            .map(|node| {
+                node.mempool_ctx
+                    .mempool
+                    .sign_net_message(msg.clone())
+                    .unwrap()
+            })
+            .collect();
+    signed_messages.sort_by(|a, b| a.signature.cmp(&b.signature));
 
     let aggregates: Vec<&crypto::Signed<MempoolNetMessage, crypto::ValidatorSignature>> =
         signed_messages.iter().collect();
@@ -336,13 +333,14 @@ async fn autobahn_basic_flow() {
     let register_tx = make_register_contract_tx(ContractName::new("test1"));
     let register_tx_2 = make_register_contract_tx(ContractName::new("test2"));
 
-    node1.mempool_ctx.submit_tx(&register_tx);
-    node1.mempool_ctx.submit_tx(&register_tx_2);
-
+    let dp = node1
+        .mempool_ctx
+        .create_data_proposal(None, &[register_tx, register_tx_2]);
     node1
         .mempool_ctx
-        .make_data_proposal_with_pending_txs()
-        .expect("Should create data proposal");
+        .process_new_data_proposal(dp.clone())
+        .unwrap();
+    node1.mempool_ctx.timer_tick().unwrap();
 
     broadcast! {
         description: "Disseminate Tx",
@@ -371,7 +369,7 @@ async fn autobahn_basic_flow() {
 
     let data_proposal_hash_node1 = node1
         .mempool_ctx
-        .current_hash(node1.mempool_ctx.validator_pubkey())
+        .current_hash(&node1.mempool_ctx.own_lane())
         .expect("Current hash should be there");
     let node1_l_size = node1.mempool_ctx.current_size().unwrap();
 
@@ -395,10 +393,10 @@ async fn autobahn_basic_flow() {
                     .cut
                     .clone()
                     .iter()
-                    .find(|(validator, _hash, _size, _poda)|
-                        validator == &node1.consensus_ctx.pubkey()
+                    .find(|(lane_id, _hash, _size, _poda)|
+                        lane_id == &node1.mempool_ctx.own_lane()
                     ),
-                Some((node1.consensus_ctx.pubkey(), data_proposal_hash_node1, node1_l_size, poda.signature)).as_ref()
+                Some((node1.mempool_ctx.own_lane(), data_proposal_hash_node1, node1_l_size, poda.signature)).as_ref()
             );
         }
     };
@@ -463,13 +461,14 @@ async fn mempool_broadcast_multiple_data_proposals() {
     let register_tx = make_register_contract_tx(ContractName::new("test1"));
     let register_tx_2 = make_register_contract_tx(ContractName::new("test2"));
 
-    node1.mempool_ctx.submit_tx(&register_tx);
-    node1.mempool_ctx.submit_tx(&register_tx_2);
-
+    let dp = node1
+        .mempool_ctx
+        .create_data_proposal(None, &[register_tx, register_tx_2]);
     node1
         .mempool_ctx
-        .make_data_proposal_with_pending_txs()
-        .expect("Should create data proposal");
+        .process_new_data_proposal(dp.clone())
+        .unwrap();
+    node1.mempool_ctx.timer_tick().unwrap();
 
     broadcast! {
         description: "Disseminate Tx",
@@ -502,13 +501,14 @@ async fn mempool_broadcast_multiple_data_proposals() {
     let register_tx = make_register_contract_tx(ContractName::new("test3"));
     let register_tx_2 = make_register_contract_tx(ContractName::new("test4"));
 
-    node1.mempool_ctx.submit_tx(&register_tx);
-    node1.mempool_ctx.submit_tx(&register_tx_2);
-
+    let dp = node1
+        .mempool_ctx
+        .create_data_proposal(Some(dp.hashed()), &[register_tx, register_tx_2]);
     node1
         .mempool_ctx
-        .make_data_proposal_with_pending_txs()
-        .expect("Should create data proposal");
+        .process_new_data_proposal(dp.clone())
+        .unwrap();
+    node1.mempool_ctx.timer_tick().unwrap();
 
     broadcast! {
         description: "Disseminate Tx",
@@ -545,23 +545,26 @@ async fn mempool_fail_to_vote_on_fork() {
     let register_tx = make_register_contract_tx(ContractName::new("test1"));
     let register_tx_2 = make_register_contract_tx(ContractName::new("test2"));
 
-    node1.mempool_ctx.submit_tx(&register_tx);
-    node1.mempool_ctx.submit_tx(&register_tx_2);
-
+    let dp1 = node1
+        .mempool_ctx
+        .create_data_proposal(None, &[register_tx, register_tx_2]);
     node1
         .mempool_ctx
-        .make_data_proposal_with_pending_txs()
-        .expect("Should create data proposal");
+        .process_new_data_proposal(dp1.clone())
+        .unwrap();
+    node1.mempool_ctx.timer_tick().unwrap();
 
-    let dp1;
+    let dp1_check;
 
     broadcast! {
         description: "Disseminate Tx",
         from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
         message_matches: MempoolNetMessage::DataProposal(data) => {
-            dp1 = data.clone();
+            dp1_check = data.clone();
         }
     };
+
+    assert_eq!(dp1, dp1_check);
 
     join_all(
         [
@@ -588,13 +591,14 @@ async fn mempool_fail_to_vote_on_fork() {
     let register_tx = make_register_contract_tx(ContractName::new("test3"));
     let register_tx_2 = make_register_contract_tx(ContractName::new("test4"));
 
-    node1.mempool_ctx.submit_tx(&register_tx);
-    node1.mempool_ctx.submit_tx(&register_tx_2);
-
+    let dp2 = node1
+        .mempool_ctx
+        .create_data_proposal(Some(dp1.hashed()), &[register_tx, register_tx_2]);
     node1
         .mempool_ctx
-        .make_data_proposal_with_pending_txs()
-        .expect("Should create data proposal");
+        .process_new_data_proposal(dp2.clone())
+        .unwrap();
+    node1.mempool_ctx.timer_tick().unwrap();
 
     broadcast! {
         description: "Disseminate Tx",
@@ -620,8 +624,8 @@ async fn mempool_fail_to_vote_on_fork() {
     };
 
     // BASIC FORK
-    // dp1(1) <- dp2(2)
-    //        <-        dp3(3)
+    // dp1 <- dp2
+    //     <- dp3
 
     let dp_fork_3 = DataProposal::new(Some(dp1.hashed()), vec![Transaction::default()]);
 
@@ -645,75 +649,23 @@ async fn mempool_fail_to_vote_on_fork() {
     assert_ne!(
         node2
             .mempool_ctx
-            .last_validator_lane_entry(node1.mempool_ctx.validator_pubkey())
+            .last_lane_entry(&node1.mempool_ctx.own_lane())
             .1,
         dp_fork_3.hashed()
     );
     assert_ne!(
         node3
             .mempool_ctx
-            .last_validator_lane_entry(node1.mempool_ctx.validator_pubkey())
+            .last_lane_entry(&node1.mempool_ctx.own_lane())
             .1,
         dp_fork_3.hashed()
     );
     assert_ne!(
         node4
             .mempool_ctx
-            .last_validator_lane_entry(node1.mempool_ctx.validator_pubkey())
+            .last_lane_entry(&node1.mempool_ctx.own_lane())
             .1,
         dp_fork_3.hashed()
-    );
-
-    // FORK with already registered id
-    // dp1(1) <- dp2(2)
-    //        <- dp3(2)
-    // Remove data proposal id 1 from node 1, to recreate one on top of data proposal id 0, and create a fork
-
-    node1.mempool_ctx.pop_data_proposal();
-
-    let register_tx = make_register_contract_tx(ContractName::new("test5"));
-    let register_tx_2 = make_register_contract_tx(ContractName::new("test6"));
-
-    node1.mempool_ctx.submit_tx(&register_tx);
-    node1.mempool_ctx.submit_tx(&register_tx_2);
-
-    node1
-        .mempool_ctx
-        .make_data_proposal_with_pending_txs()
-        .expect("Should create data proposal");
-
-    node1.mempool_ctx.assert_broadcast("poda update");
-    node1.mempool_ctx.assert_broadcast("poda update");
-
-    let fork;
-    broadcast! {
-        description: "Disseminate Tx",
-        from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
-        message_matches: MempoolNetMessage::DataProposal(dp) => {
-            fork = dp.clone();
-        }
-    };
-
-    assert_ne!(
-        fork,
-        node2
-            .mempool_ctx
-            .pop_validator_data_proposal(node1.mempool_ctx.validator_pubkey())
-            .0
-    );
-    assert_ne!(
-        fork,
-        node3
-            .mempool_ctx
-            .pop_validator_data_proposal(node1.mempool_ctx.validator_pubkey())
-            .0
-    );
-    assert_ne!(
-        fork,
-        node4
-            .mempool_ctx
-            .pop_validator_data_proposal(node1.mempool_ctx.validator_pubkey())
-            .0
     );
 }
 
@@ -864,13 +816,14 @@ async fn protocol_fees() {
     let register_tx = make_register_contract_tx(ContractName::new("test1"));
     let register_tx_2 = make_register_contract_tx(ContractName::new("test2"));
 
-    node1.mempool_ctx.submit_tx(&register_tx);
-    node1.mempool_ctx.submit_tx(&register_tx_2);
-
+    let dp = node1
+        .mempool_ctx
+        .create_data_proposal(None, &[register_tx, register_tx_2]);
     node1
         .mempool_ctx
-        .make_data_proposal_with_pending_txs()
-        .expect("Should create data proposal");
+        .process_new_data_proposal(dp.clone())
+        .unwrap();
+    node1.mempool_ctx.timer_tick().unwrap();
 
     let msg = broadcast! {
         description: "Disseminate Tx",
@@ -908,7 +861,7 @@ async fn protocol_fees() {
     assert_eq!(
         node1
             .mempool_ctx
-            .current_size_of(node2.mempool_ctx.validator_pubkey()),
+            .current_size_of(&node2.mempool_ctx.own_lane()),
         None
     );
 
@@ -916,19 +869,19 @@ async fn protocol_fees() {
     assert_eq!(
         node2
             .mempool_ctx
-            .current_size_of(node1.mempool_ctx.validator_pubkey()),
+            .current_size_of(&node1.mempool_ctx.own_lane()),
         Some(dp_size_1)
     );
     assert_eq!(
         node3
             .mempool_ctx
-            .current_size_of(node1.mempool_ctx.validator_pubkey()),
+            .current_size_of(&node1.mempool_ctx.own_lane()),
         Some(dp_size_1)
     );
     assert_eq!(
         node4
             .mempool_ctx
-            .current_size_of(node1.mempool_ctx.validator_pubkey()),
+            .current_size_of(&node1.mempool_ctx.own_lane()),
         Some(dp_size_1)
     );
 
@@ -937,15 +890,14 @@ async fn protocol_fees() {
     let register_tx = make_register_contract_tx(ContractName::new("test3"));
     let register_tx_2 = make_register_contract_tx(ContractName::new("test4"));
     let register_tx_3 = make_register_contract_tx(ContractName::new("test5"));
-
-    node2.mempool_ctx.submit_tx(&register_tx);
-    node2.mempool_ctx.submit_tx(&register_tx_2);
-    node2.mempool_ctx.submit_tx(&register_tx_3);
-
+    let dp = node2
+        .mempool_ctx
+        .create_data_proposal(None, &[register_tx, register_tx_2, register_tx_3]);
     node2
         .mempool_ctx
-        .make_data_proposal_with_pending_txs()
-        .expect("Should create data proposal");
+        .process_new_data_proposal(dp.clone())
+        .unwrap();
+    node2.mempool_ctx.timer_tick().unwrap();
 
     let msg = broadcast! {
         description: "Disseminate Tx",
@@ -979,7 +931,7 @@ async fn protocol_fees() {
     assert_eq!(
         node2
             .mempool_ctx
-            .current_size_of(node1.mempool_ctx.validator_pubkey()),
+            .current_size_of(&node1.mempool_ctx.own_lane()),
         Some(dp_size_1)
     );
 
@@ -987,20 +939,20 @@ async fn protocol_fees() {
     assert_eq!(
         node1
             .mempool_ctx
-            .current_size_of(node2.mempool_ctx.validator_pubkey()),
+            .current_size_of(&node2.mempool_ctx.own_lane()),
         Some(dp_size_2)
     );
 
     assert_eq!(
         node3
             .mempool_ctx
-            .current_size_of(node1.mempool_ctx.validator_pubkey()),
+            .current_size_of(&node1.mempool_ctx.own_lane()),
         Some(dp_size_1)
     );
     assert_eq!(
         node3
             .mempool_ctx
-            .current_size_of(node2.mempool_ctx.validator_pubkey()),
+            .current_size_of(&node2.mempool_ctx.own_lane()),
         Some(dp_size_2)
     );
 
@@ -1025,14 +977,14 @@ async fn protocol_fees() {
     assert_eq!(
         cp.staking_actions[0],
         ConsensusStakingAction::PayFeesForDaDi {
-            disseminator: node2.mempool_ctx.validator_pubkey().clone(),
+            lane_id: node2.mempool_ctx.own_lane(),
             cumul_size: dp_size_2
         }
     );
     assert_eq!(
         cp.staking_actions[1],
         ConsensusStakingAction::PayFeesForDaDi {
-            disseminator: node1.mempool_ctx.validator_pubkey().clone(),
+            lane_id: node1.mempool_ctx.own_lane(),
             cumul_size: dp_size_1
         }
     );

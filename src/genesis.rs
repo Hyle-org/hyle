@@ -17,9 +17,9 @@ use hydentity::{
     client::{register_identity, verify_identity},
     Hydentity,
 };
-use hyle_contract_sdk::{guest, identity_provider::IdentityVerification, Identity, StateDigest};
+use hyle_contract_sdk::{guest, Identity, StateDigest};
 use hyle_contract_sdk::{ContractName, Digestable, ProgramId};
-use hyllar::{client::transfer, Hyllar};
+use hyllar::{client::transfer, Hyllar, FAUCET_ID};
 use serde::{Deserialize, Serialize};
 use staking::{
     client::{delegate, deposit_for_fees, stake},
@@ -179,7 +179,9 @@ impl Genesis {
     ) -> Result<Vec<Transaction>> {
         let (contract_program_ids, mut genesis_txs, mut tx_executor) = self.genesis_contracts_txs();
 
-        let register_txs = Self::generate_register_txs(peer_pubkey, &mut tx_executor).await?;
+        let register_txs = self
+            .generate_register_txs(peer_pubkey, &mut tx_executor)
+            .await?;
 
         let faucet_txs = self
             .generate_faucet_txs(peer_pubkey, &mut tx_executor, genesis_stake)
@@ -238,6 +240,7 @@ impl Genesis {
     }
 
     async fn generate_register_txs(
+        &self,
         peer_pubkey: &PeerPublicKeyMap,
         tx_executor: &mut TxExecutor<States>,
     ) -> Result<Vec<ProofTxBuilder>> {
@@ -247,6 +250,17 @@ impl Genesis {
         // in order to let all genesis validators to create the genesis register
 
         let mut txs = vec![];
+
+        // register faucet identity
+        let identity = Identity(FAUCET_ID.into());
+        let mut transaction = ProvableBlobTx::new(identity.clone());
+        register_identity(
+            &mut transaction,
+            ContractName::new("hydentity"),
+            self.config.faucet_password.clone(),
+        )?;
+        txs.push(tx_executor.process(transaction)?);
+
         for peer in peer_pubkey.values() {
             info!("🌱  Registering identity {peer}");
 
@@ -281,7 +295,7 @@ impl Genesis {
 
             info!("🌱  Fauceting {genesis_faucet} hyllar to {peer}");
 
-            let identity = Identity::new("faucet.hydentity");
+            let identity = Identity::new(FAUCET_ID);
             let mut transaction = ProvableBlobTx::new(identity.clone());
 
             // Verify identity
@@ -381,15 +395,11 @@ impl Genesis {
         let hyllar_program_id = hyle_contracts::HYLLAR_ID.to_vec();
         let hydentity_program_id = hyle_contracts::HYDENTITY_ID.to_vec();
 
-        let mut hydentity_state = hydentity::Hydentity::default();
-        hydentity_state
-            .register_identity("faucet.hydentity", &self.config.faucet_password)
-            .expect("faucet must register");
-
+        let hydentity_state = hydentity::Hydentity::default();
         let staking_state = staking::state::Staking::new();
 
         let ctx = TxExecutorBuilder::new(States {
-            hyllar: hyllar::Hyllar::new(100_000_000_000, "faucet.hydentity".to_string()),
+            hyllar: hyllar::Hyllar::default(),
             hydentity: hydentity_state,
             staking: staking_state,
         })
@@ -429,7 +439,7 @@ impl Genesis {
         register_hyle_contract(
             &mut register_tx,
             "staking".into(),
-            "risc0".into(),
+            hyle_verifiers::versions::RISC0_1.into(),
             staking_program_id.clone().into(),
             ctx.staking.as_digest(),
         )
@@ -438,7 +448,7 @@ impl Genesis {
         register_hyle_contract(
             &mut register_tx,
             "hyllar".into(),
-            "risc0".into(),
+            hyle_verifiers::versions::RISC0_1.into(),
             hyllar_program_id.clone().into(),
             ctx.hyllar.as_digest(),
         )
@@ -447,7 +457,7 @@ impl Genesis {
         register_hyle_contract(
             &mut register_tx,
             "hydentity".into(),
-            "risc0".into(),
+            hyle_verifiers::versions::RISC0_1.into(),
             hydentity_program_id.clone().into(),
             ctx.hydentity.as_digest(),
         )
@@ -456,7 +466,7 @@ impl Genesis {
         register_hyle_contract(
             &mut register_tx,
             "risc0-recursion".into(),
-            "risc0".into(),
+            hyle_verifiers::versions::RISC0_1.into(),
             hyle_contracts::RISC0_RECURSION_ID.to_vec().into(),
             StateDigest::default(),
         )
@@ -481,7 +491,7 @@ impl Genesis {
             .clone();
 
         SignedBlock {
-            data_proposals: vec![(round_leader.clone(), vec![dp.clone()])],
+            data_proposals: vec![(LaneId(round_leader.clone()), vec![dp.clone()])],
             certificate: AggregateSignature {
                 signature: Signature("fake".into()),
                 validators: initial_validators.clone(),

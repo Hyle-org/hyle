@@ -210,19 +210,16 @@ impl FollowerRole for Consensus {
             self.bft_round_state.staking
         );
 
-        let accepted_validators = self.bft_round_state.staking.bonded();
-        for (validator, data_proposal_hash, lane_size, poda_sig) in &consensus_proposal.cut {
+        for (lane_id, data_proposal_hash, lane_size, poda_sig) in &consensus_proposal.cut {
             let voting_power = self
                 .bft_round_state
                 .staking
                 .compute_voting_power(poda_sig.validators.as_slice());
 
-            // Verify that the validator is part of the consensus
-            if !accepted_validators.contains(validator) {
-                bail!(
-                    "Validator {} is in cut but is not part of the consensus",
-                    validator
-                );
+            // Check that this is a known lane.
+            // TODO: this prevents ever deleting lane which may or may not be desirable.
+            if !self.bft_round_state.staking.is_known(&lane_id.0) {
+                bail!("Lane {} is in cut but is not a valid lane", lane_id);
             }
 
             // If this same data proposal was in the last cut, ignore.
@@ -230,11 +227,11 @@ impl FollowerRole for Consensus {
                 .bft_round_state
                 .last_cut
                 .iter()
-                .any(|(v, h, _, _)| v == validator && h == data_proposal_hash)
+                .any(|(v, h, _, _)| v == lane_id && h == data_proposal_hash)
             {
                 debug!(
-                    "DataProposal {} from validator {} was already in the last cut, not checking PoDA",
-                    data_proposal_hash, validator
+                    "DataProposal {} from lane {} was already in the last cut, not checking PoDA",
+                    data_proposal_hash, lane_id
                 );
                 continue;
             }
@@ -244,7 +241,7 @@ impl FollowerRole for Consensus {
 
             // Verify that DataProposal received enough votes
             if voting_power < f + 1 {
-                bail!("PoDA for validator {validator} does not have enough validators that signed his DataProposal");
+                bail!("PoDA for lane {lane_id} does not have enough validators that signed his DataProposal");
             }
 
             // Verify that PoDA signature is valid

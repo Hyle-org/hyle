@@ -41,7 +41,7 @@ impl<State> Default for ContractStateStore<State> {
 
 pub trait ContractHandler
 where
-    Self: Sized + HyleContract + BorshSerialize + BorshDeserialize + Digestable + 'static,
+    Self: Sized + Default + HyleContract + BorshSerialize + BorshDeserialize + Digestable + 'static,
 {
     fn api(
         store: ContractHandlerStore<Self>,

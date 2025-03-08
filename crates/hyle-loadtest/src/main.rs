@@ -2,10 +2,11 @@ use anyhow::Error;
 use clap::{Parser, Subcommand};
 use hydentity::Hydentity;
 use hyle_loadtest::{
-    generate, generate_blobs_txs, generate_proof_txs, load_blob_txs, load_proof_txs, send,
-    send_blob_txs, send_massive_blob, send_proof_txs, setup, setup_hyllar, States,
+    generate, generate_blobs_txs, generate_proof_txs, load_blob_txs, load_proof_txs,
+    long_running_test, send, send_blob_txs, send_massive_blob, send_proof_txs, setup, setup_hyllar,
+    States,
 };
-use tracing::Level;
+use tracing::{info, Level};
 
 /// A cli to interact with hyle node
 #[derive(Debug, Parser)] // requires `derive` feature
@@ -18,8 +19,14 @@ struct Args {
     #[arg(long, default_value = "127.0.0.1")]
     pub host: String,
 
+    #[arg(long, default_value = "127.0.0.1")]
+    pub host_indexer: String,
+
     #[arg(long, default_value = "1414")]
     pub tcp_port: u32,
+
+    #[arg(long, default_value = "4321")]
+    pub port: u32,
 
     #[arg(long, default_value = "10")]
     pub users: u32,
@@ -57,6 +64,9 @@ enum SendCommands {
 
     #[command(alias = "smb")]
     SendMassiveBlob,
+
+    #[command(alias = "lrt")]
+    LongRunningTest,
 }
 
 #[tokio::main]
@@ -70,20 +80,30 @@ async fn main() -> Result<(), Error> {
     let users = args.users;
     let verifier = args.verifier;
 
-    let states = States {
-        hyllar_test: setup_hyllar(users)?,
-        hydentity: Hydentity::default(),
-    };
-
     match args.command {
-        SendCommands::Setup => setup(url, users, verifier).await?,
+        SendCommands::Setup => {
+            let states = States {
+                hyllar_test: setup_hyllar(users).await?,
+                hydentity: Hydentity::default(),
+            };
+
+            setup(states.hyllar_test, url, verifier).await?
+        }
         SendCommands::GenerateBlobTransactions => {
             generate_blobs_txs(users).await?;
         }
         SendCommands::GenerateProofTransactions => {
+            let states = States {
+                hyllar_test: setup_hyllar(users).await?,
+                hydentity: Hydentity::default(),
+            };
             generate_proof_txs(users, states).await?;
         }
         SendCommands::GenerateTransactions => {
+            let states = States {
+                hyllar_test: setup_hyllar(users).await?,
+                hydentity: Hydentity::default(),
+            };
             generate(users, states).await?;
         }
         SendCommands::SendBlobTransactions => {
@@ -100,13 +120,26 @@ async fn main() -> Result<(), Error> {
             send(url, blob_txs, proof_txs).await?
         }
         SendCommands::LoadTest => {
-            setup(url.clone(), users, verifier).await?;
+            let states = States {
+                hyllar_test: setup_hyllar(users).await?,
+                hydentity: Hydentity::default(),
+            };
+            setup(states.hyllar_test.clone(), url.clone(), verifier).await?;
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             let (blob_txs, proof_txs) = generate(users, states).await?;
             send(url, blob_txs, proof_txs).await?;
         }
         SendCommands::SendMassiveBlob => {
             send_massive_blob(users, url).await?;
+        }
+        SendCommands::LongRunningTest => {
+            let url = format!("{}:{}/", args.host, args.port);
+            let indexer_url = format!("{}:{}/", args.host_indexer, args.port);
+            info!(
+                "Starting long running test on {} (indexer: {})",
+                url, indexer_url
+            );
+            long_running_test(url, indexer_url).await?;
         }
     }
 

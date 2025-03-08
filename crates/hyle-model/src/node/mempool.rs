@@ -6,6 +6,24 @@ use std::{fmt::Display, sync::RwLock};
 
 use crate::*;
 
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub enum MempoolStatusEvent {
+    WaitingDissemination {
+        parent_data_proposal_hash: DataProposalHash,
+        tx: Transaction,
+    },
+    DataProposalCreated {
+        data_proposal_hash: DataProposalHash,
+        txs_metadatas: Vec<TransactionMetadata>,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub enum MempoolBlockEvent {
+    BuiltSignedBlock(SignedBlock),
+    StartedBuildingBlocks(BlockHeight),
+}
+
 #[derive(Debug, Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[readonly::make]
 pub struct DataProposal {
@@ -127,8 +145,30 @@ impl Display for DataProposal {
     }
 }
 
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+    PartialEq,
+    Eq,
+    Hash,
+    Ord,
+    PartialOrd,
+)]
+pub struct LaneId(pub ValidatorPublicKey);
+
+impl Display for LaneId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 pub type PoDA = AggregateSignature;
-pub type Cut = Vec<(ValidatorPublicKey, DataProposalHash, LaneBytesSize, PoDA)>;
+pub type Cut = Vec<(LaneId, DataProposalHash, LaneBytesSize, PoDA)>;
 
 impl Display for TxId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

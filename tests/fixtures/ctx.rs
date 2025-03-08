@@ -81,6 +81,7 @@ impl E2ECtx {
             let client = NodeApiHttpClient {
                 url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
                 reqwest_client: Client::new(),
+                api_key: None,
             };
             nodes.push(node);
             clients.push(client);
@@ -106,6 +107,7 @@ impl E2ECtx {
         let client = NodeApiHttpClient {
             url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
             reqwest_client: Client::new(),
+            api_key: None,
         };
 
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
@@ -121,6 +123,54 @@ impl E2ECtx {
         })
     }
 
+    pub async fn new_single_with_indexer(slot_duration: u64) -> Result<E2ECtx> {
+        std::env::set_var("RISC0_DEV_MODE", "1");
+
+        let pg = Self::init().await;
+
+        let mut conf_maker = ConfMaker::default();
+        conf_maker.default.consensus.slot_duration = slot_duration;
+        conf_maker.default.single_node = Some(true);
+        conf_maker.default.consensus.genesis_stakers =
+            vec![("single-node".to_string(), 100)].into_iter().collect();
+        conf_maker.default.database_url = format!(
+            "postgres://postgres:postgres@localhost:{}/postgres",
+            pg.get_host_port_ipv4(5432).await.unwrap()
+        );
+
+        let node_conf = conf_maker.build("single-node");
+        let node = test_helpers::TestProcess::new("hyle", node_conf.clone())
+            //.log("hyle=info,tower_http=error")
+            .start();
+
+        // Request something on node1 to be sure it's alive and working
+        let client = NodeApiHttpClient {
+            url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
+            reqwest_client: Client::new(),
+            api_key: None,
+        };
+
+        // Start indexer
+        let mut indexer_conf = conf_maker.build("indexer");
+        indexer_conf.da_address = node_conf.da_address.clone();
+        let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
+
+        let url = format!("http://{}", &indexer_conf.rest);
+        let indexer_client = Some(IndexerApiHttpClient::new(url).unwrap());
+
+        // Wait for node2 to properly spin up
+        wait_height(&client, 1).await?;
+
+        info!("🚀 E2E test environment is ready!");
+        Ok(E2ECtx {
+            pg: Some(pg),
+            nodes: vec![node, indexer],
+            clients: vec![client],
+            client_index: 0,
+            indexer_client,
+            slot_duration,
+        })
+    }
     pub async fn new_multi(count: usize, slot_duration: u64) -> Result<E2ECtx> {
         std::env::set_var("RISC0_DEV_MODE", "1");
 
@@ -159,6 +209,7 @@ impl E2ECtx {
         let client = NodeApiHttpClient {
             url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
             reqwest_client: Client::new(),
+            api_key: None,
         };
         wait_height(&client, 1).await?;
         self.nodes.push(node);

@@ -7,10 +7,10 @@
 //! The function `new` is used to initialize a `BlstCrypto` instance. The behavior of this function depends on the environment:
 //!
 //! ```rust
-//! use crate::utils::crypto::BlstCrypto;
+//! use hyle::utils::crypto::BlstCrypto;
 //!
 //! let validator_name = String::from("validator_name");
-//! let crypto = BlstCrypto::new(validator_name).expect("Failed to initialize BlstCrypto");
+//! let crypto = BlstCrypto::new(&validator_name).expect("Failed to initialize BlstCrypto");
 //! ```
 //!
 //! ### Non-Test Environment
@@ -20,7 +20,7 @@
 //! If the variable is not set but HYLE_USE_KEYRING is set to 'true', it tries to load the key from the keyring.
 //! Otherwise it generates a private key from the validator name, which is highly unsecure.
 //!
-//! Note: you can use tools like seahorse (https://wiki.gnome.org/Apps/Seahorse) to manage your keyring
+//! Note: you can use tools like seahorse (<https://wiki.gnome.org/Apps/Seahorse>) to manage your keyring
 //!
 //! ### Test Environment
 //!

@@ -12,8 +12,9 @@ use crate::bus::command_response::Query;
 use crate::bus::{bus_client, BusClientReceiver, BusClientSender};
 use crate::consensus::ConsensusEvent;
 use crate::genesis::{Genesis, GenesisEvent};
+use crate::mempool::api::RestApiMessage;
 use crate::mempool::test::NodeStateEvent;
-use crate::mempool::{MempoolNetMessage, QueryNewCut, RestApiMessage};
+use crate::mempool::{MempoolNetMessage, QueryNewCut};
 use crate::model::*;
 use crate::rest::RestApi;
 use crate::utils::integration_test::NodeIntegrationCtxBuilder;
@@ -53,7 +54,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
 
     node_client.send(GenesisEvent::GenesisBlock(SignedBlock {
         data_proposals: vec![(
-            node_modules.crypto.validator_pubkey().clone(),
+            LaneId(node_modules.crypto.validator_pubkey().clone()),
             vec![DataProposal::new(
                 None,
                 vec![BlobTransaction::new(

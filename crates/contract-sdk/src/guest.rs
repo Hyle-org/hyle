@@ -1,3 +1,61 @@
+#![allow(clippy::needless_doctest_main)]
+/*!
+The `guest` module provides the `GuestEnv` trait that defines a common interface for the guests accross different zkvm.
+It provides `Risc0Env` and `SP1Env` structs that implement the `GuestEnv` trait for both zkvm.
+
+The [execute] function is used to execute an action on a given contract using the provided state and contract input.
+
+The `fail` function is used to generate a failure output for a contract action.
+
+## Example usage of this module for risc0:
+
+This is a code snippet of a Risc0 guest entrypoint (e.g. file `methods/guest/src/main.rs` in a risc0 template project).
+
+`Hydentity` struct has to implemetns [HyleContract], [Digestable] and [BorshDeserialize] traits.
+
+```rust,no_run
+#![no_main]
+
+use hyle_hydentity::Hydentity;
+use sdk::guest::{execute, GuestEnv, Risc0Env};
+
+risc0_zkvm::guest::entry!(main);
+
+fn main() {
+   let env = Risc0Env {};
+   let contract_input = env.read();
+   let (_, output) = execute::<Hydentity>(&contract_input);
+   env.commit(&output);
+}
+```
+
+## Example usage of this module for sp1:
+
+This is a code snippet of a SP1 guest entrypoint (e.g. file `program/src/main.rs` in a sp1 template project).
+
+
+`IdentityContractState` struct has to implemetns [HyleContract], [Digestable] and [BorshDeserialize] traits.
+
+```rust,no_run
+#![no_main]
+
+use contract::IdentityContractState;
+use sdk::guest::execute;
+use sdk::guest::GuestEnv;
+use sdk::guest::SP1Env;
+
+sp1_zkvm::entrypoint!(main);
+
+fn main() {
+    let env = SP1Env {};
+    let input = env.read();
+    let (_, output) = execute::<IdentityContractState>(&input);
+    env.commit(&output);
+}
+```
+
+*/
+
 use alloc::string::ToString;
 use alloc::vec;
 use borsh::BorshDeserialize;
@@ -64,7 +122,7 @@ pub fn fail(input: ContractInput, initial_state_digest: StateDigest, message: &s
         success: false,
         tx_hash: input.tx_hash,
         tx_ctx: input.tx_ctx,
-        registered_contracts: vec![],
+        onchain_effects: vec![],
         program_outputs: message.to_string().into_bytes(),
     }
 }
