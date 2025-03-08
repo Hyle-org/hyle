@@ -1,6 +1,4 @@
-use crate::log_me_impl;
-log_me_impl!();
-
+use crate::log_error;
 use std::collections::HashMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -135,10 +133,10 @@ where
         tokio::task::Builder::new()
             .name("tcp-connection-pool-loop")
             .spawn(async move {
-                _ = self
-                    .run(out_receiver, in_sender)
-                    .await
-                    .log_error("Running connection pool loop");
+                _ = log_error!(
+                    self.run(out_receiver, in_sender).await,
+                    "Running connection pool loop"
+                );
             })?;
 
         Ok((out_sender, in_receiver))
@@ -162,7 +160,7 @@ where
                 }
 
                 Some(to_send) = pool_recv.recv() => {
-                    _ = self.send(to_send).await.log_error("Sending message");
+                    _ = log_error!(self.send(to_send).await, "Sending message");
                 }
 
                 Some(peer_id) = ping_receiver.recv() => {

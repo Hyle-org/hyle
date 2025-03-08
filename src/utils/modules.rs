@@ -1,6 +1,3 @@
-use crate::log_me_impl;
-log_me_impl!();
-
 use std::{
     any::type_name,
     fs,
@@ -14,7 +11,7 @@ use std::{
 use crate::{
     bus::{bus_client, BusClientSender, SharedMessageBus},
     genesis::Genesis,
-    handle_messages,
+    handle_messages, log_error,
 };
 use anyhow::{bail, Error, Result};
 use futures::future::select_all;
@@ -39,9 +36,11 @@ where
         match fs::File::open(file) {
             Ok(mut reader) => {
                 info!("Loaded data from disk {}", file.to_string_lossy());
-                borsh::from_reader(&mut reader)
-                    .log_error(format!("Loading and decoding {}", file.to_string_lossy()))
-                    .ok()
+                log_error!(
+                    borsh::from_reader(&mut reader),
+                    format!("Loading and decoding {}", file.to_string_lossy())
+                )
+                .ok()
             }
             Err(_) => {
                 info!(
@@ -79,15 +78,18 @@ where
         let tmp = file.with_extension(format!("{}.tmp", salt));
         debug!("Saving on disk in a tmp file {:?}", tmp.clone());
         let mut buf_writer =
-            BufWriter::new(fs::File::create(tmp.as_path()).log_error("Create file")?);
-        borsh::to_writer(&mut buf_writer, store).log_error("Serializing Ctx chain")?;
+            BufWriter::new(log_error!(fs::File::create(tmp.as_path()), "Create file")?);
+        log_error!(
+            borsh::to_writer(&mut buf_writer, store),
+            "Serializing Ctx chain"
+        )?;
 
-        buf_writer.flush().log_error(format!(
-            "Flushing Buffer writer for store {}",
-            type_name::<S>()
-        ))?;
+        log_error!(
+            buf_writer.flush(),
+            format!("Flushing Buffer writer for store {}", type_name::<S>())
+        )?;
         debug!("Renaming {:?} to {:?}", &tmp, &file);
-        fs::rename(tmp, file).log_error("Rename file")?;
+        log_error!(fs::rename(tmp, file), "Rename file")?;
         Ok(())
     }
 }
@@ -229,11 +231,12 @@ impl ModulesHandler {
                             tracing::error!("Module {} exited with error: {:?}", module.name, e);
                         }
                     }
-                    _ = shutdown_client
-                        .send(signal::ShutdownCompleted {
+                    _ = log_error!(
+                        shutdown_client.send(signal::ShutdownCompleted {
                             module: module.name.to_string(),
-                        })
-                        .log_error("Sending ShutdownCompleted message");
+                        }),
+                        "Sending ShutdownCompleted message"
+                    );
                 })?;
 
             if Self::long_running_module(module.name) {
@@ -269,11 +272,12 @@ impl ModulesHandler {
                 if let Some(module_name) = started_modules_cloned.get(idx) {
                     debug!("First module to shutdown {}", module_name);
 
-                    _ = shutdown_client
-                        .send(signal::ShutdownCompleted {
+                    _ = log_error!(
+                        shutdown_client.send(signal::ShutdownCompleted {
                             module: module_name.to_string(),
-                        })
-                        .log_error("Sending ShutdownCompleted message");
+                        }),
+                        "Sending ShutdownCompleted message"
+                    );
                 }
             })?;
 
@@ -310,11 +314,12 @@ impl ModulesHandler {
         if let Some(module_name) = self.started_modules.pop() {
             // May be the shutdown message was skipped because the module failed somehow
             if !self.shut_modules.contains(&module_name.to_string()) {
-                _ = shutdown_client
-                    .send(signal::ShutdownModule {
+                _ = log_error!(
+                    shutdown_client.send(signal::ShutdownModule {
                         module: module_name.to_string(),
-                    })
-                    .log_error("Shutting down module");
+                    }),
+                    "Shutting down module"
+                );
             } else {
                 tracing::debug!("Not shutting already shut module {}", module_name);
             }

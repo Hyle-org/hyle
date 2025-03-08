@@ -1,6 +1,3 @@
-use crate::log_me_impl;
-log_me_impl!();
-
 use std::{collections::HashMap, path::Path, sync::Arc};
 
 use anyhow::{bail, Result};
@@ -9,6 +6,7 @@ use fjall::{
 };
 use tracing::info;
 
+use crate::log_warn;
 use crate::model::{DataProposalHash, Hashed, ValidatorPublicKey};
 
 use super::storage::{CanBePutOnTop, LaneEntry, Storage};
@@ -81,13 +79,10 @@ impl Storage for LanesStorage {
         validator_key: &ValidatorPublicKey,
         dp_hash: &DataProposalHash,
     ) -> Result<Option<LaneEntry>> {
-        let item = self
-            .by_hash
-            .get(format!("{}:{}", validator_key, dp_hash))
-            .log_warn(format!(
-                "Can't find DP {} for validator {}",
-                dp_hash, validator_key
-            ))?;
+        let item = log_warn!(
+            self.by_hash.get(format!("{}:{}", validator_key, dp_hash)),
+            format!("Can't find DP {} for validator {}", dp_hash, validator_key)
+        )?;
         item.map(decode_from_item).transpose()
     }
 

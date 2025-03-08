@@ -1,6 +1,3 @@
-use crate::log_me_impl;
-log_me_impl!();
-
 use super::IndexerApiState;
 use api::{
     APIBlob, APIBlock, APIContract, APIContractState, APITransaction, APITransactionEvents,
@@ -14,6 +11,7 @@ use axum::{
 use sqlx::Row;
 use utoipa::OpenApi;
 
+use crate::log_error;
 use crate::model::*;
 
 #[derive(Debug, serde::Deserialize)]
@@ -284,7 +282,7 @@ pub async fn get_transaction_with_hash(
     Path(tx_hash): Path<String>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<APITransaction>, StatusCode> {
-    let transaction = sqlx::query_as::<_, TransactionDb>(
+    let transaction = log_error!(sqlx::query_as::<_, TransactionDb>(
         r#"
         SELECT tx_hash, version, transaction_type, transaction_status, parent_dp_hash, block_hash, index
         FROM transactions
@@ -295,8 +293,8 @@ pub async fn get_transaction_with_hash(
     .bind(tx_hash)
     .fetch_optional(&state.db)
     .await
-    .map(|db| db.map(Into::<APITransaction>::into))
-    .log_error("Select transaction")
+    .map(|db| db.map(Into::<APITransaction>::into)),
+    "Select transaction")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match transaction {
@@ -320,19 +318,21 @@ pub async fn get_transaction_events(
     Path(tx_hash): Path<String>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<APITransactionEvents>>, StatusCode> {
-    let rows = sqlx::query(
-        r#"
+    let rows = log_error!(
+        sqlx::query(
+            r#"
         SELECT t.block_hash, b.height, t.tx_hash, t.events
         FROM transaction_state_events t
         LEFT JOIN blocks b ON t.block_hash = b.hash
         WHERE tx_hash = $1
         ORDER BY (b.height, index) DESC;
         "#,
+        )
+        .bind(tx_hash)
+        .fetch_all(&state.db)
+        .await,
+        "Failed to fetch transactions with blobs"
     )
-    .bind(tx_hash)
-    .fetch_all(&state.db)
-    .await
-    .log_error("Failed to fetch transactions with blobs")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let transactions: Result<Vec<APITransactionEvents>, anyhow::Error> = rows
@@ -375,7 +375,7 @@ pub async fn get_blob_transactions_by_contract(
     Path(contract_name): Path<String>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<TransactionWithBlobs>>, StatusCode> {
-    let rows = sqlx::query(
+    let rows = log_error!(sqlx::query(
         r#"
         with blobs as (
             SELECT blobs.*, array_remove(ARRAY_AGG(blob_proof_outputs.hyle_output), NULL) AS proof_outputs
@@ -409,8 +409,7 @@ pub async fn get_blob_transactions_by_contract(
     )
     .bind(contract_name.clone())
     .fetch_all(&state.db)
-    .await
-    .log_error("Failed to fetch transactions with blobs")
+    .await, "Failed to fetch transactions with blobs")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let transactions: Result<Vec<TransactionWithBlobs>, anyhow::Error> = rows

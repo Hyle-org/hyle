@@ -1,6 +1,3 @@
-use crate::log_me_impl;
-log_me_impl!();
-
 use std::{
     ops::{Deref, DerefMut},
     sync::Arc,
@@ -15,6 +12,7 @@ use crate::{
     data_availability::codec::{
         codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequest,
     },
+    log_error,
     model::{BlockHeight, CommonRunContext},
     module_handle_messages,
     node_state::{module::NodeStateEvent, NodeState},
@@ -103,17 +101,19 @@ impl DAListener {
                 let Some(streamed_signed_block) = frame else {
                     bail!("DA stream closed");
                 };
-                self.processing_next_frame(streamed_signed_block).await.log_error("Consuming da stream")?;
+                log_error!(self.processing_next_frame(streamed_signed_block).await, "Consuming da stream")?;
             }
         };
-        let _ = Self::save_on_disk::<NodeState>(
-            self.config
-                .data_directory
-                .join("da_listener_node_state.bin")
-                .as_path(),
-            &self.node_state,
-        )
-        .log_error("Saving node state");
+        let _ = log_error!(
+            Self::save_on_disk::<NodeState>(
+                self.config
+                    .data_directory
+                    .join("da_listener_node_state.bin")
+                    .as_path(),
+                &self.node_state,
+            ),
+            "Saving node state"
+        );
 
         Ok(())
     }

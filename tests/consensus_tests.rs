@@ -1,7 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use hyle::log_me_impl;
-log_me_impl!();
+use hyle::log_error;
 
 use anyhow::Result;
 use fixtures::ctx::E2ECtx;
@@ -54,12 +53,13 @@ mod e2e_consensus {
 
         assert!(node_info.pubkey.is_some());
 
-        let hyllar: Hyllar = ctx
-            .indexer_client()
-            .fetch_current_state(&"hyllar".into())
-            .await
-            .log_error("fetch state failed")
-            .unwrap();
+        let hyllar: Hyllar = log_error!(
+            ctx.indexer_client()
+                .fetch_current_state(&"hyllar".into())
+                .await,
+            "fetch state failed"
+        )
+        .unwrap();
         let hydentity: Hydentity = ctx
             .indexer_client()
             .fetch_current_state(&"hydentity".into())

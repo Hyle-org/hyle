@@ -7,47 +7,37 @@ use tracing_subscriber::{
     EnvFilter,
 };
 
-// Consolidated LogMe trait
+// Direct logging macros
+/// Macro designed to log warnings
 #[macro_export]
-macro_rules! log_me_impl {
-  () => {
-  // Will log a warning in case of error
-  // WARN {context_msg}: {cause}
-  trait LogMe<T> {
-     fn log_warn<C: std::fmt::Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T>;
-     fn log_error<C: std::fmt::Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T>;
-  }
-  impl<T, Error: Into<anyhow::Error> + std::fmt::Display + Send + Sync + 'static> LogMe<T>
-    for Result<T, Error> {
-      fn log_warn<C: std::fmt::Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T> {
-          match self {
-              Err(e) => {
-                  let ae: anyhow::Error = e.into();
-                  let ae = ae.context(context_msg);
+macro_rules! log_warn {
+    ($result:expr, $context:expr) => {
+        match $result {
+            Err(e) => {
+                let ae: anyhow::Error = e.into();
+                let ae = ae.context($context);
+                tracing::warn!(target: module_path!(), "{:#}", ae);
+                Err(ae)
+            }
+            Ok(t) => Ok(t),
+        }
+    };
+}
 
-                  tracing::error!(target: module_path!(), "{:#}", ae);
-
-                  Err(ae)
-              }
-              Ok(t) => Ok(t),
-          }
-      }
-
-      fn log_error<C: std::fmt::Display + Send + Sync + 'static>(self, context_msg: C) -> anyhow::Result<T> {
-          match self {
-              Err(e) => {
-                  let ae: anyhow::Error = e.into();
-                  let ae = ae.context(context_msg);
-
-                  tracing::error!(target: module_path!(), "{:#}", ae);
-
-                  Err(ae)
-              }
-              Ok(t) => Ok(t),
-          }
-      }
-    }
-  }
+/// Macro designed to log errors
+#[macro_export]
+macro_rules! log_error {
+    ($result:expr, $context:expr) => {
+        match $result {
+            Err(e) => {
+                let ae: anyhow::Error = e.into();
+                let ae = ae.context($context);
+                tracing::error!(target: module_path!(), "{:#}", ae);
+                Err(ae)
+            }
+            Ok(t) => Ok(t),
+        }
+    };
 }
 
 /// Custom formatter that appends node_name in front of full logs

@@ -1,8 +1,6 @@
-use crate::log_me_impl;
-log_me_impl!();
-
 use crate::{
     bus::{BusClientSender, BusMessage},
+    log_error,
     model::{SharedRunContext, Transaction},
     module_handle_messages,
     tcp::tcp_client_server,
@@ -81,7 +79,7 @@ impl TcpServer {
         module_handle_messages! {
             on_bus self.bus,
             Some(res) = receiver.recv() => {
-                _ = self.bus.send(*res.data).log_error("Sending message on TcpServerMessage topic from connection pool");
+                _ = log_error!(self.bus.send(*res.data), "Sending message on TcpServerMessage topic from connection pool");
             }
         };
 

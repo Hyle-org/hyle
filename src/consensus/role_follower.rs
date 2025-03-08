@@ -1,12 +1,10 @@
-use crate::log_me_impl;
-log_me_impl!();
-
 use borsh::{BorshDeserialize, BorshSerialize};
 use tracing::{debug, info, trace, warn};
 
 use super::Consensus;
 use crate::{
     consensus::StateTag,
+    log_error,
     mempool::MempoolNetMessage,
     model::{Hashed, Signed, ValidatorPublicKey},
     utils::crypto::BlstCrypto,
@@ -86,10 +84,11 @@ impl FollowerRole for Consensus {
                 }
             }
             Ticket::TimeoutQC(timeout_qc) => {
-                if self
-                    .try_process_timeout_qc(timeout_qc)
-                    .log_error("Processing Timeout ticket")
-                    .is_err()
+                if log_error!(
+                    self.try_process_timeout_qc(timeout_qc),
+                    "Processing Timeout ticket"
+                )
+                .is_err()
                 {
                     bail!("Invalid timeout ticket");
                 }

@@ -1,6 +1,3 @@
-use crate::log_me_impl;
-log_me_impl!();
-
 use std::time::Duration;
 use std::time::SystemTime;
 
@@ -22,6 +19,7 @@ use super::stream::send_net_message;
 use crate::bus::bus_client;
 use crate::bus::BusClientSender;
 use crate::bus::SharedMessageBus;
+use crate::log_warn;
 use crate::mempool::MempoolNetMessage;
 use crate::model::ConsensusNetMessage;
 use crate::model::SignedByValidator;
@@ -200,19 +198,19 @@ impl Peer {
                 match res {
                     OutboundMessage::SendMessage { validator_id, msg } => {
                         let warn_msg = format!("P2P Sending net message to {}", validator_id);
-                        _ = self.handle_send_message(validator_id, msg).await.log_warn(warn_msg);
+                        _ = log_warn!(self.handle_send_message(validator_id, msg).await, warn_msg);
                     }
                     OutboundMessage::BroadcastMessage(message) => {
-                        _ = self.handle_broadcast_message(message)
-                            .await
-                            .log_warn("P2P Broadcasting net message");
+                        _ = log_warn!(self.handle_broadcast_message(message)
+                            .await,
+                            "P2P Broadcasting net message");
                     }
                     OutboundMessage::BroadcastMessageOnlyFor(only_for, message) => {
                         if let Some(ref pubkey) = self.peer_pubkey {
                             if only_for.contains(pubkey) {
-                                _ = self.handle_broadcast_message(message)
-                                    .await
-                                    .log_warn(format!("P2P Broadcasting net message only for {:?}", only_for));
+                                _ = log_warn!(self.handle_broadcast_message(message)
+                                    .await,
+                                    format!("P2P Broadcasting net message only for {:?}", only_for));
                             }
                         }
                     }
@@ -220,11 +218,11 @@ impl Peer {
             }
 
             res = read_stream(&mut self.stream) => {
-                let message = res.log_warn("Reading tcp stream")?;
+                let message = log_warn!(res, "Reading tcp stream")?;
 
-                _ = self.handle_peer_stream_message(message)
-                    .await
-                    .log_warn("Handling peer stream message");
+                _ = log_warn!(self.handle_peer_stream_message(message)
+                    .await,
+                    "Handling peer stream message");
             },
 
             res =  self.internal_cmd_rx.recv() => {
@@ -242,7 +240,7 @@ impl Peer {
                         }
                     };
 
-                    _ = cmd_res.log_warn("Handling internal cmd in Peer");
+                    _ = log_warn!(cmd_res, "Handling internal cmd in Peer");
                 }
             }
         };

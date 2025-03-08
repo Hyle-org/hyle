@@ -1,8 +1,5 @@
 //! Handles all consensus logic up to block commitment.
 
-use crate::log_me_impl;
-log_me_impl!();
-
 use crate::bus::BusClientSender;
 use crate::model::*;
 use crate::module_handle_messages;
@@ -11,6 +8,7 @@ use crate::utils::modules::module_bus_client;
 use crate::{
     bus::{command_response::Query, BusMessage},
     genesis::GenesisEvent,
+    log_error,
     mempool::QueryNewCut,
     model::{Cut, Hashed, StakingAction, ValidatorPublicKey},
     p2p::{network::OutboundMessage, P2PCommand},
@@ -388,9 +386,10 @@ impl Consensus {
                     );
                     sleep(Duration::from_millis(interval)).await;
 
-                    _ = command_sender
-                        .send(ConsensusCommand::StartNewSlot)
-                        .log_error("Cannot send StartNewSlot message over channel");
+                    _ = log_error!(
+                        command_sender.send(ConsensusCommand::StartNewSlot),
+                        "Cannot send StartNewSlot message over channel"
+                    );
                 })?;
             Ok(())
         }
@@ -547,9 +546,11 @@ impl Consensus {
             return qc == &commit_qc;
         }
 
-        self.try_commit_current_proposal(commit_qc.clone())
-            .log_error("Processing Commit Ticket")
-            .is_ok()
+        log_error!(
+            self.try_commit_current_proposal(commit_qc.clone()),
+            "Processing Commit Ticket"
+        )
+        .is_ok()
     }
 
     fn try_process_timeout_qc(&mut self, timeout_qc: QuorumCertificate) -> Result<()> {
@@ -670,16 +671,16 @@ impl Consensus {
 
         self.metrics.commit();
 
-        _ = self
-            .bus
-            .send(ConsensusEvent::CommitConsensusProposal(
+        _ = log_error!(
+            self.bus.send(ConsensusEvent::CommitConsensusProposal(
                 CommittedConsensusProposal {
                     staking: self.bft_round_state.staking.clone(),
                     consensus_proposal: self.bft_round_state.consensus_proposal.clone(),
                     certificate: commit_quorum_certificate.clone(),
                 },
-            ))
-            .log_error("Failed to send ConsensusEvent::CommittedConsensusProposal on the bus");
+            )),
+            "Failed to send ConsensusEvent::CommittedConsensusProposal on the bus"
+        );
 
         debug!(
             "📈 Slot {} committed",
@@ -893,7 +894,7 @@ impl Consensus {
                             }
                         };
                         // Send a CommitConsensusProposal for the genesis block
-                        _ = self
+                        _ = log_error!(self
                             .bus
                             .send(ConsensusEvent::CommitConsensusProposal(
                                 CommittedConsensusProposal {
@@ -901,8 +902,7 @@ impl Consensus {
                                     consensus_proposal: signed_block.consensus_proposal,
                                     certificate: signed_block.certificate,
                                 },
-                            ))
-                            .log_error("Failed to send ConsensusEvent::CommittedConsensusProposal on the bus");
+                            )), "Failed to send ConsensusEvent::CommittedConsensusProposal on the bus");
                         break;
                     },
                     GenesisEvent::NoGenesis => {
@@ -937,13 +937,13 @@ impl Consensus {
         module_handle_messages! {
             on_bus self.bus,
             listen<NodeStateEvent> event => {
-                let _ = self.handle_node_state_event(event).await.log_error("Error while handling data event");
+                let _ = log_error!(self.handle_node_state_event(event).await, "Error while handling data event");
             }
             listen<ConsensusCommand> cmd => {
-                let _ = self.handle_command(cmd).await.log_error("Error while handling consensus command");
+                let _ = log_error!(self.handle_command(cmd).await, "Error while handling consensus command");
             }
             listen<SignedByValidator<ConsensusNetMessage>> cmd => {
-                let _ = self.handle_net_message(cmd).log_error("Consensus message failed");
+                let _ = log_error!(self.handle_net_message(cmd), "Consensus message failed");
             }
             command_response<QueryConsensusInfo, ConsensusInfo> _ => {
                 let slot = self.bft_round_state.consensus_proposal.slot;
@@ -956,8 +956,7 @@ impl Consensus {
                 Ok(self.bft_round_state.staking.clone())
             }
             _ = timeout_ticker.tick() => {
-                self.bus.send(ConsensusCommand::TimeoutTick)
-                    .log_error("Cannot send message over channel")?;
+                log_error!(self.bus.send(ConsensusCommand::TimeoutTick), "Cannot send message over channel")?;
             }
         };
 

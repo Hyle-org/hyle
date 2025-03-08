@@ -1,6 +1,3 @@
-use crate::log_me_impl;
-log_me_impl!();
-
 use anyhow::{bail, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_model::{
@@ -13,6 +10,7 @@ use std::{collections::HashMap, path::Path, sync::Arc, vec};
 use tracing::{debug, error, warn};
 
 use crate::{
+    log_warn,
     model::{
         BlobProofOutput, Cut, DataProposal, DataProposalHash, Hashed, PoDA, SignedByValidator,
         Transaction, TransactionData, ValidatorPublicKey,
@@ -141,10 +139,10 @@ pub trait Storage {
         data_proposal_hash: &DataProposalHash,
         signatures: Vec<SignedByValidator<MempoolNetMessage>>,
     ) -> Result<()> {
-        match self
-            .get_by_hash(validator, data_proposal_hash)
-            .log_warn("Received PoDA update for unknown DataProposal")?
-        {
+        match log_warn!(
+            self.get_by_hash(validator, data_proposal_hash),
+            "Received PoDA update for unknown DataProposal"
+        )? {
             Some(mut lane_entry) => {
                 lane_entry.signatures.extend(signatures);
                 lane_entry.signatures.dedup();

@@ -1,12 +1,10 @@
 //! Mempool logic & pending transaction management.
 
-use crate::log_me_impl;
-log_me_impl!();
-
 use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{CommittedConsensusProposal, ConsensusEvent},
     genesis::GenesisEvent,
+    log_error, log_warn,
     model::*,
     module_handle_messages,
     node_state::module::NodeStateEvent,
@@ -265,22 +263,19 @@ impl Mempool {
         module_handle_messages! {
             on_bus self.bus,
             listen<SignedByValidator<MempoolNetMessage>> cmd => {
-                let _ = self.handle_net_message(cmd)
-                    .log_error("Handling MempoolNetMessage in Mempool");
+                let _ = log_error!(self.handle_net_message(cmd), "Handling MempoolNetMessage in Mempool");
             }
             listen<RestApiMessage> cmd => {
-                let _ = self.handle_api_message(cmd).log_error("Handling API Message in Mempool");
+                let _ = log_error!(self.handle_api_message(cmd), "Handling API Message in Mempool");
             }
             listen<TcpServerMessage> cmd => {
-                let _ = self.handle_tcp_server_message(cmd).log_error("Handling TCP Server message in Mempool");
+                let _ = log_error!(self.handle_tcp_server_message(cmd), "Handling TCP Server message in Mempool");
             }
             listen<InternalMempoolEvent> event => {
-                let _ = self.handle_internal_event(event)
-                    .log_error("Handling InternalMempoolEvent in Mempool");
+                let _ = log_error!(self.handle_internal_event(event), "Handling InternalMempoolEvent in Mempool");
             }
             listen<ConsensusEvent> cmd => {
-                let _ = self.handle_consensus_event(cmd)
-                    .log_error("Handling ConsensusEvent in Mempool");
+                let _ = log_error!(self.handle_consensus_event(cmd), "Handling ConsensusEvent in Mempool");
             }
             listen<NodeStateEvent> cmd => {
                 let NodeStateEvent::NewBlock(block) = cmd;
@@ -292,8 +287,7 @@ impl Mempool {
                 self.handle_querynewcut(staking)
             }
             _ = interval.tick() => {
-                let _ = self.handle_data_proposal_management()
-                    .log_error("Creating Data Proposal on tick");
+                let _ = log_error!(self.handle_data_proposal_management(), "Creating Data Proposal on tick");
             }
         };
 
@@ -530,11 +524,12 @@ impl Mempool {
     /// Send an event if none was broadcast before
     fn set_ccp_build_start_height(&mut self, slot: Slot) {
         if self.buc_build_start_height.is_none()
-            && self
-                .bus
-                .send(MempoolBlockEvent::StartedBuildingBlocks(BlockHeight(slot)))
-                .log_error(format!("Sending StartedBuilding event at height {}", slot))
-                .is_ok()
+            && log_error!(
+                self.bus
+                    .send(MempoolBlockEvent::StartedBuildingBlocks(BlockHeight(slot))),
+                format!("Sending StartedBuilding event at height {}", slot)
+            )
+            .is_ok()
         {
             self.buc_build_start_height = Some(slot);
         }
@@ -969,10 +964,11 @@ impl Mempool {
                 let sender = sender.clone();
                 tokio::task::spawn_blocking(move || {
                     let tx =
-                        Self::process_proof_tx(kc, tx).log_error("Error processing proof tx")?;
-                    sender
-                        .send(InternalMempoolEvent::OnProcessedNewTx(tx))
-                        .log_warn("sending processed TX")
+                        log_error!(Self::process_proof_tx(kc, tx), "Error processing proof tx")?;
+                    log_warn!(
+                        sender.send(InternalMempoolEvent::OnProcessedNewTx(tx)),
+                        "sending processed TX"
+                    )
                 });
                 return Ok(());
             }
