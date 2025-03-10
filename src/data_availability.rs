@@ -7,7 +7,7 @@ mod blocks_memory;
 
 // Pick one of the two implementations
 use blocks_fjall::Blocks;
-use client_sdk::tcp::{TcpCommand, TcpEvent};
+use client_sdk::tcp::TcpEvent;
 //use blocks_memory::Blocks;
 
 use codec::{codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequest};
@@ -30,7 +30,6 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use core::str;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use tokio::sync::mpsc::Sender;
 use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
@@ -52,6 +51,12 @@ struct DABusClient {
     receiver(PeerEvent),
 }
 }
+
+type DaTcpServer = client_sdk::tcp::TcpServer<
+    codec_data_availability::ServerCodec,
+    DataAvailabilityRequest,
+    DataAvailabilityEvent,
+>;
 
 #[derive(Debug)]
 pub struct DataAvailability {
@@ -100,10 +105,8 @@ impl DataAvailability {
             &self.config.da_address
         );
 
-        let (pool_sender, mut pool_receiver) =
-            codec_data_availability::create_server(self.config.da_address.clone())
-                .run_in_background()
-                .await?;
+        let mut server: DaTcpServer =
+            codec_data_availability::start_server(self.config.da_address.clone()).await?;
 
         let (catchup_block_sender, mut catchup_block_receiver) =
             tokio::sync::mpsc::channel::<SignedBlock>(100);
@@ -113,17 +116,17 @@ impl DataAvailability {
         module_handle_messages! {
             on_bus self.bus,
             listen<MempoolBlockEvent> evt => {
-                _ = log_error!(self.handle_mempool_event(evt, pool_sender.clone()).await, "Handling Mempool Event");
+                _ = log_error!(self.handle_mempool_event(evt, &mut server).await, "Handling Mempool Event");
             }
 
             listen<MempoolStatusEvent> evt => {
-                _ = log_error!(self.handle_mempool_status_event(evt, pool_sender.clone()).await, "Handling Mempool Event");
+                _ = log_error!(self.handle_mempool_status_event(evt, &mut server).await, "Handling Mempool Event");
             }
 
             listen<GenesisEvent> cmd => {
                 if let GenesisEvent::GenesisBlock(signed_block) = cmd {
                     debug!("🌱  Genesis block received with validators {:?}", signed_block.consensus_proposal.staking_actions.clone());
-                    let _= log_error!(self.handle_signed_block(signed_block, pool_sender.clone()).await, "Handling GenesisBlock Event");
+                    let _= log_error!(self.handle_signed_block(signed_block, &mut server).await, "Handling GenesisBlock Event");
                 } else {
                     // TODO: I think this is technically a data race with p2p ?
                     self.need_catchup = true;
@@ -143,7 +146,7 @@ impl DataAvailability {
             Some(streamed_block) = catchup_block_receiver.recv() => {
                 let height = streamed_block.height().0;
 
-                let _ = log_error!(self.handle_signed_block(streamed_block, pool_sender.clone()).await, format!("Handling streamed block {height}"));
+                let _ = log_error!(self.handle_signed_block(streamed_block, &mut server).await, format!("Handling streamed block {height}"));
 
                 // Stop streaming after reaching a height communicated by Mempool
                 if let Some(until_height) = self.catchup_height.as_ref() {
@@ -159,7 +162,7 @@ impl DataAvailability {
                 }
             }
 
-            Some(request) = pool_receiver.recv() => {
+            Some(request) = server.listen_next() => {
                 info!("Received message from the connection pool");
 
                 let TcpEvent{ dest, data } = request;
@@ -177,8 +180,8 @@ impl DataAvailability {
                     if let Ok(Some(signed_block)) = self.blocks.get(&hash)
                     {
                         // Errors will be handled when sending new blocks, ignore here.
-                        if pool_sender
-                            .send(TcpCommand::Send(peer_ip.clone(), Box::new(DataAvailabilityEvent::SignedBlock(signed_block))))
+                        if server
+                            .send(peer_ip.clone(), DataAvailabilityEvent::SignedBlock(signed_block))
                             .await.is_ok() {
                             let _ = catchup_sender.send((block_hashes, peer_ip)).await;
                         }
@@ -194,11 +197,15 @@ impl DataAvailability {
     async fn handle_mempool_event(
         &mut self,
         evt: MempoolBlockEvent,
-        pool_sender: Sender<TcpCommand<DataAvailabilityEvent>>,
+        tcp_server: &mut client_sdk::tcp::TcpServer<
+            codec_data_availability::ServerCodec,
+            DataAvailabilityRequest,
+            DataAvailabilityEvent,
+        >,
     ) -> Result<()> {
         match evt {
             MempoolBlockEvent::BuiltSignedBlock(signed_block) => {
-                self.handle_signed_block(signed_block, pool_sender).await?;
+                self.handle_signed_block(signed_block, tcp_server).await?;
             }
             MempoolBlockEvent::StartedBuildingBlocks(height) => {
                 self.catchup_height = Some(height - 1);
@@ -224,12 +231,10 @@ impl DataAvailability {
     async fn handle_mempool_status_event(
         &mut self,
         evt: MempoolStatusEvent,
-        pool_sender: Sender<TcpCommand<DataAvailabilityEvent>>,
+        tcp_server: &mut DaTcpServer,
     ) -> Result<()> {
-        pool_sender
-            .send(TcpCommand::Broadcast(Box::new(
-                DataAvailabilityEvent::MempoolStatusEvent(evt),
-            )))
+        tcp_server
+            .broadcast(DataAvailabilityEvent::MempoolStatusEvent(evt))
             .await?;
 
         Ok(())
@@ -238,7 +243,7 @@ impl DataAvailability {
     async fn handle_signed_block(
         &mut self,
         block: SignedBlock,
-        pool_sender: Sender<TcpCommand<DataAvailabilityEvent>>,
+        tcp_server: &mut DaTcpServer,
     ) -> Result<()> {
         let hash = block.hashed();
         // if new block is already handled, ignore it
@@ -275,8 +280,8 @@ impl DataAvailability {
         }
 
         // store block
-        self.add_processed_block(block, pool_sender.clone()).await;
-        self.pop_buffer(hash, pool_sender).await;
+        self.add_processed_block(block.clone(), tcp_server).await;
+        self.pop_buffer(hash, tcp_server).await;
         self.blocks.persist().context("Persisting blocks")?;
         Ok(())
     }
@@ -284,7 +289,7 @@ impl DataAvailability {
     async fn pop_buffer(
         &mut self,
         mut last_block_hash: ConsensusProposalHash,
-        pool_sender: Sender<TcpCommand<DataAvailabilityEvent>>,
+        tcp_server: &mut DaTcpServer,
     ) {
         // Iterative loop to avoid stack overflows
         while let Some(first_buffered) = self.buffered_signed_blocks.first() {
@@ -302,16 +307,12 @@ impl DataAvailability {
             )]
             let first_buffered = self.buffered_signed_blocks.pop_first().unwrap();
             last_block_hash = first_buffered.hashed();
-            self.add_processed_block(first_buffered, pool_sender.clone())
+            self.add_processed_block(first_buffered.clone(), tcp_server)
                 .await;
         }
     }
 
-    async fn add_processed_block(
-        &mut self,
-        block: SignedBlock,
-        pool_sender: Sender<TcpCommand<DataAvailabilityEvent>>,
-    ) {
+    async fn add_processed_block(&mut self, block: SignedBlock, tcp_server: &mut DaTcpServer) {
         // TODO: if we don't have streaming peers, we could just pass the block here
         // and avoid a clone + drop cost (which can be substantial for large blocks).
         if let Err(e) = self.blocks.put(block.clone()) {
@@ -346,10 +347,8 @@ impl DataAvailability {
         // TODO: use retain once async closures are supported ?
         //
         _ = log_error!(
-            pool_sender
-                .send(TcpCommand::Broadcast(Box::new(
-                    DataAvailabilityEvent::SignedBlock(block.clone()),
-                )))
+            tcp_server
+                .broadcast(DataAvailabilityEvent::SignedBlock(block.clone()),)
                 .await,
             "Sending block to tcp connection pool"
         );
@@ -437,6 +436,7 @@ pub mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use crate::data_availability::codec::{codec_data_availability, DataAvailabilityRequest};
+    use crate::log_error;
     use crate::node_state::NodeState;
     use crate::{
         bus::BusClientSender,
@@ -445,14 +445,12 @@ pub mod tests {
         node_state::module::{NodeStateBusClient, NodeStateEvent},
         utils::{conf::Conf, integration_test::find_available_port},
     };
-    use client_sdk::tcp::TcpCommand;
-    use staking::state::Staking;
-    use tokio::sync::mpsc::{channel, Sender};
 
     use super::codec::DataAvailabilityEvent;
     use super::module_bus_client;
     use super::Blocks;
     use anyhow::Result;
+    use staking::state::Staking;
 
     /// For use in integration tests
     pub struct DataAvailabilityTestCtx {
@@ -463,7 +461,8 @@ pub mod tests {
 
     impl DataAvailabilityTestCtx {
         pub async fn new(shared_bus: crate::bus::SharedMessageBus) -> Self {
-            let tmpdir = tempfile::tempdir().unwrap().into_path();
+            let path = tempfile::tempdir().unwrap().into_path();
+            let tmpdir = path;
             let blocks = Blocks::new(&tmpdir).unwrap();
 
             let bus = super::DABusClient::new_from_bus(shared_bus.new_handle()).await;
@@ -494,16 +493,22 @@ pub mod tests {
         pub async fn handle_signed_block(
             &mut self,
             block: SignedBlock,
-            sender: Sender<TcpCommand<DataAvailabilityEvent>>,
+            tcp_server: &mut client_sdk::tcp::TcpServer<
+                codec_data_availability::ServerCodec,
+                DataAvailabilityRequest,
+                DataAvailabilityEvent,
+            >,
         ) {
-            self.da
-                .handle_signed_block(block.clone(), sender)
-                .await
-                .unwrap();
             let full_block = self.node_state.handle_signed_block(&block);
-            self.node_state_bus
-                .send(NodeStateEvent::NewBlock(Box::new(full_block)))
-                .unwrap();
+            _ = log_error!(
+                self.node_state_bus
+                    .send(NodeStateEvent::NewBlock(Box::new(full_block))),
+                "Sending NodeState event"
+            );
+            _ = log_error!(
+                self.da.handle_signed_block(block, tcp_server).await,
+                "Handling Signed Block"
+            );
         }
     }
 
@@ -525,7 +530,10 @@ pub mod tests {
         let tmpdir = tempfile::tempdir().unwrap().into_path();
         let blocks = Blocks::new(&tmpdir).unwrap();
 
-        let (sender, _) = channel(1);
+        let mut server = codec_data_availability::start_server("127.0.0.1:7898".to_string())
+            .await
+            .unwrap();
+
         let bus = super::DABusClient::new_from_bus(crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
         ))
@@ -548,7 +556,7 @@ pub mod tests {
         }
         blocks.reverse();
         for block in blocks {
-            da.handle_signed_block(block, sender.clone()).await.unwrap();
+            da.handle_signed_block(block, &mut server).await.unwrap();
         }
     }
 
@@ -677,12 +685,14 @@ pub mod tests {
     }
     #[test_log::test(tokio::test)]
     async fn test_da_catchup() {
-        let (sender, _) = channel(1);
         let sender_global_bus = crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
         );
         let mut block_sender = TestBusClient::new_from_bus(sender_global_bus.new_handle()).await;
         let mut da_sender = DataAvailabilityTestCtx::new(sender_global_bus).await;
+        let mut server = codec_data_availability::start_server("127.0.0.1:7890".to_string())
+            .await
+            .unwrap();
 
         let receiver_global_bus = crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
@@ -699,7 +709,7 @@ pub mod tests {
         }
         blocks.reverse();
         for block in blocks {
-            da_sender.handle_signed_block(block, sender.clone()).await;
+            da_sender.handle_signed_block(block, &mut server).await;
         }
 
         let da_sender_address = da_sender.da.config.da_address.clone();
@@ -722,7 +732,7 @@ pub mod tests {
         let mut received_blocks = vec![];
         while let Some(streamed_block) = rx.recv().await {
             da_receiver
-                .handle_signed_block(streamed_block.clone(), sender.clone())
+                .handle_signed_block(streamed_block.clone(), &mut server)
                 .await;
             received_blocks.push(streamed_block);
             if received_blocks.len() == 10 {
@@ -755,7 +765,7 @@ pub mod tests {
         // We should still be subscribed
         while let Some(streamed_block) = rx.recv().await {
             da_receiver
-                .handle_signed_block(streamed_block.clone(), sender.clone())
+                .handle_signed_block(streamed_block.clone(), &mut server)
                 .await;
             received_blocks.push(streamed_block);
             if received_blocks.len() == 15 {
