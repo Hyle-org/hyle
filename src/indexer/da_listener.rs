@@ -11,7 +11,7 @@ use crate::{
     },
     model::{BlockHeight, CommonRunContext},
     module_handle_messages,
-    node_state::{module::NodeStateEvent, NodeState},
+    node_state::{metrics::NodeStateMetrics, module::NodeStateEvent, NodeState, NodeStateStore},
     utils::{
         conf::SharedConf,
         logger::LogMe,
@@ -43,13 +43,18 @@ impl Module for DAListener {
     type Context = DAListenerCtx;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
-        let node_state = Self::load_from_disk_or_default::<NodeState>(
+        let node_state_store = Self::load_from_disk_or_default::<NodeStateStore>(
             ctx.common
                 .config
                 .data_directory
                 .join("da_listener_node_state.bin")
                 .as_path(),
         );
+
+        let node_state = NodeState {
+            store: node_state_store,
+            metrics: NodeStateMetrics::global(ctx.common.config.id.clone(), "da_listener"),
+        };
 
         let start_block = ctx.start_block.unwrap_or(node_state.current_height);
 
@@ -101,7 +106,7 @@ impl DAListener {
                 }
             }
         };
-        let _ = Self::save_on_disk::<NodeState>(
+        let _ = Self::save_on_disk::<NodeStateStore>(
             self.config
                 .data_directory
                 .join("da_listener_node_state.bin")
