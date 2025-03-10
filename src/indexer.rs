@@ -813,7 +813,7 @@ impl std::ops::Deref for Indexer {
 mod test {
     use assert_json_diff::assert_json_include;
     use axum_test::TestServer;
-    use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
+    use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateCommitment, TxHash};
     use hyle_model::api::{APIBlock, APIContract, APITransaction};
     use serde_json::json;
     use std::{
@@ -857,7 +857,10 @@ mod test {
         }
     }
 
-    fn new_register_tx(contract_name: ContractName, state_digest: StateDigest) -> BlobTransaction {
+    fn new_register_tx(
+        contract_name: ContractName,
+        state_digest: StateCommitment,
+    ) -> BlobTransaction {
         BlobTransaction::new(
             "hyle.hyle",
             vec![RegisterContractAction {
@@ -897,8 +900,8 @@ mod test {
         contract_name: ContractName,
         blob_index: BlobIndex,
         blob_tx_hash: TxHash,
-        initial_state: StateDigest,
-        next_state: StateDigest,
+        initial_state: StateCommitment,
+        next_state: StateCommitment,
         blobs: Vec<u8>,
     ) -> Transaction {
         let proof = ProofData(initial_state.0.clone());
@@ -972,8 +975,8 @@ mod test {
         let mut indexer = new_indexer(db).await;
         let server = setup_test_server(&indexer).await?;
 
-        let initial_state = StateDigest(vec![1, 2, 3]);
-        let next_state = StateDigest(vec![4, 5, 6]);
+        let initial_state = StateCommitment(vec![1, 2, 3]);
+        let next_state = StateCommitment(vec![4, 5, 6]);
         let first_contract_name = ContractName::new("c1");
         let second_contract_name = ContractName::new("c2");
 
@@ -1016,16 +1019,16 @@ mod test {
             first_contract_name.clone(),
             BlobIndex(1),
             other_blob_transaction_hash.clone(),
-            StateDigest(vec![7, 7, 7]),
-            StateDigest(vec![9, 9, 9]),
+            StateCommitment(vec![7, 7, 7]),
+            StateCommitment(vec![9, 9, 9]),
             vec![99, 50, 1, 2, 3, 99, 49, 1, 2, 3],
         );
         let proof_tx_4 = new_proof_tx(
             first_contract_name.clone(),
             BlobIndex(1),
             other_blob_transaction_hash.clone(),
-            StateDigest(vec![8, 8]),
-            StateDigest(vec![9, 9]),
+            StateCommitment(vec![8, 8]),
+            StateCommitment(vec![9, 9]),
             vec![99, 50, 1, 2, 3, 99, 49, 1, 2, 3],
         );
 
@@ -1064,8 +1067,8 @@ mod test {
         // Handling MempoolStatusEvent
         //
 
-        let initial_state_wd = StateDigest(vec![1, 2, 3]);
-        let next_state_wd = StateDigest(vec![4, 5, 6]);
+        let initial_state_wd = StateCommitment(vec![1, 2, 3]);
+        let next_state_wd = StateCommitment(vec![4, 5, 6]);
         let first_contract_name_wd = ContractName::new("wd1");
         let second_contract_name_wd = ContractName::new("wd2");
 

@@ -119,7 +119,7 @@ impl Default for NodeStateStore {
             Contract {
                 name: "hyle".into(),
                 program_id: ProgramId(vec![]),
-                state: StateDigest(vec![0]),
+                state: StateCommitment(vec![0]),
                 verifier: Verifier("hyle".to_owned()),
             },
         );
@@ -1029,7 +1029,7 @@ pub mod test {
             vec![RegisterContractAction {
                 verifier: "test".into(),
                 program_id: ProgramId(vec![]),
-                state_digest: StateDigest(vec![0, 1, 2, 3]),
+                state_digest: StateCommitment(vec![0, 1, 2, 3]),
                 contract_name: name,
             }
             .as_blob("hyle".into(), None, None)],
@@ -1040,7 +1040,7 @@ pub mod test {
         RegisterContractEffect {
             verifier: "test".into(),
             program_id: ProgramId(vec![]),
-            state_digest: StateDigest(vec![0, 1, 2, 3]),
+            state_digest: StateCommitment(vec![0, 1, 2, 3]),
             contract_name,
         }
     }
@@ -1075,8 +1075,8 @@ pub mod test {
             identity: blob_tx.identity.clone(),
             index: blob_index,
             blobs: flatten_blobs(&blob_tx.blobs),
-            initial_state: StateDigest(vec![0, 1, 2, 3]),
-            next_state: StateDigest(vec![4, 5, 6]),
+            initial_state: StateCommitment(vec![0, 1, 2, 3]),
+            next_state: StateCommitment(vec![4, 5, 6]),
             success: true,
             tx_hash: blob_tx.hashed(),
             tx_ctx: None,
@@ -1096,8 +1096,8 @@ pub mod test {
             identity: blob_tx.identity.clone(),
             index: blob_index,
             blobs: flatten_blobs(&blob_tx.blobs),
-            initial_state: StateDigest(initial_state.to_vec()),
-            next_state: StateDigest(next_state.to_vec()),
+            initial_state: StateCommitment(initial_state.to_vec()),
+            next_state: StateCommitment(next_state.to_vec()),
             success: true,
             tx_hash: blob_tx.hashed(),
             tx_ctx: None,
@@ -1374,13 +1374,13 @@ pub mod test {
 
         let mut second_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(1));
         second_hyle_output.initial_state = first_hyle_output.next_state.clone();
-        second_hyle_output.next_state = StateDigest(vec![7, 8, 9]);
+        second_hyle_output.next_state = StateCommitment(vec![7, 8, 9]);
 
         let verified_second_proof = new_proof_tx(&c1, &second_hyle_output, &blob_tx_hash);
 
         let mut third_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(2));
         third_hyle_output.initial_state = second_hyle_output.next_state.clone();
-        third_hyle_output.next_state = StateDigest(vec![10, 11, 12]);
+        third_hyle_output.next_state = StateCommitment(vec![10, 11, 12]);
 
         let verified_third_proof = new_proof_tx(&c1, &third_hyle_output, &blob_tx_hash);
 
@@ -1502,7 +1502,7 @@ pub mod test {
 
         let mut second_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(1));
         second_hyle_output.initial_state = another_first_hyle_output.next_state.clone();
-        second_hyle_output.next_state = StateDigest(vec![7, 8, 9]);
+        second_hyle_output.next_state = StateCommitment(vec![7, 8, 9]);
 
         let verified_second_proof = new_proof_tx(&c1, &second_hyle_output, &blob_tx_hash);
 
@@ -1548,13 +1548,13 @@ pub mod test {
 
         let mut second_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(1));
         second_hyle_output.initial_state = first_hyle_output.next_state.clone();
-        second_hyle_output.next_state = StateDigest(vec![7, 8, 9]);
+        second_hyle_output.next_state = StateCommitment(vec![7, 8, 9]);
 
         let verified_second_proof = new_proof_tx(&c1, &second_hyle_output, &blob_tx_hash);
 
         let mut third_hyle_output = make_hyle_output(blob_tx.clone(), BlobIndex(2));
         third_hyle_output.initial_state = first_hyle_output.next_state.clone();
-        third_hyle_output.next_state = StateDigest(vec![10, 11, 12]);
+        third_hyle_output.next_state = StateCommitment(vec![10, 11, 12]);
 
         let verified_third_proof = new_proof_tx(&c1, &third_hyle_output, &blob_tx_hash);
 
@@ -1918,7 +1918,7 @@ pub mod test {
                 vec![RegisterContractAction {
                     verifier: "test".into(),
                     program_id: ProgramId(vec![]),
-                    state_digest: StateDigest(vec![0, 1, 2, 3]),
+                    state_digest: StateCommitment(vec![0, 1, 2, 3]),
                     contract_name: name,
                 }
                 .as_blob(tld, None, None)],
@@ -2023,7 +2023,7 @@ pub mod test {
                     RegisterContractAction {
                         verifier: "test".into(),
                         program_id: ProgramId(vec![]),
-                        state_digest: StateDigest(vec![0, 1, 2, 3]),
+                        state_digest: StateCommitment(vec![0, 1, 2, 3]),
                         contract_name: "c1".into(),
                     }
                     .as_blob("hyle".into(), None, None),
@@ -2151,7 +2151,7 @@ pub mod test {
                 .push(OnchainEffect::RegisterContract(RegisterContractEffect {
                     verifier: "test".into(),
                     program_id: ProgramId(vec![1]),
-                    state_digest: StateDigest(vec![0, 1, 2, 3]),
+                    state_digest: StateCommitment(vec![0, 1, 2, 3]),
                     contract_name: "sub.c2.hyle".into(),
                 }));
             let sub_c2_proof = new_proof_tx(&"c2.hyle".into(), &output, &register_sub_c2.hashed());
@@ -2239,7 +2239,7 @@ pub mod test {
                 .push(OnchainEffect::RegisterContract(RegisterContractEffect {
                     verifier: "test".into(),
                     program_id: ProgramId(vec![1]),
-                    state_digest: StateDigest(vec![0, 1, 2, 3]),
+                    state_digest: StateCommitment(vec![0, 1, 2, 3]),
                     contract_name: "sub.c2.hyle".into(),
                 }));
             let sub_c2_proof = new_proof_tx(&"c2.hyle".into(), &output, &register_sub_c2.hashed());

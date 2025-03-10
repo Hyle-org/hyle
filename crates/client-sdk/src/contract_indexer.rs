@@ -11,7 +11,7 @@ use axum::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::{
-    guest, info, Blob, BlobIndex, BlobTransaction, ContractInput, ContractName, Digestable, Hashed,
+    guest, info, Blob, BlobIndex, BlobTransaction, ContractInput, ContractName, Hashed,
     HyleContract, TxContext, TxId,
 };
 use utoipa::openapi::OpenApi;
@@ -41,7 +41,7 @@ impl<State> Default for ContractStateStore<State> {
 
 pub trait ContractHandler
 where
-    Self: Sized + Default + HyleContract + BorshSerialize + BorshDeserialize + Digestable + 'static,
+    Self: Sized + Default + HyleContract + BorshSerialize + BorshDeserialize + 'static,
 {
     fn api(
         store: ContractHandlerStore<Self>,

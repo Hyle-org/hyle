@@ -231,8 +231,9 @@ impl ContractAction for ERC20Action {
 #[cfg(test)]
 mod tests {
 
+    use crate::HyleContract;
+
     use super::*;
-    use hyle_model::Digestable;
     use mockall::{
         mock,
         predicate::{self, *},
@@ -249,8 +250,11 @@ mod tests {
             fn approve(&mut self, owner: &str, spender: &str, amount: u128) -> Result<(), String>;
             fn allowance(&self, owner: &str, spender: &str) -> Result<u128, String>;
         }
-        impl Digestable for ERC20Contract {
-            fn as_digest(&self) -> hyle_model::StateDigest {
+        impl HyleContract for ERC20Contract {
+            fn execute(&mut self, contract_input: &hyle_model::ContractInput) -> crate::RunResult {
+                unimplemented!()
+            }
+            fn commit(&self) -> hyle_model::StateCommitment {
                 hyle_model::sdk::StateDigest(vec![])
             }
         }

@@ -1,6 +1,6 @@
-use hyle_contract_sdk::Digestable;
+use hyle_contract_sdk::HyleContract;
 use hyle_contract_sdk::ProgramId;
-use hyle_contract_sdk::StateDigest;
+use hyle_contract_sdk::StateCommitment;
 use hyle_contract_sdk::Verifier;
 use hyllar::Hyllar;
 
@@ -19,8 +19,8 @@ impl E2EContract for ERC20TestContract {
             .into()
     }
 
-    fn state_digest() -> StateDigest {
-        StateDigest(vec![
+    fn state_commitment() -> StateCommitment {
+        StateCommitment(vec![
             237, 40, 107, 60, 57, 178, 248, 111, 156, 232, 107, 188, 53, 69, 95, 231, 232, 247,
             179, 249, 104, 59, 167, 110, 11, 204, 99, 126, 181, 96, 47, 61,
         ])
@@ -38,8 +38,8 @@ impl E2EContract for HydentityTestContract {
         hyle_contracts::HYDENTITY_ID.to_vec().into()
     }
 
-    fn state_digest() -> StateDigest {
-        hydentity::Hydentity::default().as_digest()
+    fn state_commitment() -> StateCommitment {
+        hydentity::Hydentity::default().commit()
     }
 }
 
@@ -60,8 +60,8 @@ impl E2EContract for HyllarTestContract {
         hyle_contracts::HYLLAR_ID.to_vec().into()
     }
 
-    fn state_digest() -> StateDigest {
-        HyllarTestContract::init_state().as_digest()
+    fn state_commitment() -> StateCommitment {
+        HyllarTestContract::init_state().commit()
     }
 }
 
@@ -76,7 +76,7 @@ impl E2EContract for AmmTestContract {
         hyle_contracts::AMM_ID.to_vec().into()
     }
 
-    fn state_digest() -> StateDigest {
-        amm::Amm::default().as_digest()
+    fn state_commitment() -> StateCommitment {
+        amm::Amm::default().commit()
     }
 }

@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 
 use crate::{
     BlockHash, BlockHeight, ConsensusProposalHash, ContractName, DataProposalHash, Identity,
-    LaneBytesSize, ProgramId, StateDigest, Transaction, TransactionKind, TxHash,
+    LaneBytesSize, ProgramId, StateCommitment, Transaction, TransactionKind, TxHash,
     ValidatorPublicKey, Verifier,
 };
 
@@ -22,7 +22,7 @@ pub struct NodeInfo {
 pub struct APIRegisterContract {
     pub verifier: Verifier,
     pub program_id: ProgramId,
-    pub state_digest: StateDigest,
+    pub state_digest: StateCommitment,
     pub contract_name: ContractName,
 }
 

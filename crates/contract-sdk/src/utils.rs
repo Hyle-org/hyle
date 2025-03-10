@@ -2,15 +2,15 @@ use crate::{
     alloc::string::{String, ToString},
     caller::ExecutionContext,
     guest::fail,
-    Identity, StructuredBlobData,
+    HyleContract, Identity, StructuredBlobData,
 };
 use alloc::{format, vec};
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::result::Result;
 
 use hyle_model::{
-    flatten_blobs, Blob, BlobIndex, ContractInput, Digestable, DropEndOfReader, HyleOutput,
-    StateDigest, StructuredBlob,
+    flatten_blobs, Blob, BlobIndex, ContractInput, DropEndOfReader, HyleOutput, StateCommitment,
+    StructuredBlob,
 };
 
 /// This function is used to parse the contract input blob data into a given template `Action`
@@ -124,9 +124,9 @@ where
     Some(parsed_blob)
 }
 
-pub fn as_hyle_output<State: Digestable + BorshDeserialize>(
-    initial_state_digest: StateDigest,
-    nex_state_digest: StateDigest,
+pub fn as_hyle_output<State: HyleContract + BorshDeserialize>(
+    initial_state_digest: StateCommitment,
+    nex_state_digest: StateCommitment,
     contract_input: ContractInput,
     res: &mut crate::RunResult,
 ) -> HyleOutput {

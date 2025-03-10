@@ -19,8 +19,8 @@ use hyle::{
     rest::client::{IndexerApiHttpClient, NodeApiHttpClient},
 };
 use hyle_contract_sdk::{
-    flatten_blobs, BlobIndex, ContractName, HyleOutput, Identity, ProgramId, StateDigest, TxHash,
-    Verifier,
+    flatten_blobs, BlobIndex, ContractName, HyleOutput, Identity, ProgramId, StateCommitment,
+    TxHash, Verifier,
 };
 
 use crate::fixtures::test_helpers::wait_height_timeout;
@@ -30,7 +30,7 @@ use super::test_helpers::{self, wait_height, ConfMaker};
 pub trait E2EContract {
     fn verifier() -> Verifier;
     fn program_id() -> ProgramId;
-    fn state_digest() -> StateDigest;
+    fn state_commitment() -> StateCommitment;
 }
 
 pub struct E2ECtx {
@@ -294,7 +294,7 @@ impl E2ECtx {
         let blobs = vec![RegisterContractAction {
             verifier: Contract::verifier(),
             program_id: Contract::program_id(),
-            state_digest: Contract::state_digest(),
+            state_digest: Contract::state_commitment(),
             contract_name: name.into(),
         }
         .as_blob("hyle".into(), None, None)];

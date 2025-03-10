@@ -65,6 +65,7 @@ Your Contract struct, also needs to implement the [Digestable] trait.
 The [ContractInput] struct is built by the application backend and given as input to
 the zkvm.
 
+// TODO why this ?
 The first step that the contract might need to do in this function, is to call either
 [utils::parse_raw_contract_input] or [utils::parse_contract_input]
 
@@ -96,7 +97,14 @@ impl MyContract {
 ```
 */
 pub trait HyleContract {
+    // Entru point of the contract
     fn execute(&mut self, contract_input: &ContractInput) -> RunResult;
+
+    /// This function is used by the SDK to build the on-chain state commitment of the contract
+    /// It can compute a state hash, or a merkle root of the state, or any other commitment.
+    /// The [StateCommitment] will be stored on chain, and will be used as initial_state for
+    /// next contract execution.
+    fn commit(&self) -> StateCommitment;
 }
 
 pub const fn to_u8_array(val: &[u32; 8]) -> [u8; 32] {
@@ -219,9 +227,9 @@ mod tests {
 
     #[test]
     fn test_state_digest_encoding() {
-        let state_digest = StateDigest(vec![1, 2, 3, 4]);
+        let state_digest = StateCommitment(vec![1, 2, 3, 4]);
         let encoded = borsh::to_vec(&state_digest).expect("Failed to encode StateDigest");
-        let decoded: StateDigest =
+        let decoded: StateCommitment =
             borsh::from_slice(&encoded).expect("Failed to decode StateDigest");
         assert_eq!(state_digest, decoded);
     }

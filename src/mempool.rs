@@ -679,7 +679,7 @@ pub mod test {
     use crate::p2p::network::NetMessage;
     use anyhow::Result;
     use assertables::assert_ok;
-    use hyle_contract_sdk::StateDigest;
+    use hyle_contract_sdk::StateCommitment;
     use tokio::sync::broadcast::Receiver;
 
     pub struct MempoolTestCtx {
@@ -1087,7 +1087,7 @@ pub mod test {
             vec![RegisterContractAction {
                 verifier: "test".into(),
                 program_id: ProgramId(vec![]),
-                state_digest: StateDigest(vec![0, 1, 2, 3]),
+                state_digest: StateCommitment(vec![0, 1, 2, 3]),
                 contract_name: name,
             }
             .as_blob("hyle".into(), None, None)],

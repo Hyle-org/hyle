@@ -17,8 +17,8 @@ use hydentity::{
     client::{register_identity, verify_identity},
     Hydentity,
 };
-use hyle_contract_sdk::{guest, Identity, StateDigest};
-use hyle_contract_sdk::{ContractName, Digestable, ProgramId};
+use hyle_contract_sdk::{guest, Identity, StateCommitment};
+use hyle_contract_sdk::{ContractName, HyleContract, ProgramId};
 use hyllar::{client::transfer, Hyllar, FAUCET_ID};
 use serde::{Deserialize, Serialize};
 use staking::{
@@ -423,7 +423,7 @@ impl Genesis {
             "blst".into(),
             "blst".into(),
             NativeVerifiers::Blst.into(),
-            StateDigest::default(),
+            StateCommitment::default(),
         )
         .expect("register blst");
 
@@ -432,7 +432,7 @@ impl Genesis {
             "sha3_256".into(),
             "sha3_256".into(),
             NativeVerifiers::Sha3_256.into(),
-            StateDigest::default(),
+            StateCommitment::default(),
         )
         .expect("register sha3_256");
 
@@ -441,7 +441,7 @@ impl Genesis {
             "staking".into(),
             hyle_verifiers::versions::RISC0_1.into(),
             staking_program_id.clone().into(),
-            ctx.staking.as_digest(),
+            ctx.staking.commit(),
         )
         .expect("register staking");
 
@@ -450,7 +450,7 @@ impl Genesis {
             "hyllar".into(),
             hyle_verifiers::versions::RISC0_1.into(),
             hyllar_program_id.clone().into(),
-            ctx.hyllar.as_digest(),
+            ctx.hyllar.commit(),
         )
         .expect("register hyllar");
 
@@ -459,7 +459,7 @@ impl Genesis {
             "hydentity".into(),
             hyle_verifiers::versions::RISC0_1.into(),
             hydentity_program_id.clone().into(),
-            ctx.hydentity.as_digest(),
+            ctx.hydentity.commit(),
         )
         .expect("register hydentity");
 
@@ -468,7 +468,7 @@ impl Genesis {
             "risc0-recursion".into(),
             hyle_verifiers::versions::RISC0_1.into(),
             hyle_contracts::RISC0_RECURSION_ID.to_vec().into(),
-            StateDigest::default(),
+            StateCommitment::default(),
         )
         .expect("register risc0-recursion");
 

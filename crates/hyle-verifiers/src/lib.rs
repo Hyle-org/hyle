@@ -158,7 +158,7 @@ pub fn validate_sp1_program_id(program_id: &ProgramId) -> Result<(), Error> {
 mod tests {
     use std::{fs::File, io::Read};
 
-    use hyle_model::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
+    use hyle_model::{BlobIndex, HyleOutput, Identity, ProgramId, StateCommitment, TxHash};
 
     use crate::validate_risc0_program_id;
 
@@ -221,8 +221,8 @@ mod tests {
                     outputs,
                     vec![HyleOutput {
                         version: 1,
-                        initial_state: StateDigest(vec![0, 0, 0, 0]),
-                        next_state: StateDigest(vec![0, 0, 0, 0]),
+                        initial_state: StateCommitment(vec![0, 0, 0, 0]),
+                        next_state: StateCommitment(vec![0, 0, 0, 0]),
                         identity: Identity(
                             "3f368bf90c71946fc7b0cde9161ace42985d235f.ecdsa_secp256r1".to_owned()
                         ),

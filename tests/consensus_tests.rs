@@ -13,10 +13,10 @@ mod e2e_consensus {
     use hydentity::Hydentity;
     use hyle::{genesis::States, utils::logger::LogMe};
     use hyle_contract_sdk::erc20::ERC20;
-    use hyle_contract_sdk::Digestable;
+    use hyle_contract_sdk::HyleContract;
     use hyle_contract_sdk::Identity;
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF, STAKING_ELF};
-    use hyle_model::{ContractName, StateDigest};
+    use hyle_model::{ContractName, StateCommitment};
     use hyllar::client::transfer;
     use hyllar::{Hyllar, FAUCET_ID};
     use staking::client::{delegate, stake};
@@ -62,7 +62,7 @@ mod e2e_consensus {
             .fetch_current_state(&"hydentity".into())
             .await?;
 
-        let staking_state: StateDigest = StateDigest(
+        let staking_state: StateCommitment = StateCommitment(
             ctx.indexer_client()
                 .get_indexer_contract(&"staking".into())
                 .await?
@@ -76,7 +76,7 @@ mod e2e_consensus {
             .unwrap()
             .into();
 
-        assert_eq!(staking_state, staking.as_digest());
+        assert_eq!(staking_state, staking.commit());
         let states = States {
             hyllar,
             hydentity,

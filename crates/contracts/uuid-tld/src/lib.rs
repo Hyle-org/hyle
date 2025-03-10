@@ -5,8 +5,8 @@ use rand::Rng;
 use rand_seeder::SipHasher;
 use sdk::{
     info, utils::parse_raw_contract_input, Blob, BlobData, BlobIndex, ContractAction,
-    ContractInput, ContractName, Digestable, HyleContract, OnchainEffect, ProgramId,
-    RegisterContractEffect, RunResult, StateDigest, Verifier,
+    ContractInput, ContractName, HyleContract, OnchainEffect, ProgramId, RegisterContractEffect,
+    RunResult, StateCommitment, Verifier,
 };
 use uuid::Uuid;
 
@@ -17,7 +17,7 @@ pub mod client;
 pub struct UuidTldAction {
     pub verifier: Verifier,
     pub program_id: ProgramId,
-    pub state_digest: StateDigest,
+    pub state_digest: StateCommitment,
 }
 
 impl UuidTldAction {
@@ -69,6 +69,10 @@ impl HyleContract for UuidTld {
             })],
         ))
     }
+
+    fn commit(&self) -> sdk::StateCommitment {
+        sdk::StateCommitment(self.serialize().unwrap())
+    }
 }
 
 #[derive(Default, Debug, Clone, BorshSerialize, BorshDeserialize)]
@@ -96,7 +100,7 @@ impl UuidTld {
 
         // Create UUID
         let mut hasher = SipHasher::new();
-        hasher.write(&self.as_digest().0);
+        hasher.write(&self.commit().0);
         hasher.write(contract_input.tx_hash.0.as_bytes());
         hasher.write(tx_ctx.block_hash.0.as_bytes());
         hasher.write_u128(tx_ctx.timestamp);
@@ -111,12 +115,6 @@ impl UuidTld {
         info!("Registering new contract with UUID {}", id);
 
         Ok(id)
-    }
-}
-
-impl Digestable for UuidTld {
-    fn as_digest(&self) -> sdk::StateDigest {
-        sdk::StateDigest(self.serialize().unwrap())
     }
 }
 
@@ -152,7 +150,7 @@ mod test {
         let action = UuidTldAction {
             verifier: "test".into(),
             program_id: ProgramId(vec![1, 2, 3]),
-            state_digest: StateDigest(vec![0, 1, 2, 3]),
+            state_digest: StateCommitment(vec![0, 1, 2, 3]),
         };
         let mut state = UuidTld::default();
 

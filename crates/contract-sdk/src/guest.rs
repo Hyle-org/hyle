@@ -59,9 +59,9 @@ fn main() {
 use alloc::string::ToString;
 use alloc::vec;
 use borsh::BorshDeserialize;
-use hyle_model::StateDigest;
+use hyle_model::StateCommitment;
 
-use crate::{flatten_blobs, utils::as_hyle_output, ContractInput, Digestable, HyleOutput};
+use crate::{flatten_blobs, utils::as_hyle_output, ContractInput, HyleOutput};
 use crate::{HyleContract, RunResult};
 
 pub trait GuestEnv {
@@ -111,7 +111,11 @@ impl GuestEnv for SP1Env {
     }
 }
 
-pub fn fail(input: ContractInput, initial_state_digest: StateDigest, message: &str) -> HyleOutput {
+pub fn fail(
+    input: ContractInput,
+    initial_state_digest: StateCommitment,
+    message: &str,
+) -> HyleOutput {
     HyleOutput {
         version: 1,
         initial_state: initial_state_digest.clone(),
@@ -146,15 +150,15 @@ pub fn fail(input: ContractInput, initial_state_digest: StateDigest, message: &s
 /// Panics if the contract initialization fails.
 pub fn execute<State>(contract_input: &ContractInput) -> (State, HyleOutput)
 where
-    State: HyleContract + Digestable + BorshDeserialize + 'static,
+    State: HyleContract + BorshDeserialize + 'static,
 {
     let mut state: State =
         borsh::from_slice(&contract_input.state).expect("Failed to decode state");
-    let initial_state_digest = state.as_digest();
+    let initial_state_digest = state.commit();
 
     let mut res: RunResult = state.execute(contract_input);
 
-    let next_state_digest = state.as_digest();
+    let next_state_digest = state.commit();
 
     let output = as_hyle_output::<State>(
         initial_state_digest,

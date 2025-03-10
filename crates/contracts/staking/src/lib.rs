@@ -2,6 +2,7 @@ use sdk::{
     erc20::ERC20Action, utils::parse_contract_input, Blob, BlobIndex, ContractInput, HyleContract,
     RunResult, StakingAction,
 };
+use sha2::{Digest, Sha256};
 use state::Staking;
 
 #[cfg(feature = "client")]
@@ -33,6 +34,30 @@ impl HyleContract for Staking {
             Err(e) => Err(e),
             Ok(output) => Ok((output, execution_ctx, vec![])),
         }
+    }
+
+    /// On-chain state is a hash of parts of the state that are altered only
+    /// by BlobTransactions
+    /// Other parts of the states (handled by consensus) are not part of on-chain state
+    fn commit(&self) -> sdk::StateCommitment {
+        let mut hasher = Sha256::new();
+        for s in self.stakes.iter() {
+            hasher.update(&s.0 .0);
+            hasher.update(s.1.to_le_bytes());
+        }
+        for d in self.delegations.iter() {
+            hasher.update(&d.0 .0);
+            for i in d.1 {
+                hasher.update(&i.0);
+            }
+        }
+        for r in self.rewarded.iter() {
+            hasher.update(&r.0 .0);
+            for i in r.1 {
+                hasher.update(i.0.to_le_bytes());
+            }
+        }
+        sdk::StateCommitment(hasher.finalize().to_vec())
     }
 }
 

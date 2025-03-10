@@ -4,7 +4,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::erc20::ERC20;
 use sdk::utils::parse_contract_input;
 use sdk::ContractInput;
-use sdk::{erc20::ERC20Action, Digestable, HyleContract, RunResult};
+use sdk::{erc20::ERC20Action, HyleContract, RunResult};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha2::{Digest, Sha256};
@@ -59,6 +59,21 @@ impl HyleContract for Hyllar {
             Err(e) => Err(e),
             Ok(output) => Ok((output, execution_ctx, vec![])),
         }
+    }
+
+    fn commit(&self) -> sdk::StateCommitment {
+        let mut hasher = Sha256::new();
+        hasher.update(self.total_supply.to_le_bytes());
+        for (account, balance) in self.balances.iter() {
+            hasher.update(account.as_bytes());
+            hasher.update(balance.to_le_bytes());
+        }
+        for ((owner, spender), allowance) in self.allowances.iter() {
+            hasher.update(owner.as_bytes());
+            hasher.update(spender.as_bytes());
+            hasher.update(allowance.to_le_bytes());
+        }
+        sdk::StateCommitment(hasher.finalize().to_vec())
     }
 }
 
@@ -131,23 +146,6 @@ impl ERC20 for Hyllar {
             Some(&amount) => Ok(amount),
             None => Ok(0), // No allowance set
         }
-    }
-}
-
-impl Digestable for Hyllar {
-    fn as_digest(&self) -> sdk::StateDigest {
-        let mut hasher = Sha256::new();
-        hasher.update(self.total_supply.to_le_bytes());
-        for (account, balance) in self.balances.iter() {
-            hasher.update(account.as_bytes());
-            hasher.update(balance.to_le_bytes());
-        }
-        for ((owner, spender), allowance) in self.allowances.iter() {
-            hasher.update(owner.as_bytes());
-            hasher.update(spender.as_bytes());
-            hasher.update(allowance.to_le_bytes());
-        }
-        sdk::StateDigest(hasher.finalize().to_vec())
     }
 }
 

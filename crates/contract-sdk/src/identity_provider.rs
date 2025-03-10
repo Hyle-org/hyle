@@ -120,8 +120,9 @@ impl ContractAction for IdentityAction {
 
 #[cfg(test)]
 mod tests {
+    use crate::HyleContract;
+
     use super::*;
-    use hyle_model::Digestable;
     use mockall::{mock, predicate::*};
 
     mock! {
@@ -133,9 +134,13 @@ mod tests {
             fn get_identity_info(&self, account: &str) -> Result<String, &'static str>;
         }
 
-        impl Digestable for IdentityVerification {
-            fn as_digest(&self) -> crate::StateDigest;
+        impl HyleContract for IdentityVerification {
+            fn execute(&mut self, contract_input: &hyle_model::ContractInput) -> crate::RunResult {
+                unimplemented!()
+            }
+            fn commit(&self) -> crate::StateCommitment;
         }
+
     }
 
     #[test]
