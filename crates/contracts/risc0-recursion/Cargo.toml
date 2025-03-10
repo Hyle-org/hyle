@@ -20,7 +20,7 @@ path = "examples/host.rs"
 
 [dependencies]
 sdk = { workspace = true }
-serde = { version = "1.0.218", features = ["derive"] }
+serde = { version = "1.0.219", features = ["derive"] }
 
 risc0-zkvm = { version = "1.2.4", default-features = false, optional = true, features = [
     'std',
