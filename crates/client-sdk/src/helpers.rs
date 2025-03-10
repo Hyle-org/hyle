@@ -21,7 +21,7 @@ pub fn register_hyle_contract(
             contract_name: new_contract_name,
             verifier,
             program_id,
-            state_commitment: state_commitment,
+            state_commitment,
         },
         None,
         None,
