@@ -2,7 +2,8 @@ use client_sdk::{
     helpers::risc0::Risc0Prover,
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
-use sdk::{erc20::ERC20Action, BlobIndex, ContractName};
+use hyllar::HyllarAction;
+use sdk::{BlobIndex, ContractName};
 
 use crate::{Amm, AmmAction};
 
@@ -41,7 +42,7 @@ pub fn new_pair(
     )?;
     builder.add_action(
         pair.0,
-        ERC20Action::TransferFrom {
+        HyllarAction::TransferFrom {
             owner: builder.identity.0.clone(),
             recipient: contract_name.to_string(),
             amount: amounts.0,
@@ -52,7 +53,7 @@ pub fn new_pair(
     )?;
     builder.add_action(
         pair.1,
-        ERC20Action::TransferFrom {
+        HyllarAction::TransferFrom {
             owner: builder.identity.0.clone(),
             recipient: contract_name.to_string(),
             amount: amounts.1,
@@ -84,7 +85,7 @@ pub fn swap(
 
     builder.add_action(
         pair.0,
-        ERC20Action::TransferFrom {
+        HyllarAction::TransferFrom {
             owner: builder.identity.0.clone(),
             recipient: contract_name.to_string(),
             amount: amounts.0,
@@ -95,7 +96,7 @@ pub fn swap(
     )?;
     builder.add_action(
         pair.1,
-        ERC20Action::Transfer {
+        HyllarAction::Transfer {
             recipient: builder.identity.0.clone(),
             amount: amounts.1,
         },

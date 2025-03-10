@@ -38,6 +38,7 @@ risc0-zkvm = { version = "1.2.4", default-features = false, features = [
     'std',
     'prove',
 ] }
+mockall = "0.13.0"
 
 [features]
 default = []

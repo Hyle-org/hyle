@@ -1,14 +1,11 @@
 use alloc::{
     format,
     string::{String, ToString},
-    vec::Vec,
 };
-use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
 
-use hyle_model::{Blob, BlobData, BlobIndex, ContractAction, ContractName, StructuredBlobData};
+use sdk::caller::ExecutionContext;
 
-use crate::caller::ExecutionContext;
+use crate::HyllarAction;
 
 /// Trait representing the ERC-20 token standard interface.
 pub trait ERC20 {
@@ -100,31 +97,31 @@ pub trait ERC20 {
     /// * `Result<String, String>` - The output of the action execution as a string on success, or an error message on failure.
     fn execute_token_action(
         &mut self,
-        action: ERC20Action,
+        action: HyllarAction,
         execution_ctx: &ExecutionContext,
     ) -> Result<String, String> {
         let caller = execution_ctx.caller.clone().0;
         match action {
-            ERC20Action::TotalSupply => self
+            HyllarAction::TotalSupply => self
                 .total_supply()
                 .map(|supply| format!("Total Supply: {}", supply)),
-            ERC20Action::BalanceOf { account } => self
+            HyllarAction::BalanceOf { account } => self
                 .balance_of(&account)
                 .map(|balance| format!("Balance of {}: {}", account, balance)),
-            ERC20Action::Transfer { recipient, amount } => self
+            HyllarAction::Transfer { recipient, amount } => self
                 .transfer(&caller, &recipient, amount)
                 .map(|_| format!("Transferred {} to {}", amount, recipient)),
-            ERC20Action::TransferFrom {
+            HyllarAction::TransferFrom {
                 owner,
                 recipient,
                 amount,
             } => self
                 .transfer_from(&owner, &caller, &recipient, amount)
                 .map(|_| format!("Transferred {} from {} to {}", amount, owner, recipient)),
-            ERC20Action::Approve { spender, amount } => self
+            HyllarAction::Approve { spender, amount } => self
                 .approve(&caller, &spender, amount)
                 .map(|_| format!("Approved {} for {}", amount, spender,)),
-            ERC20Action::Allowance { owner, spender } => self
+            HyllarAction::Allowance { owner, spender } => self
                 .allowance(&owner, &spender)
                 .map(|allowance| format!("Allowance of {} by {}: {}", spender, owner, allowance)),
         }
@@ -148,7 +145,7 @@ pub trait ERC20 {
     ) -> Result<(), String> {
         exec_ctx.is_in_callee_blobs(
             &exec_ctx.contract_name.clone(),
-            ERC20Action::Transfer {
+            HyllarAction::Transfer {
                 recipient: recipient.to_string(),
                 amount,
             },
@@ -175,7 +172,7 @@ pub trait ERC20 {
     ) -> Result<(), String> {
         exec_ctx.is_in_callee_blobs(
             &exec_ctx.contract_name.clone(),
-            ERC20Action::TransferFrom {
+            HyllarAction::TransferFrom {
                 owner: owner.to_string(),
                 recipient: recipient.to_string(),
                 amount,
@@ -184,59 +181,15 @@ pub trait ERC20 {
     }
 }
 
-/// Enum representing possible calls to ERC-20 contract functions.
-#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone, PartialEq)]
-pub enum ERC20Action {
-    TotalSupply,
-    BalanceOf {
-        account: String,
-    },
-    Transfer {
-        recipient: String,
-        amount: u128,
-    },
-    TransferFrom {
-        owner: String,
-        recipient: String,
-        amount: u128,
-    },
-    Approve {
-        spender: String,
-        amount: u128,
-    },
-    Allowance {
-        owner: String,
-        spender: String,
-    },
-}
-
-impl ContractAction for ERC20Action {
-    fn as_blob(
-        &self,
-        contract_name: ContractName,
-        caller: Option<BlobIndex>,
-        callees: Option<Vec<BlobIndex>>,
-    ) -> Blob {
-        Blob {
-            contract_name,
-            data: BlobData::from(StructuredBlobData {
-                caller,
-                callees,
-                parameters: self.clone(),
-            }),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
 
     use super::*;
-    use hyle_model::Digestable;
     use mockall::{
         mock,
         predicate::{self, *},
     };
+    use sdk::Digestable;
     extern crate std;
 
     mock! {
@@ -250,7 +203,7 @@ mod tests {
             fn allowance(&self, owner: &str, spender: &str) -> Result<u128, String>;
         }
         impl Digestable for ERC20Contract {
-            fn as_digest(&self) -> hyle_model::StateDigest {
+            fn as_digest(&self) -> sdk::StateDigest {
                 hyle_model::sdk::StateDigest(vec![])
             }
         }
@@ -261,7 +214,7 @@ mod tests {
         let mut mock = MockERC20Contract::new();
         mock.expect_total_supply().returning(|| Ok(1000));
 
-        let action = ERC20Action::TotalSupply;
+        let action = HyllarAction::TotalSupply;
 
         let execution_ctx = ExecutionContext {
             caller: "caller".into(),
@@ -280,7 +233,7 @@ mod tests {
             .with(predicate::eq("account1"))
             .returning(|_| Ok(500));
 
-        let action = ERC20Action::BalanceOf {
+        let action = HyllarAction::BalanceOf {
             account: "account1".to_string(),
         };
         let execution_ctx = ExecutionContext {
@@ -304,7 +257,7 @@ mod tests {
             )
             .returning(|_, _, _| Ok(()));
 
-        let action = ERC20Action::Transfer {
+        let action = HyllarAction::Transfer {
             recipient: "recipient1".to_string(),
             amount: 200,
         };
@@ -330,7 +283,7 @@ mod tests {
             )
             .returning(|_, _, _, _| Ok(()));
 
-        let action = ERC20Action::TransferFrom {
+        let action = HyllarAction::TransferFrom {
             owner: "owner".to_string(),
             recipient: "recipient".to_string(),
             amount: 300,
@@ -356,7 +309,7 @@ mod tests {
             )
             .returning(|_, _, _| Ok(()));
 
-        let action = ERC20Action::Approve {
+        let action = HyllarAction::Approve {
             spender: "spender1".to_string(),
             amount: 400,
         };
@@ -377,7 +330,7 @@ mod tests {
             .with(predicate::eq("owner1"), predicate::eq("spender1"))
             .returning(|_, _| Ok(500));
 
-        let action = ERC20Action::Allowance {
+        let action = HyllarAction::Allowance {
             owner: "owner1".to_string(),
             spender: "spender1".to_string(),
         };
