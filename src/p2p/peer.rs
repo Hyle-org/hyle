@@ -27,6 +27,7 @@ use crate::model::ValidatorPublicKey;
 use crate::module_handle_messages;
 use crate::p2p::stream::read_stream;
 use crate::utils::conf::SharedConf;
+use crate::utils::crypto::BlstCrypto;
 use crate::utils::crypto::SharedBlstCrypto;
 use crate::utils::modules::signal::ShutdownModule;
 
@@ -47,7 +48,7 @@ pub struct Peer {
     last_pong: SystemTime,
     conf: SharedConf,
     fifo_filter: FifoFilter<Vec<u8>>,
-    self_pubkey: ValidatorPublicKey,
+    crypto: SharedBlstCrypto,
     peer_pubkey: Option<ValidatorPublicKey>,
     peer_name: Option<String>,
     peer_da_address: Option<String>,
@@ -71,7 +72,6 @@ impl Peer {
     ) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>(100);
         let fifo_filter = FifoFilter::new(1000);
-        let self_validator = crypto.validator_pubkey().clone();
         let mut codec = LengthDelimitedCodec::new();
         codec.set_max_frame_length(1024 * 1024 * 1024); // Set max frame length to 1 GB
         let framed = Framed::new(stream, codec);
@@ -83,7 +83,7 @@ impl Peer {
             last_pong: SystemTime::now(),
             conf,
             fifo_filter,
-            self_pubkey: self_validator,
+            crypto,
             peer_pubkey: None,
             internal_cmd_tx: cmd_tx,
             internal_cmd_rx: cmd_rx,
@@ -122,10 +122,11 @@ impl Peer {
     async fn handle_handshake_message(&mut self, msg: HandshakeNetMessage) -> Result<()> {
         match msg {
             HandshakeNetMessage::Hello(v) => {
+                BlstCrypto::verify(&v)?;
                 info!("👋 Got peer hello message {:?}", v);
-                self.peer_pubkey = Some(v.validator_pubkey);
-                self.peer_name = Some(v.name);
-                self.peer_da_address = Some(v.da_address);
+                self.peer_pubkey = Some(v.signature.validator);
+                self.peer_name = Some(v.msg.name);
+                self.peer_da_address = Some(v.msg.da_address);
                 send_net_message(&mut self.stream, HandshakeNetMessage::Verack.into()).await
             }
             HandshakeNetMessage::Verack => {
@@ -258,12 +259,11 @@ impl Peer {
     pub async fn handshake(&mut self) -> Result<(), Error> {
         send_net_message(
             &mut self.stream,
-            HandshakeNetMessage::Hello(Hello {
+            HandshakeNetMessage::Hello(self.crypto.sign(Hello {
                 version: 1,
-                validator_pubkey: self.self_pubkey.clone(),
                 name: self.conf.id.clone(),
                 da_address: self.conf.da_address.clone(),
-            })
+            })?)
             .into(),
         )
         .await
