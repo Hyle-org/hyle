@@ -8,8 +8,8 @@ use hyle_model::{LaneId, Signed, SignedByValidator, ValidatorSignature};
 use tracing::info;
 
 use crate::{
+    log_warn,
     model::{DataProposalHash, Hashed},
-    utils::logger::LogMe,
 };
 
 use super::{
@@ -80,13 +80,10 @@ impl Storage for LanesStorage {
         lane_id: &LaneId,
         dp_hash: &DataProposalHash,
     ) -> Result<Option<LaneEntry>> {
-        let item = self
-            .by_hash
-            .get(format!("{}:{}", lane_id, dp_hash))
-            .log_warn(format!(
-                "Can't find DP {} for validator {}",
-                dp_hash, lane_id
-            ))?;
+        let item = log_warn!(
+            self.by_hash.get(format!("{}:{}", lane_id, dp_hash)),
+            format!("Can't find DP {} for validator {}", dp_hash, lane_id)
+        )?;
         item.map(decode_from_item).transpose()
     }
 
@@ -160,15 +157,12 @@ impl Storage for LanesStorage {
         vote_msgs: T,
     ) -> Result<Vec<Signed<MempoolNetMessage, ValidatorSignature>>> {
         let key = format!("{}:{}", lane_id, dp_hash);
-        let Some(mut dp) = self
-            .by_hash
-            .get(key.clone())
-            .log_warn(format!(
-                "Can't find DP {} for validator {}",
-                dp_hash, lane_id
-            ))?
-            .map(decode_from_item)
-            .transpose()?
+        let Some(mut dp) = log_warn!(
+            self.by_hash.get(key.clone()),
+            format!("Can't find DP {} for validator {}", dp_hash, lane_id)
+        )?
+        .map(decode_from_item)
+        .transpose()?
         else {
             bail!("Can't find DP {} for validator {}", dp_hash, lane_id);
         };
