@@ -2,9 +2,9 @@ use client_sdk::{
     helpers::risc0::Risc0Prover,
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
-use sdk::{erc20::ERC20Action, ContractName};
+use sdk::ContractName;
 
-use crate::Hyllar;
+use crate::{Hyllar, HyllarAction};
 
 pub mod metadata {
     pub const HYLLAR_ELF: &[u8] = include_bytes!("../hyllar.img");
@@ -30,7 +30,7 @@ pub fn transfer(
 ) -> anyhow::Result<()> {
     builder.add_action(
         contract_name,
-        ERC20Action::Transfer { recipient, amount },
+        HyllarAction::Transfer { recipient, amount },
         None,
         None,
         None,
@@ -47,7 +47,7 @@ pub fn transfer_from(
 ) -> anyhow::Result<()> {
     builder.add_action(
         contract_name,
-        ERC20Action::TransferFrom {
+        HyllarAction::TransferFrom {
             owner: sender,
             recipient,
             amount,
@@ -67,7 +67,7 @@ pub fn approve(
 ) -> anyhow::Result<()> {
     builder.add_action(
         contract_name,
-        ERC20Action::Approve { spender, amount },
+        HyllarAction::Approve { spender, amount },
         None,
         None,
         None,

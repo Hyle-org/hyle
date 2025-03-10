@@ -16,6 +16,7 @@ test = false
 
 [dependencies]
 sdk = { workspace = true }
+hyllar = { workspace = true }
 serde = { version = "1.0", default-features = false, features = [
     "derive",
     "alloc",
