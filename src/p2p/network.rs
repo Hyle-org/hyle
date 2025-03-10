@@ -12,7 +12,6 @@ use strum_macros::IntoStaticStr;
 #[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
 pub struct Hello {
     pub version: u16,
-    pub validator_pubkey: ValidatorPublicKey,
     pub name: String,
     pub da_address: String,
 }
@@ -95,7 +94,7 @@ pub enum NetMessage {
 
 #[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
 pub enum HandshakeNetMessage {
-    Hello(Hello),
+    Hello(SignedByValidator<Hello>),
     Verack,
     Ping,
     Pong,
