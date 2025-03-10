@@ -8,7 +8,7 @@ We’re always happy to talk and answer questions and remarks in [our Telegram g
 
 **We do not provide financial rewards for contributions.**
 
-The exception is hackathons: [find all of these issues in our Hackathons repository](https://github.com/Hyle-org/hackathons) and they are usually tagged for a specific event. Most of these hackathons are done through [OnlyDust](https://app.onlydust.com/discover).
+The exception is online hackathons with OnlyDust: [find all of these issues in our Hackathons repository](https://github.com/Hyle-org/hackathons) and they are usually tagged for a specific event.
 
 ## **Guidelines**
 
