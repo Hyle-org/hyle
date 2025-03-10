@@ -167,7 +167,7 @@ pub struct APIContractState {
     // Struct for the contract_state table
     pub contract_name: String,             // Name of the contract
     pub block_hash: ConsensusProposalHash, // Hash of the block where the state is captured
-    pub state_commitment: Vec<u8>,             // The contract state stored in JSON format
+    pub state_commitment: Vec<u8>,         // The contract state stored in JSON format
 }
 
 #[serde_as]
