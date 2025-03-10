@@ -90,9 +90,10 @@ pub trait IdentityVerification {
 
 #[cfg(test)]
 mod tests {
+    use crate::HyleContract;
+
     use super::*;
     use mockall::{mock, predicate::*};
-    use sdk::Digestable;
 
     mock! {
         IdentityVerification {}
@@ -103,9 +104,13 @@ mod tests {
             fn get_identity_info(&self, account: &str) -> Result<String, &'static str>;
         }
 
-        impl Digestable for IdentityVerification {
-            fn as_digest(&self) -> sdk::StateDigest;
+        impl HyleContract for IdentityVerification {
+            fn execute(&mut self, contract_input: &sdk::ContractInput) -> crate::RunResult {
+                unimplemented!()
+            }
+            fn commit(&self) -> sdk::StateCommitment;
         }
+
     }
 
     #[test]

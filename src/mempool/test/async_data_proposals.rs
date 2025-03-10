@@ -4,7 +4,7 @@ use std::sync::Arc;
 use anyhow::{bail, Result};
 use assertables::assert_ok;
 use hyle_contract_sdk::{
-    flatten_blobs, Blob, BlobData, HyleOutput, Identity, ProgramId, StateDigest,
+    flatten_blobs, Blob, BlobData, HyleOutput, Identity, ProgramId, StateCommitment,
 };
 use tracing::info;
 
@@ -62,7 +62,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
                     vec![RegisterContractAction {
                         verifier: "test-slow".into(),
                         program_id: ProgramId(vec![]),
-                        state_digest: StateDigest(vec![0, 1, 2, 3]),
+                        state_commitment: StateCommitment(vec![0, 1, 2, 3]),
                         contract_name: contract_name.clone(),
                     }
                     .as_blob("hyle".into(), None, None)],

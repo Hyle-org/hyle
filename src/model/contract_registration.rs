@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use hyle_model::{ContractName, ProgramId, StateDigest, Verifier};
+use hyle_model::{ContractName, ProgramId, StateCommitment, Verifier};
 
 use crate::mempool::verifiers::validate_program_id;
 
@@ -46,13 +46,13 @@ pub fn validate_contract_name_registration(
     Ok(())
 }
 
-/// Check that the state digest is not too long.
-pub fn validate_state_digest_size(state_digest: &StateDigest) -> Result<()> {
-    const MAX_STATE_DIGEST_SIZE: usize = 10 * 1024 * 1024; // 10 Mb
-    if state_digest.0.len() > MAX_STATE_DIGEST_SIZE {
+/// Check that the state commitment is not too long.
+pub fn validate_state_commitment_size(state_commitment: &StateCommitment) -> Result<()> {
+    const MAX_STATE_COMMITMENT_SIZE: usize = 10 * 1024 * 1024; // 10 Mb
+    if state_commitment.0.len() > MAX_STATE_COMMITMENT_SIZE {
         bail!(
-            "StateDigest is too long. Maximum of {MAX_STATE_DIGEST_SIZE} bytes allowed, got {}",
-            state_digest.0.len()
+            "StateCommitment is too long. Maximum of {MAX_STATE_COMMITMENT_SIZE} bytes allowed, got {}",
+            state_commitment.0.len()
         );
     }
     Ok(())
@@ -63,19 +63,19 @@ pub fn validate_contract_registration_metadata(
     new_contract_name: &ContractName,
     verifier: &Verifier,
     program_id: &ProgramId,
-    state_digest: &StateDigest,
+    state_commitment: &StateCommitment,
 ) -> Result<()> {
     validate_contract_name_registration(owner, new_contract_name)?;
     validate_program_id(verifier, program_id)?;
-    validate_state_digest_size(state_digest)?;
+    validate_state_commitment_size(state_commitment)?;
     Ok(())
 }
 
 #[cfg(test)]
 mod test {
-    use hyle_model::StateDigest;
+    use hyle_model::StateCommitment;
 
-    use crate::model::contract_registration::validate_state_digest_size;
+    use crate::model::contract_registration::validate_state_commitment_size;
 
     use super::validate_contract_name_registration;
 
@@ -171,16 +171,16 @@ mod test {
     }
 
     #[test]
-    fn test_validate_state_digest_size_ok() {
+    fn test_validate_state_commitment_size_ok() {
         let size = 10 * 1024 * 1024;
-        let digest = StateDigest(vec![0; size]);
-        assert!(validate_state_digest_size(&digest).is_ok());
+        let commitment = StateCommitment(vec![0; size]);
+        assert!(validate_state_commitment_size(&commitment).is_ok());
     }
 
     #[test]
-    fn test_validate_state_digest_size_too_long() {
+    fn test_validate_state_commitment_size_too_long() {
         let size = 10 * 1024 * 1024 + 1;
-        let digest = StateDigest(vec![0; size]);
-        assert!(validate_state_digest_size(&digest).is_err());
+        let commitment = StateCommitment(vec![0; size]);
+        assert!(validate_state_commitment_size(&commitment).is_err());
     }
 }

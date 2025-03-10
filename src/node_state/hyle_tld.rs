@@ -38,7 +38,7 @@ fn handle_register_blob(
         &reg.contract_name,
         &reg.verifier,
         &reg.program_id,
-        &reg.state_digest,
+        &reg.state_commitment,
     )?;
 
     // Check it's not already registered
@@ -53,7 +53,7 @@ fn handle_register_blob(
         SideEffect::Register(Contract {
             name: reg.contract_name.clone(),
             program_id: reg.program_id.clone(),
-            state: reg.state_digest.clone(),
+            state: reg.state_commitment.clone(),
             verifier: reg.verifier.clone(),
         }),
     );

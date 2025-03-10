@@ -315,7 +315,7 @@ impl ContractRunner {
 
 /// Macro to easily define the full state of a TxExecutor
 /// Struct-like syntax.
-/// Must have ContractName, StateDigest, Digestable and anyhow in scope.
+/// Must have ContractName, StateCommitment, HyleContract and anyhow in scope.
 #[macro_export]
 macro_rules! contract_states {
     ($(#[$meta:meta])* $vis:vis struct $name:ident { $($mvis:vis $contract_name:ident: $contract_state:ty,)* }) => {

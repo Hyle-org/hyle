@@ -2,7 +2,7 @@ use client_sdk::rest_client::{IndexerApiHttpClient, NodeApiHttpClient};
 use hyle_model::{
     api::APIRegisterContract, BlobTransaction, ContractAction, ContractName, Hashed, OnchainEffect,
     ProgramId, ProofData, ProofTransaction, RegisterContractAction, RegisterContractEffect,
-    StateDigest,
+    StateCommitment,
 };
 use testcontainers_modules::{
     postgres::Postgres,
@@ -22,14 +22,14 @@ use hyle_contract_sdk::BlobIndex;
 
 fn make_register_blob_action(
     contract_name: ContractName,
-    state_digest: StateDigest,
+    state_commitment: StateCommitment,
 ) -> BlobTransaction {
     BlobTransaction::new(
         "hyle.hyle",
         vec![RegisterContractAction {
             verifier: "test".into(),
             program_id: ProgramId(vec![1, 2, 3]),
-            state_digest,
+            state_commitment,
             contract_name,
         }
         .as_blob("hyle".into(), None, None)],
@@ -61,13 +61,13 @@ async fn test_full_settlement_flow() -> Result<()> {
 
     info!("➡️  Registering contracts c1 & c2.hyle");
 
-    let b1 = make_register_blob_action("c1".into(), StateDigest(vec![1, 2, 3]));
+    let b1 = make_register_blob_action("c1".into(), StateCommitment(vec![1, 2, 3]));
     client.send_tx_blob(&b1).await.unwrap();
     client
         .register_contract(&APIRegisterContract {
             verifier: "test".into(),
             program_id: ProgramId(vec![1, 2, 3]),
-            state_digest: StateDigest(vec![7, 7, 7]),
+            state_commitment: StateCommitment(vec![7, 7, 7]),
             contract_name: "c2.hyle".into(),
         })
         .await
@@ -132,11 +132,11 @@ async fn test_full_settlement_flow() -> Result<()> {
 
     let pg_client = IndexerApiHttpClient::new(format!("http://{rest_client}/")).unwrap();
     let contract = pg_client.get_indexer_contract(&"c1".into()).await?;
-    assert_eq!(contract.state_digest, vec![4, 5, 6]);
+    assert_eq!(contract.state_commitment, vec![4, 5, 6]);
 
     let pg_client = IndexerApiHttpClient::new(format!("http://{rest_client}/")).unwrap();
     let contract = pg_client.get_indexer_contract(&"c2.hyle".into()).await?;
-    assert_eq!(contract.state_digest, vec![8, 8, 8]);
+    assert_eq!(contract.state_commitment, vec![8, 8, 8]);
 
     Ok(())
 }
@@ -168,7 +168,7 @@ async fn test_tx_settlement_duplicates() -> Result<()> {
     hyle_node.wait_for_genesis_event().await?;
     hyle_node.wait_for_rest_api(&client).await?;
 
-    let b1 = make_register_blob_action("c1".into(), StateDigest(vec![1, 2, 3]));
+    let b1 = make_register_blob_action("c1".into(), StateCommitment(vec![1, 2, 3]));
 
     info!("➡️  Registering contract c1 - first time");
 
@@ -184,7 +184,7 @@ async fn test_tx_settlement_duplicates() -> Result<()> {
         .register_contract(&APIRegisterContract {
             verifier: "test".into(),
             program_id: ProgramId(vec![1, 2, 3]),
-            state_digest: StateDigest(vec![7, 7, 7]),
+            state_commitment: StateCommitment(vec![7, 7, 7]),
             contract_name: "c2.hyle".into(),
         })
         .await
@@ -331,11 +331,11 @@ async fn test_tx_settlement_duplicates() -> Result<()> {
 
     // let pg_client = IndexerApiHttpClient::new(format!("http://{rest_client}/")).unwrap();
     // let contract = pg_client.get_indexer_contract(&"c1".into()).await?;
-    // assert_eq!(contract.state_digest, vec![7, 8, 9]);
+    // assert_eq!(contract.state_commitment, vec![7, 8, 9]);
 
     // let pg_client = IndexerApiHttpClient::new(format!("http://{rest_client}/")).unwrap();
     // let contract = pg_client.get_indexer_contract(&"c2.hyle".into()).await?;
-    // assert_eq!(contract.state_digest, vec![9, 9, 9]);
+    // assert_eq!(contract.state_commitment, vec![9, 9, 9]);
 
     Ok(())
 }
@@ -353,7 +353,7 @@ async fn test_contract_upgrade() -> Result<()> {
 
     info!("➡️  Registering contracts c1.hyle");
 
-    let b1 = make_register_blob_action("c1.hyle".into(), StateDigest(vec![1, 2, 3]));
+    let b1 = make_register_blob_action("c1.hyle".into(), StateCommitment(vec![1, 2, 3]));
     client.send_tx_blob(&b1).await.unwrap();
 
     hyle_node.wait_for_settled_tx(b1.hashed()).await?;
@@ -379,8 +379,8 @@ async fn test_contract_upgrade() -> Result<()> {
         .push(OnchainEffect::RegisterContract(RegisterContractEffect {
             verifier: "test".into(),
             program_id: ProgramId(vec![7, 7, 7]),
-            // The state digest is ignored during the update phase.
-            state_digest: StateDigest(vec![3, 3, 3]),
+            // The state commitment is ignored during the update phase.
+            state_commitment: StateCommitment(vec![3, 3, 3]),
             contract_name: "c1.hyle".into(),
         }));
 
@@ -401,7 +401,7 @@ async fn test_contract_upgrade() -> Result<()> {
     let contract = client.get_contract(&"c1.hyle".into()).await?;
     // Check program ID has changed.
     assert_eq!(contract.program_id, ProgramId(vec![7, 7, 7]));
-    // We use the next_state, not the state_digest of the update effect.
+    // We use the next_state, not the state_commitment of the update effect.
     assert_eq!(contract.state.0, vec![8, 8, 8]);
 
     Ok(())

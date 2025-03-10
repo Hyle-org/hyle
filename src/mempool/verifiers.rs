@@ -2,7 +2,9 @@ use anyhow::{Context, Result};
 use hyle_model::{Identity, ProofData, Signed, ValidatorSignature};
 use sha3::Digest;
 
-use hyle_contract_sdk::{Blob, BlobIndex, HyleOutput, ProgramId, StateDigest, TxHash, Verifier};
+use hyle_contract_sdk::{
+    Blob, BlobIndex, HyleOutput, ProgramId, StateCommitment, TxHash, Verifier,
+};
 
 use hyle_verifiers::{noir_proof_verifier, risc0_proof_verifier, validate_risc0_program_id};
 
@@ -131,8 +133,8 @@ pub fn verify_native(
 
     HyleOutput {
         version: 1,
-        initial_state: StateDigest::default(),
-        next_state: StateDigest::default(),
+        initial_state: StateCommitment::default(),
+        next_state: StateCommitment::default(),
         identity,
         index,
         blobs,

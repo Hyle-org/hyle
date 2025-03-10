@@ -5,8 +5,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use hyllar::HyllarAction;
 use sdk::utils::parse_contract_input;
 use sdk::{
-    Blob, BlobIndex, ContractAction, ContractInput, Digestable, HyleContract, RunResult,
-    StateDigest,
+    Blob, BlobIndex, ContractAction, ContractInput, HyleContract, RunResult, StateCommitment,
 };
 use sdk::{BlobData, ContractName, StructuredBlobData};
 use serde::{Deserialize, Serialize};
@@ -109,6 +108,10 @@ impl HyleContract for Amm {
             Ok(output) => Ok((output, execution_ctx, vec![])),
         }
     }
+
+    fn commit(&self) -> sdk::StateCommitment {
+        sdk::StateCommitment(self.as_bytes())
+    }
 }
 
 impl Amm {
@@ -204,16 +207,10 @@ impl Amm {
     }
 }
 
-impl Digestable for Amm {
-    fn as_digest(&self) -> sdk::StateDigest {
-        sdk::StateDigest(self.as_bytes())
-    }
-}
-
-impl TryFrom<StateDigest> for Amm {
+impl TryFrom<StateCommitment> for Amm {
     type Error = anyhow::Error;
 
-    fn try_from(state: StateDigest) -> Result<Self, Self::Error> {
+    fn try_from(state: StateCommitment) -> Result<Self, Self::Error> {
         borsh::from_slice(&state.0).map_err(|_| anyhow::anyhow!("Could not decode amm state"))
     }
 }
@@ -266,7 +263,7 @@ mod tests {
             Amm {
                 pairs: BTreeMap::default(),
             }
-            .as_digest()
+            .commit()
         );
 
         let result = state.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
@@ -303,7 +300,7 @@ mod tests {
             Amm {
                 pairs: BTreeMap::default(),
             }
-            .as_digest()
+            .commit()
         );
 
         let result = state.verify_swap(("token1".to_string(), "token2".to_string()), 500, 980);

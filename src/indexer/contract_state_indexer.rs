@@ -250,8 +250,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use hyle_contract_sdk::{BlobData, HyleContract, ProgramId, StateDigest};
-    use hyle_model::{DataProposalHash, Digestable};
+    use hyle_contract_sdk::{BlobData, HyleContract, ProgramId, StateCommitment};
+    use hyle_model::DataProposalHash;
     use utoipa::openapi::OpenApi;
 
     use super::*;
@@ -266,23 +266,21 @@ mod tests {
     #[derive(Clone, Debug, Default, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
     struct MockState(Vec<u8>);
 
-    impl TryFrom<StateDigest> for MockState {
+    impl TryFrom<StateCommitment> for MockState {
         type Error = Error;
 
-        fn try_from(value: StateDigest) -> Result<Self> {
+        fn try_from(value: StateCommitment) -> Result<Self> {
             Ok(MockState(value.0))
-        }
-    }
-
-    impl Digestable for MockState {
-        fn as_digest(&self) -> StateDigest {
-            StateDigest(self.0.clone())
         }
     }
 
     impl HyleContract for MockState {
         fn execute(&mut self, _: &hyle_model::ContractInput) -> hyle_contract_sdk::RunResult {
             Err("not implemented".into())
+        }
+
+        fn commit(&self) -> StateCommitment {
+            StateCommitment(self.0.clone())
         }
     }
 
@@ -319,10 +317,10 @@ mod tests {
     }
 
     async fn register_contract(indexer: &mut ContractStateIndexer<MockState>) {
-        let state_digest = StateDigest::default();
+        let state_commitment = StateCommitment::default();
         let rce = RegisterContractEffect {
             contract_name: indexer.contract_name.clone(),
-            state_digest,
+            state_commitment,
             verifier: "test".into(),
             program_id: ProgramId(vec![]),
         };
