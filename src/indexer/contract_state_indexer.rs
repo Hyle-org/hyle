@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::contract_indexer::{ContractHandler, ContractStateStore};
 use hyle_contract_sdk::{BlobIndex, ContractName, TxId};
-use hyle_model::{RegisterContractEffect, TxContext};
+use hyle_model::{RegisterContractEffect, TxContext, HYLE_TESTNET_CHAIN_ID};
 use serde::{Deserialize, Serialize};
 use std::{ops::Deref, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
@@ -149,7 +149,6 @@ where
     }
 
     async fn handle_processed_block(&mut self, block: Block) -> Result<()> {
-        let tx_context = block.get_context();
         for (_, contract) in block.registered_contracts {
             if self.contract_name == contract.contract_name {
                 self.handle_register_contract(contract).await?;
@@ -168,15 +167,29 @@ where
 
         for s_tx in block.successful_txs {
             let dp_hash = block
-                .dp_hashes
+                .dp_parent_hashes
                 .get(&s_tx)
                 .context(format!(
                     "No parent data proposal hash present for successful tx {}",
                     s_tx.0
                 ))?
                 .clone();
-            self.settle_tx(&TxId(dp_hash, s_tx), tx_context.clone())
-                .await?;
+            let lane_id = block
+                .lane_ids
+                .get(&s_tx)
+                .context(format!("No lane id found for TX hash {}", dp_hash.0))?
+                .clone();
+            self.settle_tx(
+                &TxId(dp_hash, s_tx),
+                TxContext {
+                    lane_id,
+                    block_hash: block.hash.clone(),
+                    block_height: block.block_height,
+                    timestamp: block.block_timestamp as u128,
+                    chain_id: HYLE_TESTNET_CHAIN_ID, // TODO: make it configurable
+                },
+            )
+            .await?;
         }
         Ok(())
     }

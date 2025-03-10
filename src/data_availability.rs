@@ -335,7 +335,7 @@ impl DataAvailability {
             block.count_txs(),
             block
                 .iter_txs_with_id()
-                .map(|(tx_id, tx)| {
+                .map(|(_, tx_id, tx)| {
                     let variant: &'static str = (&tx.transaction_data).into();
                     format!("\n - 0x{} {}", tx_id.1, variant)
                 })

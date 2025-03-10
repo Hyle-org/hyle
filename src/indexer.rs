@@ -521,7 +521,7 @@ impl Indexer {
         for (i, (tx_hash, events)) in (0..).zip(block.transactions_events.into_iter()) {
             let tx_hash_db: &TxHashDb = &tx_hash.clone().into();
             let parent_data_proposal_hash: DataProposalHashDb = block
-                .dp_hashes
+                .dp_parent_hashes
                 .get(&tx_hash)
                 .context(format!(
                     "No parent data proposal hash present for tx {}",
@@ -554,7 +554,7 @@ impl Indexer {
         // Handling settled blob transactions
         for settled_blob_tx_hash in block.successful_txs {
             let dp_hash_db: DataProposalHashDb = block
-                .dp_hashes
+                .dp_parent_hashes
                 .get(&settled_blob_tx_hash)
                 .context(format!(
                     "No parent data proposal hash present for settled blob tx {}",
@@ -573,7 +573,7 @@ impl Indexer {
 
         for failed_blob_tx_hash in block.failed_txs {
             let dp_hash_db: DataProposalHashDb = block
-                .dp_hashes
+                .dp_parent_hashes
                 .get(&failed_blob_tx_hash)
                 .context(format!(
                     "No parent data proposal hash present for failed blob tx {}",
@@ -593,7 +593,7 @@ impl Indexer {
         // Handling timed out blob transactions
         for timed_out_tx_hash in block.timed_out_txs {
             let dp_hash_db: DataProposalHashDb = block
-                .dp_hashes
+                .dp_parent_hashes
                 .get(&timed_out_tx_hash)
                 .context(format!(
                     "No parent data proposal hash present for timed out tx {}",
@@ -612,7 +612,7 @@ impl Indexer {
 
         for handled_blob_proof_output in block.blob_proof_outputs {
             let proof_dp_hash: DataProposalHashDb = block
-                .dp_hashes
+                .dp_parent_hashes
                 .get(&handled_blob_proof_output.proof_tx_hash)
                 .context(format!(
                     "No parent data proposal hash present for proof tx {}",
@@ -621,7 +621,7 @@ impl Indexer {
                 .clone()
                 .into();
             let blob_dp_hash: DataProposalHashDb = block
-                .dp_hashes
+                .dp_parent_hashes
                 .get(&handled_blob_proof_output.blob_tx_hash)
                 .context(format!(
                     "No parent data proposal hash present for blob tx {}",
@@ -659,7 +659,7 @@ impl Indexer {
         // Handling verified blob (! must come after blob proof output, as it updates that)
         for (blob_tx_hash, blob_index, blob_proof_output_index) in block.verified_blobs {
             let blob_tx_parent_dp_hash: DataProposalHashDb = block
-                .dp_hashes
+                .dp_parent_hashes
                 .get(&blob_tx_hash)
                 .context(format!(
                     "No parent data proposal hash present for verified blob tx {}",
@@ -701,7 +701,7 @@ impl Indexer {
             let state_digest = &contract.state_digest.0;
             let contract_name = &contract.contract_name.0;
             let tx_parent_dp_hash: DataProposalHashDb = block
-                .dp_hashes
+                .dp_parent_hashes
                 .get(&tx_hash)
                 .context(format!(
                     "No parent data proposal hash present for registered contract tx {}",
