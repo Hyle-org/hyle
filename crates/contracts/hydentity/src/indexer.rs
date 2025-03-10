@@ -1,4 +1,4 @@
-use crate::{identity_provider::IdentityVerification, AccountInfo, Hydentity, IdentityAction};
+use crate::{identity_provider::IdentityVerification, AccountInfo, Hydentity, HydentityAction};
 use anyhow::{anyhow, Context, Result};
 use client_sdk::contract_indexer::{
     axum::Router,
@@ -41,17 +41,17 @@ impl ContractHandler for Hydentity {
             data,
         } = tx.blobs.get(index.0).context("Failed to get blob")?;
 
-        let action: IdentityAction = borsh::from_slice(&data.0)?;
+        let action: HydentityAction = borsh::from_slice(&data.0)?;
 
         match action {
-            IdentityAction::RegisterIdentity { account } => {
+            HydentityAction::RegisterIdentity { account } => {
                 let (name, hash) = Hydentity::parse_id(&account)?;
                 info!("🚀 Executed {contract_name}: {name} registered");
                 state
                     .identities
                     .insert(name, AccountInfo { hash, nonce: 0 });
             }
-            IdentityAction::VerifyIdentity { account, nonce: _ } => {
+            HydentityAction::VerifyIdentity { account, nonce: _ } => {
                 if let Some(id) = state.identities.get_mut(&account) {
                     id.nonce += 1;
                 }

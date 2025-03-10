@@ -6,7 +6,7 @@ use client_sdk::transaction_builder::ProvableBlobTx;
 use client_sdk::transaction_builder::TxExecutor;
 use client_sdk::transaction_builder::TxExecutorBuilder;
 use hyle_hydentity::Hydentity;
-use hyle_hydentity::IdentityAction;
+use hyle_hydentity::HydentityAction;
 use sdk::Hashed;
 use sdk::{guest, ContractInput, ContractName, HyleOutput};
 
@@ -115,7 +115,7 @@ async fn main() {
             transaction
                 .add_action(
                     "hydentity".into(),
-                    IdentityAction::VerifyIdentity {
+                    HydentityAction::VerifyIdentity {
                         account: identity.clone(),
                         nonce,
                     },

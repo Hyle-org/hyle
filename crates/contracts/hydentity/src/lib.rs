@@ -36,7 +36,7 @@ pub struct Hydentity {
 
 /// Enum representing the actions that can be performed by the IdentityVerification contract.
 #[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
-pub enum IdentityAction {
+pub enum HydentityAction {
     RegisterIdentity { account: String },
     VerifyIdentity { account: String, nonce: u32 },
     GetIdentityInfo { account: String },
@@ -167,12 +167,12 @@ impl Digestable for Hydentity {
     }
 }
 
-impl IdentityAction {
+impl HydentityAction {
     pub fn as_blob(&self, contract_name: ContractName) -> Blob {
         <Self as ContractAction>::as_blob(self, contract_name, None, None)
     }
 }
-impl ContractAction for IdentityAction {
+impl ContractAction for HydentityAction {
     fn as_blob(
         &self,
         contract_name: ContractName,

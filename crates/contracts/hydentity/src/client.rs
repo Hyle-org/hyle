@@ -1,4 +1,4 @@
-use crate::{Hydentity, IdentityAction};
+use crate::{Hydentity, HydentityAction};
 use client_sdk::{
     helpers::risc0::Risc0Prover,
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
@@ -35,7 +35,7 @@ pub fn verify_identity(
 
     builder.add_action(
         contract_name,
-        IdentityAction::VerifyIdentity {
+        HydentityAction::VerifyIdentity {
             account: builder.identity.0.clone(),
             nonce,
         },
@@ -56,7 +56,7 @@ pub fn register_identity(
 
     builder.add_action(
         contract_name,
-        IdentityAction::RegisterIdentity { account },
+        HydentityAction::RegisterIdentity { account },
         Some(password.into_bytes().to_vec()),
         None,
         None,
