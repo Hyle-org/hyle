@@ -6,6 +6,8 @@ use std::{
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
+use crate::LaneId;
+
 #[derive(
     Debug,
     Serialize,
@@ -438,6 +440,7 @@ pub struct HyleOutput {
 )]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct TxContext {
+    pub lane_id: LaneId,
     pub block_hash: BlockHash,
     pub block_height: BlockHeight,
     pub timestamp: u128,
