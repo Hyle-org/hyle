@@ -5,9 +5,8 @@ pub mod contract_state_indexer;
 pub mod da_listener;
 
 use crate::model::*;
-use crate::utils::logger::LogMe;
 use crate::{
-    module_handle_messages,
+    log_error, log_warn, module_handle_messages,
     node_state::module::NodeStateEvent,
     utils::modules::{module_bus_client, Module},
 };
@@ -123,15 +122,15 @@ impl Indexer {
         module_handle_messages! {
             on_bus self.bus,
             listen<NodeStateEvent> event => {
-                _ = self.handle_node_state_event(event)
-                    .await
-                    .log_error("Indexer handling node state event");
+                _ = log_error!(self.handle_node_state_event(event)
+                    .await,
+                    "Indexer handling node state event");
             }
 
             listen<MempoolStatusEvent> event => {
-                _ = self.handle_mempool_status_event(event)
-                    .await
-                    .log_error("Indexer handling mempool status event");
+                _ = log_error!(self.handle_mempool_status_event(event)
+                    .await,
+                    "Indexer handling mempool status event");
             }
 
             Some((contract_name, socket)) = self.new_sub_receiver.recv() => {
@@ -152,8 +151,8 @@ impl Indexer {
                                 maybe_transaction = rx.recv() => {
                                     match maybe_transaction {
                                         Ok(transaction) => {
-                                            if let Ok(json) = serde_json::to_vec(&transaction)
-                                                .log_error("Serialize transaction to JSON") {
+                                            if let Ok(json) = log_error!(serde_json::to_vec(&transaction),
+                                                "Serialize transaction to JSON") {
                                                 if ws_tx.send(Message::Binary(json.into())).await.is_err() {
                                                     break;
                                                 }
@@ -293,15 +292,16 @@ impl Indexer {
                 .execute(&mut *transaction)
                 .await?;
 
-                _ = self
-                    .insert_tx_data(
+                _ = log_warn!(
+                    self.insert_tx_data(
                         transaction.deref_mut(),
                         tx_hash,
                         &tx,
                         parent_data_proposal_hash_db,
                     )
-                    .await
-                    .log_warn("Inserting tx data at status 'waiting dissemination'");
+                    .await,
+                    "Inserting tx data at status 'waiting dissemination'"
+                );
             }
 
             MempoolStatusEvent::DataProposalCreated {
@@ -312,10 +312,13 @@ impl Indexer {
 
                 query_builder.push_values(txs_metadatas, |mut b, value| {
                     let tx_type: TransactionTypeDb = value.transaction_kind.into();
-                    let version = i32::try_from(value.version)
-                        .map_err(|_| anyhow::anyhow!("Tx version is too large to fit into an i32"))
-                        .log_error("Converting version number into i32")
-                        .unwrap_or(0);
+                    let version = log_error!(
+                        i32::try_from(value.version).map_err(|_| anyhow::anyhow!(
+                            "Tx version is too large to fit into an i32"
+                        )),
+                        "Converting version number into i32"
+                    )
+                    .unwrap_or(0);
 
                     let tx_hash: TxHashDb = value.id.1.into();
                     let parent_data_proposal_hash_db: DataProposalHashDb = value.id.0.into();
@@ -399,9 +402,11 @@ impl Indexer {
                 query_builder.push_values(
                     blob_tx.blobs.iter().enumerate(),
                     |mut b, (blob_index, blob)| {
-                        let blob_index = i32::try_from(blob_index)
-                            .log_error("Blob index is too large to fit into an i32")
-                            .unwrap_or_default();
+                        let blob_index = log_error!(
+                            i32::try_from(blob_index),
+                            "Blob index is too large to fit into an i32"
+                        )
+                        .unwrap_or_default();
 
                         let identity = &blob_tx.identity.0;
                         let contract_name = &blob.contract_name.0;
@@ -471,7 +476,7 @@ impl Indexer {
             let tx_hash: &TxHashDb = &tx_id.1.into();
 
             // Make sure transaction exists (Missed Mempool Status event)
-            sqlx::query(
+            log_warn!(sqlx::query(
                 "INSERT INTO transactions (tx_hash, parent_dp_hash, version, transaction_type, transaction_status, block_hash, index)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                 ON CONFLICT(tx_hash, parent_dp_hash) DO UPDATE SET transaction_status=$5, block_hash=$6, index=$7",
@@ -484,18 +489,19 @@ impl Indexer {
             .bind(block.hash.clone())
             .bind(i)
             .execute(&mut *transaction)
-            .await
-            .log_warn(format!("Inserting transaction {:?}", tx_hash))?;
+            .await,
+            format!("Inserting transaction {:?}", tx_hash))?;
 
-            _ = self
-                .insert_tx_data(
+            _ = log_warn!(
+                self.insert_tx_data(
                     transaction.deref_mut(),
                     tx_hash,
                     &tx,
                     parent_data_proposal_hash.clone(),
                 )
-                .await
-                .log_warn("Inserting tx data when tx in block");
+                .await,
+                "Inserting tx data when tx in block"
+            );
 
             if let TransactionData::Blob(blob_tx) = &tx.transaction_data {
                 // Send the transaction to all websocket subscribers
@@ -526,7 +532,7 @@ impl Indexer {
             let serialized_events = serde_json::to_string(&events)?;
             debug!("Inserting transaction state event {tx_hash}: {serialized_events}");
 
-            sqlx::query(
+            log_warn!(sqlx::query(
                 "INSERT INTO transaction_state_events (block_hash, index, tx_hash, parent_dp_hash, events)
                 VALUES ($1, $2, $3, $4, $5::jsonb)",
             )
@@ -536,8 +542,8 @@ impl Indexer {
             .bind(parent_data_proposal_hash)
             .bind(serialized_events)
             .execute(&mut *transaction)
-            .await
-            .log_warn(format!("Inserting transaction state event {:?}", tx_hash))?;
+            .await,
+            format!("Inserting transaction state event {:?}", tx_hash))?;
         }
 
         // Handling new stakers
