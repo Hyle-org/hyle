@@ -424,6 +424,7 @@ impl NodeState {
             .push(TransactionStateEvent::NewProof {
                 blob_index: blob_proof_data.hyle_output.index,
                 proof_tx_hash: proof_tx_hash.clone(),
+                program_output: blob_proof_data.hyle_output.program_outputs.clone(),
             });
 
         blob.possible_proofs.push((
