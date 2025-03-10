@@ -1,4 +1,4 @@
-use std::{hash::Hash, sync::Arc};
+use std::hash::Hash;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -34,8 +34,7 @@ pub struct UnsettledBlobTransaction {
     pub identity: Identity,
     pub parent_dp_hash: DataProposalHash,
     pub hash: TxHash,
-    #[schema(value_type=TxContext)]
-    pub tx_context: Arc<TxContext>,
+    pub tx_context: TxContext,
     pub blobs_hash: BlobsHash,
     pub blobs: Vec<UnsettledBlobMetadata>,
 }
