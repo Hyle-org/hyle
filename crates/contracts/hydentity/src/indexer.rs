@@ -1,4 +1,4 @@
-use crate::{AccountInfo, Hydentity};
+use crate::{identity_provider::IdentityVerification, AccountInfo, Hydentity, IdentityAction};
 use anyhow::{anyhow, Context, Result};
 use client_sdk::contract_indexer::{
     axum::Router,
@@ -16,10 +16,7 @@ use client_sdk::contract_indexer::{
     utoipa::{self, ToSchema},
     AppError,
 };
-use sdk::{
-    identity_provider::{IdentityAction, IdentityVerification},
-    info, Blob, BlobIndex, BlobTransaction, Identity, TxContext,
-};
+use sdk::{info, Blob, BlobIndex, BlobTransaction, Identity, TxContext};
 use serde::Serialize;
 
 use client_sdk::contract_indexer::axum;

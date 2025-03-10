@@ -1,9 +1,9 @@
-use crate::Hydentity;
+use crate::{Hydentity, IdentityAction};
 use client_sdk::{
     helpers::risc0::Risc0Prover,
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
-use sdk::{identity_provider::IdentityAction, ContractName};
+use sdk::ContractName;
 
 pub mod metadata {
     pub const HYDENTITY_ELF: &[u8] = include_bytes!("../hydentity.img");

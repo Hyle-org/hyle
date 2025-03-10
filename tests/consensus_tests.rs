@@ -15,12 +15,12 @@ mod e2e_consensus {
     use hydentity::client::{register_identity, verify_identity};
     use hydentity::Hydentity;
     use hyle::genesis::States;
-    use hyle_contract_sdk::erc20::ERC20;
     use hyle_contract_sdk::Digestable;
     use hyle_contract_sdk::Identity;
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF, STAKING_ELF};
     use hyle_model::{ContractName, StateDigest};
     use hyllar::client::transfer;
+    use hyllar::erc20::ERC20;
     use hyllar::{Hyllar, FAUCET_ID};
     use staking::client::{delegate, stake};
     use staking::state::Staking;

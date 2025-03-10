@@ -6,7 +6,7 @@ use client_sdk::transaction_builder::ProvableBlobTx;
 use client_sdk::transaction_builder::TxExecutor;
 use client_sdk::transaction_builder::TxExecutorBuilder;
 use hyle_hydentity::Hydentity;
-use sdk::identity_provider::IdentityAction;
+use hyle_hydentity::IdentityAction;
 use sdk::Hashed;
 use sdk::{guest, ContractInput, ContractName, HyleOutput};
 

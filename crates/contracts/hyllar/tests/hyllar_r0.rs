@@ -1,9 +1,7 @@
 use core::str;
 
-use hyle_hyllar::{Hyllar, FAUCET_ID};
-use sdk::{
-    erc20::ERC20Action, BlobIndex, ContractAction, ContractInput, ContractName, HyleOutput, TxHash,
-};
+use hyle_hyllar::{Hyllar, HyllarAction, FAUCET_ID};
+use sdk::{BlobIndex, ContractAction, ContractInput, ContractName, HyleOutput, TxHash};
 
 fn execute(inputs: ContractInput) -> HyleOutput {
     let contract_input = borsh::to_vec(&inputs).unwrap();
@@ -30,7 +28,7 @@ fn execute_transfer_from() {
         tx_hash: TxHash::default(),
         tx_ctx: None,
         private_input: vec![],
-        blobs: vec![ERC20Action::TransferFrom {
+        blobs: vec![HyllarAction::TransferFrom {
             owner: FAUCET_ID.into(),
             recipient: "amm".into(),
             amount: 100,
