@@ -1,7 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
-use staking::ValidatorPublicKey;
 use std::{fmt::Display, sync::RwLock};
 
 use crate::*;
@@ -144,22 +143,6 @@ impl Display for DataProposal {
         write!(f, "{}", self.hashed())
     }
 }
-
-#[derive(
-    Clone,
-    Debug,
-    Default,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    PartialEq,
-    Eq,
-    Hash,
-    Ord,
-    PartialOrd,
-)]
-pub struct LaneId(pub ValidatorPublicKey);
 
 impl Display for LaneId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
