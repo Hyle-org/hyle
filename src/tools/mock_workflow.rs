@@ -12,7 +12,7 @@ use crate::{
 };
 use anyhow::Result;
 use client_sdk::rest_client::NodeApiHttpClient;
-use hyle_contract_sdk::{Identity, ProgramId, StateDigest};
+use hyle_contract_sdk::{Identity, ProgramId, StateCommitment};
 use hyle_model::{ContractAction, RegisterContractAction};
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
@@ -167,7 +167,7 @@ impl MockWorkflowHandler {
             vec![RegisterContractAction {
                 verifier: "verifier".into(),
                 program_id: ProgramId(vec![]),
-                state_digest: StateDigest(vec![]),
+                state_commitment: StateCommitment(vec![]),
                 contract_name: ContractName::new("contract"),
             }
             .as_blob("hyle".into(), None, None)],

@@ -698,7 +698,7 @@ impl Indexer {
         for (tx_hash, contract) in block.registered_contracts {
             let verifier = &contract.verifier.0;
             let program_id = &contract.program_id.0;
-            let state_digest = &contract.state_digest.0;
+            let state_commitment = &contract.state_commitment.0;
             let contract_name = &contract.contract_name.0;
             let tx_parent_dp_hash: DataProposalHashDb = block
                 .dp_parent_hashes
@@ -713,45 +713,45 @@ impl Indexer {
 
             // Adding to Contract table
             sqlx::query(
-                "INSERT INTO contracts (tx_hash, parent_dp_hash, verifier, program_id, state_digest, contract_name)
+                "INSERT INTO contracts (tx_hash, parent_dp_hash, verifier, program_id, state_commitment, contract_name)
                 VALUES ($1, $2, $3, $4, $5, $6)",
             )
             .bind(tx_hash)
             .bind(tx_parent_dp_hash)
             .bind(verifier)
             .bind(program_id)
-            .bind(state_digest)
+            .bind(state_commitment)
             .bind(contract_name)
             .execute(&mut *transaction)
             .await?;
 
             // Adding to ContractState table
             sqlx::query(
-                "INSERT INTO contract_state (contract_name, block_hash, state_digest)
+                "INSERT INTO contract_state (contract_name, block_hash, state_commitment)
                 VALUES ($1, $2, $3)",
             )
             .bind(contract_name)
             .bind(block.hash.clone())
-            .bind(state_digest)
+            .bind(state_commitment)
             .execute(&mut *transaction)
             .await?;
         }
 
         // Handling updated contract state
-        for (contract_name, state_digest) in block.updated_states {
+        for (contract_name, state_commitment) in block.updated_states {
             let contract_name = &contract_name.0;
-            let state_digest = &state_digest.0;
+            let state_commitment = &state_commitment.0;
             sqlx::query(
-                "UPDATE contract_state SET state_digest = $1 WHERE contract_name = $2 AND block_hash = $3",
+                "UPDATE contract_state SET state_commitment = $1 WHERE contract_name = $2 AND block_hash = $3",
             )
-            .bind(state_digest.clone())
+            .bind(state_commitment.clone())
             .bind(contract_name.clone())
             .bind(block.hash.clone())
             .execute(&mut *transaction)
             .await?;
 
-            sqlx::query("UPDATE contracts SET state_digest = $1 WHERE contract_name = $2")
-                .bind(state_digest)
+            sqlx::query("UPDATE contracts SET state_commitment = $1 WHERE contract_name = $2")
+                .bind(state_commitment)
                 .bind(contract_name)
                 .execute(&mut *transaction)
                 .await?;
@@ -819,7 +819,7 @@ impl std::ops::Deref for Indexer {
 mod test {
     use assert_json_diff::assert_json_include;
     use axum_test::TestServer;
-    use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateDigest, TxHash};
+    use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateCommitment, TxHash};
     use hyle_model::api::{APIBlock, APIContract, APITransaction};
     use serde_json::json;
     use std::{
@@ -863,13 +863,16 @@ mod test {
         }
     }
 
-    fn new_register_tx(contract_name: ContractName, state_digest: StateDigest) -> BlobTransaction {
+    fn new_register_tx(
+        contract_name: ContractName,
+        state_commitment: StateCommitment,
+    ) -> BlobTransaction {
         BlobTransaction::new(
             "hyle.hyle",
             vec![RegisterContractAction {
                 verifier: "test".into(),
                 program_id: ProgramId(vec![3, 2, 1]),
-                state_digest,
+                state_commitment,
                 contract_name,
             }
             .as_blob("hyle".into(), None, None)],
@@ -903,8 +906,8 @@ mod test {
         contract_name: ContractName,
         blob_index: BlobIndex,
         blob_tx_hash: TxHash,
-        initial_state: StateDigest,
-        next_state: StateDigest,
+        initial_state: StateCommitment,
+        next_state: StateCommitment,
         blobs: Vec<u8>,
     ) -> Transaction {
         let proof = ProofData(initial_state.0.clone());
@@ -978,8 +981,8 @@ mod test {
         let mut indexer = new_indexer(db).await;
         let server = setup_test_server(&indexer).await?;
 
-        let initial_state = StateDigest(vec![1, 2, 3]);
-        let next_state = StateDigest(vec![4, 5, 6]);
+        let initial_state = StateCommitment(vec![1, 2, 3]);
+        let next_state = StateCommitment(vec![4, 5, 6]);
         let first_contract_name = ContractName::new("c1");
         let second_contract_name = ContractName::new("c2");
 
@@ -1022,16 +1025,16 @@ mod test {
             first_contract_name.clone(),
             BlobIndex(1),
             other_blob_transaction_hash.clone(),
-            StateDigest(vec![7, 7, 7]),
-            StateDigest(vec![9, 9, 9]),
+            StateCommitment(vec![7, 7, 7]),
+            StateCommitment(vec![9, 9, 9]),
             vec![99, 50, 1, 2, 3, 99, 49, 1, 2, 3],
         );
         let proof_tx_4 = new_proof_tx(
             first_contract_name.clone(),
             BlobIndex(1),
             other_blob_transaction_hash.clone(),
-            StateDigest(vec![8, 8]),
-            StateDigest(vec![9, 9]),
+            StateCommitment(vec![8, 8]),
+            StateCommitment(vec![9, 9]),
             vec![99, 50, 1, 2, 3, 99, 49, 1, 2, 3],
         );
 
@@ -1070,8 +1073,8 @@ mod test {
         // Handling MempoolStatusEvent
         //
 
-        let initial_state_wd = StateDigest(vec![1, 2, 3]);
-        let next_state_wd = StateDigest(vec![4, 5, 6]);
+        let initial_state_wd = StateCommitment(vec![1, 2, 3]);
+        let next_state_wd = StateCommitment(vec![4, 5, 6]);
         let first_contract_name_wd = ContractName::new("wd1");
         let second_contract_name_wd = ContractName::new("wd2");
 
@@ -1252,12 +1255,12 @@ mod test {
         let transactions_response = server.get("/contract/c1").await;
         transactions_response.assert_status_ok();
         let json_response = transactions_response.json::<APIContract>();
-        assert_eq!(json_response.state_digest, next_state.0);
+        assert_eq!(json_response.state_commitment, next_state.0);
 
         let transactions_response = server.get("/contract/c2").await;
         transactions_response.assert_status_ok();
         let json_response = transactions_response.json::<APIContract>();
-        assert_eq!(json_response.state_digest, next_state.0);
+        assert_eq!(json_response.state_commitment, next_state.0);
 
         let transactions_response = server.get("/contract/d1").await;
         transactions_response.assert_status_not_found();

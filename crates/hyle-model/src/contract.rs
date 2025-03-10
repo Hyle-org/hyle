@@ -39,22 +39,23 @@ pub trait DataSized {
     fn estimate_size(&self) -> usize;
 }
 
-/// This trait is used by the SDK to build the on-chain state commitment of the contract
-/// It can compute a state hash, or a merkle root of the state, or any other commitment.
-/// The [StateDigest] will be stored on chain, and will be used as initial_state for
-/// next contract execution.
-pub trait Digestable {
-    fn as_digest(&self) -> StateDigest;
-}
-
+/// This struct is passed from the application backend to the contract as a zkvm input.
 #[derive(Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
 pub struct ContractInput {
+    /// Borsh serialization of the contract state
     pub state: Vec<u8>,
-    pub identity: Identity,
-    pub index: BlobIndex,
-    pub blobs: Vec<Blob>,
+    /// TxHash of the BlobTransaction being proved
     pub tx_hash: TxHash,
+    /// User's identity used for the BlobTransaction
+    pub identity: Identity,
+    /// All [Blob]s of the BlobTransaction
+    pub blobs: Vec<Blob>,
+    /// Index of the blob corresponding to the contract.
+    /// The [Blob] referenced by this index has to be parsed by the contract
+    pub index: BlobIndex,
+    /// Optional additional context of the BlobTransaction
     pub tx_ctx: Option<TxContext>,
+    /// Additional input for the contract that is not written on-chain in the BlobTransaction
     pub private_input: Vec<u8>,
 }
 
@@ -63,17 +64,11 @@ pub struct ContractInput {
     Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize,
 )]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
-pub struct StateDigest(pub Vec<u8>);
+pub struct StateCommitment(pub Vec<u8>);
 
-impl std::fmt::Debug for StateDigest {
+impl std::fmt::Debug for StateCommitment {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "StateDigest({})", hex::encode(&self.0))
-    }
-}
-
-impl Digestable for StateDigest {
-    fn as_digest(&self) -> StateDigest {
-        self.clone()
+        write!(f, "StateCommitment({})", hex::encode(&self.0))
     }
 }
 
@@ -92,6 +87,8 @@ impl Digestable for StateDigest {
     PartialOrd,
 )]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
+/// An identity is a string that identifies the person that sent
+/// the BlobTransaction
 pub struct Identity(pub String);
 
 #[derive(
@@ -294,6 +291,9 @@ impl TryFrom<BlobData> for StructuredBlobData<DropEndOfReader> {
     Hash,
 )]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
+/// A Blob is a binary-serialized action that the contract has to parse
+/// An action is often written as an enum representing the call of a specific
+/// contract function.
 pub struct Blob {
     pub contract_name: ContractName,
     pub data: BlobData,
@@ -424,8 +424,8 @@ pub enum OnchainEffect {
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct HyleOutput {
     pub version: u32,
-    pub initial_state: StateDigest,
-    pub next_state: StateDigest,
+    pub initial_state: StateCommitment,
+    pub next_state: StateCommitment,
     pub identity: Identity,
     pub index: BlobIndex,
     pub blobs: Vec<u8>,
@@ -605,7 +605,7 @@ impl Add<BlockHeight> for BlockHeight {
 pub struct RegisterContractAction {
     pub verifier: Verifier,
     pub program_id: ProgramId,
-    pub state_digest: StateDigest,
+    pub state_commitment: StateCommitment,
     pub contract_name: ContractName,
 }
 
@@ -617,7 +617,7 @@ impl Hashed<TxHash> for RegisterContractAction {
         let mut hasher = Sha3_256::new();
         hasher.update(self.verifier.0.clone());
         hasher.update(self.program_id.0.clone());
-        hasher.update(self.state_digest.0.clone());
+        hasher.update(self.state_commitment.0.clone());
         hasher.update(self.contract_name.0.clone());
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
@@ -687,7 +687,7 @@ impl ContractAction for DeleteContractAction {
 pub struct RegisterContractEffect {
     pub verifier: Verifier,
     pub program_id: ProgramId,
-    pub state_digest: StateDigest,
+    pub state_commitment: StateCommitment,
     pub contract_name: ContractName,
 }
 
@@ -699,7 +699,7 @@ impl Hashed<TxHash> for RegisterContractEffect {
         let mut hasher = Sha3_256::new();
         hasher.update(self.verifier.0.clone());
         hasher.update(self.program_id.0.clone());
-        hasher.update(self.state_digest.0.clone());
+        hasher.update(self.state_commitment.0.clone());
         hasher.update(self.contract_name.0.clone());
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))

@@ -5,7 +5,7 @@ use sdk::{utils::parse_raw_contract_input, Blob, ContractAction, ContractInput, 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use sdk::{Digestable, HyleContract, RunResult};
+use sdk::{HyleContract, RunResult};
 use sha2::{Digest, Sha256};
 
 #[cfg(feature = "client")]
@@ -26,6 +26,16 @@ impl HyleContract for Hydentity {
             Err(e) => Err(e),
             Ok(output) => Ok((output, exec_ctx, vec![])),
         }
+    }
+
+    fn commit(&self) -> sdk::StateCommitment {
+        let mut hasher = Sha256::new();
+        for (account, info) in &self.identities {
+            hasher.update(account.as_bytes());
+            hasher.update(info.hash.as_bytes());
+            hasher.update(info.nonce.to_be_bytes());
+        }
+        sdk::StateCommitment(hasher.finalize().to_vec())
     }
 }
 
@@ -152,18 +162,6 @@ impl IdentityVerification for Hydentity {
             Some(info) => Ok(serde_json::to_string(&info).map_err(|_| "Failed to serialize")?),
             None => Err("Identity not found"),
         }
-    }
-}
-
-impl Digestable for Hydentity {
-    fn as_digest(&self) -> sdk::StateDigest {
-        let mut hasher = Sha256::new();
-        for (account, info) in &self.identities {
-            hasher.update(account.as_bytes());
-            hasher.update(info.hash.as_bytes());
-            hasher.update(info.nonce.to_be_bytes());
-        }
-        sdk::StateDigest(hasher.finalize().to_vec())
     }
 }
 

@@ -9,8 +9,8 @@ use fixtures::ctx::{E2EContract, E2ECtx};
 use hydentity::{client::register_identity, Hydentity};
 use hyle::mempool::verifiers::verify_proof;
 use hyle_contract_sdk::{
-    guest, BlobTransaction, ContractInput, ContractName, Digestable, Hashed, HyleOutput, ProgramId,
-    StateDigest, Verifier,
+    guest, BlobTransaction, ContractInput, ContractName, Hashed, HyleContract, HyleOutput,
+    ProgramId, StateCommitment, Verifier,
 };
 use hyle_contracts::{HYDENTITY_ELF, UUID_TLD_ELF, UUID_TLD_ID};
 use hyle_model::OnchainEffect;
@@ -33,8 +33,8 @@ impl E2EContract for UuidContract {
     fn program_id() -> ProgramId {
         ProgramId(UUID_TLD_ID.to_vec())
     }
-    fn state_digest() -> StateDigest {
-        UuidTld::default().as_digest()
+    fn state_commitment() -> StateCommitment {
+        UuidTld::default().commit()
     }
 }
 
@@ -70,7 +70,7 @@ async fn test_uuid_registration() {
         UuidTldAction {
             verifier: "test".into(),
             program_id: ProgramId(vec![]),
-            state_digest: StateDigest(vec![0, 1, 2, 3]),
+            state_commitment: StateCommitment(vec![0, 1, 2, 3]),
         },
         None,
         None,
@@ -123,5 +123,5 @@ async fn test_uuid_registration() {
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
     };
     assert_eq!(contract.verifier, Verifier("test".into()));
-    assert_eq!(contract.state, StateDigest(vec![0, 1, 2, 3]));
+    assert_eq!(contract.state, StateCommitment(vec![0, 1, 2, 3]));
 }

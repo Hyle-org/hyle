@@ -184,12 +184,13 @@ pub trait ERC20 {
 #[cfg(test)]
 mod tests {
 
+    use crate::HyleContract;
+
     use super::*;
     use mockall::{
         mock,
         predicate::{self, *},
     };
-    use sdk::Digestable;
     extern crate std;
 
     mock! {
@@ -202,9 +203,12 @@ mod tests {
             fn approve(&mut self, owner: &str, spender: &str, amount: u128) -> Result<(), String>;
             fn allowance(&self, owner: &str, spender: &str) -> Result<u128, String>;
         }
-        impl Digestable for ERC20Contract {
-            fn as_digest(&self) -> sdk::StateDigest {
-                hyle_model::sdk::StateDigest(vec![])
+        impl HyleContract for ERC20Contract {
+            fn execute(&mut self, contract_input: &sdk::ContractInput) -> crate::RunResult {
+                unimplemented!()
+            }
+            fn commit(&self) -> sdk::StateCommitment {
+                sdk::StateCommitment(vec![])
             }
         }
     }

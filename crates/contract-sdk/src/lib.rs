@@ -1,13 +1,21 @@
 //! # Hylé Contract SDK
 //!
-//! This crate contains some tools to be used in smart contracts.
+//! This crate contains tools to be used in smart contracts that runs on rust zkvm like Risc0 or
+//! SP1.
 //!
-//! ## Shortcuts to important pages
+//! ## How to build a contract on Hyle ?
 //!
-//! * [Guest module for contract zkvm entrypoint](crate::guest) -> zkvm entrypoint
-//! * [HyleContract trait](trait@crate::HyleContract) -> Contract entrypoint
-//! * [Contract composition](StructuredBlobData) -> Cross contract calls
+//! To build a contract, you will need to create a contract lib, with a struct that implements
+//! the [HyleContract] trait.
 //!
+//! Then you will need a zkvm binary that will execute this code. Take a look at the
+//! [Guest module for contract zkvm](crate::guest).
+//!
+//! You can start from our templates for [Risc0](https://github.com/Hyle-org/template-risc0)
+//! or [SP1](https://github.com/Hyle-org/template-sp1).
+//!
+//! If your contract needs to interact with other contracts, take a lookt at
+//! [StructuredBlobData]. More is coming on that soon.
 #![cfg_attr(not(test), no_std)]
 
 extern crate alloc;
@@ -58,13 +66,14 @@ pub type RunResult = Result<(String, ExecutionContext, Vec<OnchainEffect>), Stri
 This trait is used to define the contract's entrypoint.
 By using it and the [execute](function@crate::guest::execute) function, you let the sdk
 generate for you the [HyleOutput] struct with correct fields.
-Your Contract struct, also needs to implement the [Digestable] trait.
 
 The [ContractInput] struct is built by the application backend and given as input to
 the zkvm.
 
-The first step that the contract might need to do in this function, is to call either
-[utils::parse_raw_contract_input] or [utils::parse_contract_input]
+The contract input is generic to any contract, and holds all the blobs of the blob transaction
+being proved. These blobs are stored as vec of bytes, so contract need to parse them into the
+expected type. For this, it can call either [utils::parse_raw_contract_input] or
+[utils::parse_contract_input]. Check the [utils] documentation for details on these functions.
 
 ## Example of execute implementation:
 
@@ -94,7 +103,14 @@ impl MyContract {
 ```
 */
 pub trait HyleContract {
+    /// Entry point of the contract
     fn execute(&mut self, contract_input: &ContractInput) -> RunResult;
+
+    /// This function builds the on-chain state commitment of the contract
+    /// It can compute a state hash, or a merkle root of the state, or any other commitment.
+    /// The [StateCommitment] will be stored on chain, and will be used as initial_state for
+    /// next contract execution.
+    fn commit(&self) -> StateCommitment;
 }
 
 pub const fn to_u8_array(val: &[u32; 8]) -> [u8; 32] {
@@ -216,12 +232,12 @@ mod tests {
     }
 
     #[test]
-    fn test_state_digest_encoding() {
-        let state_digest = StateDigest(vec![1, 2, 3, 4]);
-        let encoded = borsh::to_vec(&state_digest).expect("Failed to encode StateDigest");
-        let decoded: StateDigest =
-            borsh::from_slice(&encoded).expect("Failed to decode StateDigest");
-        assert_eq!(state_digest, decoded);
+    fn test_state_commitment_encoding() {
+        let state_commitment = StateCommitment(vec![1, 2, 3, 4]);
+        let encoded = borsh::to_vec(&state_commitment).expect("Failed to encode StateCommitment");
+        let decoded: StateCommitment =
+            borsh::from_slice(&encoded).expect("Failed to decode StateCommitment");
+        assert_eq!(state_commitment, decoded);
     }
 
     #[test]

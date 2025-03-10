@@ -11,7 +11,7 @@ use client_sdk::transaction_builder::{
 use client_sdk::{contract_states, transaction_builder};
 use hydentity::client::{register_identity, verify_identity};
 use hydentity::Hydentity;
-use hyle_contract_sdk::Digestable;
+use hyle_contract_sdk::HyleContract;
 use hyle_contract_sdk::Identity;
 use hyle_contract_sdk::TxHash;
 use hyle_contract_sdk::{guest, ContractInput, ContractName, HyleOutput};
@@ -122,7 +122,7 @@ pub async fn setup(hyllar: Hyllar, url: String, verifier: String) -> Result<()> 
             contract_name: "hyllar_test".into(),
             verifier: verifier.into(),
             program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
-            state_digest: hyllar.as_digest(),
+            state_commitment: hyllar.commit(),
         }
         .as_blob("hyle".into(), None, None)],
     );
@@ -410,7 +410,7 @@ pub async fn long_running_test(node_url: String, _indexer_url: String) -> Result
                 contract_name: random_hyllar_contract.clone(),
                 verifier: hyle_contract_sdk::Verifier("test".to_string()),
                 program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
-                state_digest: Hyllar::default().as_digest(),
+                state_commitment: Hyllar::default().commit(),
             }
             .as_blob("hyle".into(), None, None)],
         );
@@ -423,7 +423,7 @@ pub async fn long_running_test(node_url: String, _indexer_url: String) -> Result
                 contract_name: random_hydentity_contract.clone(),
                 verifier: hyle_contract_sdk::Verifier("test".to_string()),
                 program_id: hyle_contracts::HYDENTITY_ID.to_vec().into(),
-                state_digest: Hydentity::default().as_digest(),
+                state_commitment: Hydentity::default().commit(),
             }
             .as_blob("hyle".into(), None, None)],
         );
