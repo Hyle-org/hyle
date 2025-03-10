@@ -9,12 +9,12 @@ use crate::{
     data_availability::codec::{
         codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequest,
     },
+    log_error,
     model::{BlockHeight, CommonRunContext},
     module_handle_messages,
     node_state::{metrics::NodeStateMetrics, module::NodeStateEvent, NodeState, NodeStateStore},
     utils::{
         conf::SharedConf,
-        logger::LogMe,
         modules::{module_bus_client, Module},
     },
 };
@@ -99,21 +99,23 @@ impl DAListener {
             on_bus self.bus,
             frame = client.recv() => {
                 if let Some(streamed_signed_block) = frame {
-                    self.processing_next_frame(streamed_signed_block).await.log_error("Consuming da stream")?;
+                    log_error!(self.processing_next_frame(streamed_signed_block).await, "Consuming da stream")?;
                     client.ping().await?;
                 } else {
                     client = self.start_client(self.node_state.current_height + 1).await?;
                 }
             }
         };
-        let _ = Self::save_on_disk::<NodeStateStore>(
-            self.config
-                .data_directory
-                .join("da_listener_node_state.bin")
-                .as_path(),
-            &self.node_state,
-        )
-        .log_error("Saving node state");
+        let _ = log_error!(
+            Self::save_on_disk::<NodeStateStore>(
+                self.config
+                    .data_directory
+                    .join("da_listener_node_state.bin")
+                    .as_path(),
+                &self.node_state,
+            ),
+            "Saving node state"
+        );
 
         Ok(())
     }
