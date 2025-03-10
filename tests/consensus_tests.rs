@@ -1,4 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+use hyle::log_error;
+
 use anyhow::Result;
 use fixtures::ctx::E2ECtx;
 
@@ -11,13 +14,13 @@ mod e2e_consensus {
     use fixtures::test_helpers::send_transaction;
     use hydentity::client::{register_identity, verify_identity};
     use hydentity::Hydentity;
-    use hyle::{genesis::States, utils::logger::LogMe};
-    use hyle_contract_sdk::erc20::ERC20;
+    use hyle::genesis::States;
     use hyle_contract_sdk::HyleContract;
     use hyle_contract_sdk::Identity;
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF, STAKING_ELF};
     use hyle_model::{ContractName, StateCommitment};
     use hyllar::client::transfer;
+    use hyllar::erc20::ERC20;
     use hyllar::{Hyllar, FAUCET_ID};
     use staking::client::{delegate, stake};
     use staking::state::Staking;
@@ -51,12 +54,13 @@ mod e2e_consensus {
 
         assert!(node_info.pubkey.is_some());
 
-        let hyllar: Hyllar = ctx
-            .indexer_client()
-            .fetch_current_state(&"hyllar".into())
-            .await
-            .log_error("fetch state failed")
-            .unwrap();
+        let hyllar: Hyllar = log_error!(
+            ctx.indexer_client()
+                .fetch_current_state(&"hyllar".into())
+                .await,
+            "fetch state failed"
+        )
+        .unwrap();
         let hydentity: Hydentity = ctx
             .indexer_client()
             .fetch_current_state(&"hydentity".into())

@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use sdk::erc20::ERC20;
+use erc20::ERC20;
 use sdk::utils::parse_contract_input;
-use sdk::ContractInput;
-use sdk::{erc20::ERC20Action, HyleContract, RunResult};
+use sdk::{
+    Blob, BlobData, BlobIndex, ContractAction, ContractInput, ContractName, StructuredBlobData,
+};
+use sdk::{HyleContract, RunResult};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha2::{Digest, Sha256};
@@ -16,43 +18,14 @@ pub mod client;
 #[cfg(feature = "client")]
 pub mod indexer;
 
+pub mod erc20;
+
 pub const TOTAL_SUPPLY: u128 = 100_000_000_000;
 pub const FAUCET_ID: &str = "faucet.hydentity";
 
-/// Struct representing the Hyllar token.
-#[serde_as]
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone)]
-pub struct Hyllar {
-    total_supply: u128,
-    balances: BTreeMap<String, u128>, // Balances for each account
-    #[serde_as(as = "Vec<(_, _)>")]
-    allowances: BTreeMap<(String, String), u128>, // Allowances (owner, spender)
-}
-
-impl Default for Hyllar {
-    fn default() -> Self {
-        Self::custom(FAUCET_ID.to_string())
-    }
-}
-
-impl Hyllar {
-    pub fn custom(faucet_id: String) -> Self {
-        let mut balances = BTreeMap::new();
-        balances.insert(faucet_id, TOTAL_SUPPLY); // Assign initial supply to faucet
-        Hyllar {
-            total_supply: TOTAL_SUPPLY,
-            balances,
-            allowances: BTreeMap::new(),
-        }
-    }
-    pub fn to_bytes(&self) -> Vec<u8> {
-        borsh::to_vec(self).expect("Failed to encode Balances")
-    }
-}
-
 impl HyleContract for Hyllar {
     fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
-        let (action, execution_ctx) = parse_contract_input::<ERC20Action>(contract_input)?;
+        let (action, execution_ctx) = parse_contract_input::<HyllarAction>(contract_input)?;
         let output = self.execute_token_action(action, &execution_ctx);
 
         match output {
@@ -74,6 +47,63 @@ impl HyleContract for Hyllar {
             hasher.update(allowance.to_le_bytes());
         }
         sdk::StateCommitment(hasher.finalize().to_vec())
+    }
+}
+
+/// Struct representing the Hyllar token.
+#[serde_as]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone)]
+pub struct Hyllar {
+    total_supply: u128,
+    balances: BTreeMap<String, u128>, // Balances for each account
+    #[serde_as(as = "Vec<(_, _)>")]
+    allowances: BTreeMap<(String, String), u128>, // Allowances (owner, spender)
+}
+
+/// Enum representing possible calls to ERC-20 contract functions.
+#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone, PartialEq)]
+pub enum HyllarAction {
+    TotalSupply,
+    BalanceOf {
+        account: String,
+    },
+    Transfer {
+        recipient: String,
+        amount: u128,
+    },
+    TransferFrom {
+        owner: String,
+        recipient: String,
+        amount: u128,
+    },
+    Approve {
+        spender: String,
+        amount: u128,
+    },
+    Allowance {
+        owner: String,
+        spender: String,
+    },
+}
+
+impl Default for Hyllar {
+    fn default() -> Self {
+        Self::custom(FAUCET_ID.to_string())
+    }
+}
+
+impl Hyllar {
+    pub fn custom(faucet_id: String) -> Self {
+        let mut balances = BTreeMap::new();
+        balances.insert(faucet_id, TOTAL_SUPPLY); // Assign initial supply to faucet
+        Hyllar {
+            total_supply: TOTAL_SUPPLY,
+            balances,
+            allowances: BTreeMap::new(),
+        }
+    }
+    pub fn to_bytes(&self) -> Vec<u8> {
+        borsh::to_vec(self).expect("Failed to encode Balances")
     }
 }
 
@@ -145,6 +175,24 @@ impl ERC20 for Hyllar {
         {
             Some(&amount) => Ok(amount),
             None => Ok(0), // No allowance set
+        }
+    }
+}
+
+impl ContractAction for HyllarAction {
+    fn as_blob(
+        &self,
+        contract_name: ContractName,
+        caller: Option<BlobIndex>,
+        callees: Option<Vec<BlobIndex>>,
+    ) -> Blob {
+        Blob {
+            contract_name,
+            data: BlobData::from(StructuredBlobData {
+                caller,
+                callees,
+                parameters: self.clone(),
+            }),
         }
     }
 }

@@ -16,9 +16,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 pub mod caller;
-pub mod erc20;
 pub mod guest;
-pub mod identity_provider;
 pub mod utils;
 
 use caller::ExecutionContext;

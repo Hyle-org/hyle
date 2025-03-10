@@ -1,6 +1,7 @@
+use hyllar::HyllarAction;
 use sdk::{
-    erc20::ERC20Action, utils::parse_contract_input, Blob, BlobIndex, ContractInput, HyleContract,
-    RunResult, StakingAction,
+    utils::parse_contract_input, Blob, BlobIndex, ContractInput, HyleContract, RunResult,
+    StakingAction,
 };
 use sha2::{Digest, Sha256};
 use state::Staking;
@@ -62,10 +63,10 @@ impl HyleContract for Staking {
 }
 
 fn check_transfer_blob(blobs: &[Blob], index: BlobIndex, amount: u128) -> Result<(), String> {
-    let transfer_action = sdk::utils::parse_structured_blob::<ERC20Action>(blobs, &index)
+    let transfer_action = sdk::utils::parse_structured_blob::<HyllarAction>(blobs, &index)
         .ok_or("No transfer blob found".to_string())?;
     match transfer_action.data.parameters {
-        ERC20Action::Transfer {
+        HyllarAction::Transfer {
             recipient,
             amount: transfer_amount,
         } => {
@@ -92,7 +93,7 @@ fn check_transfer_blob(blobs: &[Blob], index: BlobIndex, amount: u128) -> Result
             Ok(())
         }
         els => Err(format!(
-            "Wrong ERC20Action, should be a transfer {:?} to 'staking' but was {:?}",
+            "Wrong HyllarAction, should be a transfer {:?} to 'staking' but was {:?}",
             amount, els
         )),
     }

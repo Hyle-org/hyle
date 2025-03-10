@@ -173,7 +173,7 @@ impl NodeState {
         // Handle all transactions
         for (lane_id, tx_id, tx) in signed_block.iter_txs_with_id() {
             // TODO: make this more efficient
-            info!("TX {} on lane {}", tx_id.1, lane_id);
+            debug!("TX {} on lane {}", tx_id.1, lane_id);
             block_under_construction
                 .lane_ids
                 .insert(tx_id.1.clone(), lane_id.clone());

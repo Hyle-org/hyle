@@ -1,10 +1,11 @@
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
-use sdk::{utils::parse_raw_contract_input, ContractInput};
+use identity_provider::IdentityVerification;
+use sdk::{utils::parse_raw_contract_input, Blob, ContractAction, ContractInput, ContractName};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use sdk::{identity_provider::IdentityVerification, HyleContract, RunResult};
+use sdk::{HyleContract, RunResult};
 use sha2::{Digest, Sha256};
 
 #[cfg(feature = "client")]
@@ -12,16 +13,7 @@ pub mod client;
 #[cfg(feature = "client")]
 pub mod indexer;
 
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
-pub struct AccountInfo {
-    pub hash: String,
-    pub nonce: u32,
-}
-
-#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone, Default)]
-pub struct Hydentity {
-    identities: BTreeMap<String, AccountInfo>,
-}
+pub mod identity_provider;
 
 impl HyleContract for Hydentity {
     fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
@@ -45,6 +37,25 @@ impl HyleContract for Hydentity {
         }
         sdk::StateCommitment(hasher.finalize().to_vec())
     }
+}
+
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone, Default)]
+pub struct Hydentity {
+    identities: BTreeMap<String, AccountInfo>,
+}
+
+/// Enum representing the actions that can be performed by the IdentityVerification contract.
+#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
+pub enum HydentityAction {
+    RegisterIdentity { account: String },
+    VerifyIdentity { account: String, nonce: u32 },
+    GetIdentityInfo { account: String },
+}
+
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+pub struct AccountInfo {
+    pub hash: String,
+    pub nonce: u32,
 }
 
 impl Hydentity {
@@ -150,6 +161,25 @@ impl IdentityVerification for Hydentity {
         match self.identities.get(account) {
             Some(info) => Ok(serde_json::to_string(&info).map_err(|_| "Failed to serialize")?),
             None => Err("Identity not found"),
+        }
+    }
+}
+
+impl HydentityAction {
+    pub fn as_blob(&self, contract_name: ContractName) -> Blob {
+        <Self as ContractAction>::as_blob(self, contract_name, None, None)
+    }
+}
+impl ContractAction for HydentityAction {
+    fn as_blob(
+        &self,
+        contract_name: ContractName,
+        _caller: Option<sdk::BlobIndex>,
+        _callees: Option<Vec<sdk::BlobIndex>>,
+    ) -> Blob {
+        Blob {
+            contract_name,
+            data: sdk::BlobData(borsh::to_vec(self).expect("failed to encode program inputs")),
         }
     }
 }

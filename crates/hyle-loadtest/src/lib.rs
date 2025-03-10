@@ -11,7 +11,6 @@ use client_sdk::transaction_builder::{
 use client_sdk::{contract_states, transaction_builder};
 use hydentity::client::{register_identity, verify_identity};
 use hydentity::Hydentity;
-use hyle_contract_sdk::erc20::ERC20;
 use hyle_contract_sdk::HyleContract;
 use hyle_contract_sdk::Identity;
 use hyle_contract_sdk::TxHash;
@@ -20,6 +19,7 @@ use hyle_contract_sdk::{Blob, BlobData, ContractAction, RegisterContractAction};
 use hyle_contract_sdk::{BlobTransaction, Transaction};
 use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF};
 use hyllar::client::transfer;
+use hyllar::erc20::ERC20;
 use hyllar::{Hyllar, FAUCET_ID};
 use rand::Rng;
 use tokio::task::JoinSet;
