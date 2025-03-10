@@ -13,7 +13,7 @@ use crate::*;
 pub struct Contract {
     pub name: ContractName,
     pub program_id: ProgramId,
-    pub state: StateDigest,
+    pub state: StateCommitment,
     pub verifier: Verifier,
 }
 

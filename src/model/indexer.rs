@@ -137,7 +137,7 @@ pub struct ContractDb {
     pub tx_hash: TxHashDb,   // Corresponds to the registration transaction hash
     pub verifier: String,    // Verifier of the contract
     pub program_id: Vec<u8>, // Program ID
-    pub state_digest: Vec<u8>, // State digest of the contract
+    pub state_commitment: Vec<u8>, // state commitment of the contract
     pub contract_name: String, // Contract name
 }
 
@@ -147,7 +147,7 @@ impl From<ContractDb> for APIContract {
             tx_hash: val.tx_hash.0,
             verifier: val.verifier,
             program_id: val.program_id,
-            state_digest: val.state_digest,
+            state_commitment: val.state_commitment,
             contract_name: val.contract_name,
         }
     }
@@ -158,7 +158,7 @@ pub struct ContractStateDb {
     // Struct for the contract_state table
     pub contract_name: String,             // Name of the contract
     pub block_hash: ConsensusProposalHash, // Hash of the block where the state is captured
-    pub state_digest: Vec<u8>,             // The contract state stored in JSON format
+    pub state_commitment: Vec<u8>,         // The contract state stored in JSON format
 }
 
 impl From<ContractStateDb> for APIContractState {
@@ -166,7 +166,7 @@ impl From<ContractStateDb> for APIContractState {
         APIContractState {
             contract_name: value.contract_name,
             block_hash: value.block_hash,
-            state_digest: value.state_digest,
+            state_commitment: value.state_commitment,
         }
     }
 }

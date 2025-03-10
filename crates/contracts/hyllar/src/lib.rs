@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use sdk::erc20::ERC20;
+use erc20::ERC20;
 use sdk::utils::parse_contract_input;
-use sdk::ContractInput;
-use sdk::{erc20::ERC20Action, Digestable, HyleContract, RunResult};
+use sdk::{
+    Blob, BlobData, BlobIndex, ContractAction, ContractInput, ContractName, StructuredBlobData,
+};
+use sdk::{HyleContract, RunResult};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha2::{Digest, Sha256};
@@ -16,8 +18,37 @@ pub mod client;
 #[cfg(feature = "client")]
 pub mod indexer;
 
+pub mod erc20;
+
 pub const TOTAL_SUPPLY: u128 = 100_000_000_000;
 pub const FAUCET_ID: &str = "faucet.hydentity";
+
+impl HyleContract for Hyllar {
+    fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
+        let (action, execution_ctx) = parse_contract_input::<HyllarAction>(contract_input)?;
+        let output = self.execute_token_action(action, &execution_ctx);
+
+        match output {
+            Err(e) => Err(e),
+            Ok(output) => Ok((output, execution_ctx, vec![])),
+        }
+    }
+
+    fn commit(&self) -> sdk::StateCommitment {
+        let mut hasher = Sha256::new();
+        hasher.update(self.total_supply.to_le_bytes());
+        for (account, balance) in self.balances.iter() {
+            hasher.update(account.as_bytes());
+            hasher.update(balance.to_le_bytes());
+        }
+        for ((owner, spender), allowance) in self.allowances.iter() {
+            hasher.update(owner.as_bytes());
+            hasher.update(spender.as_bytes());
+            hasher.update(allowance.to_le_bytes());
+        }
+        sdk::StateCommitment(hasher.finalize().to_vec())
+    }
+}
 
 /// Struct representing the Hyllar token.
 #[serde_as]
@@ -27,6 +58,32 @@ pub struct Hyllar {
     balances: BTreeMap<String, u128>, // Balances for each account
     #[serde_as(as = "Vec<(_, _)>")]
     allowances: BTreeMap<(String, String), u128>, // Allowances (owner, spender)
+}
+
+/// Enum representing possible calls to ERC-20 contract functions.
+#[derive(Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone, PartialEq)]
+pub enum HyllarAction {
+    TotalSupply,
+    BalanceOf {
+        account: String,
+    },
+    Transfer {
+        recipient: String,
+        amount: u128,
+    },
+    TransferFrom {
+        owner: String,
+        recipient: String,
+        amount: u128,
+    },
+    Approve {
+        spender: String,
+        amount: u128,
+    },
+    Allowance {
+        owner: String,
+        spender: String,
+    },
 }
 
 impl Default for Hyllar {
@@ -47,18 +104,6 @@ impl Hyllar {
     }
     pub fn to_bytes(&self) -> Vec<u8> {
         borsh::to_vec(self).expect("Failed to encode Balances")
-    }
-}
-
-impl HyleContract for Hyllar {
-    fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
-        let (action, execution_ctx) = parse_contract_input::<ERC20Action>(contract_input)?;
-        let output = self.execute_token_action(action, &execution_ctx);
-
-        match output {
-            Err(e) => Err(e),
-            Ok(output) => Ok((output, execution_ctx, vec![])),
-        }
     }
 }
 
@@ -134,20 +179,21 @@ impl ERC20 for Hyllar {
     }
 }
 
-impl Digestable for Hyllar {
-    fn as_digest(&self) -> sdk::StateDigest {
-        let mut hasher = Sha256::new();
-        hasher.update(self.total_supply.to_le_bytes());
-        for (account, balance) in self.balances.iter() {
-            hasher.update(account.as_bytes());
-            hasher.update(balance.to_le_bytes());
+impl ContractAction for HyllarAction {
+    fn as_blob(
+        &self,
+        contract_name: ContractName,
+        caller: Option<BlobIndex>,
+        callees: Option<Vec<BlobIndex>>,
+    ) -> Blob {
+        Blob {
+            contract_name,
+            data: BlobData::from(StructuredBlobData {
+                caller,
+                callees,
+                parameters: self.clone(),
+            }),
         }
-        for ((owner, spender), allowance) in self.allowances.iter() {
-            hasher.update(owner.as_bytes());
-            hasher.update(spender.as_bytes());
-            hasher.update(allowance.to_le_bytes());
-        }
-        sdk::StateDigest(hasher.finalize().to_vec())
     }
 }
 

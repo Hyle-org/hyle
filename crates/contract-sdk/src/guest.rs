@@ -11,7 +11,7 @@ The `fail` function is used to generate a failure output for a contract action.
 
 This is a code snippet of a Risc0 guest entrypoint (e.g. file `methods/guest/src/main.rs` in a risc0 template project).
 
-`Hydentity` struct has to implemetns [HyleContract], [Digestable] and [BorshDeserialize] traits.
+`Hydentity` struct has to implements [HyleContract] and [BorshDeserialize] traits.
 
 ```rust,no_run
 #![no_main]
@@ -34,7 +34,7 @@ fn main() {
 This is a code snippet of a SP1 guest entrypoint (e.g. file `program/src/main.rs` in a sp1 template project).
 
 
-`IdentityContractState` struct has to implemetns [HyleContract], [Digestable] and [BorshDeserialize] traits.
+`IdentityContractState` struct has to implements [HyleContract] and [BorshDeserialize] traits.
 
 ```rust,no_run
 #![no_main]
@@ -59,9 +59,9 @@ fn main() {
 use alloc::string::ToString;
 use alloc::vec;
 use borsh::BorshDeserialize;
-use hyle_model::StateDigest;
+use hyle_model::StateCommitment;
 
-use crate::{flatten_blobs, utils::as_hyle_output, ContractInput, Digestable, HyleOutput};
+use crate::{flatten_blobs, utils::as_hyle_output, ContractInput, HyleOutput};
 use crate::{HyleContract, RunResult};
 
 pub trait GuestEnv {
@@ -111,11 +111,15 @@ impl GuestEnv for SP1Env {
     }
 }
 
-pub fn fail(input: ContractInput, initial_state_digest: StateDigest, message: &str) -> HyleOutput {
+pub fn fail(
+    input: ContractInput,
+    initial_state_commitment: StateCommitment,
+    message: &str,
+) -> HyleOutput {
     HyleOutput {
         version: 1,
-        initial_state: initial_state_digest.clone(),
-        next_state: initial_state_digest,
+        initial_state: initial_state_commitment.clone(),
+        next_state: initial_state_commitment,
         identity: input.identity,
         index: input.index,
         blobs: flatten_blobs(&input.blobs),
@@ -135,7 +139,7 @@ pub fn fail(input: ContractInput, initial_state_digest: StateDigest, message: &s
 ///
 /// # Type Parameters
 ///
-/// * `State` - The type of the state that must implement the `Digestable`, `BorshDeserialize`, `HyleContract` traits.
+/// * `State` - The type of the state that must implement the `HyleContract` and `BorshDeserialize` traits.
 ///
 /// # Returns
 ///
@@ -146,19 +150,19 @@ pub fn fail(input: ContractInput, initial_state_digest: StateDigest, message: &s
 /// Panics if the contract initialization fails.
 pub fn execute<State>(contract_input: &ContractInput) -> (State, HyleOutput)
 where
-    State: HyleContract + Digestable + BorshDeserialize + 'static,
+    State: HyleContract + BorshDeserialize + 'static,
 {
     let mut state: State =
         borsh::from_slice(&contract_input.state).expect("Failed to decode state");
-    let initial_state_digest = state.as_digest();
+    let initial_state_commitment = state.commit();
 
     let mut res: RunResult = state.execute(contract_input);
 
-    let next_state_digest = state.as_digest();
+    let next_state_commitment = state.commit();
 
     let output = as_hyle_output::<State>(
-        initial_state_digest,
-        next_state_digest,
+        initial_state_commitment,
+        next_state_commitment,
         contract_input.clone(),
         &mut res,
     );

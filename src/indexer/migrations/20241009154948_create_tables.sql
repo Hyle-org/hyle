@@ -70,7 +70,7 @@ CREATE TABLE contracts (
     parent_dp_hash TEXT NOT NULL,
     verifier TEXT NOT NULL,
     program_id BYTEA NOT NULL,
-    state_digest BYTEA NOT NULL,
+    state_commitment BYTEA NOT NULL,
     contract_name TEXT PRIMARY KEY NOT NULL,
     FOREIGN KEY (parent_dp_hash, tx_hash) REFERENCES transactions(parent_dp_hash, tx_hash) ON DELETE CASCADE
 );
@@ -78,7 +78,7 @@ CREATE TABLE contracts (
 CREATE TABLE contract_state (
     contract_name TEXT NOT NULL,                                          -- Name of the contract
     block_hash TEXT NOT NULL REFERENCES blocks(hash) ON DELETE CASCADE,   -- Block where the state is captured
-    state_digest BYTEA NOT NULL,                                          -- The contract state stored in JSON format for flexibility
+    state_commitment BYTEA NOT NULL,                                          -- The contract state stored in JSON format for flexibility
     PRIMARY KEY (contract_name, block_hash)
 );
 

@@ -2,11 +2,10 @@ use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use sdk::erc20::ERC20Action;
+use hyllar::HyllarAction;
 use sdk::utils::parse_contract_input;
 use sdk::{
-    Blob, BlobIndex, ContractAction, ContractInput, Digestable, HyleContract, RunResult,
-    StateDigest,
+    Blob, BlobIndex, ContractAction, ContractInput, HyleContract, RunResult, StateCommitment,
 };
 use sdk::{BlobData, ContractName, StructuredBlobData};
 use serde::{Deserialize, Serialize};
@@ -66,7 +65,7 @@ impl HyleContract for Amm {
                 // Check that a blob for the transfer exists for first token in swap
                 execution_ctx.is_in_callee_blobs(
                     &ContractName(pair.0.clone()),
-                    ERC20Action::TransferFrom {
+                    HyllarAction::TransferFrom {
                         owner: execution_ctx.caller.0.clone(),
                         recipient: execution_ctx.contract_name.0.clone(),
                         amount: from_amount,
@@ -75,7 +74,7 @@ impl HyleContract for Amm {
                 // Check that a blob for the transfer exists for second token in swap
                 execution_ctx.is_in_callee_blobs(
                     &ContractName(pair.1.clone()),
-                    ERC20Action::Transfer {
+                    HyllarAction::Transfer {
                         recipient: execution_ctx.caller.0.clone(),
                         amount: to_amount,
                     },
@@ -86,7 +85,7 @@ impl HyleContract for Amm {
                 // Check that a blob for the transfer exists for first token in pair
                 execution_ctx.is_in_callee_blobs(
                     &ContractName(pair.0.clone()),
-                    ERC20Action::TransferFrom {
+                    HyllarAction::TransferFrom {
                         owner: execution_ctx.caller.0.clone(),
                         recipient: execution_ctx.contract_name.0.clone(),
                         amount: amounts.0,
@@ -95,7 +94,7 @@ impl HyleContract for Amm {
                 // Check that a blob for the transfer exists for second token in pair
                 execution_ctx.is_in_callee_blobs(
                     &ContractName(pair.1.clone()),
-                    ERC20Action::TransferFrom {
+                    HyllarAction::TransferFrom {
                         owner: execution_ctx.caller.0.clone(),
                         recipient: execution_ctx.contract_name.0.clone(),
                         amount: amounts.1,
@@ -108,6 +107,10 @@ impl HyleContract for Amm {
             Err(e) => Err(e),
             Ok(output) => Ok((output, execution_ctx, vec![])),
         }
+    }
+
+    fn commit(&self) -> sdk::StateCommitment {
+        sdk::StateCommitment(self.as_bytes())
     }
 }
 
@@ -204,16 +207,10 @@ impl Amm {
     }
 }
 
-impl Digestable for Amm {
-    fn as_digest(&self) -> sdk::StateDigest {
-        sdk::StateDigest(self.as_bytes())
-    }
-}
-
-impl TryFrom<StateDigest> for Amm {
+impl TryFrom<StateCommitment> for Amm {
     type Error = anyhow::Error;
 
-    fn try_from(state: StateDigest) -> Result<Self, Self::Error> {
+    fn try_from(state: StateCommitment) -> Result<Self, Self::Error> {
         borsh::from_slice(&state.0).map_err(|_| anyhow::anyhow!("Could not decode amm state"))
     }
 }
@@ -266,7 +263,7 @@ mod tests {
             Amm {
                 pairs: BTreeMap::default(),
             }
-            .as_digest()
+            .commit()
         );
 
         let result = state.verify_swap(("token1".to_string(), "token2".to_string()), 5, 10);
@@ -303,7 +300,7 @@ mod tests {
             Amm {
                 pairs: BTreeMap::default(),
             }
-            .as_digest()
+            .commit()
         );
 
         let result = state.verify_swap(("token1".to_string(), "token2".to_string()), 500, 980);
