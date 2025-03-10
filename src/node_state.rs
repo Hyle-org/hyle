@@ -418,13 +418,15 @@ impl NodeState {
             "Saving a hyle_output for BlobTx {} index {}",
             blob_proof_data.hyle_output.tx_hash.0, blob_proof_data.hyle_output.index
         );
+
+        let program_output = hex::encode(blob_proof_data.hyle_output.program_outputs.clone());
         tx_events
             .entry(blob_tx_hash.clone())
             .or_default()
             .push(TransactionStateEvent::NewProof {
                 blob_index: blob_proof_data.hyle_output.index,
                 proof_tx_hash: proof_tx_hash.clone(),
-                program_output: blob_proof_data.hyle_output.program_outputs.clone(),
+                program_output,
             });
 
         blob.possible_proofs.push((
