@@ -1,7 +1,7 @@
 //! State required for participation in consensus by the node.
 
 use crate::model::contract_registration::{
-    validate_contract_name_registration, validate_state_digest_size,
+    validate_contract_name_registration, validate_state_commitment_size,
 };
 use crate::model::verifiers::NativeVerifiers;
 use crate::model::*;
@@ -291,7 +291,7 @@ impl NodeState {
             Contract {
                 name: tx.contract_name.clone(),
                 program_id: tx.program_id.clone(),
-                state: tx.state_digest.clone(),
+                state: tx.state_commitment.clone(),
                 verifier: tx.verifier.clone(),
             },
         );
@@ -784,7 +784,7 @@ impl NodeState {
                         RegisterContractEffect {
                             contract_name: contract.name.clone(),
                             program_id: contract.program_id.clone(),
-                            state_digest: contract.state.clone(),
+                            state_commitment: contract.state.clone(),
                             verifier: contract.verifier.clone(),
                         },
                     ));
@@ -880,7 +880,7 @@ impl NodeState {
         proof_metadata: &(ProgramId, HyleOutput),
         contract: &Contract,
     ) -> Result<()> {
-        validate_state_digest_size(&proof_metadata.1.next_state)?;
+        validate_state_commitment_size(&proof_metadata.1.next_state)?;
 
         tracing::trace!(
             "Processing proof for contract {} with state {:?}",
@@ -911,14 +911,14 @@ impl NodeState {
                         &effect.contract_name,
                         &effect.verifier,
                         &effect.program_id,
-                        &effect.state_digest,
+                        &effect.state_commitment,
                     )?;
                     contract_changes.insert(
                         effect.contract_name.clone(),
                         SideEffect::Register(Contract {
                             name: effect.contract_name.clone(),
                             program_id: effect.program_id.clone(),
-                            state: effect.state_digest.clone(),
+                            state: effect.state_commitment.clone(),
                             verifier: effect.verifier.clone(),
                         }),
                     );
@@ -1029,7 +1029,7 @@ pub mod test {
             vec![RegisterContractAction {
                 verifier: "test".into(),
                 program_id: ProgramId(vec![]),
-                state_digest: StateCommitment(vec![0, 1, 2, 3]),
+                state_commitment: StateCommitment(vec![0, 1, 2, 3]),
                 contract_name: name,
             }
             .as_blob("hyle".into(), None, None)],
@@ -1040,7 +1040,7 @@ pub mod test {
         RegisterContractEffect {
             verifier: "test".into(),
             program_id: ProgramId(vec![]),
-            state_digest: StateCommitment(vec![0, 1, 2, 3]),
+            state_commitment: StateCommitment(vec![0, 1, 2, 3]),
             contract_name,
         }
     }
@@ -1918,7 +1918,7 @@ pub mod test {
                 vec![RegisterContractAction {
                     verifier: "test".into(),
                     program_id: ProgramId(vec![]),
-                    state_digest: StateCommitment(vec![0, 1, 2, 3]),
+                    state_commitment: StateCommitment(vec![0, 1, 2, 3]),
                     contract_name: name,
                 }
                 .as_blob(tld, None, None)],
@@ -2023,7 +2023,7 @@ pub mod test {
                     RegisterContractAction {
                         verifier: "test".into(),
                         program_id: ProgramId(vec![]),
-                        state_digest: StateCommitment(vec![0, 1, 2, 3]),
+                        state_commitment: StateCommitment(vec![0, 1, 2, 3]),
                         contract_name: "c1".into(),
                     }
                     .as_blob("hyle".into(), None, None),
@@ -2151,7 +2151,7 @@ pub mod test {
                 .push(OnchainEffect::RegisterContract(RegisterContractEffect {
                     verifier: "test".into(),
                     program_id: ProgramId(vec![1]),
-                    state_digest: StateCommitment(vec![0, 1, 2, 3]),
+                    state_commitment: StateCommitment(vec![0, 1, 2, 3]),
                     contract_name: "sub.c2.hyle".into(),
                 }));
             let sub_c2_proof = new_proof_tx(&"c2.hyle".into(), &output, &register_sub_c2.hashed());
@@ -2239,7 +2239,7 @@ pub mod test {
                 .push(OnchainEffect::RegisterContract(RegisterContractEffect {
                     verifier: "test".into(),
                     program_id: ProgramId(vec![1]),
-                    state_digest: StateCommitment(vec![0, 1, 2, 3]),
+                    state_commitment: StateCommitment(vec![0, 1, 2, 3]),
                     contract_name: "sub.c2.hyle".into(),
                 }));
             let sub_c2_proof = new_proof_tx(&"c2.hyle".into(), &output, &register_sub_c2.hashed());

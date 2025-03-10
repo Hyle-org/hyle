@@ -60,14 +60,14 @@ pub type RunResult = Result<(String, ExecutionContext, Vec<OnchainEffect>), Stri
 This trait is used to define the contract's entrypoint.
 By using it and the [execute](function@crate::guest::execute) function, you let the sdk
 generate for you the [HyleOutput] struct with correct fields.
-Your Contract struct, also needs to implement the [Digestable] trait.
 
 The [ContractInput] struct is built by the application backend and given as input to
 the zkvm.
 
-// TODO why this ?
-The first step that the contract might need to do in this function, is to call either
-[utils::parse_raw_contract_input] or [utils::parse_contract_input]
+The contract input is generic to any contract, and holds all the blobs of the blob transaction
+being proved. These blobs are stored as vec of bytes, so contract need to parse them into the
+expected type. For this, it can call either [utils::parse_raw_contract_input] or
+[utils::parse_contract_input]. Check the [utils] documentation for details on these functions.
 
 ## Example of execute implementation:
 
@@ -97,10 +97,10 @@ impl MyContract {
 ```
 */
 pub trait HyleContract {
-    // Entru point of the contract
+    /// Entry point of the contract
     fn execute(&mut self, contract_input: &ContractInput) -> RunResult;
 
-    /// This function is used by the SDK to build the on-chain state commitment of the contract
+    /// This function builds the on-chain state commitment of the contract
     /// It can compute a state hash, or a merkle root of the state, or any other commitment.
     /// The [StateCommitment] will be stored on chain, and will be used as initial_state for
     /// next contract execution.
@@ -226,12 +226,12 @@ mod tests {
     }
 
     #[test]
-    fn test_state_digest_encoding() {
-        let state_digest = StateCommitment(vec![1, 2, 3, 4]);
-        let encoded = borsh::to_vec(&state_digest).expect("Failed to encode StateDigest");
+    fn test_state_commitment_encoding() {
+        let state_commitment = StateCommitment(vec![1, 2, 3, 4]);
+        let encoded = borsh::to_vec(&state_commitment).expect("Failed to encode StateCommitment");
         let decoded: StateCommitment =
-            borsh::from_slice(&encoded).expect("Failed to decode StateDigest");
-        assert_eq!(state_digest, decoded);
+            borsh::from_slice(&encoded).expect("Failed to decode StateCommitment");
+        assert_eq!(state_commitment, decoded);
     }
 
     #[test]

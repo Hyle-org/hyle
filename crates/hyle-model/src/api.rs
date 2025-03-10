@@ -22,7 +22,7 @@ pub struct NodeInfo {
 pub struct APIRegisterContract {
     pub verifier: Verifier,
     pub program_id: ProgramId,
-    pub state_digest: StateCommitment,
+    pub state_commitment: StateCommitment,
     pub contract_name: ContractName,
 }
 
@@ -158,7 +158,7 @@ pub struct APIContract {
     #[serde_as(as = "serde_with::hex::Hex")]
     pub program_id: Vec<u8>, // Program ID
     #[serde_as(as = "serde_with::hex::Hex")]
-    pub state_digest: Vec<u8>, // State digest of the contract
+    pub state_commitment: Vec<u8>, // State commitment of the contract
     pub contract_name: String, // Contract name
 }
 
@@ -167,7 +167,7 @@ pub struct APIContractState {
     // Struct for the contract_state table
     pub contract_name: String,             // Name of the contract
     pub block_hash: ConsensusProposalHash, // Hash of the block where the state is captured
-    pub state_digest: Vec<u8>,             // The contract state stored in JSON format
+    pub state_commitment: Vec<u8>,             // The contract state stored in JSON format
 }
 
 #[serde_as]

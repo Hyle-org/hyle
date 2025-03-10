@@ -125,8 +125,8 @@ where
 }
 
 pub fn as_hyle_output<State: HyleContract + BorshDeserialize>(
-    initial_state_digest: StateCommitment,
-    nex_state_digest: StateCommitment,
+    initial_state_commitment: StateCommitment,
+    nex_state_commitment: StateCommitment,
     contract_input: ContractInput,
     res: &mut crate::RunResult,
 ) -> HyleOutput {
@@ -135,7 +135,7 @@ pub fn as_hyle_output<State: HyleContract + BorshDeserialize>(
             if !execution_context.callees_blobs.is_empty() {
                 return fail(
                     contract_input,
-                    initial_state_digest,
+                    initial_state_commitment,
                     &format!(
                         "Execution context has not been fully consumed {:?}",
                         execution_context.callees_blobs
@@ -144,8 +144,8 @@ pub fn as_hyle_output<State: HyleContract + BorshDeserialize>(
             }
             HyleOutput {
                 version: 1,
-                initial_state: initial_state_digest,
-                next_state: nex_state_digest,
+                initial_state: initial_state_commitment,
+                next_state: nex_state_commitment,
                 identity: contract_input.identity,
                 index: contract_input.index,
                 blobs: flatten_blobs(&contract_input.blobs),
@@ -156,7 +156,7 @@ pub fn as_hyle_output<State: HyleContract + BorshDeserialize>(
                 program_outputs: core::mem::take(program_output).into_bytes(),
             }
         }
-        Err(message) => fail(contract_input, initial_state_digest, message),
+        Err(message) => fail(contract_input, initial_state_commitment, message),
     }
 }
 

@@ -66,7 +66,7 @@ mod e2e_consensus {
             ctx.indexer_client()
                 .get_indexer_contract(&"staking".into())
                 .await?
-                .state_digest,
+                .state_commitment,
         );
 
         let staking: Staking = ctx

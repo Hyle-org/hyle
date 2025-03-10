@@ -255,7 +255,7 @@ mod tests {
                 unimplemented!()
             }
             fn commit(&self) -> hyle_model::StateCommitment {
-                hyle_model::sdk::StateDigest(vec![])
+                hyle_model::sdk::StateCommitment(vec![])
             }
         }
     }

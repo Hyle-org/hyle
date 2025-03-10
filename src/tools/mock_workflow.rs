@@ -167,7 +167,7 @@ impl MockWorkflowHandler {
             vec![RegisterContractAction {
                 verifier: "verifier".into(),
                 program_id: ProgramId(vec![]),
-                state_digest: StateCommitment(vec![]),
+                state_commitment: StateCommitment(vec![]),
                 contract_name: ContractName::new("contract"),
             }
             .as_blob("hyle".into(), None, None)],

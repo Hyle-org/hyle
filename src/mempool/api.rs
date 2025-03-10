@@ -95,7 +95,7 @@ pub async fn send_blob_transaction(
                 &parameters.contract_name,
                 &parameters.verifier,
                 &parameters.program_id,
-                &parameters.state_digest,
+                &parameters.state_commitment,
             )
             .map_err(|err| AppError(StatusCode::BAD_REQUEST, anyhow!(err)))?;
         }
@@ -145,7 +145,7 @@ pub async fn register_contract(
         &payload.contract_name,
         &payload.verifier,
         &payload.program_id,
-        &payload.state_digest,
+        &payload.state_commitment,
     )
     .map_err(|err| AppError(StatusCode::BAD_REQUEST, anyhow!(err)))?;
 
@@ -154,7 +154,7 @@ pub async fn register_contract(
         vec![RegisterContractAction {
             verifier: payload.verifier,
             program_id: payload.program_id,
-            state_digest: payload.state_digest,
+            state_commitment: payload.state_commitment,
             contract_name: payload.contract_name,
         }
         .as_blob(owner, None, None)],

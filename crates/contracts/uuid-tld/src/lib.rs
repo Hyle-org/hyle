@@ -17,7 +17,7 @@ pub mod client;
 pub struct UuidTldAction {
     pub verifier: Verifier,
     pub program_id: ProgramId,
-    pub state_digest: StateCommitment,
+    pub state_commitment: StateCommitment,
 }
 
 impl UuidTldAction {
@@ -65,7 +65,7 @@ impl HyleContract for UuidTld {
                 .into(),
                 verifier: action.verifier,
                 program_id: action.program_id,
-                state_digest: action.state_digest,
+                state_commitment: action.state_commitment,
             })],
         ))
     }
@@ -150,7 +150,7 @@ mod test {
         let action = UuidTldAction {
             verifier: "test".into(),
             program_id: ProgramId(vec![1, 2, 3]),
-            state_digest: StateCommitment(vec![0, 1, 2, 3]),
+            state_commitment: StateCommitment(vec![0, 1, 2, 3]),
         };
         let mut state = UuidTld::default();
 

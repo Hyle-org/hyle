@@ -13,7 +13,7 @@ pub fn register_hyle_contract(
     new_contract_name: ContractName,
     verifier: Verifier,
     program_id: ProgramId,
-    state_digest: StateCommitment,
+    state_commitment: StateCommitment,
 ) -> anyhow::Result<()> {
     builder.add_action(
         "hyle".into(),
@@ -21,7 +21,7 @@ pub fn register_hyle_contract(
             contract_name: new_contract_name,
             verifier,
             program_id,
-            state_digest,
+            state_commitment: state_commitment,
         },
         None,
         None,

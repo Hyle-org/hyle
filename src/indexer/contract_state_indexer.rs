@@ -303,10 +303,10 @@ mod tests {
     }
 
     async fn register_contract(indexer: &mut ContractStateIndexer<MockState>) {
-        let state_digest = StateCommitment::default();
+        let state_commitment = StateCommitment::default();
         let rce = RegisterContractEffect {
             contract_name: indexer.contract_name.clone(),
-            state_digest,
+            state_commitment,
             verifier: "test".into(),
             program_id: ProgramId(vec![]),
         };

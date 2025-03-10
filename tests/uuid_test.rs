@@ -70,7 +70,7 @@ async fn test_uuid_registration() {
         UuidTldAction {
             verifier: "test".into(),
             program_id: ProgramId(vec![]),
-            state_digest: StateCommitment(vec![0, 1, 2, 3]),
+            state_commitment: StateCommitment(vec![0, 1, 2, 3]),
         },
         None,
         None,

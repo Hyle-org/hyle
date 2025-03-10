@@ -294,7 +294,7 @@ impl E2ECtx {
         let blobs = vec![RegisterContractAction {
             verifier: Contract::verifier(),
             program_id: Contract::program_id(),
-            state_digest: Contract::state_commitment(),
+            state_commitment: Contract::state_commitment(),
             contract_name: name.into(),
         }
         .as_blob("hyle".into(), None, None)];

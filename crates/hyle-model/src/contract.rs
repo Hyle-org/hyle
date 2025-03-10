@@ -57,7 +57,7 @@ pub struct StateCommitment(pub Vec<u8>);
 
 impl std::fmt::Debug for StateCommitment {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "StateDigest({})", hex::encode(&self.0))
+        write!(f, "StateCommitment({})", hex::encode(&self.0))
     }
 }
 
@@ -588,7 +588,7 @@ impl Add<BlockHeight> for BlockHeight {
 pub struct RegisterContractAction {
     pub verifier: Verifier,
     pub program_id: ProgramId,
-    pub state_digest: StateCommitment,
+    pub state_commitment: StateCommitment,
     pub contract_name: ContractName,
 }
 
@@ -600,7 +600,7 @@ impl Hashed<TxHash> for RegisterContractAction {
         let mut hasher = Sha3_256::new();
         hasher.update(self.verifier.0.clone());
         hasher.update(self.program_id.0.clone());
-        hasher.update(self.state_digest.0.clone());
+        hasher.update(self.state_commitment.0.clone());
         hasher.update(self.contract_name.0.clone());
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
@@ -670,7 +670,7 @@ impl ContractAction for DeleteContractAction {
 pub struct RegisterContractEffect {
     pub verifier: Verifier,
     pub program_id: ProgramId,
-    pub state_digest: StateCommitment,
+    pub state_commitment: StateCommitment,
     pub contract_name: ContractName,
 }
 
@@ -682,7 +682,7 @@ impl Hashed<TxHash> for RegisterContractEffect {
         let mut hasher = Sha3_256::new();
         hasher.update(self.verifier.0.clone());
         hasher.update(self.program_id.0.clone());
-        hasher.update(self.state_digest.0.clone());
+        hasher.update(self.state_commitment.0.clone());
         hasher.update(self.contract_name.0.clone());
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))

@@ -692,7 +692,7 @@ impl Indexer {
         for (tx_hash, contract) in block.registered_contracts {
             let verifier = &contract.verifier.0;
             let program_id = &contract.program_id.0;
-            let state_digest = &contract.state_digest.0;
+            let state_commitment = &contract.state_commitment.0;
             let contract_name = &contract.contract_name.0;
             let tx_parent_dp_hash: DataProposalHashDb = block
                 .dp_hashes
@@ -707,45 +707,45 @@ impl Indexer {
 
             // Adding to Contract table
             sqlx::query(
-                "INSERT INTO contracts (tx_hash, parent_dp_hash, verifier, program_id, state_digest, contract_name)
+                "INSERT INTO contracts (tx_hash, parent_dp_hash, verifier, program_id, state_commitment, contract_name)
                 VALUES ($1, $2, $3, $4, $5, $6)",
             )
             .bind(tx_hash)
             .bind(tx_parent_dp_hash)
             .bind(verifier)
             .bind(program_id)
-            .bind(state_digest)
+            .bind(state_commitment)
             .bind(contract_name)
             .execute(&mut *transaction)
             .await?;
 
             // Adding to ContractState table
             sqlx::query(
-                "INSERT INTO contract_state (contract_name, block_hash, state_digest)
+                "INSERT INTO contract_state (contract_name, block_hash, state_commitment)
                 VALUES ($1, $2, $3)",
             )
             .bind(contract_name)
             .bind(block.hash.clone())
-            .bind(state_digest)
+            .bind(state_commitment)
             .execute(&mut *transaction)
             .await?;
         }
 
         // Handling updated contract state
-        for (contract_name, state_digest) in block.updated_states {
+        for (contract_name, state_commitment) in block.updated_states {
             let contract_name = &contract_name.0;
-            let state_digest = &state_digest.0;
+            let state_commitment = &state_commitment.0;
             sqlx::query(
-                "UPDATE contract_state SET state_digest = $1 WHERE contract_name = $2 AND block_hash = $3",
+                "UPDATE contract_state SET state_commitment = $1 WHERE contract_name = $2 AND block_hash = $3",
             )
-            .bind(state_digest.clone())
+            .bind(state_commitment.clone())
             .bind(contract_name.clone())
             .bind(block.hash.clone())
             .execute(&mut *transaction)
             .await?;
 
-            sqlx::query("UPDATE contracts SET state_digest = $1 WHERE contract_name = $2")
-                .bind(state_digest)
+            sqlx::query("UPDATE contracts SET state_commitment = $1 WHERE contract_name = $2")
+                .bind(state_commitment)
                 .bind(contract_name)
                 .execute(&mut *transaction)
                 .await?;
@@ -859,14 +859,14 @@ mod test {
 
     fn new_register_tx(
         contract_name: ContractName,
-        state_digest: StateCommitment,
+        state_commitment: StateCommitment,
     ) -> BlobTransaction {
         BlobTransaction::new(
             "hyle.hyle",
             vec![RegisterContractAction {
                 verifier: "test".into(),
                 program_id: ProgramId(vec![3, 2, 1]),
-                state_digest,
+                state_commitment,
                 contract_name,
             }
             .as_blob("hyle".into(), None, None)],
@@ -1249,12 +1249,12 @@ mod test {
         let transactions_response = server.get("/contract/c1").await;
         transactions_response.assert_status_ok();
         let json_response = transactions_response.json::<APIContract>();
-        assert_eq!(json_response.state_digest, next_state.0);
+        assert_eq!(json_response.state_commitment, next_state.0);
 
         let transactions_response = server.get("/contract/c2").await;
         transactions_response.assert_status_ok();
         let json_response = transactions_response.json::<APIContract>();
-        assert_eq!(json_response.state_digest, next_state.0);
+        assert_eq!(json_response.state_commitment, next_state.0);
 
         let transactions_response = server.get("/contract/d1").await;
         transactions_response.assert_status_not_found();
