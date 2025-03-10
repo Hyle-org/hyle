@@ -52,7 +52,7 @@ pub struct ContractInput {
     pub state: Vec<u8>,
     /// TxHash of the BlobTransaction being proved
     pub tx_hash: TxHash,
-    /// Identity of the BlobTransaction
+    /// User's identity used for the BlobTransaction
     pub identity: Identity,
     /// All [Blob]s of the BlobTransaction
     pub blobs: Vec<Blob>,
