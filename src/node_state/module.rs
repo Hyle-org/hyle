@@ -1,6 +1,7 @@
 //! State required for participation in consensus by the node.
 
-use super::NodeState;
+use super::metrics::NodeStateMetrics;
+use super::{NodeState, NodeStateStore};
 use crate::bus::{command_response::Query, BusClientSender, BusMessage};
 use crate::data_availability::DataEvent;
 use crate::log_error;
@@ -61,19 +62,22 @@ impl Module for NodeStateModule {
                 guard.replace(router.nest("/v1/", api));
             }
         }
+        let metrics = NodeStateMetrics::global(ctx.config.id.clone(), "node_state");
 
-        let storage = Self::load_from_disk_or_default::<NodeState>(
+        let store = Self::load_from_disk_or_default::<NodeStateStore>(
             ctx.config.data_directory.join("node_state.bin").as_path(),
         );
 
-        for name in storage.contracts.keys() {
+        for name in store.contracts.keys() {
             info!("📝 Loaded contract state for {}", name);
         }
+
+        let node_state = NodeState { store, metrics };
 
         Ok(Self {
             config: ctx.config.clone(),
             bus,
-            inner: storage,
+            inner: node_state,
         })
     }
 
@@ -105,7 +109,7 @@ impl Module for NodeStateModule {
         };
 
         let _ = log_error!(
-            Self::save_on_disk::<NodeState>(
+            Self::save_on_disk::<NodeStateStore>(
                 self.config.data_directory.join("node_state.bin").as_path(),
                 &self.inner,
             ),

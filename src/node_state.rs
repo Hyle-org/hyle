@@ -12,6 +12,7 @@ use anyhow::{bail, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_contract_sdk::{utils::parse_structured_blob, BlobIndex, HyleOutput, TxHash};
 use hyle_tld::handle_blob_for_hyle_tld;
+use metrics::NodeStateMetrics;
 use ordered_tx_map::OrderedTxMap;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -22,6 +23,7 @@ use tracing::{debug, error, info, trace};
 
 mod api;
 mod hyle_tld;
+pub mod metrics;
 pub mod module;
 mod ordered_tx_map;
 mod timeouts;
@@ -61,11 +63,40 @@ struct SettlementResult {
     blob_proof_output_indices: Vec<usize>,
 }
 
+#[derive(Debug, Clone)]
+pub struct NodeState {
+    pub metrics: NodeStateMetrics,
+    pub store: NodeStateStore,
+}
+
+impl NodeState {
+    pub fn create(node_id: String, module_name: &'static str) -> Self {
+        NodeState {
+            metrics: NodeStateMetrics::global(node_id, module_name),
+            store: NodeStateStore::default(),
+        }
+    }
+}
+
+impl std::ops::Deref for NodeState {
+    type Target = NodeStateStore;
+
+    fn deref(&self) -> &Self::Target {
+        &self.store
+    }
+}
+
+impl std::ops::DerefMut for NodeState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.store
+    }
+}
+
 /// NodeState manages the flattened, up-to-date state of the chain.
 /// It processes raw transactions and outputs more structured data for indexers.
 /// See also: NodeStateModule for the actual module implementation.
 #[derive(BorshSerialize, BorshDeserialize, Debug, Clone)]
-pub struct NodeState {
+pub struct NodeStateStore {
     timeouts: Timeouts,
     pub current_height: BlockHeight,
     // This field is public for testing purposes
@@ -74,7 +105,7 @@ pub struct NodeState {
 }
 
 // TODO: we should register the 'hyle' TLD in the genesis block.
-impl Default for NodeState {
+impl Default for NodeStateStore {
     fn default() -> Self {
         let mut ret = Self {
             timeouts: Timeouts::default(),
@@ -230,15 +261,25 @@ impl NodeState {
             // For each transaction that could not be settled, if it is the next one to be settled, set its timeout
             for unsettled_tx in next_unsettled_txs.iter() {
                 if self.unsettled_transactions.is_next_to_settle(unsettled_tx) {
-                    if let Some(tx) = self.unsettled_transactions.get(unsettled_tx) {
+                    if let Some(block_height) = self
+                        .unsettled_transactions
+                        .get(unsettled_tx)
+                        .map(|ut| ut.tx_context.block_height)
+                    {
                         // Timeout starts from when the blob tx was sequenced
-                        self.timeouts
-                            .set(unsettled_tx.clone(), tx.tx_context.block_height);
+                        self.timeouts.set(unsettled_tx.clone(), block_height);
                     }
                 }
             }
             next_unsettled_txs.clear();
         }
+
+        self.metrics.record_contracts(self.contracts.len() as u64);
+        self.metrics
+            .record_unsettled_transactions(self.unsettled_transactions.len() as u64);
+        self.metrics.add_processed_block();
+        self.metrics.record_current_height(self.current_height.0);
+
         block_under_construction.txs = signed_block.iter_clone_txs_with_id().collect();
         block_under_construction
     }
@@ -322,8 +363,9 @@ impl NodeState {
         }) && should_try_and_settle;
 
         if self.unsettled_transactions.is_next_to_settle(&blob_tx_hash) {
+            let block_height = self.current_height;
             // Update timeouts
-            self.timeouts.set(blob_tx_hash.clone(), self.current_height);
+            self.timeouts.set(blob_tx_hash.clone(), block_height);
         }
 
         if should_try_and_settle {
@@ -484,6 +526,7 @@ impl NodeState {
             unsettled_tx.blobs.iter(),
             vec![],
             events,
+            &NodeStateMetrics::global("node_name".to_string(), "module_name"),
         ) {
             Some(res) => res,
             None => {
@@ -511,6 +554,7 @@ impl NodeState {
         mut blob_iter: impl Iterator<Item = &'a UnsettledBlobMetadata> + Clone,
         mut blob_proof_output_indices: Vec<usize>,
         events: &mut Vec<TransactionStateEvent>,
+        metrics: &NodeStateMetrics,
     ) -> Option<Result<SettlementResult, ()>> {
         // Recursion end-case: we succesfully settled all prior blobs, so success.
         let Some(current_blob) = blob_iter.next() else {
@@ -546,6 +590,7 @@ impl NodeState {
                         blob_iter.clone(),
                         blob_proof_output_indices.clone(),
                         events,
+                        metrics,
                     )
                 }
                 Err(err) => {
@@ -607,12 +652,14 @@ impl NodeState {
             }
 
             tracing::trace!("Settlement - OK blob");
+            metrics.add_settled_transactions(1);
             match Self::settle_blobs_recursively(
                 contracts,
                 current_contracts,
                 blob_iter.clone(),
                 blob_proof_output_indices.clone(),
                 events,
+                metrics,
             ) {
                 // If this proof settles, early return, otherwise try the next one (with continue for explicitness)
                 Some(res) => return Some(res),
@@ -666,6 +713,7 @@ impl NodeState {
             .entry(bth.clone())
             .or_default()
             .push(TransactionStateEvent::Settled);
+        self.metrics.add_settled_transactions(1);
         info!("✨ Settled tx {}", &bth);
 
         // Keep track of which blob proof output we used to settle the TX for each blob.
@@ -907,6 +955,7 @@ impl NodeState {
         txs_at_timeout.retain(|tx| {
             if let Some(mut tx) = self.unsettled_transactions.remove(tx) {
                 info!("⏰ Blob tx timed out: {}", &tx.hash);
+                self.metrics.add_triggered_timeouts();
                 let hash = tx.hash.clone();
                 let parent_hash = tx.parent_dp_hash.clone();
                 block_under_construction
@@ -933,8 +982,9 @@ impl NodeState {
                 // For each transaction that could not be settled, if it is the next one to be settled, reset its timeout
                 for unsettled_tx in next_unsettled_txs {
                     if self.unsettled_transactions.is_next_to_settle(&unsettled_tx) {
+                        let block_height = self.current_height;
                         // Timeout starts from current_height
-                        self.timeouts.set(unsettled_tx.clone(), self.current_height);
+                        self.timeouts.set(unsettled_tx.clone(), block_height);
                     }
                 }
 
@@ -960,7 +1010,10 @@ pub mod test {
     use utils::get_current_timestamp_ms;
 
     async fn new_node_state() -> NodeState {
-        NodeState::default()
+        NodeState {
+            metrics: NodeStateMetrics::global("test".to_string(), "test"),
+            store: NodeStateStore::default(),
+        }
     }
 
     fn new_blob(contract: &str) -> Blob {

@@ -437,14 +437,12 @@ pub mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use crate::data_availability::codec::{codec_data_availability, DataAvailabilityRequest};
+    use crate::node_state::NodeState;
     use crate::{
         bus::BusClientSender,
         consensus::CommittedConsensusProposal,
         model::*,
-        node_state::{
-            module::{NodeStateBusClient, NodeStateEvent},
-            NodeState,
-        },
+        node_state::module::{NodeStateBusClient, NodeStateEvent},
         utils::{conf::Conf, integration_test::find_available_port},
     };
     use client_sdk::tcp::TcpCommand;
@@ -472,6 +470,9 @@ pub mod tests {
             let node_state_bus = NodeStateBusClient::new_from_bus(shared_bus).await;
 
             let mut config: Conf = Conf::new(None, None, None).unwrap();
+
+            let node_state = NodeState::create(config.id.clone(), "data_availability");
+
             config.da_address = format!("127.0.0.1:{}", find_available_port().await);
             let da = super::DataAvailability {
                 config: config.into(),
@@ -482,8 +483,6 @@ pub mod tests {
                 catchup_task: None,
                 catchup_height: None,
             };
-
-            let node_state = NodeState::default();
 
             DataAvailabilityTestCtx {
                 node_state_bus,
