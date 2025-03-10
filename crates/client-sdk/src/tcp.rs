@@ -36,8 +36,8 @@ pub enum TcpMessage<Data: Clone> {
 // TODO: Add ConnectPeer, RemovePeer ?
 #[derive(Debug, Clone, BorshDeserialize, BorshSerialize)]
 pub enum TcpCommand<Data: Clone> {
-    Broadcast(Box<Data>),
-    Send(String, Box<Data>),
+    Broadcast(Data),
+    Send(String, Data),
 }
 
 // TODO: when useful, we can add NewPeer event, PeerDisconnected ...
@@ -165,7 +165,15 @@ where
         }
     }
 
-    pub async fn send(&mut self, msg: TcpCommand<Res>) -> Result<()> {
+    pub async fn broadcast(&mut self, msg: Res) -> Result<()> {
+        self.send_command(TcpCommand::Broadcast(msg)).await
+    }
+
+    pub async fn send(&mut self, to: String, msg: Res) -> Result<()> {
+        self.send_command(TcpCommand::Send(to, msg)).await
+    }
+
+    pub async fn send_command(&mut self, msg: TcpCommand<Res>) -> Result<()> {
         match msg {
             TcpCommand::Broadcast(data) => {
                 debug!("Broadcasting data {:?} to all", data);
@@ -178,7 +186,7 @@ where
                         to_remove.push(peer_id.clone());
                     } else {
                         debug!("streaming event to peer {}", &peer_id);
-                        match peer.sender.send(TcpMessage::Data((*data).clone())).await {
+                        match peer.sender.send(TcpMessage::Data(data.clone())).await {
                             Ok(_) => {}
                             Err(e) => {
                                 debug!(
@@ -205,7 +213,7 @@ where
 
                 peer_stream
                     .sender
-                    .send(TcpMessage::Data(*data))
+                    .send(TcpMessage::Data(data))
                     .await
                     .map_err(|_| anyhow!("Sending message to peer {}", &to))?;
             }
@@ -476,7 +484,7 @@ tcp_client_server! {
 pub mod tests {
     use std::time::Duration;
 
-    use crate::tcp::{TcpCommand, TcpMessage};
+    use crate::tcp::TcpMessage;
 
     use anyhow::Result;
     use borsh::{BorshDeserialize, BorshSerialize};
@@ -519,9 +527,7 @@ pub mod tests {
 
         // From server to client
         _ = server
-            .send(TcpCommand::Broadcast(Box::new(
-                DataAvailabilityEvent::SignedBlock(SignedBlock::default()),
-            )))
+            .broadcast(DataAvailabilityEvent::SignedBlock(SignedBlock::default()))
             .await;
 
         assert_eq!(

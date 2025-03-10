@@ -7,7 +7,7 @@ mod blocks_memory;
 
 // Pick one of the two implementations
 use blocks_fjall::Blocks;
-use client_sdk::tcp::{TcpCommand, TcpEvent};
+use client_sdk::tcp::TcpEvent;
 //use blocks_memory::Blocks;
 
 use codec::{codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequest};
@@ -181,7 +181,7 @@ impl DataAvailability {
                     {
                         // Errors will be handled when sending new blocks, ignore here.
                         if server
-                            .send(TcpCommand::Send(peer_ip.clone(), Box::new(DataAvailabilityEvent::SignedBlock(signed_block))))
+                            .send(peer_ip.clone(), DataAvailabilityEvent::SignedBlock(signed_block))
                             .await.is_ok() {
                             let _ = catchup_sender.send((block_hashes, peer_ip)).await;
                         }
@@ -231,16 +231,10 @@ impl DataAvailability {
     async fn handle_mempool_status_event(
         &mut self,
         evt: MempoolStatusEvent,
-        tcp_server: &mut client_sdk::tcp::TcpServer<
-            codec_data_availability::ServerCodec,
-            DataAvailabilityRequest,
-            DataAvailabilityEvent,
-        >,
+        tcp_server: &mut DaTcpServer,
     ) -> Result<()> {
         tcp_server
-            .send(TcpCommand::Broadcast(Box::new(
-                DataAvailabilityEvent::MempoolStatusEvent(evt),
-            )))
+            .broadcast(DataAvailabilityEvent::MempoolStatusEvent(evt))
             .await?;
 
         Ok(())
@@ -354,9 +348,7 @@ impl DataAvailability {
         //
         _ = log_error!(
             tcp_server
-                .send(TcpCommand::Broadcast(Box::new(
-                    DataAvailabilityEvent::SignedBlock(block.clone()),
-                )))
+                .broadcast(DataAvailabilityEvent::SignedBlock(block.clone()),)
                 .await,
             "Sending block to tcp connection pool"
         );
