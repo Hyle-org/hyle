@@ -20,7 +20,7 @@ jobs:
       - name: Install rzup
         run: |
           curl -L https://risczero.com/install | bash
-          rzup install
+          /home/runner/.risc0/bin/rzup install
 
       - name: Run contract update command
         run: |
