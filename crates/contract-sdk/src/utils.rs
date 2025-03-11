@@ -160,12 +160,12 @@ pub fn as_hyle_output<State: HyleContract + BorshDeserialize>(
     }
 }
 
-pub fn check_caller_callees<Paramaters>(
+pub fn check_caller_callees<Parameters>(
     input: &ContractInput,
-    parameters: &StructuredBlob<Paramaters>,
+    parameters: &StructuredBlob<Parameters>,
 ) -> Result<Identity, String>
 where
-    Paramaters: BorshSerialize + BorshDeserialize,
+    Parameters: BorshSerialize + BorshDeserialize,
 {
     // Check that callees has this blob as caller
     if let Some(callees) = parameters.data.callees.as_ref() {
