@@ -539,7 +539,7 @@ impl NodeState {
             unsettled_tx.blobs.iter(),
             vec![],
             events,
-            &NodeStateMetrics::global("node_name".to_string(), "module_name"),
+            &self.metrics,
         ) {
             Some(res) => res,
             None => {
