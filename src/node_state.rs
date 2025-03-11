@@ -784,6 +784,7 @@ impl NodeState {
                             &contract.name, contract.state
                         );
                     } else {
+                        info!("📝 Registering contract {}", contract.name);
                         debug!(
                             "📝 Register '{}', contract state: {:?}",
                             &contract.name, contract.state
