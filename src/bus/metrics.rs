@@ -12,6 +12,7 @@ pub struct BusMetrics {
     labels: HashMap<(TypeId, TypeId), [KeyValue; 2]>,
     send: opentelemetry::metrics::Counter<u64>,
     receive: opentelemetry::metrics::Counter<u64>,
+    latency: opentelemetry::metrics::Histogram<u64>,
 }
 
 #[allow(clippy::unwrap_used, clippy::expect_used)]
@@ -22,8 +23,9 @@ impl BusMetrics {
 
         BusMetrics {
             labels: HashMap::new(),
-            send: my_meter.u64_counter("send").build(),
-            receive: my_meter.u64_counter("receive").build(),
+            send: my_meter.u64_counter("bus_send").build(),
+            receive: my_meter.u64_counter("bus_receive").build(),
+            latency: my_meter.u64_histogram("bus_handler_latency").build(),
         }
     }
 
@@ -89,5 +91,11 @@ impl BusMetrics {
         let key = self.get_key::<Msg, Client>();
         self.get_or_insert_labels::<Msg, Client>(&key);
         self.receive.add(1, self.labels.get(&key).unwrap());
+    }
+
+    pub fn latency<Msg: 'static, Client: 'static>(&mut self, latency: u64) {
+        let key = self.get_key::<Msg, Client>();
+        self.get_or_insert_labels::<Msg, Client>(&key);
+        self.latency.record(latency, self.labels.get(&key).unwrap());
     }
 }
