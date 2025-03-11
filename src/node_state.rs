@@ -656,6 +656,8 @@ impl NodeState {
                 continue;
             }
 
+            metrics.add_settled_transactions(1);
+
             if !proof_metadata.1.success {
                 // We have a valid proof of failure, we short-circuit.
                 let msg = format!("Proven failure for blob {}", i);
@@ -665,7 +667,6 @@ impl NodeState {
             }
 
             tracing::trace!("Settlement - OK blob");
-            metrics.add_settled_transactions(1);
             match Self::settle_blobs_recursively(
                 contracts,
                 current_contracts,
