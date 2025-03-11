@@ -439,7 +439,7 @@ impl Genesis {
         register_hyle_contract(
             &mut register_tx,
             "staking".into(),
-            hyle_verifiers::versions::RISC0_1.into(),
+            hyle_model::verifiers::RISC0_1.into(),
             staking_program_id.clone().into(),
             ctx.staking.commit(),
         )
@@ -448,7 +448,7 @@ impl Genesis {
         register_hyle_contract(
             &mut register_tx,
             "hyllar".into(),
-            hyle_verifiers::versions::RISC0_1.into(),
+            hyle_model::verifiers::RISC0_1.into(),
             hyllar_program_id.clone().into(),
             ctx.hyllar.commit(),
         )
@@ -457,7 +457,7 @@ impl Genesis {
         register_hyle_contract(
             &mut register_tx,
             "hydentity".into(),
-            hyle_verifiers::versions::RISC0_1.into(),
+            hyle_model::verifiers::RISC0_1.into(),
             hydentity_program_id.clone().into(),
             ctx.hydentity.commit(),
         )
@@ -466,7 +466,7 @@ impl Genesis {
         register_hyle_contract(
             &mut register_tx,
             "risc0-recursion".into(),
-            hyle_verifiers::versions::RISC0_1.into(),
+            hyle_model::verifiers::RISC0_1.into(),
             hyle_contracts::RISC0_RECURSION_ID.to_vec().into(),
             StateCommitment::default(),
         )
