@@ -1,6 +1,11 @@
 name: Create a PR to update contracts
 
 on:
+  push:
+    branches:
+      - feat/add_ci_workflow_to_update_contracts
+  schedule:
+    - cron: "0 2 * * *"
   workflow_dispatch:  # Permet l'exécution manuelle
 
 jobs:
