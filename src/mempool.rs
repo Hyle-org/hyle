@@ -266,9 +266,11 @@ impl Mempool {
                 self.handle_querynewcut(staking)
             }
             Some(event) = self.running_tasks.join_next() => {
-                if let Ok(Ok(event)) = log_error!(event, "Processing InternalMempoolEvent from Blocker Joinset") {
-                    let _ = log_error!(self.handle_internal_event(event),
-                        "Handling InternalMempoolEvent in Mempool");
+                if let Ok(event) = log_error!(event, "Processing InternalMempoolEvent from Blocker Joinset") {
+                    if let Ok(event) = log_error!(event, "Error in running task") {
+                        let _ = log_error!(self.handle_internal_event(event),
+                            "Handling InternalMempoolEvent in Mempool");
+                    }
                 }
             }
             _ = interval.tick() => {
