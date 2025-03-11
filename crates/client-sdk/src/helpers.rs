@@ -105,9 +105,11 @@ pub mod sp1 {
             let (pk, vk) = client.setup(binary);
             Self { client, pk, vk }
         }
+
         pub fn program_id(&self) -> Result<sdk::ProgramId> {
-            sdk::ProgramId(serde_json::to_vec(&prover.vk)?)
+            Ok(sdk::ProgramId(serde_json::to_vec(&self.vk)?))
         }
+
         pub async fn prove(&self, contract_input: ContractInput) -> Result<ProofData> {
             // Setup the inputs.
             let mut stdin = SP1Stdin::new();
