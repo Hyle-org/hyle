@@ -1088,8 +1088,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a734575233f9bf1bbbd6fa1e0dc5dda4afc61658d28b30b8e07d492e40b4d03b"
 dependencies = [
  "pathdiff",
- "ron",
  "serde",
+ "toml",
  "winnow 0.6.26",
 ]
 
@@ -2533,7 +2533,6 @@ dependencies = [
  "rand 0.9.0",
  "reqwest",
  "risc0-zkvm",
- "ron",
  "serde",
  "serde_json",
  "sha3",
@@ -2548,6 +2547,7 @@ dependencies = [
  "tokio-stream",
  "tokio-tungstenite",
  "tokio-util",
+ "toml",
  "tower-http",
  "tracing",
  "tracing-subscriber 0.3.19",
@@ -5301,18 +5301,6 @@ dependencies = [
  "getrandom 0.2.15",
  "libm",
  "stability",
-]
-
-[[package]]
-name = "ron"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b91f7eff05f748767f183df4320a63d6936e9c6107d97c9e6bdd9784f4289c94"
-dependencies = [
- "base64 0.21.7",
- "bitflags 2.9.0",
- "serde",
- "serde_derive",
 ]
 
 [[package]]

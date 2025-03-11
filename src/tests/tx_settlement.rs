@@ -47,7 +47,7 @@ async fn test_full_settlement_flow() -> Result<()> {
         .unwrap();
 
     let mut builder = NodeIntegrationCtxBuilder::new().await;
-    let rest_client = builder.conf.rest.clone();
+    let rest_client = builder.conf.rest_address.clone();
     builder.conf.run_indexer = true;
     builder.conf.database_url = format!(
         "postgres://postgres:postgres@localhost:{}/postgres",
@@ -151,7 +151,7 @@ async fn build_hyle_node() -> Result<(String, NodeIntegrationCtx)> {
         .unwrap();
 
     let mut builder = NodeIntegrationCtxBuilder::new().await;
-    let rest_client = builder.conf.rest.clone();
+    let rest_client = builder.conf.rest_address.clone();
     builder.conf.run_indexer = true;
     builder.conf.database_url = format!(
         "postgres://postgres:postgres@localhost:{}/postgres",
@@ -343,7 +343,7 @@ async fn test_tx_settlement_duplicates() -> Result<()> {
 #[test_log::test(tokio::test)]
 async fn test_contract_upgrade() -> Result<()> {
     let builder = NodeIntegrationCtxBuilder::new().await;
-    let rest_url = builder.conf.rest.clone();
+    let rest_url = builder.conf.rest_address.clone();
     let mut hyle_node = builder.build().await?;
 
     hyle_node.wait_for_genesis_event().await?;

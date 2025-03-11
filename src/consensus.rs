@@ -477,7 +477,7 @@ impl Consensus {
     fn send_candidacy(&mut self) -> Result<()> {
         let candidacy = ValidatorCandidacy {
             pubkey: self.crypto.validator_pubkey().clone(),
-            peer_address: self.config.host.clone(),
+            peer_address: self.config.p2p.address.clone(),
         };
         info!(
             "📝 Sending candidacy message to be part of consensus.  {}",
@@ -2309,7 +2309,7 @@ pub mod test {
     async fn test_consensus_starts_after_genesis_is_processed() {
         let mut node_builder = NodeIntegrationCtxBuilder::new().await;
         node_builder.conf.run_indexer = false;
-        node_builder.conf.single_node = Some(false);
+        node_builder.conf.consensus.solo = false;
         node_builder = node_builder.skip::<NodeStateModule>().skip::<RestApi>();
         let mut node = node_builder.build().await.unwrap();
 

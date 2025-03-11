@@ -379,6 +379,7 @@ impl ModulesHandler {
         M: Module + 'static + Send,
         <M as Module>::Context: std::marker::Send,
     {
+        debug!("Adding module {}", type_name::<M>());
         self.modules.push(ModuleStarter {
             name: type_name::<M>(),
             starter: Box::pin(Self::run_module(module)),
