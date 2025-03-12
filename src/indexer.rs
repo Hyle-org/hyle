@@ -490,7 +490,7 @@ impl Indexer {
             .bind(i)
             .execute(&mut *transaction)
             .await,
-            format!("Inserting transaction {:?}", tx_hash))?;
+            "Inserting transaction {:?}", tx_hash)?;
 
             _ = log_warn!(
                 self.insert_tx_data(
@@ -543,7 +543,7 @@ impl Indexer {
             .bind(serialized_events)
             .execute(&mut *transaction)
             .await,
-            format!("Inserting transaction state event {:?}", tx_hash))?;
+            "Inserting transaction state event {:?}", tx_hash)?;
         }
 
         // Handling new stakers

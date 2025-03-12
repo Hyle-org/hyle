@@ -11,6 +11,19 @@ use tracing_subscriber::{
 /// Macro designed to log warnings
 #[macro_export]
 macro_rules! log_warn {
+    // Pattern for format string with arguments
+    ($result:expr, $fmt:literal, $($arg:tt)*) => {
+        match $result {
+            Err(e) => {
+                let ae: anyhow::Error = e.into();
+                let ae = ae.context(format!($fmt, $($arg)*));
+                tracing::warn!(target: module_path!(), "{:#}", ae);
+                Err(ae)
+            }
+            Ok(t) => Ok(t),
+        }
+    };
+    // Pattern for a single expression (string or otherwise)
     ($result:expr, $context:expr) => {
         match $result {
             Err(e) => {
@@ -27,6 +40,19 @@ macro_rules! log_warn {
 /// Macro designed to log errors
 #[macro_export]
 macro_rules! log_error {
+    // Pattern for format string with arguments
+    ($result:expr, $fmt:literal, $($arg:tt)*) => {
+        match $result {
+            Err(e) => {
+                let ae: anyhow::Error = e.into();
+                let ae = ae.context(format!($fmt, $($arg)*));
+                tracing::error!(target: module_path!(), "{:#}", ae);
+                Err(ae)
+            }
+            Ok(t) => Ok(t),
+        }
+    };
+    // Pattern for a single expression (string or otherwise)
     ($result:expr, $context:expr) => {
         match $result {
             Err(e) => {

@@ -82,7 +82,9 @@ impl Storage for LanesStorage {
     ) -> Result<Option<LaneEntry>> {
         let item = log_warn!(
             self.by_hash.get(format!("{}:{}", lane_id, dp_hash)),
-            format!("Can't find DP {} for validator {}", dp_hash, lane_id)
+            "Can't find DP {} for validator {}",
+            dp_hash,
+            lane_id
         )?;
         item.map(decode_from_item).transpose()
     }
@@ -159,7 +161,9 @@ impl Storage for LanesStorage {
         let key = format!("{}:{}", lane_id, dp_hash);
         let Some(mut dp) = log_warn!(
             self.by_hash.get(key.clone()),
-            format!("Can't find DP {} for validator {}", dp_hash, lane_id)
+            "Can't find DP {} for validator {}",
+            dp_hash,
+            lane_id
         )?
         .map(decode_from_item)
         .transpose()?
