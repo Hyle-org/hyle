@@ -5,10 +5,10 @@ services:
     network_mode: host
     environment:
       - HYLE_ID=leader-1
-      - HYLE_REST=localhost:4001
-      - HYLE_HOST=localhost:1001
+      - HYLE_REST_ADDRESS=localhost:4001
+      - HYLE_P2P__ADDRESS=localhost:1001
       - HYLE_DA_ADDRESS=localhost:4141
-      - HYLE_TCP_SERVER_ADDRESS=localhost:1414
+      - HYLE_TCP_ADDRESS=localhost:1414
       - RUST_LOG=debug
       - HYLE_CONSENSUS__SLOT_DURATION=3000
   hyle2:
@@ -16,11 +16,11 @@ services:
     privileged: true
     environment:
       - HYLE_ID=hyle2
-      - HYLE_PEERS=localhost:1001
-      - HYLE_REST=localhost:4002
-      - HYLE_HOST=localhost:1002
+      - HYLE_P2P__PEERS=localhost:1001
+      - HYLE_REST_ADDRESS=localhost:4002
+      - HYLE_P2P__ADDRESS=localhost:1002
       - HYLE_DA_ADDRESS=localhost:4142
-      - HYLE_TCP_SERVER_ADDRESS=localhost:2414
+      - HYLE_TCP_ADDRESS=localhost:2414
       - RUST_LOG=debug
       - HYLE_CONSENSUS__SLOT_DURATION=3000
     network_mode: host
@@ -31,12 +31,12 @@ services:
     privileged: true
     environment:
       - HYLE_ID=hyle3
-      - HYLE_PEERS=localhost:1001,localhost:1002
-      - HYLE_REST=localhost:4003
-      - HYLE_HOST=localhost:1003
+      - HYLE_P2P__PEERS=localhost:1001,localhost:1002
+      - HYLE_REST_ADDRESS=localhost:4003
+      - HYLE_P2P__ADDRESS=localhost:1003
       - RUST_LOG=debug
       - HYLE_DA_ADDRESS=localhost:4143
-      - HYLE_TCP_SERVER_ADDRESS=localhost:3414
+      - HYLE_TCP_ADDRESS=localhost:3414
       - HYLE_CONSENSUS__SLOT_DURATION=3000
     network_mode: host
     depends_on:
@@ -46,9 +46,9 @@ services:
     privileged: true
     environment:
       - HYLE_ID=hyle4
-      - HYLE_PEERS=localhost:1001,localhost:1002,localhost:1003
-      - HYLE_REST=localhost:4004
-      - HYLE_HOST=localhost:1004
+      - HYLE_P2P__PEERS=localhost:1001,localhost:1002,localhost:1003
+      - HYLE_REST_ADDRESS=localhost:4004
+      - HYLE_P2P__ADDRESS=localhost:1004
       - RUST_LOG=debug
       - HYLE_DA_ADDRESS=localhost:4144
       - HYLE_CONSENSUS__SLOT_DURATION=3000

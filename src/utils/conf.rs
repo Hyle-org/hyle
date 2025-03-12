@@ -104,7 +104,7 @@ impl Conf {
                     .separator("__")
                     .prefix_separator("_")
                     .list_separator(",")
-                    .with_list_parse_key("peers") // Parse this key into Vec<String>
+                    .with_list_parse_key("p2p.peers") // Parse this key into Vec<String>
                     .try_parsing(true),
             )
             .set_override_option("data_directory", data_directory)?
