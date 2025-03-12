@@ -150,7 +150,7 @@ where
         loop {
             tokio::select! {
                 Ok((stream, addr)) = self.tcp_listener.accept() => {
-                    _  = self.setup_peer(stream, &addr.ip().to_string());
+                    _  = self.setup_peer(stream, &addr.to_string());
                 }
 
                 Some(peer_id) = self.ping_receiver.recv() => {
@@ -260,6 +260,7 @@ where
                 }
             })?;
 
+        tracing::debug!("Peer {} connected", peer_ip);
         // Store peer in the list.
         self.peers.insert(
             peer_ip.to_string(),

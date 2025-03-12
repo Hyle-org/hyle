@@ -17,6 +17,7 @@ use tracing::info;
 use hyle::{
     model::*,
     rest::client::{IndexerApiHttpClient, NodeApiHttpClient},
+    utils::conf::Conf,
 };
 use hyle_contract_sdk::{
     flatten_blobs, BlobIndex, ContractName, HyleOutput, Identity, ProgramId, StateCommitment,
@@ -191,17 +192,23 @@ impl E2ECtx {
         })
     }
 
-    pub async fn add_node(&mut self) -> Result<&NodeApiHttpClient> {
+    pub fn make_conf(&self, prefix: &str) -> Conf {
         let mut conf_maker = ConfMaker::default();
-        let mut node_conf = conf_maker.build("new-node");
+        let mut node_conf = conf_maker.build(prefix);
         node_conf.consensus.slot_duration = self.slot_duration;
-
-        //node_conf.peers = vec![self.nodes[0].conf.host.clone()];
         node_conf.p2p.peers = self
             .nodes
             .iter()
             .map(|node| node.conf.p2p.address.clone())
             .collect();
+        node_conf
+    }
+
+    pub async fn add_node(&mut self) -> Result<&NodeApiHttpClient> {
+        self.add_node_with_conf(self.make_conf("new_node")).await
+    }
+
+    pub async fn add_node_with_conf(&mut self, node_conf: Conf) -> Result<&NodeApiHttpClient> {
         let node = test_helpers::TestProcess::new("hyle", node_conf)
             //.log("hyle=info,tower_http=error")
             .start();

@@ -10,7 +10,7 @@ use crate::{
     node_state::module::NodeStateEvent,
     p2p::network::OutboundMessage,
     utils::{
-        conf::SharedConf,
+        conf::{P2pMode, SharedConf},
         crypto::{BlstCrypto, SharedBlstCrypto},
         modules::{module_bus_client, Module},
         serialize::arc_rwlock_borsh,
@@ -258,6 +258,12 @@ impl Mempool {
             }
             listen<NodeStateEvent> cmd => {
                 let NodeStateEvent::NewBlock(block) = cmd;
+                // In this p2p mode we don't receive consensus events so we must update manually.
+                if self.conf.p2p.mode == P2pMode::LaneManager {
+                    if let Err(e) = self.staking.process_block(block.as_ref()) {
+                        tracing::error!("Error processing block in mempool: {:?}", e);
+                    }
+                }
                 for (_, contract) in block.registered_contracts {
                     self.handle_contract_registration(contract);
                 }
