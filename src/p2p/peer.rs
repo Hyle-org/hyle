@@ -211,7 +211,8 @@ impl Peer {
                             if only_for.contains(pubkey) {
                                 _ = log_warn!(self.handle_broadcast_message(message)
                                     .await,
-                                    format!("P2P Broadcasting net message only for {:?}", only_for));
+                                    "P2P Broadcasting net message only for {:?}",
+                                    only_for);
                             }
                         }
                     }
