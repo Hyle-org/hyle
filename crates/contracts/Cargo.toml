@@ -24,6 +24,7 @@ methods = [
     "hyllar",
     "hydentity",
     "staking",
+    "token",
     "risc0-recursion",
     "uuid-tld",
 ]

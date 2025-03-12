@@ -1,0 +1,56 @@
+[package]
+name = "hyle-token"
+description = "Hyle Smart Contract"
+version = { workspace = true }
+edition = { workspace = true }
+# license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+rust-version = "1.81"
+
+[[bin]]
+name = "token"
+path = "src/main.rs"
+required-features = ["risc0"]
+test = false
+
+[dependencies]
+sdk = { workspace = true }
+serde = { version = "1.0", default-features = false, features = [
+    "derive",
+    "alloc",
+] }
+anyhow = "1.0.96"
+sha2 = "=0.10.8" # precompile patched at workspace root
+borsh = { version = "1.5.5", features = ["derive"] }
+serde_with = "3.12.0"
+verkle-trie = { git = "https://github.com/crate-crypto/rust-verkle", tag = "v0.0.3" }
+verkle-spec = { git = "https://github.com/crate-crypto/rust-verkle", tag = "v0.0.3" }
+ipa-multipoint = { git = "https://github.com/crate-crypto/rust-verkle", tag = "v0.0.3" }
+
+risc0-zkvm = { version = "1.2.4", default-features = false, optional = true, features = [
+    'std',
+] }
+client-sdk = { workspace = true, features = [
+    "risc0",
+    "indexer",
+], optional = true }
+
+[dev-dependencies]
+hyle-token = { path = ".", features = ["client"] }
+test-log = { version = "0.2.17", features = [
+    "color",
+    "trace",
+], default-features = false }
+
+# Active client feature for tests
+risc0-zkvm = { version = "1.2.4", default-features = false, features = [
+    'std',
+    'prove',
+] }
+mockall = "0.13.0"
+
+[features]
+default = []
+client = ["dep:client-sdk"]
+risc0 = ["dep:risc0-zkvm", "sdk/risc0"]

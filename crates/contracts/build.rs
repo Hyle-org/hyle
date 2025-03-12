@@ -22,6 +22,7 @@ fn main() {
         "hyle-hydentity",
         "hyle-hyllar",
         "hyle-staking",
+        "hyle-token",
         "hyle-risc0-recursion",
         "hyle-uuid-tld",
     ]
