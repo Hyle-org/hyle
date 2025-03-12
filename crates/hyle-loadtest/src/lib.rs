@@ -408,9 +408,10 @@ pub async fn long_running_test(node_url: String, _indexer_url: String) -> Result
             Identity::new("hyle.hyle"),
             vec![RegisterContractAction {
                 contract_name: random_hyllar_contract.clone(),
-                verifier: hyle_contract_sdk::Verifier("test".to_string()),
+                verifier: hyle_contract_sdk::Verifier("risc0-1".to_string()),
                 program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
-                state_commitment: Hyllar::default().commit(),
+                state_commitment: Hyllar::custom(format!("faucet.{}", random_hydentity_contract))
+                    .commit(),
             }
             .as_blob("hyle".into(), None, None)],
         );
@@ -421,7 +422,7 @@ pub async fn long_running_test(node_url: String, _indexer_url: String) -> Result
             Identity::new("hyle.hyle"),
             vec![RegisterContractAction {
                 contract_name: random_hydentity_contract.clone(),
-                verifier: hyle_contract_sdk::Verifier("test".to_string()),
+                verifier: hyle_contract_sdk::Verifier("risc0-1".to_string()),
                 program_id: hyle_contracts::HYDENTITY_ID.to_vec().into(),
                 state_commitment: Hydentity::default().commit(),
             }
@@ -429,6 +430,8 @@ pub async fn long_running_test(node_url: String, _indexer_url: String) -> Result
         );
 
         client.send_tx_blob(&tx).await?;
+
+        tokio::time::sleep(Duration::from_secs(5)).await;
 
         let mut users: Vec<u64> = vec![];
 
