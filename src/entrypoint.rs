@@ -31,13 +31,15 @@ use std::{
 };
 use testcontainers_modules::{
     postgres::Postgres,
-    testcontainers::{runners::AsyncRunner, ImageExt},
+    testcontainers::{runners::AsyncRunner, ContainerAsync, ImageExt},
 };
 use tracing::{error, info};
 use utoipa::OpenApi;
 
 pub struct RunPg {
     data_dir: PathBuf,
+    #[allow(dead_code)]
+    pg: ContainerAsync<Postgres>,
 }
 
 impl RunPg {
@@ -56,6 +58,8 @@ impl RunPg {
             .start()
             .await?;
 
+        std::thread::sleep(std::time::Duration::from_secs(3));
+
         config.database_url = format!(
             "postgres://postgres:postgres@localhost:{}/postgres",
             pg.get_host_port_ipv4(5432).await?
@@ -63,6 +67,7 @@ impl RunPg {
         config.run_indexer = true;
 
         Ok(Self {
+            pg,
             data_dir: config.data_directory.clone(),
         })
     }
