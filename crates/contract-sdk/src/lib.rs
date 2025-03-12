@@ -78,7 +78,14 @@ expected type. For this, it can call either [utils::parse_raw_contract_input] or
 ## Example of execute implementation:
 
 ```rust
+use hyle_contract_sdk::{StateCommitment, HyleContract, RunResult};
+use hyle_contract_sdk::utils::parse_raw_contract_input;
+use hyle_model::ContractInput;
+
+use borsh::{BorshSerialize, BorshDeserialize};
+
 struct MyContract{}
+#[derive(BorshSerialize, BorshDeserialize)]
 enum MyContractAction{
     DoSomething
 }
@@ -91,12 +98,15 @@ impl HyleContract for MyContract {
 
         Ok((output, exec_ctx, vec![]))
     }
+    fn commit(&self) -> StateCommitment {
+        StateCommitment(vec![])
+    }
 }
 
 impl MyContract {
-    fn execute_action(action: MyContractAction) -> Result<String, String> {
+    fn execute_action(&mut self, action: MyContractAction) -> Result<String, String> {
         /// Execute contract's logic
-        Ok("Done.")
+        Ok("Done.".to_string())
     }
 }
 

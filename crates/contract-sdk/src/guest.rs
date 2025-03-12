@@ -13,7 +13,7 @@ This is a code snippet of a Risc0 guest entrypoint (e.g. file `methods/guest/src
 
 `Hydentity` struct has to implements [HyleContract] and [BorshDeserialize] traits.
 
-```rust,no_run
+```rust,no_run,compile_fail
 #![no_main]
 
 use hyle_hydentity::Hydentity;
@@ -36,7 +36,7 @@ This is a code snippet of a SP1 guest entrypoint (e.g. file `program/src/main.rs
 
 `IdentityContractState` struct has to implements [HyleContract] and [BorshDeserialize] traits.
 
-```rust,no_run
+```rust,no_run,compile_fail
 #![no_main]
 
 use contract::IdentityContractState;
