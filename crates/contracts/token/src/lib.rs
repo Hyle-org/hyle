@@ -110,7 +110,7 @@ pub struct Account {
 }
 
 impl Account {
-    pub fn pedersen_key_hash(&self) -> [u8; 32] {
+    pub fn key_hash(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
         hasher.update(self.address.as_bytes());
         let mut result: [u8; 32] = hasher.finalize().into();
@@ -142,7 +142,7 @@ impl Account {
     }
 
     pub fn key_value_hash(&self) -> ([u8; 32], Option<[u8; 32]>) {
-        (self.pedersen_key_hash(), self.value_hash())
+        (self.key_hash(), self.value_hash())
     }
 
     // FIXME: c de la merde
@@ -347,7 +347,7 @@ mod tests {
             balance: 0,
             allowance: BTreeMap::new(),
         };
-        let alice_key = alice_account.pedersen_key_hash();
+        let alice_key = alice_account.key_hash();
 
         assert_eq!(token_trie.get(faucet_key), faucet_value);
         assert_eq!(token_trie.get(alice_key), None);
@@ -390,7 +390,7 @@ mod tests {
             balance: TOTAL_SUPPLY,
             allowance: BTreeMap::new(),
         };
-        let faucet_key = faucet_account.pedersen_key_hash();
+        let faucet_key = faucet_account.key_hash();
 
         let proof = token_trie
             .create_verkle_proof(vec![faucet_key].into_iter())
