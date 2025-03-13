@@ -2,7 +2,7 @@
 
 use crate::{
     bus::{BusMessage, SharedMessageBus},
-    handle_messages, log_error,
+    log_error,
     model::SharedRunContext,
     module_handle_messages,
     utils::{
@@ -64,7 +64,7 @@ impl Module for P2P {
 
 impl P2P {
     fn spawn_peer(&mut self, peer_address: String) {
-        if self.connected_peers.contains(&peer_address) || peer_address == self.config.host {
+        if self.connected_peers.contains(&peer_address) || peer_address == self.config.p2p.address {
             return;
         }
 
@@ -129,20 +129,7 @@ impl P2P {
         // Wait all other threads to start correctly
         sleep(Duration::from_secs(1)).await;
 
-        if !self.config.p2p_listen {
-            for peer in self.config.peers.clone() {
-                self.spawn_peer(peer);
-            }
-            handle_messages! {
-                on_bus self.bus_client,
-                listen<P2PCommand> cmd => {
-                     self.handle_command(cmd)
-                }
-            }
-            // unreachable!();
-        }
-
-        let listener = TcpListener::bind(&self.config.host).await?;
+        let listener = TcpListener::bind(&self.config.p2p.address).await?;
         info!(
             "📡  Starting P2P module, listening on {}",
             listener.local_addr()?
@@ -152,7 +139,7 @@ impl P2P {
         #[cfg(test)]
         sleep(Duration::from_secs(1)).await;
 
-        for peer in self.config.peers.clone() {
+        for peer in self.config.p2p.peers.clone() {
             self.spawn_peer(peer);
         }
 

@@ -6,7 +6,7 @@ use hyle::{
     model::BlobTransaction,
     rest::client::NodeApiHttpClient,
     utils::{
-        conf::{Conf, Consensus},
+        conf::{Conf, P2pConf},
         crypto::BlstCrypto,
     },
 };
@@ -34,10 +34,13 @@ impl ConfMaker {
             } else {
                 format!("{}-{}", prefix, self.i)
             },
-            host: format!("localhost:{}", self.random_port + self.i),
+            p2p: P2pConf {
+                address: format!("localhost:{}", self.random_port + self.i),
+                ..self.default.p2p.clone()
+            },
             da_address: format!("localhost:{}", self.random_port + 1000 + self.i),
-            tcp_server_address: Some(format!("localhost:{}", self.random_port + 2000 + self.i)),
-            rest: format!("localhost:{}", self.random_port + 3000 + self.i),
+            tcp_address: Some(format!("localhost:{}", self.random_port + 2000 + self.i)),
+            rest_address: format!("localhost:{}", self.random_port + 3000 + self.i),
             ..self.default.clone()
         }
     }
@@ -48,25 +51,27 @@ impl Default for ConfMaker {
         let mut default = Conf::new(None, None, None).unwrap();
         let mut rng = rand::rng();
         let random_port: u32 = rng.random_range(1024..(65536 - 4000));
-        default.single_node = Some(false);
-        default.host = format!("localhost:{}", random_port);
-        default.da_address = format!("localhost:{}", random_port + 1000);
-        default.tcp_server_address = Some(format!("localhost:{}", random_port + 2000));
-        default.rest = format!("localhost:{}", random_port + 3000);
-        default.run_indexer = false; // disable indexer by default to avoid needed PG
+
         default.log_format = "node".to_string(); // Activate node name in logs for convenience in tests.
-        info!("Default conf: {:?}", default);
-        default.consensus = Consensus {
-            slot_duration: 1,
-            genesis_stakers: {
-                let mut stakers = std::collections::HashMap::new();
-                stakers.insert("node-1".to_owned(), 100);
-                stakers.insert("node-2".to_owned(), 100);
-                stakers
-            },
+        default.p2p.address = format!("localhost:{}", random_port);
+        default.p2p.mode = hyle::utils::conf::P2pMode::FullValidator;
+        default.consensus.solo = false;
+        default.genesis.stakers = {
+            let mut stakers = std::collections::HashMap::new();
+            stakers.insert("node-1".to_owned(), 100);
+            stakers.insert("node-2".to_owned(), 100);
+            stakers
         };
-        default.faucet_password = "password".into();
+        default.genesis.faucet_password = "password".into();
+
+        default.da_address = format!("localhost:{}", random_port + 1000);
+        default.tcp_address = Some(format!("localhost:{}", random_port + 2000));
+        default.rest_address = format!("localhost:{}", random_port + 3000);
+
+        default.run_indexer = false; // disable indexer by default to avoid needed PG
+
         info!("Default conf: {:?}", default);
+
         Self {
             i: 0,
             random_port,
@@ -108,8 +113,9 @@ impl TestProcess {
 
         conf.data_directory = tmpdir.path().to_path_buf();
         // Serialize the configuration to a file
-        let conf_file = tmpdir.path().join("config.ron");
-        ron::ser::to_writer(std::fs::File::create(&conf_file).unwrap(), &conf).unwrap();
+        let conf_file = tmpdir.path().join("config.toml");
+
+        std::fs::write(&conf_file, toml::to_string(&conf).unwrap()).unwrap();
 
         cmd.env("RISC0_DEV_MODE", "1");
 
