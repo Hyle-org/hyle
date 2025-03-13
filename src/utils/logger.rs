@@ -100,7 +100,7 @@ pub enum TracingMode {
 
 /// Setup tracing - stdout subscriber
 /// stdout defaults to INFO to INFO even if RUST_LOG is set to e.g. debug
-pub fn setup_tracing(mode: TracingMode, node_name: String) -> Result<()> {
+pub fn setup_tracing(conf: &crate::utils::conf::Conf, node_name: String) -> Result<()> {
     let mut filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
         .from_env()?;
@@ -129,6 +129,11 @@ pub fn setup_tracing(mode: TracingMode, node_name: String) -> Result<()> {
     }
 
     // Can't use match inline because these are different return types
+    let mode = match conf.log_format.as_str() {
+        "json" => TracingMode::Json,
+        "node" => TracingMode::NodeName,
+        _ => TracingMode::Full,
+    };
     match mode {
         TracingMode::Full => register_global_subscriber(filter, tracing_subscriber::fmt::layer()),
         TracingMode::Json => register_global_subscriber(
