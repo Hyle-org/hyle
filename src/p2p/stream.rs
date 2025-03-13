@@ -26,6 +26,7 @@ pub async fn send_net_message(
     stream: &mut Framed<TcpStream, LengthDelimitedCodec>,
     msg: NetMessage,
 ) -> Result<(), Error> {
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     stream
         .send(msg.to_binary()?.into())
         .await
