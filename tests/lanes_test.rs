@@ -1,9 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use hyle::log_error;
-
 use anyhow::Result;
-use fixtures::{ctx::E2ECtx, test_helpers::ConfMaker};
+use fixtures::ctx::E2ECtx;
 use hyle_model::{api::APIRegisterContract, ContractName, ProgramId, StateCommitment};
 
 mod fixtures;
