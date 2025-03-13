@@ -41,7 +41,7 @@ impl Staking {
     }
 
     pub fn is_known(&self, key: &ValidatorPublicKey) -> bool {
-        self.bonded.iter().any(|v| v == key)
+        self.delegations.keys().any(|v| v == key)
     }
 
     pub fn bonded(&self) -> &Vec<ValidatorPublicKey> {
