@@ -59,6 +59,13 @@ pub enum TokenAction {
         recipient_account: Account,
         amount: u128,
     },
+    TransferFrom {
+        proof: BorshableVerkleProof,
+        owner_account: Account,
+        spender: String,
+        recipient_account: Account,
+        amount: u128,
+    },
     Approve {
         proof: BorshableVerkleProof,
         owner: Account,
@@ -77,6 +84,19 @@ impl HyleContract for Token {
                 recipient_account,
                 amount,
             } => self.transfer(proof.into(), sender_account, recipient_account, amount),
+            TokenAction::TransferFrom {
+                proof,
+                owner_account,
+                spender,
+                recipient_account,
+                amount,
+            } => self.transfer_from(
+                proof.into(),
+                owner_account,
+                spender,
+                recipient_account,
+                amount,
+            ),
             TokenAction::Approve {
                 proof,
                 owner,
@@ -224,6 +244,26 @@ impl Token {
         }
     }
 
+    pub fn transfer_from(
+        &mut self,
+        proof: VerkleProof,
+        owner_account: Account,
+        spender: String,
+        recipient_account: Account,
+        amount: u128,
+    ) -> Result<String, String> {
+        if owner_account.allowance.get(&spender).unwrap_or(&0) < &amount {
+            return Err(format!(
+                "Allowance exceeded for spender={} owner={} allowance={}",
+                spender,
+                owner_account.address,
+                owner_account.allowance.get(&spender).unwrap_or(&0)
+            ));
+        }
+
+        self.transfer(proof, owner_account, recipient_account, amount)
+    }
+
     fn approve(
         &mut self,
         proof: VerkleProof,
@@ -320,6 +360,61 @@ mod tests {
         // Send 10 token to alice on trie
         alice_account.update_balance(10);
         faucet_account.update_balance(-10);
+        let alice_new_value = alice_account.value_hash().unwrap();
+        let faucet_new_value = faucet_account.value_hash().unwrap();
+        token_trie
+            .insert(vec![(alice_key, alice_new_value), (faucet_key, faucet_new_value)].into_iter());
+
+        // Assert commitment is updated accordingly to trie
+        assert_eq!(
+            token.commitment.0,
+            token_trie.root_commitment().to_bytes().to_vec()
+        );
+    }
+
+    #[test_log::test]
+    fn test_token_verkle_tree_transfer_from() {
+        let mut faucet_account = Account {
+            address: FAUCET_ID.to_string(),
+            balance: TOTAL_SUPPLY,
+            allowance: BTreeMap::new(),
+        };
+        let mut token_trie = Token::init_trie(faucet_account.clone());
+        let (faucet_key, faucet_value) = faucet_account.key_value_hash();
+
+        // Adding 100 token to alice
+        let mut alice_account = Account {
+            address: "alice".to_string(),
+            balance: 100,
+            allowance: BTreeMap::new(),
+        };
+        // Adding "spender" to alice's allowance
+        alice_account.allowance.insert("spender".to_string(), 100);
+        let (alice_key, alice_value) = alice_account.key_value_hash();
+        token_trie.insert_single(alice_key, alice_value.unwrap());
+
+        assert_eq!(token_trie.get(faucet_key), faucet_value);
+        assert_eq!(token_trie.get(alice_key), alice_value);
+
+        let proof = token_trie
+            .create_verkle_proof(vec![faucet_key, alice_key].into_iter())
+            .unwrap();
+
+        let mut token = Token::new(token_trie.clone());
+
+        // Transfer 100 token to alice on commitment
+        let res = token.transfer_from(
+            proof,
+            alice_account.clone(),
+            "spender".to_string(),
+            faucet_account.clone(),
+            10,
+        );
+        assert!(res.is_ok(), "{}", res.unwrap_err());
+
+        // Send 10 token to from alice to faucet on trie
+        alice_account.update_balance(-10);
+        faucet_account.update_balance(10);
         let alice_new_value = alice_account.value_hash().unwrap();
         let faucet_new_value = faucet_account.value_hash().unwrap();
         token_trie
