@@ -514,13 +514,13 @@ impl Consensus {
                 self.on_prepare_vote(msg, consensus_proposal_hash)
             }
             ConsensusNetMessage::Confirm(prepare_quorum_certificate) => {
-                self.on_confirm(prepare_quorum_certificate)
+                self.on_confirm(sender, prepare_quorum_certificate)
             }
             ConsensusNetMessage::ConfirmAck(consensus_proposal_hash) => {
                 self.on_confirm_ack(msg, consensus_proposal_hash)
             }
             ConsensusNetMessage::Commit(commit_quorum_certificate, proposal_hash_hint) => {
-                self.on_commit(commit_quorum_certificate, proposal_hash_hint)
+                self.on_commit(sender, commit_quorum_certificate, proposal_hash_hint)
             }
             ConsensusNetMessage::Timeout(slot, view) => self.on_timeout(msg, slot, view),
             ConsensusNetMessage::TimeoutCertificate(timeout_certificate, slot, view) => {
