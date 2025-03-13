@@ -10,7 +10,7 @@ use crate::{
     genesis::GenesisEvent,
     log_error,
     mempool::QueryNewCut,
-    model::{Cut, Hashed, StakingAction, ValidatorPublicKey},
+    model::{Cut, Hashed, ValidatorPublicKey},
     p2p::{network::OutboundMessage, P2PCommand},
     utils::{
         conf::SharedConf,
@@ -731,39 +731,11 @@ impl Consensus {
         match msg {
             NodeStateEvent::NewBlock(block) => {
                 let block_total_tx = block.total_txs();
-                for action in block.staking_actions {
-                    match action {
-                        (identity, StakingAction::Stake { amount }) => {
-                            self.store
-                                .bft_round_state
-                                .staking
-                                .stake(identity, amount)
-                                .map_err(|e| anyhow!(e))?;
-                        }
-                        (identity, StakingAction::Delegate { validator }) => {
-                            self.store
-                                .bft_round_state
-                                .staking
-                                .delegate_to(identity, validator)
-                                .map_err(|e| anyhow!(e))?;
-                        }
-                        (_identity, StakingAction::Distribute { claim: _ }) => todo!(),
-                        (_identity, StakingAction::DepositForFees { holder, amount }) => {
-                            self.store
-                                .bft_round_state
-                                .staking
-                                .deposit_for_fees(holder, amount)
-                                .map_err(|e| anyhow!(e))?;
-                        }
-                    }
-                }
-                for validator in block.new_bounded_validators.iter() {
-                    self.store
-                        .bft_round_state
-                        .staking
-                        .bond(validator.clone())
-                        .map_err(|e| anyhow!(e))?;
-                }
+                self.store
+                    .bft_round_state
+                    .staking
+                    .process_block(block.as_ref())
+                    .map_err(|e| anyhow!(e))?;
 
                 if let StateTag::Joining = self.bft_round_state.state_tag {
                     if self.store.bft_round_state.joining.staking_updated_to < block.block_height.0
