@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::io::{Cursor, Read, Write};
+use std::io::Cursor;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use ipa_multipoint::committer::DefaultCommitter;
@@ -21,107 +21,46 @@ extern crate alloc;
 pub const TOTAL_SUPPLY: u128 = 100_000_000_000;
 pub const FAUCET_ID: &str = "faucet.hydentity";
 
-// FIXME: c de la merde
-impl BorshSerialize for TokenAction {
-    fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        match self {
-            TokenAction::Transfer {
-                proof,
-                sender_account,
-                recipient_account,
-                amount,
-            } => {
-                let mut proof_bytes = Vec::new();
-                proof
-                    .write(&mut proof_bytes)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BorshableVerkleProof(pub VerkleProof);
 
-                BorshSerialize::serialize(&0, writer)?;
-                BorshSerialize::serialize(&proof_bytes, writer)?;
-                BorshSerialize::serialize(&sender_account, writer)?;
-                BorshSerialize::serialize(&recipient_account, writer)?;
-                BorshSerialize::serialize(&amount, writer)?;
-            }
-            TokenAction::Approve {
-                proof,
-                owner,
-                spender,
-                amount,
-            } => {
-                let mut proof_bytes = Vec::new();
-                proof
-                    .write(&mut proof_bytes)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-
-                BorshSerialize::serialize(&1, writer)?;
-                BorshSerialize::serialize(&proof_bytes, writer)?;
-                BorshSerialize::serialize(&owner, writer)?;
-                BorshSerialize::serialize(&spender, writer)?;
-                BorshSerialize::serialize(&amount, writer)?;
-            }
-        }
-        Ok(())
+impl From<BorshableVerkleProof> for VerkleProof {
+    fn from(proof: BorshableVerkleProof) -> Self {
+        proof.0
     }
 }
 
-// FIXME: c de la merde
-impl BorshDeserialize for TokenAction {
-    fn deserialize_reader<R: Read>(reader: &mut R) -> std::io::Result<Self> {
-        let variant_tag = u8::deserialize_reader(reader)?;
-        match variant_tag {
-            0 => {
-                let proof_bytes: Vec<u8> = BorshDeserialize::deserialize_reader(reader)?;
-                let sender_account: Account = BorshDeserialize::deserialize_reader(reader)?;
-                let recipient_account: Account = BorshDeserialize::deserialize_reader(reader)?;
-                let amount: u128 = BorshDeserialize::deserialize_reader(reader)?;
+impl BorshSerialize for BorshableVerkleProof {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        let mut proof_bytes = Vec::new();
+        self.0
+            .write(&mut proof_bytes)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        borsh::BorshSerialize::serialize(&proof_bytes, writer)
+    }
+}
 
-                let proof = VerkleProof::read(&mut Cursor::new(proof_bytes)).map_err(|_| {
-                    std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid proof")
-                })?;
+impl BorshDeserialize for BorshableVerkleProof {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let proof_bytes: Vec<u8> = BorshDeserialize::deserialize_reader(reader)?;
+        let proof = VerkleProof::read(&mut Cursor::new(proof_bytes))
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid proof"))?;
 
-                Ok(TokenAction::Transfer {
-                    proof,
-                    sender_account,
-                    recipient_account,
-                    amount,
-                })
-            }
-            1 => {
-                let proof_bytes: Vec<u8> = BorshDeserialize::deserialize_reader(reader)?;
-                let owner: Account = BorshDeserialize::deserialize_reader(reader)?;
-                let spender: String = BorshDeserialize::deserialize_reader(reader)?;
-                let amount: u128 = BorshDeserialize::deserialize_reader(reader)?;
-
-                let proof = VerkleProof::read(&mut Cursor::new(proof_bytes)).map_err(|_| {
-                    std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid proof")
-                })?;
-
-                Ok(TokenAction::Approve {
-                    proof,
-                    owner,
-                    spender,
-                    amount,
-                })
-            }
-            _ => Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Unknown variant",
-            )),
-        }
+        Ok(Self(proof))
     }
 }
 
 /// Enum representing possible calls to Token contract functions.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, BorshDeserialize, BorshSerialize)]
 pub enum TokenAction {
     Transfer {
-        proof: VerkleProof,
+        proof: BorshableVerkleProof,
         sender_account: Account,
         recipient_account: Account,
         amount: u128,
     },
     Approve {
-        proof: VerkleProof,
+        proof: BorshableVerkleProof,
         owner: Account,
         spender: String,
         amount: u128,
@@ -137,13 +76,13 @@ impl HyleContract for Token {
                 sender_account,
                 recipient_account,
                 amount,
-            } => self.transfer(proof, sender_account, recipient_account, amount),
+            } => self.transfer(proof.into(), sender_account, recipient_account, amount),
             TokenAction::Approve {
                 proof,
                 owner,
                 spender,
                 amount,
-            } => self.approve(proof, owner, spender, amount),
+            } => self.approve(proof.into(), owner, spender, amount),
         };
 
         match output {
