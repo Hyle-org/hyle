@@ -10,7 +10,7 @@ pub struct ERC20TestContract {}
 
 impl E2EContract for ERC20TestContract {
     fn verifier() -> Verifier {
-        hyle_verifiers::versions::RISC0_1.into()
+        hyle_model::verifiers::RISC0_1.into()
     }
 
     fn program_id() -> ProgramId {
@@ -31,7 +31,7 @@ pub struct HydentityTestContract {}
 
 impl E2EContract for HydentityTestContract {
     fn verifier() -> Verifier {
-        hyle_verifiers::versions::RISC0_1.into()
+        hyle_model::verifiers::RISC0_1.into()
     }
 
     fn program_id() -> ProgramId {
@@ -53,7 +53,7 @@ impl HyllarTestContract {
 
 impl E2EContract for HyllarTestContract {
     fn verifier() -> Verifier {
-        hyle_verifiers::versions::RISC0_1.into()
+        hyle_model::verifiers::RISC0_1.into()
     }
 
     fn program_id() -> ProgramId {
@@ -69,7 +69,7 @@ pub struct AmmTestContract {}
 
 impl E2EContract for AmmTestContract {
     fn verifier() -> Verifier {
-        hyle_verifiers::versions::RISC0_1.into()
+        hyle_model::verifiers::RISC0_1.into()
     }
 
     fn program_id() -> ProgramId {

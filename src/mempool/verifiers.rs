@@ -28,7 +28,7 @@ pub fn verify_proof(
             tracing::info!("Woke up from sleep");
             Ok(serde_json::from_slice(&proof.0)?)
         }
-        hyle_verifiers::versions::RISC0_1 => {
+        hyle_model::verifiers::RISC0_1 => {
             let journal = risc0_proof_verifier(&proof.0, &program_id.0)?;
             // First try to decode it as a single HyleOutput
             Ok(match journal.decode::<HyleOutput>() {
@@ -47,11 +47,9 @@ pub fn verify_proof(
                 }
             })
         }
-        hyle_verifiers::versions::NOIR => noir_proof_verifier(&proof.0, &program_id.0),
+        hyle_model::verifiers::NOIR => noir_proof_verifier(&proof.0, &program_id.0),
         #[cfg(feature = "sp1")]
-        hyle_verifiers::versions::SP1_4 => {
-            hyle_verifiers::sp1_proof_verifier(&proof.0, &program_id.0)
-        }
+        hyle_model::verifiers::SP1_4 => hyle_verifiers::sp1_proof_verifier(&proof.0, &program_id.0),
         _ => Err(anyhow::anyhow!("{} verifier not implemented yet", verifier)),
     }?;
     hyle_outputs.iter().for_each(|hyle_output| {
@@ -74,7 +72,7 @@ pub fn verify_recursive_proof(
     use risc0_recursion::{Risc0Journal, Risc0ProgramId};
 
     let outputs = match verifier.0.as_str() {
-        hyle_verifiers::versions::RISC0_1 => {
+        hyle_model::verifiers::RISC0_1 => {
             let journal = risc0_proof_verifier(&proof.0, &program_id.0)?;
             let mut output = journal
                 .decode::<Vec<(Risc0ProgramId, Risc0Journal)>>()
@@ -179,9 +177,9 @@ pub fn verify_native_impl(
 
 pub fn validate_program_id(verifier: &Verifier, program_id: &ProgramId) -> Result<()> {
     match verifier.0.as_str() {
-        hyle_verifiers::versions::RISC0_1 => validate_risc0_program_id(program_id),
+        hyle_model::verifiers::RISC0_1 => validate_risc0_program_id(program_id),
         #[cfg(feature = "sp1")]
-        hyle_verifiers::versions::SP1_4 => hyle_verifiers::validate_sp1_program_id(program_id),
+        hyle_model::verifiers::SP1_4 => hyle_verifiers::validate_sp1_program_id(program_id),
         _ => Ok(()),
     }
 }
