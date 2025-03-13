@@ -280,6 +280,15 @@ impl E2ECtx {
         &self.clients[self.client_index]
     }
 
+    pub fn client_by_id(&self, name: &str) -> &NodeApiHttpClient {
+        let i = self
+            .nodes
+            .iter()
+            .position(|node| node.conf.id == name)
+            .unwrap();
+        &self.clients[i]
+    }
+
     pub fn indexer_client(&self) -> &IndexerApiHttpClient {
         self.indexer_client.as_ref().unwrap()
     }
