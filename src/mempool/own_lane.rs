@@ -92,13 +92,12 @@ impl super::Mempool {
             .lanes
             .get_lane_pending_entries(&self.own_lane_id(), last_cut)?;
 
-        let min_signatures = match self.staking.is_bonded(self.crypto.validator_pubkey()) {
-            true => 2,
-            false => 1,
-        };
         for lane_entry in entries {
             // If there's only 1 signature (=own signature), broadcast it to everyone
-            if lane_entry.signatures.len() == 1 && self.staking.bonded().len() >= min_signatures {
+            let there_are_other_validators =
+                !self.staking.is_bonded(self.crypto.validator_pubkey())
+                    || self.staking.bonded().len() >= 2;
+            if lane_entry.signatures.len() == 1 && there_are_other_validators {
                 debug!(
                     "🚗 Broadcast DataProposal {} ({} validators, {} txs)",
                     lane_entry.data_proposal.hashed(),
