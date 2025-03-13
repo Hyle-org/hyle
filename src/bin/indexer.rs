@@ -28,7 +28,7 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 async fn main() -> Result<()> {
     #[cfg(feature = "dhat")]
     let _profiler = {
-        info!("Running with dhat memory profiler");
+        tracing::info!("Running with dhat memory profiler");
         dhat::Profiler::new_heap()
     };
 
