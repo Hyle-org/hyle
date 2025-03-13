@@ -172,22 +172,18 @@ pub struct Account {
 
 impl Account {
     pub fn pedersen_key_hash(&self) -> [u8; 32] {
-        // TODO: refacto to make it more secure
-        // Hashing self.address into 64 bytes
         let mut hasher = Sha256::new();
         hasher.update(self.address.as_bytes());
-        let result = hasher.finalize();
-        let mut key_hash = [0u8; 64];
-        key_hash[..32].copy_from_slice(&result);
-
-        // Pedersen hash the result to make it a legit key for the verkle tree
-        let committer = DefaultCommitter::new(&new_crs().G);
-        let h = verkle_spec::hash64(&committer, key_hash);
-        h.to_fixed_bytes()
+        let mut result: [u8; 32] = hasher.finalize().into();
+        // HACK: We add a suffix to the key to force every key to be in same subtree...
+        result[0] = 0x00;
+        result
     }
 
     pub fn value_hash(&self) -> Option<[u8; 32]> {
         if self.balance == 0 && self.allowance.is_empty() {
+            // There is a distinction that exists by using the suffix in the key to differentiate 0 from empty
+            // cf https://notes.ethereum.org/@vbuterin/verkle_tree_eip#Verkle-tree-definition
             return None;
         }
         let mut value_bytes = [0u8; 32];
