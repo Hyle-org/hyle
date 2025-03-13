@@ -126,7 +126,7 @@ async fn faucet_and_delegate(
     Ok(())
 }
 
-async fn scenario_lane_manager_outside_consensus(mut ctx: E2ECtx) -> Result<()> {
+async fn scenario_lane_manager_outside_consensus(mut ctx: E2ECtx, delegate: bool) -> Result<()> {
     let mut conf = ctx.make_conf("lane_mgr");
     conf.p2p.mode = hyle::utils::conf::P2pMode::LaneManager;
     // Remove indexer
@@ -135,9 +135,12 @@ async fn scenario_lane_manager_outside_consensus(mut ctx: E2ECtx) -> Result<()> 
     ctx.add_node_with_conf(conf).await?;
     let lane_mgr_client = ctx.client_by_id("lane_mgr-1");
 
-    faucet_and_delegate(&ctx, lane_mgr_client, 100).await?;
+    if delegate {
+        faucet_and_delegate(&ctx, lane_mgr_client, 100).await?;
+    }
 
-    let _ = ctx.wait_height(1).await;
+    // Need to wait for both nodes to have caught up node state.
+    let _ = ctx.wait_height(2).await;
 
     let tx_hash = lane_mgr_client
         .register_contract(&APIRegisterContract {
@@ -176,11 +179,11 @@ async fn scenario_lane_manager_outside_consensus(mut ctx: E2ECtx) -> Result<()> 
 #[test_log::test(tokio::test)]
 async fn lane_manager_outside_consensus_single_node() -> Result<()> {
     let ctx = E2ECtx::new_single_with_indexer(500).await?;
-    scenario_lane_manager_outside_consensus(ctx).await
+    scenario_lane_manager_outside_consensus(ctx, false).await
 }
 
 #[test_log::test(tokio::test)]
 async fn lane_manager_outside_consensus_multi_node() -> Result<()> {
     let ctx = E2ECtx::new_multi_with_indexer(2, 500).await?;
-    scenario_lane_manager_outside_consensus(ctx).await
+    scenario_lane_manager_outside_consensus(ctx, true).await
 }
