@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
 
     log_error!(
         hyle::entrypoint::common_main(config, None).await,
-        "Error at initialization"
+        "Error running hyle"
     )?;
 
     Ok(())

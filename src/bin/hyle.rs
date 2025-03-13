@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use hyle::{
     entrypoint::RunPg,
+    log_error,
     utils::{conf, crypto::BlstCrypto, logger::setup_tracing},
 };
 use std::sync::Arc;
@@ -63,7 +64,10 @@ async fn main() -> Result<()> {
         None
     };
 
-    hyle::entrypoint::common_main(config, Some(crypto)).await?;
+    log_error!(
+        hyle::entrypoint::common_main(config, Some(crypto)).await,
+        "Error running hyle"
+    )?;
 
     Ok(())
 }

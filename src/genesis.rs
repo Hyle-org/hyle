@@ -147,8 +147,6 @@ impl Genesis {
         let mut initial_validators = self.peer_pubkey.values().cloned().collect::<Vec<_>>();
         initial_validators.sort();
 
-        info!("{:?}", self.config.genesis.stakers);
-
         let genesis_txs = match self
             .generate_genesis_txs(&self.peer_pubkey, &self.config.genesis.stakers)
             .await
