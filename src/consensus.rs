@@ -543,7 +543,7 @@ impl Consensus {
         }
 
         log_error!(
-            self.try_commit_current_proposal(commit_qc.clone()),
+            self.try_commit_current_proposal(commit_qc),
             "Processing Commit Ticket"
         )
         .is_ok()
@@ -565,7 +565,7 @@ impl Consensus {
         )
         .context("Verifying Timeout Ticket")?;
 
-        self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc.clone()))
+        self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc))
     }
 
     fn on_commit_while_joining(
@@ -683,7 +683,7 @@ impl Consensus {
             &self.bft_round_state.consensus_proposal.slot
         );
 
-        self.carry_on_with_ticket(Ticket::CommitQC(commit_quorum_certificate.clone()))
+        self.carry_on_with_ticket(Ticket::CommitQC(commit_quorum_certificate))
     }
 
     /// Message received by leader & follower.
@@ -721,7 +721,7 @@ impl Consensus {
 
         // Add validator to consensus candidates
         self.validator_candidates.push(NewValidatorCandidate {
-            pubkey: candidacy.pubkey.clone(),
+            pubkey: candidacy.pubkey,
             msg,
         });
         Ok(())
