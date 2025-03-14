@@ -8,6 +8,7 @@ use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tokio_util::codec::Framed;
 use tokio_util::codec::LengthDelimitedCodec;
+use tracing::debug;
 use tracing::{info, trace, warn};
 
 use super::fifo_filter::FifoFilter;
@@ -180,7 +181,7 @@ impl Peer {
     fn ping_pong(&self) {
         let tx = self.internal_cmd_tx.clone();
         let interval = self.conf.p2p.ping_interval;
-        info!("Starting ping pong");
+        debug!("Starting ping pong");
 
         let _ = tokio::task::Builder::new()
             .name(&format!("ping-peer-{}", self.id))
@@ -211,7 +212,8 @@ impl Peer {
                             if only_for.contains(pubkey) {
                                 _ = log_warn!(self.handle_broadcast_message(message)
                                     .await,
-                                    format!("P2P Broadcasting net message only for {:?}", only_for));
+                                    "P2P Broadcasting net message only for {:?}",
+                                    only_for);
                             }
                         }
                     }

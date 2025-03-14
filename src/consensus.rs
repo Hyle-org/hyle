@@ -10,7 +10,7 @@ use crate::{
     genesis::GenesisEvent,
     log_error,
     mempool::QueryNewCut,
-    model::{Cut, Hashed, StakingAction, ValidatorPublicKey},
+    model::{Cut, Hashed, ValidatorPublicKey},
     p2p::{network::OutboundMessage, P2PCommand},
     utils::{
         conf::SharedConf,
@@ -477,7 +477,7 @@ impl Consensus {
     fn send_candidacy(&mut self) -> Result<()> {
         let candidacy = ValidatorCandidacy {
             pubkey: self.crypto.validator_pubkey().clone(),
-            peer_address: self.config.host.clone(),
+            peer_address: self.config.p2p.address.clone(),
         };
         info!(
             "📝 Sending candidacy message to be part of consensus.  {}",
@@ -514,13 +514,13 @@ impl Consensus {
                 self.on_prepare_vote(msg, consensus_proposal_hash)
             }
             ConsensusNetMessage::Confirm(prepare_quorum_certificate) => {
-                self.on_confirm(prepare_quorum_certificate)
+                self.on_confirm(sender, prepare_quorum_certificate)
             }
             ConsensusNetMessage::ConfirmAck(consensus_proposal_hash) => {
                 self.on_confirm_ack(msg, consensus_proposal_hash)
             }
             ConsensusNetMessage::Commit(commit_quorum_certificate, proposal_hash_hint) => {
-                self.on_commit(commit_quorum_certificate, proposal_hash_hint)
+                self.on_commit(sender, commit_quorum_certificate, proposal_hash_hint)
             }
             ConsensusNetMessage::Timeout(slot, view) => self.on_timeout(msg, slot, view),
             ConsensusNetMessage::TimeoutCertificate(timeout_certificate, slot, view) => {
@@ -731,39 +731,11 @@ impl Consensus {
         match msg {
             NodeStateEvent::NewBlock(block) => {
                 let block_total_tx = block.total_txs();
-                for action in block.staking_actions {
-                    match action {
-                        (identity, StakingAction::Stake { amount }) => {
-                            self.store
-                                .bft_round_state
-                                .staking
-                                .stake(identity, amount)
-                                .map_err(|e| anyhow!(e))?;
-                        }
-                        (identity, StakingAction::Delegate { validator }) => {
-                            self.store
-                                .bft_round_state
-                                .staking
-                                .delegate_to(identity, validator)
-                                .map_err(|e| anyhow!(e))?;
-                        }
-                        (_identity, StakingAction::Distribute { claim: _ }) => todo!(),
-                        (_identity, StakingAction::DepositForFees { holder, amount }) => {
-                            self.store
-                                .bft_round_state
-                                .staking
-                                .deposit_for_fees(holder, amount)
-                                .map_err(|e| anyhow!(e))?;
-                        }
-                    }
-                }
-                for validator in block.new_bounded_validators.iter() {
-                    self.store
-                        .bft_round_state
-                        .staking
-                        .bond(validator.clone())
-                        .map_err(|e| anyhow!(e))?;
-                }
+                self.store
+                    .bft_round_state
+                    .staking
+                    .process_block(block.as_ref())
+                    .map_err(|e| anyhow!(e))?;
 
                 if let StateTag::Joining = self.bft_round_state.state_tag {
                     if self.store.bft_round_state.joining.staking_updated_to < block.block_height.0
@@ -2309,7 +2281,7 @@ pub mod test {
     async fn test_consensus_starts_after_genesis_is_processed() {
         let mut node_builder = NodeIntegrationCtxBuilder::new().await;
         node_builder.conf.run_indexer = false;
-        node_builder.conf.single_node = Some(false);
+        node_builder.conf.consensus.solo = false;
         node_builder = node_builder.skip::<NodeStateModule>().skip::<RestApi>();
         let mut node = node_builder.build().await.unwrap();
 

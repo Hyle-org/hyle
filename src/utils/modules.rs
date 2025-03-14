@@ -38,7 +38,8 @@ where
                 info!("Loaded data from disk {}", file.to_string_lossy());
                 log_error!(
                     borsh::from_reader(&mut reader),
-                    format!("Loading and decoding {}", file.to_string_lossy())
+                    "Loading and decoding {}",
+                    file.to_string_lossy()
                 )
                 .ok()
             }
@@ -86,7 +87,8 @@ where
 
         log_error!(
             buf_writer.flush(),
-            format!("Flushing Buffer writer for store {}", type_name::<S>())
+            "Flushing Buffer writer for store {}",
+            type_name::<S>()
         )?;
         debug!("Renaming {:?} to {:?}", &tmp, &file);
         log_error!(fs::rename(tmp, file), "Rename file")?;
@@ -377,6 +379,7 @@ impl ModulesHandler {
         M: Module + 'static + Send,
         <M as Module>::Context: std::marker::Send,
     {
+        debug!("Adding module {}", type_name::<M>());
         self.modules.push(ModuleStarter {
             name: type_name::<M>(),
             starter: Box::pin(Self::run_module(module)),

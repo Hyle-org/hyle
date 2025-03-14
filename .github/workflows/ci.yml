@@ -55,7 +55,7 @@ jobs:
           echo "$PWD" >> $GITHUB_PATH
       - run: cargo build --verbose
       - run: cargo nextest run --profile ci --workspace
-      - run: cargo test --doc
+      - run: cargo test --doc --workspace
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
         uses: codecov/test-results-action@v1

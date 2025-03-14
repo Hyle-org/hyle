@@ -26,9 +26,14 @@ pub(super) trait FollowerRole {
         consensus_proposal: ConsensusProposal,
         ticket: Ticket,
     ) -> Result<()>;
-    fn on_confirm(&mut self, prepare_quorum_certificate: QuorumCertificate) -> Result<()>;
+    fn on_confirm(
+        &mut self,
+        sender: ValidatorPublicKey,
+        prepare_quorum_certificate: QuorumCertificate,
+    ) -> Result<()>;
     fn on_commit(
         &mut self,
+        sender: ValidatorPublicKey,
         commit_quorum_certificate: QuorumCertificate,
         proposal_hash_hint: ConsensusProposalHash,
     ) -> Result<()>;
@@ -43,7 +48,10 @@ impl FollowerRole for Consensus {
         consensus_proposal: ConsensusProposal,
         ticket: Ticket,
     ) -> Result<()> {
-        debug!("Received Prepare message: {}", consensus_proposal);
+        debug!(
+            sender = %sender,
+            "Received Prepare message: {}", consensus_proposal
+        );
 
         if matches!(self.bft_round_state.state_tag, StateTag::Joining) {
             // Ignore obviously outdated messages.
@@ -129,6 +137,7 @@ impl FollowerRole for Consensus {
         if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
             debug!(
                 proposal_hash = %consensus_proposal.hashed(),
+                sender = %sender,
                 "📤 Slot {} Prepare message validated. Sending PrepareVote to leader",
                 self.bft_round_state.consensus_proposal.slot
             );
@@ -148,7 +157,11 @@ impl FollowerRole for Consensus {
         Ok(())
     }
 
-    fn on_confirm(&mut self, prepare_quorum_certificate: QuorumCertificate) -> Result<()> {
+    fn on_confirm(
+        &mut self,
+        sender: ValidatorPublicKey,
+        prepare_quorum_certificate: QuorumCertificate,
+    ) -> Result<()> {
         match self.bft_round_state.state_tag {
             StateTag::Follower => {}
             StateTag::Joining => {
@@ -170,6 +183,7 @@ impl FollowerRole for Consensus {
         if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
             debug!(
                 proposal_hash = %consensus_proposal_hash,
+                sender = %sender,
                 "📤 Slot {} Confirm message validated. Sending ConfirmAck to leader",
                 self.bft_round_state.consensus_proposal.slot
             );
@@ -185,6 +199,7 @@ impl FollowerRole for Consensus {
 
     fn on_commit(
         &mut self,
+        sender: ValidatorPublicKey,
         commit_quorum_certificate: QuorumCertificate,
         proposal_hash_hint: ConsensusProposalHash,
     ) -> Result<()> {
@@ -193,7 +208,14 @@ impl FollowerRole for Consensus {
             StateTag::Joining => {
                 self.on_commit_while_joining(commit_quorum_certificate, proposal_hash_hint)
             }
-            _ => bail!("Commit message received while not follower"),
+            _ => {
+                debug!(
+                    sender = %sender,
+                    proposal_hash = %proposal_hash_hint,
+                    "Commit message received while not follower"
+                );
+                bail!("Commit message received while not follower")
+            }
         }
     }
 

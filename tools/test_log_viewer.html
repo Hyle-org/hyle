@@ -145,7 +145,7 @@
                     //console.error("Error parsing line", line, e);
                 }
             });
-            return { nodeLogs, sortedTimestamps: Array.from(timestamps).sort() };
+            return { nodeLogs, sortedTimestamps: Array.from(timestamps).sort((a, b) => a - b) };
         }
 
         function renderLogs(nodeLogs, timestamps) {

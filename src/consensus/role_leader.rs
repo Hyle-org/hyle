@@ -160,6 +160,8 @@ impl LeaderRole for Consensus {
         }
         if !matches!(self.bft_round_state.leader.step, Step::PrepareVote) {
             debug!(
+                proposal_hash = %consensus_proposal_hash,
+                sender = %msg.signature.validator,
                 "PrepareVote received at wrong step (step = {:?})",
                 self.bft_round_state.leader.step
             );
@@ -196,7 +198,7 @@ impl LeaderRole for Consensus {
         // Waits for at least n-f = 2f+1 matching PrepareVote messages
         let f = self.bft_round_state.staking.compute_f();
 
-        trace!(
+        debug!(
             "📩 Slot {} validated votes: {} / {} ({} validators for a total bond = {})",
             self.bft_round_state.consensus_proposal.slot,
             voting_power,
@@ -244,12 +246,18 @@ impl LeaderRole for Consensus {
         consensus_proposal_hash: ConsensusProposalHash,
     ) -> Result<()> {
         if !matches!(self.bft_round_state.state_tag, StateTag::Leader) {
-            debug!("ConfirmAck received while not leader");
+            debug!(
+                proposal_hash = %consensus_proposal_hash,
+                sender = %msg.signature.validator,
+                "ConfirmAck received while not leader"
+            );
             return Ok(());
         }
 
         if !matches!(self.bft_round_state.leader.step, Step::ConfirmAck) {
             debug!(
+                proposal_hash = %consensus_proposal_hash,
+                sender = %msg.signature.validator,
                 "ConfirmAck received at wrong step (step ={:?})",
                 self.bft_round_state.leader.step
             );
@@ -260,6 +268,7 @@ impl LeaderRole for Consensus {
         if consensus_proposal_hash != self.bft_round_state.consensus_proposal.hashed() {
             self.metrics.confirm_ack_error("invalid_proposal_hash");
             debug!(
+                sender = %msg.signature.validator,
                 "Got {} expected {}",
                 consensus_proposal_hash,
                 self.bft_round_state.consensus_proposal.hashed()

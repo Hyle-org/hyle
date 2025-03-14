@@ -17,6 +17,7 @@ use tracing::info;
 use hyle::{
     model::*,
     rest::client::{IndexerApiHttpClient, NodeApiHttpClient},
+    utils::conf::Conf,
 };
 use hyle_contract_sdk::{
     flatten_blobs, BlobIndex, ContractName, HyleOutput, Identity, ProgramId, StateCommitment,
@@ -65,21 +66,21 @@ impl E2ECtx {
 
         for i in 0..count {
             let mut node_conf = conf_maker.build("node");
-            node_conf.peers = peers.clone();
+            node_conf.p2p.peers = peers.clone();
             genesis_stakers.insert(node_conf.id.clone(), 100);
-            peers.push(node_conf.host.clone());
+            peers.push(node_conf.p2p.address.clone());
             confs.push(node_conf);
         }
 
         for node_conf in confs.iter_mut() {
-            node_conf.consensus.genesis_stakers = genesis_stakers.clone();
+            node_conf.genesis.stakers = genesis_stakers.clone();
             let node = test_helpers::TestProcess::new("hyle", node_conf.clone())
                 //.log("hyle=info,tower_http=error")
                 .start();
 
             // Request something on node1 to be sure it's alive and working
             let client = NodeApiHttpClient {
-                url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
+                url: Url::parse(&format!("http://{}", &node.conf.rest_address)).unwrap(),
                 reqwest_client: Client::new(),
                 api_key: None,
             };
@@ -94,8 +95,8 @@ impl E2ECtx {
 
         let mut conf_maker = ConfMaker::default();
         conf_maker.default.consensus.slot_duration = slot_duration;
-        conf_maker.default.single_node = Some(true);
-        conf_maker.default.consensus.genesis_stakers =
+        conf_maker.default.consensus.solo = true;
+        conf_maker.default.genesis.stakers =
             vec![("single-node".to_string(), 100)].into_iter().collect();
 
         let node_conf = conf_maker.build("single-node");
@@ -105,7 +106,7 @@ impl E2ECtx {
 
         // Request something on node1 to be sure it's alive and working
         let client = NodeApiHttpClient {
-            url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
+            url: Url::parse(&format!("http://{}", &node.conf.rest_address)).unwrap(),
             reqwest_client: Client::new(),
             api_key: None,
         };
@@ -130,8 +131,8 @@ impl E2ECtx {
 
         let mut conf_maker = ConfMaker::default();
         conf_maker.default.consensus.slot_duration = slot_duration;
-        conf_maker.default.single_node = Some(true);
-        conf_maker.default.consensus.genesis_stakers =
+        conf_maker.default.consensus.solo = true;
+        conf_maker.default.genesis.stakers =
             vec![("single-node".to_string(), 100)].into_iter().collect();
         conf_maker.default.database_url = format!(
             "postgres://postgres:postgres@localhost:{}/postgres",
@@ -145,7 +146,7 @@ impl E2ECtx {
 
         // Request something on node1 to be sure it's alive and working
         let client = NodeApiHttpClient {
-            url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
+            url: Url::parse(&format!("http://{}", &node.conf.rest_address)).unwrap(),
             reqwest_client: Client::new(),
             api_key: None,
         };
@@ -155,7 +156,7 @@ impl E2ECtx {
         indexer_conf.da_address = node_conf.da_address.clone();
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
-        let url = format!("http://{}", &indexer_conf.rest);
+        let url = format!("http://{}", &indexer_conf.rest_address);
         let indexer_client = Some(IndexerApiHttpClient::new(url).unwrap());
 
         // Wait for node2 to properly spin up
@@ -191,23 +192,29 @@ impl E2ECtx {
         })
     }
 
-    pub async fn add_node(&mut self) -> Result<&NodeApiHttpClient> {
+    pub fn make_conf(&self, prefix: &str) -> Conf {
         let mut conf_maker = ConfMaker::default();
-        let mut node_conf = conf_maker.build("new-node");
+        let mut node_conf = conf_maker.build(prefix);
         node_conf.consensus.slot_duration = self.slot_duration;
-
-        //node_conf.peers = vec![self.nodes[0].conf.host.clone()];
-        node_conf.peers = self
+        node_conf.p2p.peers = self
             .nodes
             .iter()
-            .map(|node| node.conf.host.clone())
+            .map(|node| node.conf.p2p.address.clone())
             .collect();
+        node_conf
+    }
+
+    pub async fn add_node(&mut self) -> Result<&NodeApiHttpClient> {
+        self.add_node_with_conf(self.make_conf("new_node")).await
+    }
+
+    pub async fn add_node_with_conf(&mut self, node_conf: Conf) -> Result<&NodeApiHttpClient> {
         let node = test_helpers::TestProcess::new("hyle", node_conf)
             //.log("hyle=info,tower_http=error")
             .start();
         // Request something on node1 to be sure it's alive and working
         let client = NodeApiHttpClient {
-            url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
+            url: Url::parse(&format!("http://{}", &node.conf.rest_address)).unwrap(),
             reqwest_client: Client::new(),
             api_key: None,
         };
@@ -237,7 +244,7 @@ impl E2ECtx {
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
         nodes.push(indexer);
-        let url = format!("http://{}", &indexer_conf.rest);
+        let url = format!("http://{}", &indexer_conf.rest_address);
         clients.push(NodeApiHttpClient::new(url.clone()).unwrap());
         let indexer_client = Some(IndexerApiHttpClient::new(url).unwrap());
 

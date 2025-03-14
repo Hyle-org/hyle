@@ -98,10 +98,10 @@ impl NodeIntegrationCtxBuilder {
             Some(false),
         )
         .expect("conf ok");
-        conf.host = format!("localhost:{}", find_available_port().await);
+        conf.p2p.address = format!("localhost:{}", find_available_port().await);
         conf.da_address = format!("localhost:{}", find_available_port().await);
-        conf.tcp_server_address = Some(format!("localhost:{}", find_available_port().await));
-        conf.rest = format!("localhost:{}", find_available_port().await);
+        conf.tcp_address = Some(format!("localhost:{}", find_available_port().await));
+        conf.rest_address = format!("localhost:{}", find_available_port().await);
 
         Self {
             tmpdir,
@@ -244,9 +244,6 @@ impl NodeIntegrationCtx {
 
         std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
 
-        let run_indexer = config.run_indexer;
-        let run_tcp_server = config.run_tcp_server;
-
         let ctx = SharedRunContext {
             common: CommonRunContext {
                 bus: bus.new_handle(),
@@ -264,14 +261,14 @@ impl NodeIntegrationCtx {
 
         Self::build_module::<Genesis>(&mut handler, &ctx, ctx.clone(), &mut mocks).await?;
 
-        if config.single_node.unwrap_or(false) {
+        if config.consensus.solo {
             Self::build_module::<SingleNodeConsensus>(&mut handler, &ctx, ctx.clone(), &mut mocks)
                 .await?;
         } else {
             Self::build_module::<Consensus>(&mut handler, &ctx, ctx.clone(), &mut mocks).await?;
         }
 
-        if run_indexer {
+        if config.run_indexer {
             Self::build_module::<Indexer>(&mut handler, &ctx, ctx.common.clone(), &mut mocks)
                 .await?;
         }
@@ -282,39 +279,42 @@ impl NodeIntegrationCtx {
 
         Self::build_module::<P2P>(&mut handler, &ctx, ctx.clone(), &mut mocks).await?;
 
-        // Should come last so the other modules have nested their own routes.
-        #[allow(clippy::expect_used, reason = "Fail on misconfiguration")]
-        let router = ctx
-            .common
-            .router
-            .lock()
-            .expect("Context router should be available")
-            .take()
-            .expect("Context router should be available");
+        if config.run_rest_server {
+            // Should come last so the other modules have nested their own routes.
+            #[allow(clippy::expect_used, reason = "Fail on misconfiguration")]
+            let router = ctx
+                .common
+                .router
+                .lock()
+                .expect("Context router should be available")
+                .take()
+                .expect("Context router should be available");
 
-        // Not really intended to be mocked but you can (and probably should) skip it.
-        Self::build_module::<RestApi>(
-            &mut handler,
-            &ctx,
-            RestApiRunContext {
-                rest_addr: ctx.common.config.rest.clone(),
-                max_body_size: ctx.common.config.rest_max_body_size,
-                info: NodeInfo {
-                    id: config.id.clone(),
-                    pubkey: Some(pubkey),
-                    da_address: config.da_address.clone(),
+            // Not really intended to be mocked but you can (and probably should) skip it.
+            Self::build_module::<RestApi>(
+                &mut handler,
+                &ctx,
+                RestApiRunContext {
+                    rest_addr: ctx.common.config.rest_address.clone(),
+                    max_body_size: ctx.common.config.rest_max_body_size,
+                    info: NodeInfo {
+                        id: config.id.clone(),
+                        pubkey: Some(pubkey),
+                        da_address: config.da_address.clone(),
+                    },
+                    bus: ctx.common.bus.new_handle(),
+                    metrics_layer: None,
+                    router: router.clone(),
+                    openapi: Default::default(),
                 },
-                bus: ctx.common.bus.new_handle(),
-                metrics_layer: None,
-                router: router.clone(),
-                openapi: Default::default(),
-            },
-            &mut mocks,
-        )
-        .await?;
+                &mut mocks,
+            )
+            .await?;
+        }
 
-        if run_tcp_server {
-            Self::build_module::<TcpServer>(&mut handler, &ctx, ctx.clone(), &mut mocks).await?;
+        if config.run_tcp_server {
+            Self::build_module::<TcpServer>(&mut handler, &ctx, ctx.common.clone(), &mut mocks)
+                .await?;
         }
 
         // Ensure we didn't pass a Mock we didn't use

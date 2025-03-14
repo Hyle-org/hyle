@@ -35,18 +35,20 @@ HYLE_RUN_INDEXER=false cargo run
 ```
 
 Note: if you need sp1 verifier, enable the feature: `sp1`
-```sh 
+
+```sh
 cargo run -F sp1
 ```
 
 #### Run with Indexer
 
 To run the indexer, you can use the `--pg` node argument:
+
 ```sh
 cargo run -- --pg
 ```
 
-It will start a postgres server for you, and will close it (with all its data) whenever you stop the node. 
+It will start a postgres server for you, and will close it (with all its data) whenever you stop the node.
 This is usefull during development.
 
 If you want data persistance, you can run the PostgreSQL server:
@@ -57,6 +59,7 @@ docker run -d --rm --name pg_hyle -p 5432:5432 -e POSTGRES_PASSWORD=postgres pos
 ```
 
 and then in the `hyle` root:
+
 ```sh
 cargo run
 ```
@@ -70,10 +73,10 @@ You can configure Hylé using environment variables or a configuration file:
 Copy the default configuration file to the directory where the node will run:
 
 ```bash
-cp ./src/utils/conf_defaults.ron config.ron
+cp ./src/utils/conf_defaults.toml config.toml
 ```
 
-If a file named `config.ron` is present, it will be automatically loaded at node startup.
+If a file named `config.toml` is present, it will be automatically loaded at node startup.
 
 #### Using Environment Variables
 
