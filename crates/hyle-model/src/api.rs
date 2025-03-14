@@ -11,7 +11,7 @@ use crate::{
     ValidatorPublicKey, Verifier,
 };
 
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, ToSchema)]
 pub struct NodeInfo {
     pub id: String,
     pub pubkey: Option<ValidatorPublicKey>,
