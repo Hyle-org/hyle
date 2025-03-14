@@ -992,3 +992,190 @@ async fn protocol_fees() {
         }
     );
 }
+
+/// P = Proposal
+/// Cf = Confirm
+/// C = Commit
+///
+/// Normal case: P1 -> Cf1 -> C1 -> P2 -> Cf2 -> C2
+/// Test case: P1 -> C1 -> P2 -> C2
+///
+/// Confirm messages can be ignored if not received
+#[test_log::test(tokio::test)]
+async fn autobahn_missed_a_confirm_message() {
+    let (mut node1, mut node2, mut node3, mut node4) = build_nodes!(4).await;
+
+    ConsensusTestCtx::setup_for_round(
+        &mut [
+            &mut node1.consensus_ctx,
+            &mut node2.consensus_ctx,
+            &mut node3.consensus_ctx,
+            &mut node4.consensus_ctx,
+        ],
+        0,
+        3,
+        0,
+    );
+
+    node1.start_round_with_cut_from_mempool().await;
+
+    // Slot from node-1 not yet sent to node 4
+    broadcast! {
+        description: "Prepare",
+        from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
+        message_matches: ConsensusNetMessage::Prepare(_, _)
+    };
+
+    send! {
+        description: "PrepareVote",
+        from: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx], to: node1.consensus_ctx,
+        message_matches: ConsensusNetMessage::PrepareVote(_)
+    };
+
+    // Node 4 doesn't receive confirm
+    broadcast! {
+        description: "Confirm",
+        from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Confirm(_)
+    };
+
+    send! {
+        description: "ConfirmAck",
+        from: [node2.consensus_ctx, node3.consensus_ctx], to: node1.consensus_ctx,
+        message_matches: ConsensusNetMessage::ConfirmAck(_)
+    };
+
+    // But Node 4 receive commit
+    broadcast! {
+        description: "Commit",
+        from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
+        message_matches: ConsensusNetMessage::Commit(_, _)
+    };
+
+    // SLot 2 starts with new leader, sending to all
+    node2.start_round_with_cut_from_mempool().await;
+
+    broadcast! {
+        description: "Prepare",
+        from: node2.consensus_ctx, to: [node1.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
+        message_matches: ConsensusNetMessage::Prepare(_, _)
+    };
+
+    send! {
+        description: "PrepareVote",
+        from: [node1.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx], to: node2.consensus_ctx,
+        message_matches: ConsensusNetMessage::PrepareVote(_)
+    };
+
+    broadcast! {
+        description: "Confirm",
+        from: node2.consensus_ctx, to: [node1.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
+        message_matches: ConsensusNetMessage::Confirm(_)
+    };
+
+    send! {
+        description: "ConfirmAck",
+        from: [node1.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx], to: node2.consensus_ctx,
+        message_matches: ConsensusNetMessage::ConfirmAck(_)
+    };
+
+    broadcast! {
+        description: "Commit",
+        from: node2.consensus_ctx, to: [node1.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
+        message_matches: ConsensusNetMessage::Commit(_, _)
+    };
+}
+
+/// P = Proposal
+/// Cf = Confirm
+/// C = Commit
+///
+/// Normal case: P1 -> Cf1 -> C1 -> P2 -> Cf2 -> C2
+/// Test case: P1 -> P2 -> Cf2 -> C2
+///
+/// Confirm and commit can be ignored if next porposal is received
+#[test_log::test(tokio::test)]
+async fn autobahn_missed_confirm_and_commit_messages() {
+    let (mut node1, mut node2, mut node3, mut node4) = build_nodes!(4).await;
+
+    ConsensusTestCtx::setup_for_round(
+        &mut [
+            &mut node1.consensus_ctx,
+            &mut node2.consensus_ctx,
+            &mut node3.consensus_ctx,
+            &mut node4.consensus_ctx,
+        ],
+        0,
+        3,
+        0,
+    );
+
+    node1.start_round_with_cut_from_mempool().await;
+
+    // Slot from node-1 not yet sent to node 4
+    broadcast! {
+        description: "Prepare",
+        from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
+        message_matches: ConsensusNetMessage::Prepare(_, _)
+    };
+
+    send! {
+        description: "PrepareVote",
+        from: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx], to: node1.consensus_ctx,
+        message_matches: ConsensusNetMessage::PrepareVote(_)
+    };
+
+    // Node 4 doesn't receive confirm
+    broadcast! {
+        description: "Confirm",
+        from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Confirm(_)
+    };
+
+    send! {
+        description: "ConfirmAck",
+        from: [node2.consensus_ctx, node3.consensus_ctx], to: node1.consensus_ctx,
+        message_matches: ConsensusNetMessage::ConfirmAck(_)
+    };
+
+    // Node 4 doesn't receive commit
+    broadcast! {
+        description: "Commit",
+        from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Commit(_, _)
+    };
+
+    // SLot 2 starts with new leader, sending to all
+    node2.start_round_with_cut_from_mempool().await;
+
+    broadcast! {
+        description: "Prepare",
+        from: node2.consensus_ctx, to: [node1.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
+        message_matches: ConsensusNetMessage::Prepare(_, _)
+    };
+
+    // Node 4 has fast-forwarded to the next proposal
+    send! {
+        description: "PrepareVote",
+        from: [node1.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx], to: node2.consensus_ctx,
+        message_matches: ConsensusNetMessage::PrepareVote(_)
+    };
+
+    broadcast! {
+        description: "Confirm",
+        from: node2.consensus_ctx, to: [node1.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
+        message_matches: ConsensusNetMessage::Confirm(_)
+    };
+
+    send! {
+        description: "ConfirmAck",
+        from: [node1.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx], to: node2.consensus_ctx,
+        message_matches: ConsensusNetMessage::ConfirmAck(_)
+    };
+
+    broadcast! {
+        description: "Commit",
+        from: node2.consensus_ctx, to: [node1.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
+        message_matches: ConsensusNetMessage::Commit(_, _)
+    };
+}
