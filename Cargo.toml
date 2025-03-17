@@ -170,7 +170,7 @@ test-log = { version = "0.2.17", features = [
     "trace",
 ], default-features = false }
 tokio-stream = "0.1.17"
-tempfile = "3.17.1"
+tempfile = "3.19.0"
 assert-json-diff = "2.0.2"
 risc0-recursion = { workspace = true }
 risc0-zkvm = { version = "1.2.4", default-features = false, features = [
