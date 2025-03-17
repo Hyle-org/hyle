@@ -22,7 +22,7 @@ risc0-zkvm = { version = "1.2.4", default-features = false, optional = true, fea
     'std',
 ] }
 client-sdk = { workspace = true, default-features = false, features = ["risc0"], optional = true }
-uuid = { version = "1.15.1", default-features = false }
+uuid = { version = "1.16.0", default-features = false }
 rand = { version = "0.9", default-features = false }
 rand_seeder = { version = "0.4.0", default-features = false }
 
