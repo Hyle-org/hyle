@@ -25,6 +25,7 @@ use hyle_model::utils::get_current_timestamp_ms;
 use metrics::ConsensusMetrics;
 use role_follower::{FollowerRole, FollowerState};
 use role_leader::{LeaderRole, LeaderState};
+use role_sync::RoleSync;
 use role_timeout::{TimeoutRole, TimeoutRoleState, TimeoutState};
 use serde::{Deserialize, Serialize};
 use staking::state::{Staking, MIN_STAKE};
@@ -42,6 +43,7 @@ pub mod metrics;
 pub mod module;
 pub mod role_follower;
 pub mod role_leader;
+pub mod role_sync;
 pub mod role_timeout;
 
 // -----------------------------
@@ -207,6 +209,12 @@ impl Consensus {
                 ..ConsensusProposal::default()
             },
             staking: std::mem::take(&mut self.bft_round_state.staking),
+            follower: FollowerState {
+                buffered_prepares: std::mem::take(
+                    &mut self.bft_round_state.follower.buffered_prepares,
+                ),
+                ..FollowerState::default()
+            },
             ..BFTRoundState::default()
         };
 
@@ -416,11 +424,15 @@ impl Consensus {
     ///  - the signatures are above 2f+1 voting power.
     ///
     /// This ensures that we can trust the message.
-    fn verify_quorum_certificate<T: borsh::BorshSerialize>(
+    fn verify_quorum_certificate<T: borsh::BorshSerialize + std::fmt::Debug>(
         &self,
         message: T,
         quorum_certificate: &QuorumCertificate,
     ) -> Result<()> {
+        debug!(
+            "🔍 Verifying Quorum Certificate for message: {:?}, certificate: {:?}",
+            message, quorum_certificate
+        );
         // Construct the expected signed message
         let expected_signed_message = Signed {
             msg: message,
@@ -513,8 +525,8 @@ impl Consensus {
             ConsensusNetMessage::PrepareVote(consensus_proposal_hash) => {
                 self.on_prepare_vote(msg, consensus_proposal_hash)
             }
-            ConsensusNetMessage::Confirm(prepare_quorum_certificate) => {
-                self.on_confirm(sender, prepare_quorum_certificate)
+            ConsensusNetMessage::Confirm(prepare_quorum_certificate, proposal_hash_hint) => {
+                self.on_confirm(sender, prepare_quorum_certificate, proposal_hash_hint)
             }
             ConsensusNetMessage::ConfirmAck(consensus_proposal_hash) => {
                 self.on_confirm_ack(msg, consensus_proposal_hash)
@@ -526,29 +538,14 @@ impl Consensus {
             ConsensusNetMessage::TimeoutCertificate(timeout_certificate, slot, view) => {
                 self.on_timeout_certificate(&timeout_certificate, slot, view)
             }
-
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
                 self.on_validator_candidacy(msg, candidacy)
             }
-        }
-    }
-
-    fn verify_commit_ticket(&mut self, commit_qc: QuorumCertificate) -> bool {
-        // Three options:
-        // - we have already received the commit message for this ticket, so we already processed the QC.
-        // - we haven't, so we process it right away
-        // - the CQC is invalid and we just ignore it.
-        if let Some(qc) = &self.bft_round_state.follower.buffered_quorum_certificate {
-            if qc == &commit_qc {
-                return true;
+            ConsensusNetMessage::SyncRequest(proposal_hash) => {
+                self.on_sync_request(sender, proposal_hash)
             }
+            ConsensusNetMessage::SyncReply(prepare) => self.on_sync_reply(prepare),
         }
-
-        log_error!(
-            self.try_commit_current_proposal(commit_qc),
-            "Processing Commit Ticket"
-        )
-        .is_ok()
     }
 
     fn try_process_timeout_qc(&mut self, timeout_qc: QuorumCertificate) -> Result<()> {
@@ -615,7 +612,10 @@ impl Consensus {
         // Try to commit the proposal
         self.bft_round_state.state_tag = StateTag::Follower;
         if self
-            .try_commit_current_proposal(commit_quorum_certificate)
+            .try_commit_current_proposal(
+                commit_quorum_certificate,
+                self.bft_round_state.consensus_proposal.hashed(),
+            )
             .is_err()
         {
             self.bft_round_state.state_tag = StateTag::Joining;
@@ -658,14 +658,24 @@ impl Consensus {
     fn try_commit_current_proposal(
         &mut self,
         commit_quorum_certificate: QuorumCertificate,
+        proposal_hash_hint: ConsensusProposalHash,
     ) -> Result<()> {
         // Check that this is a QC for ConfirmAck for the expected proposal.
         // This also checks slot/view as those are part of the hash.
         // TODO: would probably be good to make that more explicit.
         self.verify_quorum_certificate(
-            ConsensusNetMessage::ConfirmAck(self.bft_round_state.consensus_proposal.hashed()),
+            ConsensusNetMessage::ConfirmAck(proposal_hash_hint.clone()),
             &commit_quorum_certificate,
         )?;
+
+        if self.bft_round_state.consensus_proposal.hashed() != proposal_hash_hint {
+            warn!(
+                "Received Commit for proposal {:?} but expected {:?}. Ignoring.",
+                proposal_hash_hint,
+                self.bft_round_state.consensus_proposal.hashed()
+            );
+            return Ok(());
+        }
 
         self.metrics.commit();
 
@@ -1339,7 +1349,7 @@ pub mod test {
                 msg: net_msg,
             } = rec
             {
-                assert_eq!(to, &dest);
+                assert_eq!(to, &dest, "Got message {:?}", net_msg);
                 if let NetMessage::ConsensusMessage(msg) = net_msg {
                     msg
                 } else {
@@ -1442,7 +1452,7 @@ pub mod test {
         broadcast! {
             description: "Leader - Confirm",
             from: node1, to: [node2, node3, node4],
-            message_matches: ConsensusNetMessage::Confirm(_)
+            message_matches: ConsensusNetMessage::Confirm(_, _)
         };
 
         send! {

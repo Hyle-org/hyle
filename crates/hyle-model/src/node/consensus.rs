@@ -259,12 +259,14 @@ impl From<NewValidatorCandidate> for ConsensusStakingAction {
 pub enum ConsensusNetMessage {
     Prepare(ConsensusProposal, Ticket),
     PrepareVote(ConsensusProposalHash),
-    Confirm(QuorumCertificate),
+    Confirm(QuorumCertificate, ConsensusProposalHash),
     ConfirmAck(ConsensusProposalHash),
     Commit(QuorumCertificate, ConsensusProposalHash),
     Timeout(Slot, View),
     TimeoutCertificate(QuorumCertificate, Slot, View),
     ValidatorCandidacy(ValidatorCandidacy),
+    SyncRequest(ConsensusProposalHash),
+    SyncReply((ValidatorPublicKey, ConsensusProposal, Ticket)),
 }
 
 impl Hashed<QuorumCertificateHash> for QuorumCertificate {
@@ -332,8 +334,8 @@ impl Display for ConsensusNetMessage {
             ConsensusNetMessage::PrepareVote(cphash) => {
                 write!(f, "{} (CP hash: {})", enum_variant, cphash)
             }
-            ConsensusNetMessage::Confirm(cert) => {
-                _ = writeln!(f, "{}", enum_variant);
+            ConsensusNetMessage::Confirm(cert, cphash) => {
+                _ = writeln!(f, "{} (CP hash: {})", enum_variant, cphash);
                 _ = write!(f, "Certificate {} with validators ", cert.signature);
                 for v in cert.validators.iter() {
                     _ = write!(f, "{},", v);
@@ -353,7 +355,7 @@ impl Display for ConsensusNetMessage {
             }
 
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
-                write!(f, "{} (CP hash {})", enum_variant, candidacy)
+                write!(f, "{} (Candidacy {})", enum_variant, candidacy)
             }
             ConsensusNetMessage::Timeout(slot, view) => {
                 write!(f, "{} - Slot: {} View: {}", enum_variant, slot, view)
@@ -365,6 +367,16 @@ impl Display for ConsensusNetMessage {
                     _ = write!(f, "{},", v);
                 }
                 write!(f, "")
+            }
+            ConsensusNetMessage::SyncRequest(consensus_proposal_hash) => {
+                write!(f, "{} (CP hash: {})", enum_variant, consensus_proposal_hash)
+            }
+            ConsensusNetMessage::SyncReply((sender, consensus_proposal, ticket)) => {
+                write!(
+                    f,
+                    "{} sender: {}, CP: {}, ticket: {}",
+                    enum_variant, sender, consensus_proposal, ticket
+                )
             }
         }
     }

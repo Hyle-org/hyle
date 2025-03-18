@@ -147,7 +147,7 @@ macro_rules! simple_commit_round {
         broadcast! {
             description: "Leader - Confirm",
             from: $leader, to: [$($follower),+$(,$joining)?],
-            message_matches: hyle_contract_sdk::ConsensusNetMessage::Confirm(_)
+            message_matches: hyle_contract_sdk::ConsensusNetMessage::Confirm(_, _)
         };
 
         send! {
@@ -424,7 +424,7 @@ async fn autobahn_basic_flow() {
     broadcast! {
         description: "Confirm",
         from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
-        message_matches: ConsensusNetMessage::Confirm(_)
+        message_matches: ConsensusNetMessage::Confirm(_, _)
     };
 
     let (vote2, vote3, vote4) = send! {
@@ -1036,7 +1036,7 @@ async fn autobahn_missed_a_confirm_message() {
     broadcast! {
         description: "Confirm",
         from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx],
-        message_matches: ConsensusNetMessage::Confirm(_)
+        message_matches: ConsensusNetMessage::Confirm(_, _)
     };
 
     send! {
@@ -1070,7 +1070,7 @@ async fn autobahn_missed_a_confirm_message() {
     broadcast! {
         description: "Confirm",
         from: node2.consensus_ctx, to: [node1.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
-        message_matches: ConsensusNetMessage::Confirm(_)
+        message_matches: ConsensusNetMessage::Confirm(_, _)
     };
 
     send! {
@@ -1129,7 +1129,7 @@ async fn autobahn_missed_confirm_and_commit_messages() {
     broadcast! {
         description: "Confirm",
         from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx],
-        message_matches: ConsensusNetMessage::Confirm(_)
+        message_matches: ConsensusNetMessage::Confirm(_, _)
     };
 
     send! {
@@ -1164,7 +1164,7 @@ async fn autobahn_missed_confirm_and_commit_messages() {
     broadcast! {
         description: "Confirm",
         from: node2.consensus_ctx, to: [node1.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
-        message_matches: ConsensusNetMessage::Confirm(_)
+        message_matches: ConsensusNetMessage::Confirm(_, _)
     };
 
     send! {
@@ -1177,5 +1177,123 @@ async fn autobahn_missed_confirm_and_commit_messages() {
         description: "Commit",
         from: node2.consensus_ctx, to: [node1.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
         message_matches: ConsensusNetMessage::Commit(_, _)
+    };
+}
+
+#[test_log::test(tokio::test)]
+async fn autobahn_buffer_early_messages() {
+    let (mut node1, mut node2, mut node3, mut node4) = build_nodes!(4).await;
+
+    ConsensusTestCtx::setup_for_round(
+        &mut [
+            &mut node1.consensus_ctx,
+            &mut node2.consensus_ctx,
+            &mut node3.consensus_ctx,
+            &mut node4.consensus_ctx,
+        ],
+        0,
+        3,
+        0,
+    );
+
+    node1.start_round_with_cut_from_mempool().await;
+
+    // Slot 3 starts, all nodes receive the prepare
+    broadcast! {
+        description: "Prepare",
+        from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
+        message_matches: ConsensusNetMessage::Prepare(_, _)
+    };
+
+    send! {
+        description: "PrepareVote",
+        from: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx], to: node1.consensus_ctx,
+        message_matches: ConsensusNetMessage::PrepareVote(_)
+    };
+
+    broadcast! {
+        description: "Confirm - Node4 disconnected",
+        from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Confirm(_, _)
+    };
+
+    send! {
+        description: "ConfirmAck",
+        from: [node2.consensus_ctx, node3.consensus_ctx], to: node1.consensus_ctx,
+        message_matches: ConsensusNetMessage::ConfirmAck(_)
+    };
+
+    broadcast! {
+        description: "Commit - Node4 still disconnected",
+        from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Commit(_, _)
+    };
+
+    // Slot 4 starts with new leader with node4 disconnected
+    node2.start_round_with_cut_from_mempool().await;
+
+    broadcast! {
+        description: "Prepare",
+        from: node2.consensus_ctx, to: [node1.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Prepare(_, _)
+    };
+
+    send! {
+        description: "PrepareVote",
+        from: [node1.consensus_ctx, node3.consensus_ctx], to: node2.consensus_ctx,
+        message_matches: ConsensusNetMessage::PrepareVote(_)
+    };
+
+    broadcast! {
+        description: "Confirm",
+        from: node2.consensus_ctx, to: [node1.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Confirm(_, _)
+    };
+
+    send! {
+        description: "ConfirmAck",
+        from: [node1.consensus_ctx, node3.consensus_ctx], to: node2.consensus_ctx,
+        message_matches: ConsensusNetMessage::ConfirmAck(_)
+    };
+
+    broadcast! {
+        description: "Commit",
+        from: node2.consensus_ctx, to: [node1.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Commit(_, _)
+    };
+
+    // Slot 5 starts with new leader but node4 is back online
+    node3.start_round_with_cut_from_mempool().await;
+
+    broadcast! {
+        description: "Prepare",
+        from: node3.consensus_ctx, to: [node1.consensus_ctx, node2.consensus_ctx, node4.consensus_ctx],
+        message_matches: ConsensusNetMessage::Prepare(_, _)
+    };
+
+    send! {
+        description: "PrepareVote",
+        from: [node1.consensus_ctx, node2.consensus_ctx], to: node3.consensus_ctx,
+        message_matches: ConsensusNetMessage::PrepareVote(_)
+    };
+
+    node3.consensus_ctx.assert_broadcast("Confirm");
+
+    broadcast! {
+        description: "SyncRequest - Node4 ask for missed proposal Slot 4",
+        from: node4.consensus_ctx, to: [node1.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::SyncRequest(_)
+    };
+
+    send! {
+        description: "SyncReply - All nodes reply with proposal Slot 4",
+        from: [node1.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx], to: node4.consensus_ctx,
+        message_matches: ConsensusNetMessage::SyncReply(_)
+    };
+
+    send! {
+        description: "PrepareVote - Node4 votes on slot 5",
+        from: [node4.consensus_ctx], to: node3.consensus_ctx,
+        message_matches: ConsensusNetMessage::PrepareVote(_)
     };
 }
