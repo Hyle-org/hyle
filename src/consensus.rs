@@ -539,7 +539,9 @@ impl Consensus {
         // - we haven't, so we process it right away
         // - the CQC is invalid and we just ignore it.
         if let Some(qc) = &self.bft_round_state.follower.buffered_quorum_certificate {
-            return qc == &commit_qc;
+            if qc == &commit_qc {
+                return true;
+            }
         }
 
         log_error!(
