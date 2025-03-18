@@ -736,6 +736,9 @@ impl Consensus {
                         break;
                     },
                     GenesisEvent::NoGenesis => {
+                        // First wait a coupld seconds to hopefully have reconnected with all peers.
+                        info!("🧳 Waiting a few seconds before processing with rejoin to connect with peers.");
+                        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
                         // If we deserialized, we might be a follower or a leader.
                         // There's a few possibilities: maybe we're restarting quick enough that we're still synched,
                         // maybe we actually would block consensus by having a large stake
@@ -743,6 +746,8 @@ impl Consensus {
                         // Regardless, we should probably assume that we need to catch up.
                         // TODO: this logic can be improved.
                         self.bft_round_state.state_tag = StateTag::Joining;
+                        // Set up an initial timeout to ensure we don't get stuck if we miss commits
+                        self.bft_round_state.timeout.state.schedule_next(get_current_timestamp());
                         break;
                     },
                 }
@@ -759,9 +764,12 @@ impl Consensus {
     }
 
     async fn start(&mut self) -> Result<()> {
-        info!("🚀 Starting consensus");
+        info!(
+            "🚀 Starting consensus as {:?}",
+            self.bft_round_state.state_tag
+        );
 
-        let mut timeout_ticker = interval(Duration::from_millis(100));
+        let mut timeout_ticker = interval(Duration::from_millis(200));
         timeout_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         module_handle_messages! {

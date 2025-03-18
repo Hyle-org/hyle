@@ -297,6 +297,11 @@ impl E2ECtx {
         })
     }
 
+    pub async fn stop_all(&mut self) -> Result<()> {
+        futures::future::join_all(self.nodes.iter_mut().map(|node| node.stop())).await;
+        Ok(())
+    }
+
     pub async fn stop_node(&mut self, index: usize) -> Result<()> {
         self.nodes[index].stop().await
     }

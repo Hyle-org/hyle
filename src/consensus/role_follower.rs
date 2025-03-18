@@ -61,30 +61,48 @@ impl FollowerRole for Consensus {
             "Received Prepare message: {}", consensus_proposal
         );
 
+        info!(
+            "At round {} {}",
+            self.bft_round_state.consensus_proposal.slot,
+            self.bft_round_state.consensus_proposal.view
+        );
+
         if matches!(self.bft_round_state.state_tag, StateTag::Joining) {
-            // Ignore obviously outdated messages.
-            // We'll be optimistic for ones in the future and hope that
-            // maybe we'll have caught up by the time the commit rolls around.
-            if consensus_proposal.slot <= self.bft_round_state.joining.staking_updated_to {
+            // Shortcut - if this is the prepare we expected, exit joining mode.
+            let is_next_prepare = consensus_proposal.view == 0
+                && consensus_proposal.slot == self.bft_round_state.consensus_proposal.slot + 1
+                || consensus_proposal.view == self.bft_round_state.consensus_proposal.view + 1
+                    && consensus_proposal.slot == self.bft_round_state.consensus_proposal.slot;
+            if is_next_prepare {
                 info!(
-                        "🌑 Outdated Prepare message (Slot {} / view {} while at {}) received while joining. Ignoring.",
-                        consensus_proposal.slot, consensus_proposal.view, self.bft_round_state.joining.staking_updated_to
-                    );
+                    "Received Prepare message for next slot while joining. Exiting joining mode."
+                );
+                self.bft_round_state.state_tag = StateTag::Follower;
+            } else {
+                // Ignore obviously outdated messages.
+                // We'll be optimistic for ones in the future and hope that
+                // maybe we'll have caught up by the time the commit rolls around.
+                if consensus_proposal.slot <= self.bft_round_state.joining.staking_updated_to {
+                    info!(
+                            "🌑 Outdated Prepare message (Slot {} / view {} while at {}) received while joining. Ignoring.",
+                            consensus_proposal.slot, consensus_proposal.view, self.bft_round_state.joining.staking_updated_to
+                        );
+                    return Ok(());
+                }
+                info!(
+                    "🌕 Prepare message (Slot {} / view {}) received while joining. Storing.",
+                    consensus_proposal.slot, consensus_proposal.view
+                );
+                // Store the message until we receive a matching Commit.
+                // Because we may receive old or rogue proposals, we store all of them.
+                // TODO: it would be slightly DOS-safer to only save those from validators we know,
+                // but I'm not sure it's an actual problem in practice.
+                self.bft_round_state
+                    .joining
+                    .buffered_prepares
+                    .push(consensus_proposal);
                 return Ok(());
             }
-            info!(
-                "🌕 Prepare message (Slot {} / view {}) received while joining. Storing.",
-                consensus_proposal.slot, consensus_proposal.view
-            );
-            // Store the message until we receive a matching Commit.
-            // Because we may receive old or rogue proposals, we store all of them.
-            // TODO: it would be slightly DOS-safer to only save those from validators we know,
-            // but I'm not sure it's an actual problem in practice.
-            self.bft_round_state
-                .joining
-                .buffered_prepares
-                .push(consensus_proposal);
-            return Ok(());
         }
         // If received proposal for next slot, we continue processing and will try to fast forward
         // if received proposal is for an even further slot, we buffer it
@@ -458,24 +476,27 @@ impl Consensus {
             return Ok(());
         };
         // Use that as our proposal.
-        self.bft_round_state.consensus_proposal = self
+        let mut potential_proposal = self
             .bft_round_state
             .joining
             .buffered_prepares
             .swap_remove(proposal_index);
-        self.bft_round_state.joining.buffered_prepares.clear();
 
         // At this point check that we're caught up enough that it's realistic to verify the QC.
-        if self.bft_round_state.joining.staking_updated_to + 1
-            < self.bft_round_state.consensus_proposal.slot
-        {
+        if self.bft_round_state.joining.staking_updated_to + 1 < potential_proposal.slot {
             info!(
                 "🏃Ignoring commit message, we are only caught up to {} ({} needed).",
                 self.bft_round_state.joining.staking_updated_to,
-                self.bft_round_state.consensus_proposal.slot - 1
+                potential_proposal.slot - 1
             );
             return Ok(());
         }
+
+        std::mem::swap(
+            &mut self.bft_round_state.consensus_proposal,
+            &mut potential_proposal,
+        );
+        self.bft_round_state.joining.buffered_prepares.clear();
 
         info!(
             "📦 Commit message received for slot {}, trying to synchronize.",
@@ -491,6 +512,11 @@ impl Consensus {
             )
             .is_err()
         {
+            // Swap back
+            std::mem::swap(
+                &mut self.bft_round_state.consensus_proposal,
+                &mut potential_proposal,
+            );
             self.bft_round_state.state_tag = StateTag::Joining;
             bail!("⛑️ Failed to synchronize, retrying soon.");
         }
