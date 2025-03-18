@@ -28,7 +28,7 @@ reqwest = { version = "0.12", features = ["json"], optional = true }
 
 # Tcp feature
 tokio = { version = "1.42.0", features = ["full", "tracing"], optional = true }
-tokio-util = { version = "0.7.13", optional = true }
+tokio-util = { version = "0.7.14", optional = true }
 futures = { version = "0.3.31", optional = true }
 
 # Indexer feature, these are re-exported
