@@ -111,7 +111,9 @@ impl E2ECtx {
             api_key: None,
         };
 
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        while client.get_node_info().await.is_err() {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
 
         info!("🚀 E2E test environment is ready!");
         Ok(E2ECtx {
@@ -157,10 +159,14 @@ impl E2ECtx {
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
         let url = format!("http://{}", &indexer_conf.rest_address);
-        let indexer_client = Some(IndexerApiHttpClient::new(url).unwrap());
+        let indexer_client = IndexerApiHttpClient::new(url).unwrap();
 
-        // Wait for node2 to properly spin up
-        wait_height(&client, 2).await?;
+        while indexer_client.get_last_block().await.is_err() {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        while client.get_node_info().await.is_err() {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
 
         info!("🚀 E2E test environment is ready!");
         Ok(E2ECtx {
@@ -168,7 +174,7 @@ impl E2ECtx {
             nodes: vec![node, indexer],
             clients: vec![client],
             client_index: 0,
-            indexer_client,
+            indexer_client: Some(indexer_client),
             slot_duration,
         })
     }
@@ -180,6 +186,19 @@ impl E2ECtx {
 
         let (nodes, clients) = Self::build_nodes(count, &mut conf_maker);
         wait_height_timeout(clients.first().unwrap(), 1, 120).await?;
+
+        loop {
+            let mut stop = true;
+            for client in clients.iter() {
+                if client.get_node_info().await.is_err() {
+                    stop = false
+                }
+            }
+            if stop {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
 
         info!("🚀 E2E test environment is ready!");
         Ok(E2ECtx {
@@ -247,11 +266,23 @@ impl E2ECtx {
         nodes.push(indexer);
         let url = format!("http://{}", &indexer_conf.rest_address);
 
-        let indexer_client = Some(IndexerApiHttpClient::new(url).unwrap());
+        let indexer_client = IndexerApiHttpClient::new(url).unwrap();
 
-        // Wait for node2 to properly spin up
-        let client = clients.first().unwrap();
-        wait_height(client, 1).await?;
+        loop {
+            let mut stop = true;
+            for client in clients.iter() {
+                if client.get_node_info().await.is_err() {
+                    stop = false
+                }
+            }
+            if stop {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        while indexer_client.get_last_block().await.is_err() {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
 
         let pg = Some(pg);
 
@@ -261,7 +292,7 @@ impl E2ECtx {
             nodes,
             clients,
             client_index: 0,
-            indexer_client,
+            indexer_client: Some(indexer_client),
             slot_duration,
         })
     }

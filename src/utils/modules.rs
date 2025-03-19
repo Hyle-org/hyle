@@ -122,7 +122,7 @@ pub mod signal {
         >,
     ) -> anyhow::Result<()> {
         if *should_shutdown {
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             return Ok(());
         }
         while let Ok(shutdown_event) = shutdown_receiver.recv().await {
@@ -132,7 +132,7 @@ pub mod signal {
                     std::any::type_name::<T>()
                 );
                 *should_shutdown = true;
-                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                 return Ok(());
             }
         }
