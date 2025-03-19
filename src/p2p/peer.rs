@@ -3,7 +3,13 @@ use std::time::SystemTime;
 
 use anyhow::Context;
 use anyhow::{Error, Result};
-use tokio::net::TcpStream;
+
+#[cfg(not(feature = "turmoil"))]
+use tokio::net;
+
+#[cfg(feature = "turmoil")]
+use turmoil::net;
+
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tokio_util::codec::Framed;
@@ -44,7 +50,7 @@ struct PeerBusClient {
 
 pub struct Peer {
     id: u64,
-    stream: Framed<TcpStream, LengthDelimitedCodec>,
+    stream: Framed<net::TcpStream, LengthDelimitedCodec>,
     bus: PeerBusClient,
     last_pong: SystemTime,
     conf: SharedConf,
@@ -66,7 +72,7 @@ enum Cmd {
 impl Peer {
     pub async fn new(
         id: u64,
-        stream: TcpStream,
+        stream: net::TcpStream,
         bus: SharedMessageBus,
         crypto: SharedBlstCrypto,
         conf: SharedConf,
@@ -250,8 +256,8 @@ impl Peer {
         Ok(())
     }
 
-    pub async fn connect(addr: &str) -> Result<TcpStream> {
-        let conn = TcpStream::connect(addr)
+    pub async fn connect(addr: &str) -> Result<net::TcpStream> {
+        let conn = net::TcpStream::connect(addr)
             .await
             .context("Connect to peer with TCP stream")?;
         info!("Connected to peer: {}", addr);

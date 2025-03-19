@@ -12,8 +12,20 @@ use crate::{
     },
 };
 use anyhow::{Context, Result};
-use std::{collections::HashSet, sync::Arc, time::Duration};
-use tokio::{net::TcpListener, time::sleep};
+use std::{
+    collections::HashSet,
+    net::{IpAddr, Ipv4Addr},
+    sync::Arc,
+    time::Duration,
+};
+use tokio::time::sleep;
+
+#[cfg(not(feature = "turmoil"))]
+use tokio::net;
+
+#[cfg(feature = "turmoil")]
+use turmoil::net;
+
 use tracing::{error, info, trace, warn};
 
 mod fifo_filter;
@@ -106,7 +118,7 @@ impl P2P {
                                 };
                             }
                             Err(e) => {
-                                warn!("Error while connecting to peer #{}: {}", id, e);
+                                warn!("Error while connecting to peer #{}: {:#?}", id, e);
                             }
                         }
 
@@ -129,7 +141,19 @@ impl P2P {
         // Wait all other threads to start correctly
         sleep(Duration::from_secs(1)).await;
 
-        let listener = TcpListener::bind(&self.config.p2p.address).await?;
+        let addr = (
+            IpAddr::from(Ipv4Addr::UNSPECIFIED),
+            self.config
+                .p2p
+                .address
+                .split(":")
+                .last()
+                .unwrap()
+                .parse()
+                .unwrap(),
+        );
+
+        let listener = net::TcpListener::bind(&addr).await?;
         info!(
             "📡  Starting P2P module, listening on {}",
             listener.local_addr()?

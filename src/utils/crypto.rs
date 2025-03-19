@@ -106,7 +106,7 @@ impl BlstCrypto {
                 .map_err(|e| anyhow!("Could not generate key from keyring secret: {:?}", e))?,
             Err(keyring::Error::NoEntry) => {
                 let mut ikm = [0u8; 32];
-                rand::rng().fill(&mut ikm);
+                rand::thread_rng().fill(&mut ikm);
                 entry.set_password(&hex::encode(ikm))?;
                 SecretKey::key_gen(&ikm, &[])
                     .map_err(|e| anyhow!("Could not generate new key: {:?}", e))?
@@ -143,9 +143,9 @@ impl BlstCrypto {
 
     #[cfg(test)]
     pub fn new_random() -> Result<Self> {
-        let mut rng = rand::rng();
+        let mut rng = rand::thread_rng();
         let id: String = (0..32)
-            .map(|_| rng.random_range(33..127) as u8 as char) // Caractères imprimables ASCII
+            .map(|_| rng.gen_range(33..127) as u8 as char) // Caractères imprimables ASCII
             .collect();
         Self::new(id.as_str())
     }

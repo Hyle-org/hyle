@@ -3,6 +3,7 @@ use assert_cmd::prelude::*;
 use client_sdk::transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutor};
 
 use hyle::{
+    entrypoint::common_main,
     model::BlobTransaction,
     rest::client::NodeApiHttpClient,
     utils::{
@@ -13,10 +14,13 @@ use hyle::{
 use hyle_model::TxHash;
 use rand::Rng;
 use signal_child::signal;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tempfile::TempDir;
-use tokio::process::{Child, Command};
 use tokio::{io::AsyncBufReadExt, time::timeout};
+use tokio::{
+    process::{Child, Command},
+    task::JoinHandle,
+};
 use tracing::info;
 
 pub struct ConfMaker {
@@ -28,19 +32,20 @@ pub struct ConfMaker {
 impl ConfMaker {
     pub fn build(&mut self, prefix: &str) -> Conf {
         self.i += 1;
+        let id = if prefix == "single-node" {
+            prefix.into()
+        } else {
+            format!("{}-{}", prefix, self.i)
+        };
         Conf {
-            id: if prefix == "single-node" {
-                prefix.into()
-            } else {
-                format!("{}-{}", prefix, self.i)
-            },
+            id: id.clone(),
             p2p: P2pConf {
-                address: format!("localhost:{}", self.random_port + self.i),
+                address: format!("{}:{}", id, self.random_port + self.i),
                 ..self.default.p2p.clone()
             },
-            da_address: format!("localhost:{}", self.random_port + 1000 + self.i),
-            tcp_address: Some(format!("localhost:{}", self.random_port + 2000 + self.i)),
-            rest_address: format!("localhost:{}", self.random_port + 3000 + self.i),
+            da_address: format!("{}:{}", id, self.random_port + 1000 + self.i),
+            tcp_address: Some(format!("{}:{}", id, self.random_port + 2000 + self.i)),
+            rest_address: format!("{}:{}", id, self.random_port + 3000 + self.i),
             ..self.default.clone()
         }
     }
@@ -49,11 +54,11 @@ impl ConfMaker {
 impl Default for ConfMaker {
     fn default() -> Self {
         let mut default = Conf::new(None, None, None).unwrap();
-        let mut rng = rand::rng();
-        let random_port: u32 = rng.random_range(1024..(65536 - 4000));
+        let mut rng = rand::thread_rng();
+        let random_port: u32 = rng.gen_range(1024..(65536 - 4000));
 
         default.log_format = "node".to_string(); // Activate node name in logs for convenience in tests.
-        default.p2p.address = format!("localhost:{}", random_port);
+        default.p2p.address = format!("127.0.0.1:{}", random_port);
         default.p2p.mode = hyle::utils::conf::P2pMode::FullValidator;
         default.consensus.solo = false;
         default.genesis.stakers = {
@@ -64,9 +69,9 @@ impl Default for ConfMaker {
         };
         default.genesis.faucet_password = "password".into();
 
-        default.da_address = format!("localhost:{}", random_port + 1000);
-        default.tcp_address = Some(format!("localhost:{}", random_port + 2000));
-        default.rest_address = format!("localhost:{}", random_port + 3000);
+        default.da_address = format!("127.0.0.1:{}", random_port + 1000);
+        default.tcp_address = Some(format!("127.0.0.1:{}", random_port + 2000));
+        default.rest_address = format!("127.0.0.1:{}", random_port + 3000);
 
         default.run_indexer = false; // disable indexer by default to avoid needed PG
 
@@ -77,6 +82,22 @@ impl Default for ConfMaker {
             random_port,
             default,
         }
+    }
+}
+
+#[derive(Clone)]
+pub struct TurmoilProcess {
+    pub conf: Conf,
+    pub client: NodeApiHttpClient,
+}
+
+impl TurmoilProcess {
+    pub async fn start(&self) -> anyhow::Result<()> {
+        let crypto = Arc::new(BlstCrypto::new(&self.conf.id).expect("Creating crypto"));
+
+        common_main(self.conf.clone(), Some(crypto)).await?;
+
+        Ok(())
     }
 }
 

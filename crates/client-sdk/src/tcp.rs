@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    net::{IpAddr, Ipv4Addr},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -10,12 +11,18 @@ use futures::{
     SinkExt, StreamExt,
 };
 use sdk::Transaction;
+
+#[cfg(not(feature = "turmoil"))]
+use tokio::net::{TcpListener, TcpStream};
+
 use tokio::{
-    net::{TcpListener, TcpStream},
     sync::mpsc::{Receiver, Sender},
     task::JoinHandle,
 };
 use tokio_util::codec::{Decoder, Encoder, Framed, LengthDelimitedCodec};
+
+#[cfg(feature = "turmoil")]
+use turmoil::net::{TcpListener, TcpStream};
 
 use anyhow::{anyhow, bail, Context, Result};
 use tracing::{debug, error, info, trace, warn};
@@ -107,7 +114,7 @@ where
     }
 }
 
-#[derive(Debug)]
+// #[derive(Debug)]
 pub struct TcpServer<Codec, Req: Clone, Res: Clone + std::fmt::Debug>
 where
     Codec: Decoder<Item = Req> + Encoder<Res> + Default,
@@ -129,12 +136,16 @@ where
     Res: BorshSerialize + Clone + Send + 'static + std::fmt::Debug,
 {
     pub async fn start(addr: String, pool_name: &'static str) -> Result<Self> {
+        let addr = (
+            IpAddr::from(Ipv4Addr::UNSPECIFIED),
+            addr.split(":").last().unwrap().parse().unwrap(),
+        );
         let tcp_listener = TcpListener::bind(&addr).await?;
         let (pool_sender, pool_receiver) = tokio::sync::mpsc::channel(100);
         let (ping_sender, ping_receiver) = tokio::sync::mpsc::channel(100);
         info!(
             "📡  Starting Tcp Connection Pool {}, listening for stream requests on {}",
-            &pool_name, &addr
+            &pool_name, &addr.1
         );
         Ok(TcpServer::<Codec, Req, Res> {
             peers: HashMap::new(),

@@ -1,5 +1,9 @@
 use anyhow::{anyhow, bail, Context, Error};
 use futures::{SinkExt, StreamExt};
+#[cfg(feature = "turmoil")]
+use turmoil::net::TcpStream;
+
+#[cfg(not(feature = "turmoil"))]
 use tokio::net::TcpStream;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tracing::trace;

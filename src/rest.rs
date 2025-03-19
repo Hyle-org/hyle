@@ -1,5 +1,7 @@
 //! Public API for interacting with the node.
 
+use std::net::{IpAddr, Ipv4Addr};
+
 use anyhow::{Context, Result};
 pub use axum::Router;
 use axum::{
@@ -140,10 +142,15 @@ impl RestApi {
             self.rest_addr
         );
 
+        let addr = (
+            IpAddr::from(Ipv4Addr::UNSPECIFIED),
+            self.rest_addr.split(":").last().unwrap().parse().unwrap(),
+        );
+
         module_handle_messages! {
             on_bus self.bus,
             _ = axum::serve(
-                tokio::net::TcpListener::bind(&self.rest_addr)
+                tokio::net::TcpListener::bind(&addr)
                     .await
                     .context("Starting rest server")?,
                 #[allow(clippy::expect_used, reason="incorrect setup logic")]

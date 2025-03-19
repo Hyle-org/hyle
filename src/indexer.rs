@@ -12,6 +12,7 @@ use crate::{
 };
 use anyhow::{bail, Context, Error, Result};
 use api::IndexerAPI;
+use axum::serve::Listener;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -29,6 +30,7 @@ use hyle_model::api::{
 };
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use sqlx::{PgExecutor, QueryBuilder, Row};
+use std::net::SocketAddr;
 use std::ops::DerefMut;
 use std::{collections::HashMap, sync::Arc};
 use tokio::select;
@@ -37,6 +39,12 @@ use tracing::{debug, error, info, trace};
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
+
+#[cfg(not(feature = "turmoil"))]
+use tokio::net;
+
+#[cfg(feature = "turmoil")]
+use turmoil::net;
 
 module_bus_client! {
 #[derive(Debug)]
@@ -1499,12 +1507,12 @@ mod test {
         assert!(!transactions_response.text().is_empty());
 
         // Websocket
-        let listener = tokio::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)))
+        let listener = net::TcpListener::bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)))
             .await
             .unwrap();
         let addr = listener.local_addr().unwrap();
 
-        tokio::spawn(axum::serve(listener, indexer.api(None)).into_future());
+        tokio::spawn(axum::serve(TurmoilListener(listener), indexer.api(None)).into_future());
 
         let _ = tokio_tungstenite::connect_async(format!(
             "ws://{addr}/blob_transactions/contract/contract_1/ws"
@@ -1518,5 +1526,21 @@ mod test {
         }
 
         Ok(())
+    }
+}
+
+struct TurmoilListener(net::TcpListener);
+
+impl Listener for TurmoilListener {
+    type Io = net::TcpStream;
+
+    type Addr = SocketAddr;
+
+    fn accept(&mut self) -> impl std::future::Future<Output = (Self::Io, Self::Addr)> + Send {
+        async move { self.0.accept().await.unwrap() }
+    }
+
+    fn local_addr(&self) -> tokio::io::Result<Self::Addr> {
+        self.0.local_addr()
     }
 }

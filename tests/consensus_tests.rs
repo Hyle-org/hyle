@@ -10,6 +10,7 @@ mod fixtures;
 mod e2e_consensus {
 
     use client_sdk::helpers::risc0::Risc0Prover;
+    use client_sdk::rest_client::{IndexerApiHttpClient, NodeApiHttpClient};
     use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutor, TxExecutorBuilder};
     use fixtures::test_helpers::send_transaction;
     use hydentity::client::{register_identity, verify_identity};
@@ -168,8 +169,8 @@ mod e2e_consensus {
         Ok(())
     }
 
-    async fn gen_txs(
-        ctx: &mut E2ECtx,
+    pub async fn gen_txs(
+        client: &NodeApiHttpClient,
         tx_ctx: &mut TxExecutor<States>,
         id: String,
         amount: u128,
@@ -180,7 +181,7 @@ mod e2e_consensus {
 
             register_identity(&mut transaction, "hydentity".into(), "password".to_owned())?;
 
-            let tx_hash = send_transaction(ctx.client(), transaction, tx_ctx).await;
+            let tx_hash = send_transaction(client, transaction, tx_ctx).await;
             tracing::warn!("Register TX Hash: {:?}", tx_hash);
         }
 
@@ -201,7 +202,7 @@ mod e2e_consensus {
                 amount,
             )?;
 
-            let tx_hash = send_transaction(ctx.client(), transaction, tx_ctx).await;
+            let tx_hash = send_transaction(client, transaction, tx_ctx).await;
             tracing::warn!("Transfer TX Hash: {:?}", tx_hash);
         }
 
@@ -254,14 +255,12 @@ mod e2e_consensus {
         Ok(())
     }
 
-    async fn init_states(ctx: &mut E2ECtx) -> TxExecutor<States> {
-        let hyllar: Hyllar = ctx
-            .indexer_client()
+    pub async fn init_states(indexer_client: &IndexerApiHttpClient) -> TxExecutor<States> {
+        let hyllar: Hyllar = indexer_client
             .fetch_current_state(&"hyllar".into())
             .await
             .unwrap();
-        let hydentity: Hydentity = ctx
-            .indexer_client()
+        let hydentity: Hydentity = indexer_client
             .fetch_current_state(&"hydentity".into())
             .await
             .unwrap();
@@ -286,12 +285,22 @@ mod e2e_consensus {
         _ = ctx.wait_height(1).await;
 
         // Gen a few txs
-        let mut tx_ctx = init_states(&mut ctx).await;
+        let states = States {
+            hyllar: Hyllar::default(),
+            hydentity: Hydentity::default(),
+            staking: Staking::default(),
+        };
+
+        let mut tx_ctx = TxExecutorBuilder::new(states)
+            // Replace prover binaries for non-reproducible mode.
+            .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
+            .with_prover("hyllar".into(), Risc0Prover::new(HYLLAR_ELF))
+            .build();
 
         warn!("Starting generating txs");
 
         for i in 0..6 {
-            _ = gen_txs(&mut ctx, &mut tx_ctx, format!("alex{}", i), 100 + i).await;
+            _ = gen_txs(ctx.client(), &mut tx_ctx, format!("alex{}", i), 100 + i).await;
         }
 
         ctx.stop_node(0).await?;
@@ -300,7 +309,7 @@ mod e2e_consensus {
         ctx.wait_height(0).await?;
 
         for i in 6..10 {
-            _ = gen_txs(&mut ctx, &mut tx_ctx, format!("alex{}", i), 100 + i).await;
+            _ = gen_txs(ctx.client(), &mut tx_ctx, format!("alex{}", i), 100 + i).await;
         }
 
         ctx.wait_height(2).await?;
@@ -315,6 +324,267 @@ mod e2e_consensus {
             info!("Checking alex{}.hydentity balance: {:?}", i, balance);
             assert_eq!(balance.unwrap(), ((100 + i) as u128));
         }
+
+        Ok(())
+    }
+}
+
+use rand::{rngs::StdRng, RngCore, SeedableRng};
+
+/// Structure personnalisée qui encapsule un RNG seedable
+pub struct MySeedableRng {
+    rng: StdRng, // Utilisation d'un générateur déterministe basé sur une seed
+}
+
+impl MySeedableRng {
+    /// Constructeur : Initialise un RNG avec une seed donnée
+    pub fn new(seed: u64) -> Self {
+        MySeedableRng {
+            rng: StdRng::seed_from_u64(seed),
+        }
+    }
+}
+
+impl RngCore for MySeedableRng {
+    /// Génère un nombre aléatoire de 32 bits
+    fn next_u32(&mut self) -> u32 {
+        self.rng.next_u32()
+    }
+
+    /// Génère un nombre aléatoire de 64 bits
+    fn next_u64(&mut self) -> u64 {
+        self.rng.next_u64()
+    }
+
+    /// Remplit un buffer de bytes avec des valeurs aléatoires
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        self.rng.fill_bytes(dest)
+    }
+
+    /// Remplit un buffer de bytes de manière non déterministe (optionnel)
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
+        self.rng.try_fill_bytes(dest)
+    }
+}
+
+#[cfg(feature = "turmoil")]
+#[cfg(test)]
+mod turmoil_tests {
+    use std::{net::Ipv4Addr, sync::Arc, time::Duration};
+
+    use anyhow::Context;
+    use client_sdk::{
+        helpers::risc0::Risc0Prover,
+        tcp::{codec_tcp_server, TcpServerMessage},
+        transaction_builder::TxExecutorBuilder,
+    };
+    use futures::TryFutureExt;
+    use hydentity::Hydentity;
+    use hyle::{genesis::States, log_error};
+    use hyle_contract_sdk::info;
+    use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF};
+    use hyle_model::{
+        BlobTransaction, ContractAction, ContractName, ProgramId, RegisterContractAction,
+        StateCommitment, Transaction,
+    };
+    use hyllar::{erc20::ERC20, Hyllar};
+    use rand::{RngCore, SeedableRng};
+    use staking::state::Staking;
+    use tokio::sync::Mutex;
+    use tracing::{warn, Instrument};
+    use turmoil::{net::TcpStream, Result, Sim};
+
+    use crate::{
+        e2e_consensus::{gen_txs, init_states},
+        fixtures::{ctx::E2ETurmoilCtx, test_helpers::wait_height},
+        MySeedableRng,
+    };
+    pub fn make_register_contract_tx(name: ContractName) -> Transaction {
+        BlobTransaction::new(
+            "hyle.hyle",
+            vec![RegisterContractAction {
+                verifier: "test".into(),
+                program_id: ProgramId(vec![]),
+                state_commitment: StateCommitment(vec![0, 1, 2, 3]),
+                contract_name: name,
+            }
+            .as_blob("hyle".into(), None, None)],
+        )
+        .into()
+    }
+
+    #[test_log::test]
+    fn turmoil_test() -> Result<()> {
+        let rng = MySeedableRng::new(123);
+        let mut sim = turmoil::Builder::new()
+            .simulation_duration(Duration::from_secs(120))
+            .min_message_latency(Duration::from_secs(1))
+            .max_message_latency(Duration::from_secs(5))
+            // .fail_rate(0.9)
+            .tick_duration(Duration::from_millis(100))
+            .enable_tokio_io()
+            .build_with_rng(Box::new(rng));
+
+        let mut ctx = E2ETurmoilCtx::new_multi(4, 500)?;
+
+        let mut nodes = ctx.nodes.clone();
+        nodes.reverse();
+
+        let tcp_address;
+        let turmoil_node = nodes.pop().unwrap();
+        {
+            let id = turmoil_node.conf.id.clone();
+            tcp_address = turmoil_node.conf.tcp_address.clone().unwrap();
+            let cloned = Arc::new(Mutex::new(turmoil_node.clone())); // Permet de partager la variable
+
+            let f = {
+                let cloned = Arc::clone(&cloned); // Clonage pour éviter de déplacer
+                move || {
+                    let cloned = Arc::clone(&cloned);
+                    async move {
+                        let mut node = cloned.lock().await; // Accès mutable au nœud
+                        node.start().await;
+                        Ok(())
+                    }
+                    .instrument(tracing::info_span!("server-node-1"))
+                }
+            };
+
+            sim.host(id, f);
+        }
+        let turmoil_node = nodes.pop().unwrap();
+        {
+            let id = turmoil_node.conf.id.clone();
+            let cloned = Arc::new(Mutex::new(turmoil_node.clone())); // Permet de partager la variable
+
+            let f = {
+                let cloned = Arc::clone(&cloned); // Clonage pour éviter de déplacer
+                move || {
+                    let cloned = Arc::clone(&cloned);
+                    async move {
+                        let mut node = cloned.lock().await; // Accès mutable au nœud
+                        node.start().await;
+                        Ok(())
+                    }
+                    .instrument(tracing::info_span!("server-node-2"))
+                }
+            };
+
+            sim.host(id, f);
+        }
+        let turmoil_node = nodes.pop().unwrap();
+        {
+            let id = turmoil_node.conf.id.clone();
+            let cloned = Arc::new(Mutex::new(turmoil_node.clone())); // Permet de partager la variable
+
+            let f = {
+                let cloned = Arc::clone(&cloned); // Clonage pour éviter de déplacer
+                move || {
+                    let cloned = Arc::clone(&cloned);
+                    async move {
+                        let mut node = cloned.lock().await; // Accès mutable au nœud
+                        node.start().await;
+                        Ok(())
+                    }
+                    .instrument(tracing::info_span!("server-node-3"))
+                }
+            };
+
+            sim.host(id, f);
+        }
+
+        let turmoil_node = nodes.pop().unwrap();
+        {
+            let id = turmoil_node.conf.id.clone();
+            let cloned = Arc::new(Mutex::new(turmoil_node.clone())); // Permet de partager la variable
+
+            let f = {
+                let cloned = Arc::clone(&cloned); // Clonage pour éviter de déplacer
+                move || {
+                    let cloned = Arc::clone(&cloned);
+                    async move {
+                        let mut node = cloned.lock().await; // Accès mutable au nœud
+                        node.start().await;
+                        Ok(())
+                    }
+                    .instrument(tracing::info_span!("server-node-4"))
+                }
+            };
+
+            sim.host(id, f);
+        }
+
+        sim.client("client", async move {
+            // _ = ctx.wait_height(1).await;
+            // let states = States {
+            //     hyllar: Hyllar::default(),
+            //     hydentity: Hydentity::default(),
+            //     staking: Staking::default(),
+            // };
+
+            // let mut tx_ctx = TxExecutorBuilder::new(states)
+            //     // Replace prover binaries for non-reproducible mode.
+            //     .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
+            //     .with_prover("hyllar".into(), Risc0Prover::new(HYLLAR_ELF))
+            //     .build();
+
+            // warn!("Starting generating txs");
+
+            // for i in 0..6 {
+            //     _ = gen_txs(ctx.client(), &mut tx_ctx, format!("alex{}", i), 100 + i).await;
+            // }
+
+            // ctx.wait_height(5).await?;
+            //
+
+            // let state: Hyllar = ctx
+            //     .indexer_client()
+            //     .fetch_current_state(&ContractName::new("hyllar"))
+            //     .await?;
+
+            // for i in 0..10 {
+            //     let balance = state.balance_of(&format!("alex{}.hydentity", i));
+            //     info!("Checking alex{}.hydentity balance: {:?}", i, balance);
+            //     assert_eq!(balance.unwrap(), ((100 + i) as u128));
+            // }
+            //
+
+            tokio::time::sleep(Duration::from_secs(5)).await;
+
+            let mut client =
+                codec_tcp_server::connect("client-turmoil".to_string(), tcp_address.to_string())
+                    .await
+                    .unwrap();
+
+            let mut i = 0;
+            loop {
+                i += 1;
+
+                // info!("client iteration");
+                // info!("p2p port {}", addr);
+                tokio::time::sleep(Duration::from_millis(1000)).await;
+
+                let tx = make_register_contract_tx(format!("contract-{}", i).into());
+
+                _ = client.send(TcpServerMessage::NewTx(tx)).await;
+            }
+        });
+
+        // sim.set_link_latency("node-1", "node-3", Duration::from_secs(1));
+        // sim.set_link_latency("node-1", "node-2", Duration::from_secs(1));
+        // sim.set_link_latency("node-3", "node-2", Duration::from_secs(1));
+        // sim.set_link_latency("node-3", "node-4", Duration::from_secs(1));
+        // sim.set_link_latency("node-4", "node-2", Duration::from_secs(1));
+        // sim.set_link_latency("node-4", "node-1", Duration::from_secs(1));
+
+        // sim.set_link_latency("node-1", "node-3", Duration::from_secs(2));
+        // sim.set_link_latency("node-1", "node-2", Duration::from_secs(2));
+        // sim.set_link_latency("node-3", "node-2", Duration::from_secs(2));
+        // sim.set_link_latency("node-3", "node-4", Duration::from_secs(2));
+        // sim.set_link_latency("node-4", "node-2", Duration::from_secs(2));
+        // sim.set_link_latency("node-4", "node-1", Duration::from_secs(2));
+
+        sim.run()?;
 
         Ok(())
     }

@@ -37,6 +37,7 @@ utoipa = { version = "5.3.1", optional = true }
 utoipa-axum = { version = "0.2.0", optional = true }
 bytes = { version = "1.10.0", optional = true }
 paste = { version = "1.0.15", optional = true }
+turmoil = { version = "0.6.6", optional = true }
 
 [features]
 rest = ["dep:reqwest"]
@@ -44,3 +45,4 @@ tcp = ["dep:reqwest", "dep:tokio", "dep:tokio-util", "dep:futures", "dep:bytes",
 indexer = ["dep:utoipa", "dep:axum", "dep:utoipa-axum", "dep:tokio"]
 risc0 = ["dep:risc0-zkvm", "dep:bonsai-runner"]
 sp1 = ["dep:sp1-sdk", "dep:bincode"]
+turmoil = ["dep:turmoil"]

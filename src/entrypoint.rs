@@ -25,6 +25,7 @@ use axum::Router;
 use axum_otel_metrics::HttpMetricsLayerBuilder;
 use hydentity::Hydentity;
 use hyllar::Hyllar;
+use opentelemetry::metrics::MeterProvider;
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -88,19 +89,17 @@ pub async fn common_main(config: conf::Conf, crypto: Option<SharedBlstCrypto>) -
     info!("Starting node with config: {:?}", &config);
 
     // Init global metrics meter we expose as an endpoint
-    let provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
-        .with_reader(
-            opentelemetry_prometheus::exporter()
-                .with_registry(prometheus::default_registry().clone())
-                .build()
-                .context("starting prometheus exporter")?,
-        )
-        .build();
-
-    opentelemetry::global::set_meter_provider(provider.clone());
+    // let provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
+    //     .with_reader(
+    //         opentelemetry_prometheus::exporter()
+    //             .with_registry(prometheus::default_registry().clone())
+    //             .build()
+    //             .context("starting prometheus exporter")?,
+    //     )
+    //     .build();
 
     let metrics_layer = HttpMetricsLayerBuilder::new()
-        .with_provider(provider)
+        // .with_provider(provider)
         .build();
 
     let bus = SharedMessageBus::new(BusMetrics::global(config.id.clone()));
@@ -229,21 +228,21 @@ pub async fn common_main(config: conf::Conf, crypto: Option<SharedBlstCrypto>) -
 
     #[cfg(unix)]
     {
-        use tokio::signal::unix;
-        let mut interrupt = unix::signal(unix::SignalKind::interrupt())?;
-        let mut terminate = unix::signal(unix::SignalKind::terminate())?;
+        // use tokio::signal::unix;
+        // let mut interrupt = unix::signal(unix::SignalKind::interrupt())?;
+        // let mut terminate = unix::signal(unix::SignalKind::terminate())?;
         tokio::select! {
             res = handler.shutdown_loop() => {
                 if let Err(e) = res {
                     error!("Error running modules: {:?}", e);
                 }
             }
-            _ = interrupt.recv() =>  {
-                info!("SIGINT received, shutting down");
-            }
-            _ = terminate.recv() =>  {
-                info!("SIGTERM received, shutting down");
-            }
+            // _ = interrupt.recv() =>  {
+            //     info!("SIGINT received, shutting down");
+            // }
+            // _ = terminate.recv() =>  {
+            //     info!("SIGTERM received, shutting down");
+            // }
         }
         _ = handler.shutdown_modules().await;
     }
