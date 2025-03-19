@@ -220,10 +220,11 @@ impl Consensus {
 
         // If we finish the round via a committed proposal, update some state
         match ticket {
-            Some(Ticket::CommitQC(qc)) => {
+            Some(Ticket::CommitQC(qc)) | Some(Ticket::ForcedCommitQc(qc)) => {
                 self.bft_round_state.consensus_proposal.parent_hash = round_proposal_hash;
                 self.bft_round_state.consensus_proposal.slot += 1;
                 self.bft_round_state.consensus_proposal.view = 0;
+                // TODO set None if ForcedCommitQc
                 self.bft_round_state.follower.buffered_quorum_certificate = Some(qc);
                 let staking = &mut self.store.bft_round_state.staking;
                 for action in staking_actions {
@@ -247,6 +248,8 @@ impl Consensus {
             }
             Some(Ticket::TimeoutQC(_)) => {
                 self.bft_round_state.consensus_proposal.parent_hash = round_parent_hash;
+                // FIXME: I think TimeoutQC should hold the view, in case we missed mutliple views
+                // at once
                 self.bft_round_state.consensus_proposal.view += 1;
             }
             els => {
@@ -548,23 +551,35 @@ impl Consensus {
         }
     }
 
-    fn try_process_timeout_qc(&mut self, timeout_qc: QuorumCertificate) -> Result<()> {
+    fn try_process_timeout_qc(
+        &mut self,
+        timeout_qc: QuorumCertificate,
+        consensus_proposal: &ConsensusProposal,
+    ) -> Result<()> {
+        let slot = consensus_proposal.slot;
+        let view = consensus_proposal.view;
         debug!(
             "Trying to process timeout Certificate against consensus proposal slot: {}, view: {}",
-            self.bft_round_state.consensus_proposal.slot,
-            self.bft_round_state.consensus_proposal.view,
+            slot, view,
         );
 
-        self.verify_quorum_certificate(
-            ConsensusNetMessage::Timeout(
-                self.bft_round_state.consensus_proposal.slot,
-                self.bft_round_state.consensus_proposal.view,
-            ),
-            &timeout_qc,
-        )
-        .context("Verifying Timeout Ticket")?;
+        self.verify_quorum_certificate(ConsensusNetMessage::Timeout(slot, view - 1), &timeout_qc)
+            .context("Verifying Timeout Ticket")?;
 
-        self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc))
+        if slot == self.bft_round_state.consensus_proposal.slot {
+            self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc))
+        } else {
+            // We are not in the same slot as the timeout certificate
+            // So we force a fast-forward the current slot
+            self.carry_on_with_ticket(Ticket::ForcedCommitQc(timeout_qc.clone()))?;
+
+            info!(
+                "🔀 Fast forwarded slot {}",
+                &self.bft_round_state.consensus_proposal.slot - 1
+            );
+
+            self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc))
+        }
     }
 
     fn on_commit_while_joining(
@@ -632,7 +647,7 @@ impl Consensus {
     fn carry_on_with_ticket(&mut self, ticket: Ticket) -> Result<()> {
         self.finish_round(Some(ticket.clone()))?;
 
-        if self.is_round_leader() {
+        if self.is_round_leader() && self.is_up_to_date() {
             // Setup our ticket for the next round
             // Send Prepare message to all validators
             self.delay_start_new_round(ticket)

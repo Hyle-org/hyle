@@ -1112,9 +1112,8 @@ async fn autobahn_missed_confirm_and_commit_messages() {
 
     node1.start_round_with_cut_from_mempool().await;
 
-    // Slot from node-1 not yet sent to node 4
     broadcast! {
-        description: "Prepare",
+        description: "Prepare - Slot from node-1 not yet sent to node 4",
         from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
         message_matches: ConsensusNetMessage::Prepare(_, _)
     };
@@ -1125,9 +1124,8 @@ async fn autobahn_missed_confirm_and_commit_messages() {
         message_matches: ConsensusNetMessage::PrepareVote(_)
     };
 
-    // Node 4 doesn't receive confirm
     broadcast! {
-        description: "Confirm",
+        description: "Confirm - Node 4 doesn't receive confirm",
         from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx],
         message_matches: ConsensusNetMessage::Confirm(_, _)
     };
@@ -1138,9 +1136,8 @@ async fn autobahn_missed_confirm_and_commit_messages() {
         message_matches: ConsensusNetMessage::ConfirmAck(_)
     };
 
-    // Node 4 doesn't receive commit
     broadcast! {
-        description: "Commit",
+        description: "Commit - Node 4 doesn't receive commit",
         from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx],
         message_matches: ConsensusNetMessage::Commit(_, _)
     };
@@ -1154,9 +1151,8 @@ async fn autobahn_missed_confirm_and_commit_messages() {
         message_matches: ConsensusNetMessage::Prepare(_, _)
     };
 
-    // Node 4 has fast-forwarded to the next proposal
     send! {
-        description: "PrepareVote",
+        description: "PrepareVote - Node 4 has fast-forwarded to the next proposal",
         from: [node1.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx], to: node2.consensus_ctx,
         message_matches: ConsensusNetMessage::PrepareVote(_)
     };
@@ -1182,6 +1178,7 @@ async fn autobahn_missed_confirm_and_commit_messages() {
 
 #[test_log::test(tokio::test)]
 async fn autobahn_buffer_early_messages() {
+    // node 4 got disconnected for a slot
     let (mut node1, mut node2, mut node3, mut node4) = build_nodes!(4).await;
 
     ConsensusTestCtx::setup_for_round(
@@ -1196,9 +1193,9 @@ async fn autobahn_buffer_early_messages() {
         0,
     );
 
+    // Slot 3 starts, all nodes receive the prepare
     node1.start_round_with_cut_from_mempool().await;
 
-    // Slot 3 starts, all nodes receive the prepare
     broadcast! {
         description: "Prepare",
         from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
@@ -1277,7 +1274,7 @@ async fn autobahn_buffer_early_messages() {
         message_matches: ConsensusNetMessage::PrepareVote(_)
     };
 
-    node3.consensus_ctx.assert_broadcast("Confirm");
+    let confirm = node3.consensus_ctx.assert_broadcast("Confirm");
 
     broadcast! {
         description: "SyncRequest - Node4 ask for missed proposal Slot 4",
@@ -1295,5 +1292,216 @@ async fn autobahn_buffer_early_messages() {
         description: "PrepareVote - Node4 votes on slot 5",
         from: [node4.consensus_ctx], to: node3.consensus_ctx,
         message_matches: ConsensusNetMessage::PrepareVote(_)
+    };
+
+    node1.consensus_ctx.handle_msg(
+        &confirm,
+        "[handling broadcast message from: node3 at: node1] Confirm",
+    );
+    node2.consensus_ctx.handle_msg(
+        &confirm,
+        "[handling broadcast message from: node3 at: node2] Confirm",
+    );
+    node4.consensus_ctx.handle_msg(
+        &confirm,
+        "[handling broadcast message from: node3 at: node4] Confirm",
+    );
+
+    send! {
+        description: "ConfirmAck",
+        from: [node1.consensus_ctx, node2.consensus_ctx, node4.consensus_ctx], to: node3.consensus_ctx,
+        message_matches: ConsensusNetMessage::ConfirmAck(_)
+    };
+
+    broadcast! {
+        description: "Commit",
+        from: node3.consensus_ctx, to: [node1.consensus_ctx, node2.consensus_ctx, node4.consensus_ctx],
+        message_matches: ConsensusNetMessage::Commit(_, _)
+    };
+
+    // Slot 6 starts with node4 as leader
+    node4.start_round_with_cut_from_mempool().await;
+
+    broadcast! {
+        description: "Prepare",
+        from: node4.consensus_ctx, to: [node1.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Prepare(_, _)
+    };
+}
+
+#[test_log::test(tokio::test)]
+async fn autobahn_got_timed_out_during_sync() {
+    // node1 is 2nd leader but got disconnected
+    let (mut node0, mut node1, mut node2, mut node3) = build_nodes!(4).await;
+
+    ConsensusTestCtx::setup_for_round(
+        &mut [
+            &mut node0.consensus_ctx,
+            &mut node1.consensus_ctx,
+            &mut node2.consensus_ctx,
+            &mut node3.consensus_ctx,
+        ],
+        0,
+        3,
+        0,
+    );
+
+    // Slot 3 starts, all nodes receive the prepare
+    node0.start_round_with_cut_from_mempool().await;
+
+    broadcast! {
+        description: "Prepare",
+        from: node0.consensus_ctx, to: [node1.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Prepare(_, _)
+    };
+
+    send! {
+        description: "PrepareVote",
+        from: [node1.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx], to: node0.consensus_ctx,
+        message_matches: ConsensusNetMessage::PrepareVote(_)
+    };
+
+    broadcast! {
+        description: "Confirm - Node1 disconnected",
+        from: node0.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Confirm(_, _)
+    };
+
+    send! {
+        description: "ConfirmAck",
+        from: [node2.consensus_ctx, node3.consensus_ctx], to: node0.consensus_ctx,
+        message_matches: ConsensusNetMessage::ConfirmAck(_)
+    };
+
+    broadcast! {
+        description: "Commit - Node1 still disconnected",
+        from: node0.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Commit(_, _)
+    };
+
+    // Make node0 and node2 timeout, node3 will not timeout but follow mutiny
+    // , because at f+1, mutiny join
+    ConsensusTestCtx::timeout(&mut [&mut node0.consensus_ctx, &mut node2.consensus_ctx]).await;
+
+    broadcast! {
+        description: "Follower - Timeout",
+        from: node0.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Timeout(..)
+    };
+    broadcast! {
+        description: "Follower - Timeout",
+        from: node2.consensus_ctx, to: [node0.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Timeout(..)
+    };
+
+    // node 3 should join the mutiny
+    broadcast! {
+        description: "Follower - Timeout",
+        from: node3.consensus_ctx, to: [node0.consensus_ctx, node2.consensus_ctx],
+        message_matches: ConsensusNetMessage::Timeout(..)
+    };
+
+    node0
+        .consensus_ctx
+        .assert_broadcast("Timeout Certificate 1");
+    // Node 2 is next leader, and does not emits a timeout certificate since it will broadcast the next Prepare with it
+    node2
+        .consensus_ctx
+        .assert_no_broadcast("Timeout Certificate 3");
+    node3
+        .consensus_ctx
+        .assert_broadcast("Timeout Certificate 4");
+
+    // Slot 4 starts with new leader with node2 disconnected
+    node2.start_round_with_cut_from_mempool().await;
+
+    broadcast! {
+        description: "Prepare",
+        from: node2.consensus_ctx, to: [node0.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Prepare(_, _)
+    };
+
+    send! {
+        description: "PrepareVote",
+        from: [node0.consensus_ctx, node3.consensus_ctx], to: node2.consensus_ctx,
+        message_matches: ConsensusNetMessage::PrepareVote(_)
+    };
+
+    broadcast! {
+        description: "Confirm",
+        from: node2.consensus_ctx, to: [node0.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Confirm(_, _)
+    };
+
+    send! {
+        description: "ConfirmAck",
+        from: [node0.consensus_ctx, node3.consensus_ctx], to: node2.consensus_ctx,
+        message_matches: ConsensusNetMessage::ConfirmAck(_)
+    };
+
+    broadcast! {
+        description: "Commit",
+        from: node2.consensus_ctx, to: [node0.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Commit(_, _)
+    };
+
+    // Slot 5 starts with new leader but node1 is back online
+    node3.start_round_with_cut_from_mempool().await;
+
+    broadcast! {
+        description: "Prepare",
+        from: node3.consensus_ctx, to: [node0.consensus_ctx, node1.consensus_ctx, node2.consensus_ctx],
+        message_matches: ConsensusNetMessage::Prepare(_, _)
+    };
+
+    send! {
+        description: "PrepareVote",
+        from: [node0.consensus_ctx, node2.consensus_ctx], to: node3.consensus_ctx,
+        message_matches: ConsensusNetMessage::PrepareVote(_)
+    };
+
+    let confirm = node3.consensus_ctx.assert_broadcast("Confirm");
+
+    broadcast! {
+        description: "SyncRequest - Node1 ask for missed proposal Slot 4",
+        from: node1.consensus_ctx, to: [node0.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::SyncRequest(_)
+    };
+
+    send! {
+        description: "SyncReply - All nodes reply with proposal Slot 4",
+        from: [node0.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx], to: node1.consensus_ctx,
+        message_matches: ConsensusNetMessage::SyncReply(_)
+    };
+
+    send! {
+        description: "PrepareVote - Node2 votes on slot 5",
+        from: [node1.consensus_ctx], to: node3.consensus_ctx,
+        message_matches: ConsensusNetMessage::PrepareVote(_)
+    };
+
+    node0.consensus_ctx.handle_msg(
+        &confirm,
+        "[handling broadcast message from: node3 at: node0] Confirm",
+    );
+    node1.consensus_ctx.handle_msg(
+        &confirm,
+        "[handling broadcast message from: node3 at: node1] Confirm",
+    );
+    node2.consensus_ctx.handle_msg(
+        &confirm,
+        "[handling broadcast message from: node3 at: node2] Confirm",
+    );
+
+    send! {
+        description: "ConfirmAck",
+        from: [node0.consensus_ctx, node1.consensus_ctx, node2.consensus_ctx], to: node3.consensus_ctx,
+        message_matches: ConsensusNetMessage::ConfirmAck(_)
+    };
+
+    broadcast! {
+        description: "Commit",
+        from: node3.consensus_ctx, to: [node0.consensus_ctx, node1.consensus_ctx, node2.consensus_ctx],
+        message_matches: ConsensusNetMessage::Commit(_, _)
     };
 }

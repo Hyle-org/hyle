@@ -108,6 +108,7 @@ pub enum Ticket {
     Genesis,
     CommitQC(QuorumCertificate),
     TimeoutQC(QuorumCertificate),
+    ForcedCommitQc(QuorumCertificate),
 }
 
 #[cfg(feature = "sqlx")]

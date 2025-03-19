@@ -121,14 +121,18 @@ impl FollowerRole for Consensus {
                 }
             }
             Ticket::TimeoutQC(timeout_qc) => {
+                // if ticket for next slot && correct parent hash, fast forward
                 if log_error!(
-                    self.try_process_timeout_qc(timeout_qc.clone()),
+                    self.try_process_timeout_qc(timeout_qc.clone(), &consensus_proposal),
                     "Processing Timeout ticket"
                 )
                 .is_err()
                 {
                     bail!("Invalid timeout ticket");
                 }
+            }
+            els => {
+                bail!("Invalid TimedOutCommit ticket here {:?}", els);
             }
         }
 
@@ -389,6 +393,15 @@ impl Consensus {
     #[inline]
     pub(super) fn follower_state(&mut self) -> &mut FollowerState {
         &mut self.store.bft_round_state.follower
+    }
+
+    pub(super) fn is_up_to_date(&self) -> bool {
+        self.store
+            .bft_round_state
+            .follower
+            .buffered_prepares
+            .next_prepare_of(self.bft_round_state.consensus_proposal.hashed())
+            .is_none()
     }
 
     fn buffer_prepare_message_and_fetch_missing_parent(
