@@ -657,7 +657,7 @@ impl Consensus {
     fn carry_on_with_ticket(&mut self, ticket: Ticket) -> Result<()> {
         self.finish_round(Some(ticket.clone()))?;
 
-        if self.is_round_leader() && self.is_up_to_date() {
+        if self.is_round_leader() && self.has_buffered_prepares_children() {
             // Setup our ticket for the next round
             // Send Prepare message to all validators
             self.delay_start_new_round(ticket)

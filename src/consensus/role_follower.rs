@@ -401,7 +401,7 @@ impl Consensus {
         &mut self.store.bft_round_state.follower
     }
 
-    pub(super) fn is_up_to_date(&self) -> bool {
+    pub(super) fn has_buffered_children(&self) -> bool {
         self.store
             .bft_round_state
             .follower
