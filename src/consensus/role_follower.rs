@@ -502,16 +502,13 @@ impl BufferedPrepares {
         );
         let proposal_hash = prepare_message.1.hashed();
         let parent_hash = prepare_message.1.parent_hash.clone();
-        // If a children exists for the parent,
-        // we update it if the new prepare is for a later slot
+        // If a children exists for the parent we update it
+        // TODO: make this more trustless, if we receive a prepare from a byzantine validator
+        // we might get stuck
         self.children
             .entry(parent_hash)
             .and_modify(|h| {
-                if let Some(existing) = self.prepares.get(h) {
-                    if existing.1.slot < prepare_message.1.slot {
-                        *h = proposal_hash.clone();
-                    }
-                }
+                *h = proposal_hash.clone();
             })
             .or_insert(proposal_hash.clone());
         self.prepares.insert(proposal_hash, prepare_message);
