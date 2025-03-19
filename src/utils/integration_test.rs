@@ -143,13 +143,14 @@ impl NodeIntegrationCtxBuilder {
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
 
         let node_task = Some(tokio::spawn(async move {
+            node_modules.start_modules().await?;
             tokio::select! {
-                res = node_modules.start_modules() => {
+                res = node_modules.shutdown_loop() => {
                     res
                 }
                 Ok(_) = rx => {
                     info!("Node shutdown requested");
-                    let _ = node_modules.shutdown_next_module().await;
+                    let _ = node_modules.shutdown_modules().await;
                     Ok(())
                 }
             }
@@ -211,6 +212,7 @@ impl Drop for NodeIntegrationCtx {
             }
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
+        info!("Node shutdown complete");
     }
 }
 

@@ -122,7 +122,7 @@ pub mod signal {
         >,
     ) -> anyhow::Result<()> {
         if *should_shutdown {
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             return Ok(());
         }
         while let Ok(shutdown_event) = shutdown_receiver.recv().await {
@@ -132,7 +132,7 @@ pub mod signal {
                     std::any::type_name::<T>()
                 );
                 *should_shutdown = true;
-                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                 return Ok(());
             }
         }
@@ -332,7 +332,7 @@ impl ModulesHandler {
     }
 
     /// Shutdown modules in reverse order (start A, B, C, shutdown C, B, A)
-    pub async fn shutdown_next_module(&mut self) -> Result<()> {
+    async fn shutdown_next_module(&mut self) -> Result<()> {
         let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
         if let Some(module_name) = self.started_modules.pop() {
             // May be the shutdown message was skipped because the module failed somehow

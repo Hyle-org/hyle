@@ -283,8 +283,6 @@ mod e2e_consensus {
     async fn can_restart_single_node_after_txs() -> Result<()> {
         let mut ctx = E2ECtx::new_single_with_indexer(500).await?;
 
-        _ = ctx.wait_height(1).await;
-
         // Gen a few txs
         let mut tx_ctx = init_states(&mut ctx).await;
 
