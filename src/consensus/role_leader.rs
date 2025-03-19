@@ -162,7 +162,12 @@ impl LeaderRole for Consensus {
         consensus_proposal_hash: ConsensusProposalHash,
     ) -> Result<()> {
         if !matches!(self.bft_round_state.state_tag, StateTag::Leader) {
-            bail!("PrepareVote received while not leader");
+            debug!(
+                sender = %msg.signature.validator,
+                proposal_hash = %consensus_proposal_hash,
+                "PrepareVote received while not leader. Ignoring."
+            );
+            return Ok(());
         }
         if !matches!(self.bft_round_state.leader.step, Step::PrepareVote) {
             debug!(

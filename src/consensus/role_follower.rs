@@ -217,7 +217,14 @@ impl FollowerRole for Consensus {
             StateTag::Joining => {
                 return Ok(());
             }
-            _ => bail!("Confirm message received while not follower"),
+            _ => {
+                debug!(
+                    sender = %sender,
+                    proposal_hash = %proposal_hash_hint,
+                    "Confirm message received while not follower. Ignoring."
+                );
+                return Ok(());
+            }
         }
 
         if proposal_hash_hint != self.bft_round_state.consensus_proposal.hashed() {
@@ -273,9 +280,9 @@ impl FollowerRole for Consensus {
                 debug!(
                     sender = %sender,
                     proposal_hash = %proposal_hash_hint,
-                    "Commit message received while not follower"
+                    "Commit message received while not follower. Ignoring."
                 );
-                bail!("Commit message received while not follower")
+                Ok(())
             }
         }
     }
