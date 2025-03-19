@@ -173,7 +173,7 @@ impl FollowerRole for Consensus {
         if let Some(prepare) = self
             .follower_state()
             .buffered_prepares
-            .next_prepare_of(consensus_proposal.hashed())
+            .next_prepare(consensus_proposal.hashed())
         {
             // FIXME? In theory, we could have a stackoverflow if we need to catchup a lot of prepares
             // Note: If we want to vote on the passed proposal even if it's too late,
@@ -406,7 +406,7 @@ impl Consensus {
             .bft_round_state
             .follower
             .buffered_prepares
-            .next_prepare_of(self.bft_round_state.consensus_proposal.hashed())
+            .next_prepare(self.bft_round_state.consensus_proposal.hashed())
             .is_none()
     }
 
@@ -524,7 +524,7 @@ impl BufferedPrepares {
         self.prepares.get(proposal_hash)
     }
 
-    fn next_prepare_of(&self, proposal_hash: ConsensusProposalHash) -> Option<Prepare> {
+    fn next_prepare(&self, proposal_hash: ConsensusProposalHash) -> Option<Prepare> {
         self.children
             .get(&proposal_hash)
             .and_then(|children| self.prepares.get(children).cloned())
