@@ -160,7 +160,7 @@ impl E2ECtx {
         let indexer_client = Some(IndexerApiHttpClient::new(url).unwrap());
 
         // Wait for node2 to properly spin up
-        wait_height(&client, 1).await?;
+        wait_height(&client, 2).await?;
 
         info!("🚀 E2E test environment is ready!");
         Ok(E2ECtx {
@@ -218,6 +218,7 @@ impl E2ECtx {
             reqwest_client: Client::new(),
             api_key: None,
         };
+
         wait_height(&client, 1).await?;
         self.nodes.push(node);
         self.clients.push(client);
@@ -245,7 +246,7 @@ impl E2ECtx {
 
         nodes.push(indexer);
         let url = format!("http://{}", &indexer_conf.rest_address);
-        clients.push(NodeApiHttpClient::new(url.clone()).unwrap());
+
         let indexer_client = Some(IndexerApiHttpClient::new(url).unwrap());
 
         // Wait for node2 to properly spin up
@@ -278,6 +279,23 @@ impl E2ECtx {
 
     pub fn client(&self) -> &NodeApiHttpClient {
         &self.clients[self.client_index]
+    }
+
+    pub fn client_by_id(&self, name: &str) -> &NodeApiHttpClient {
+        let mut post_indexer = false;
+        let mut i = self
+            .nodes
+            .iter()
+            .inspect(|node| {
+                tracing::warn!("totoro {:?}", node.conf.id);
+                if node.conf.id.contains("indexer") {
+                    post_indexer = true;
+                }
+            })
+            .position(|node| node.conf.id == name)
+            .unwrap();
+        i = if post_indexer { i - 1 } else { i };
+        &self.clients[i]
     }
 
     pub fn indexer_client(&self) -> &IndexerApiHttpClient {
