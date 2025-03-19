@@ -332,7 +332,7 @@ impl ModulesHandler {
     }
 
     /// Shutdown modules in reverse order (start A, B, C, shutdown C, B, A)
-    pub async fn shutdown_next_module(&mut self) -> Result<()> {
+    async fn shutdown_next_module(&mut self) -> Result<()> {
         let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
         if let Some(module_name) = self.started_modules.pop() {
             // May be the shutdown message was skipped because the module failed somehow
