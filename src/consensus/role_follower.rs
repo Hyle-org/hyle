@@ -121,7 +121,6 @@ impl FollowerRole for Consensus {
                 }
             }
             Ticket::TimeoutQC(timeout_qc) => {
-                // if ticket for next slot && correct parent hash, fast forward
                 if log_error!(
                     self.try_process_timeout_qc(timeout_qc.clone(), &consensus_proposal),
                     "Processing Timeout ticket"

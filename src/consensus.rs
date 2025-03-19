@@ -568,7 +568,10 @@ impl Consensus {
 
         if slot == self.bft_round_state.consensus_proposal.slot {
             self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc))
-        } else {
+            // if ticket for next slot && correct parent hash, fast forward
+        } else if slot == self.bft_round_state.consensus_proposal.slot + 1
+            && consensus_proposal.parent_hash == self.bft_round_state.consensus_proposal.hashed()
+        {
             // We are not in the same slot as the timeout certificate
             // So we force a fast-forward the current slot
             self.carry_on_with_ticket(Ticket::ForcedCommitQc(timeout_qc.clone()))?;
@@ -579,6 +582,13 @@ impl Consensus {
             );
 
             self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc))
+        } else {
+            bail!(
+                "Timeout Certificate slot {} view {} is not the current slot {} nor next one",
+                slot,
+                view,
+                self.bft_round_state.consensus_proposal.slot
+            )
         }
     }
 
@@ -675,14 +685,6 @@ impl Consensus {
         commit_quorum_certificate: QuorumCertificate,
         proposal_hash_hint: ConsensusProposalHash,
     ) -> Result<()> {
-        // Check that this is a QC for ConfirmAck for the expected proposal.
-        // This also checks slot/view as those are part of the hash.
-        // TODO: would probably be good to make that more explicit.
-        self.verify_quorum_certificate(
-            ConsensusNetMessage::ConfirmAck(proposal_hash_hint.clone()),
-            &commit_quorum_certificate,
-        )?;
-
         if self.bft_round_state.consensus_proposal.hashed() != proposal_hash_hint {
             warn!(
                 "Received Commit for proposal {:?} but expected {:?}. Ignoring.",
@@ -691,6 +693,14 @@ impl Consensus {
             );
             return Ok(());
         }
+
+        // Check that this is a QC for ConfirmAck for the expected proposal.
+        // This also checks slot/view as those are part of the hash.
+        // TODO: would probably be good to make that more explicit.
+        self.verify_quorum_certificate(
+            ConsensusNetMessage::ConfirmAck(proposal_hash_hint.clone()),
+            &commit_quorum_certificate,
+        )?;
 
         self.metrics.commit();
 
