@@ -13,6 +13,7 @@ use crate::{
         conf::{P2pMode, SharedConf},
         crypto::{BlstCrypto, SharedBlstCrypto},
         modules::{module_bus_client, Module},
+        profiling::time_branch,
         serialize::arc_rwlock_borsh,
     },
 };
@@ -166,6 +167,7 @@ impl BusMessage for MempoolStatusEvent {}
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum InternalMempoolEvent {
     OnProcessedNewTx(Transaction),
+    OnHashedDataProposal((LaneId, DataProposal)),
     OnProcessedDataProposal((LaneId, DataProposalVerdict, DataProposal)),
 }
 impl BusMessage for InternalMempoolEvent {}
@@ -245,18 +247,23 @@ impl Mempool {
                 self.running_tasks.is_empty()
             },
             listen<SignedByValidator<MempoolNetMessage>> cmd => {
+                time_branch!(100, "Handling MempoolNetMessage in Mempool");
                 let _ = log_error!(self.handle_net_message(cmd), "Handling MempoolNetMessage in Mempool");
             }
             listen<RestApiMessage> cmd => {
+                time_branch!(100, "Handling API Message in Mempool");
                 let _ = log_error!(self.handle_api_message(cmd), "Handling API Message in Mempool");
             }
             listen<TcpServerMessage> cmd => {
+                time_branch!(100, "Handling TCP Server message in Mempool");
                 let _ = log_error!(self.handle_tcp_server_message(cmd), "Handling TCP Server message in Mempool");
             }
             listen<ConsensusEvent> cmd => {
+                time_branch!(100, "Handling ConsensusEvent in Mempool");
                 let _ = log_error!(self.handle_consensus_event(cmd), "Handling ConsensusEvent in Mempool");
             }
             listen<NodeStateEvent> cmd => {
+                time_branch!(100, "Handling NodeStateEvent in Mempool");
                 let NodeStateEvent::NewBlock(block) = cmd;
                 // In this p2p mode we don't receive consensus events so we must update manually.
                 if self.conf.p2p.mode == P2pMode::LaneManager {
@@ -269,9 +276,11 @@ impl Mempool {
                 }
             }
             command_response<QueryNewCut, Cut> staking => {
+                time_branch!(100, "Handling QueryNewCut in Mempool");
                 self.handle_querynewcut(staking)
             }
             Some(event) = self.running_tasks.join_next() => {
+                time_branch!(100, "Processing InternalMempoolEvent from Blocker Joinset");
                 if let Ok(event) = log_error!(event, "Processing InternalMempoolEvent from Blocker Joinset") {
                     if let Ok(event) = log_error!(event, "Error in running task") {
                         let _ = log_error!(self.handle_internal_event(event),
@@ -280,6 +289,7 @@ impl Mempool {
                 }
             }
             _ = interval.tick() => {
+                time_branch!(100, "Handling data proposal (creation & broadcast) on tick");
                 let _ = log_error!(self.handle_data_proposal_management(), "Creating Data Proposal on tick");
             }
         };
@@ -358,6 +368,9 @@ impl Mempool {
             InternalMempoolEvent::OnProcessedNewTx(tx) => {
                 self.on_new_tx(tx).context("Processing new tx")
             }
+            InternalMempoolEvent::OnHashedDataProposal((lane_id, data_proposal)) => self
+                .on_hashed_data_proposal(&lane_id, data_proposal)
+                .context("Hashing data proposal"),
             InternalMempoolEvent::OnProcessedDataProposal((lane_id, verdict, data_proposal)) => {
                 self.on_processed_data_proposal(lane_id, verdict, data_proposal)
                     .context("Processing data proposal")

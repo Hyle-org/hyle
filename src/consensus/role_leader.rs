@@ -9,7 +9,7 @@ use crate::{
         ValidatorPublicKey,
     },
 };
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_model::ConsensusStakingAction;
 use staking::state::MIN_STAKE;
@@ -93,13 +93,16 @@ impl LeaderRole for Consensus {
             self.bft_round_state.staking
         );
 
-        let cut = match self
-            .bus
-            .request(QueryNewCut(self.bft_round_state.staking.clone()))
-            .await
+        let cut = match tokio::time::timeout(
+            std::time::Duration::from_millis(200),
+            self.bus
+                .request(QueryNewCut(self.bft_round_state.staking.clone())),
+        )
+        .await
+        .context("Timeout while querying Mempool")
         {
-            Ok(cut) => cut,
-            Err(err) => {
+            Ok(Ok(cut)) => cut,
+            Ok(Err(err)) | Err(err) => {
                 // In case of an error, we reuse the last cut to avoid being considered byzantine
                 error!(
                     "Could not get a new cut from Mempool {:?}. Reusing previous one...",
