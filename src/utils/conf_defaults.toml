@@ -16,8 +16,7 @@ rest_address = "127.0.0.1:4321"
 rest_max_body_size = 10_485_760 # 10 MB
 
 # TCP API
-run_tcp_server = true
-tcp_address = "127.0.0.1:1414"
+tcp_server_port = 1414
 
 # Indexer
 run_indexer = true

@@ -73,10 +73,8 @@ pub struct Conf {
     /// Maximum body size for REST requests
     pub rest_max_body_size: usize,
 
-    /// Whether to run the TCP server
-    pub run_tcp_server: bool,
-    /// Server address for the TCP API
-    pub tcp_address: Option<String>,
+    /// Server port for the TCP API
+    pub tcp_server_port: Option<u16>,
 
     /// Whether to run the indexer
     pub run_indexer: bool,

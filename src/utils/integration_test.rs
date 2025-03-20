@@ -100,7 +100,7 @@ impl NodeIntegrationCtxBuilder {
         .expect("conf ok");
         conf.p2p.address = format!("localhost:{}", find_available_port().await);
         conf.da_address = format!("localhost:{}", find_available_port().await);
-        conf.tcp_address = Some(format!("localhost:{}", find_available_port().await));
+        conf.tcp_server_port = Some(find_available_port().await);
         conf.rest_address = format!("localhost:{}", find_available_port().await);
 
         Self {
@@ -314,7 +314,7 @@ impl NodeIntegrationCtx {
             .await?;
         }
 
-        if config.run_tcp_server {
+        if config.tcp_server_port.is_some() {
             Self::build_module::<TcpServer>(&mut handler, &ctx, ctx.common.clone(), &mut mocks)
                 .await?;
         }

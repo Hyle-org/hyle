@@ -236,7 +236,7 @@ async fn common_main(
             .await?;
     }
 
-    if config.run_tcp_server {
+    if config.tcp_server_port.is_some() {
         handler
             .build_module::<TcpServer>(common_run_ctx.clone())
             .await?;

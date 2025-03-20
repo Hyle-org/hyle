@@ -128,13 +128,16 @@ where
     Req: BorshDeserialize + Clone + Send + 'static + std::fmt::Debug,
     Res: BorshSerialize + Clone + Send + 'static + std::fmt::Debug,
 {
-    pub async fn start(addr: String, pool_name: &'static str) -> Result<Self> {
+    pub async fn start<A: tokio::net::ToSocketAddrs>(
+        addr: A,
+        pool_name: &'static str,
+    ) -> Result<Self> {
         let tcp_listener = TcpListener::bind(&addr).await?;
         let (pool_sender, pool_receiver) = tokio::sync::mpsc::channel(100);
         let (ping_sender, ping_receiver) = tokio::sync::mpsc::channel(100);
-        info!(
-            "📡  Starting Tcp Connection Pool {}, listening for stream requests on {}",
-            &pool_name, &addr
+        debug!(
+            "Starting TcpConnectionPool {}, listening for stream requests",
+            &pool_name
         );
         Ok(TcpServer::<Codec, Req, Res> {
             peers: HashMap::new(),
@@ -451,7 +454,7 @@ macro_rules! tcp_client_server {
             pub type Client = $crate::tcp::TcpClient<ClientCodec, $req, $res>;
             pub type Server = $crate::tcp::TcpServer<ServerCodec, $req, $res>;
 
-            pub async fn start_server(addr: String) -> Result<Server> {
+            pub async fn start_server<A: tokio::net::ToSocketAddrs >(addr: A) -> Result<Server> {
                 $crate::tcp::TcpServer::<ServerCodec, $req, $res>::start(addr, stringify!($name)).await
             }
             pub async fn connect(id: String, addr: String) -> Result<Client> {

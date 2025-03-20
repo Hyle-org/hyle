@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{net::Ipv4Addr, sync::Arc};
 
 use crate::{
     bus::{BusClientSender, BusMessage},
@@ -49,18 +49,18 @@ impl Module for TcpServer {
 
 impl TcpServer {
     pub async fn start(&mut self) -> Result<()> {
-        let tcp_server_address = self
+        let tcp_server_port = self
             .config
-            .tcp_address
-            .as_ref()
-            .context("tcp_server_address not specified in conf file. Not Starting module.")?;
-
-        let mut server = codec_tcp_server::start_server(tcp_server_address.clone()).await?;
+            .tcp_server_port
+            .context("tcp_server_port not specified in conf file. Not Starting module.")?;
 
         info!(
-            "📡  Starting TcpServer module, listening for stream requests on {}",
-            tcp_server_address
+            "📡  Starting TcpServer module, listening for stream requests on port {}",
+            &tcp_server_port
         );
+
+        let mut server =
+            codec_tcp_server::start_server((Ipv4Addr::UNSPECIFIED, tcp_server_port)).await?;
 
         module_handle_messages! {
             on_bus self.bus,
