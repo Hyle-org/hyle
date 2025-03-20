@@ -112,12 +112,6 @@ pub mod handle_messages_helpers {
     ) {
         Pick::<BusMetrics>::get_mut(_bus).receive::<Msg, Client>();
     }
-    pub fn latency_bus_metrics<Msg: 'static, Client: Pick<BusMetrics> + 'static>(
-        _bus: &mut Client,
-        latency: u64,
-    ) {
-        Pick::<BusMetrics>::get_mut(_bus).latency::<Msg, Client>(latency);
-    }
     pub fn setup_metrics<T>(_t: &T) -> EventLoopMetrics {
         EventLoopMetrics::global(BusMetrics::simplified_name::<T>())
     }
@@ -130,7 +124,7 @@ macro_rules! handle_messages {
         #[allow(unused_imports)]
         use $crate::utils::static_type_map::Pick;
         #[allow(unused_imports)]
-        use $crate::bus::command_response::handle_messages_helpers::{receive_bus_metrics, latency_bus_metrics, setup_metrics};
+        use $crate::bus::command_response::handle_messages_helpers::{receive_bus_metrics, setup_metrics};
         let event_loop_metrics = setup_metrics(&$bus);
         $crate::handle_messages! {
             metrics(event_loop_metrics) bus($bus) index(bus_receiver) $($rest)*
