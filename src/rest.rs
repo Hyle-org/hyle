@@ -1,5 +1,7 @@
 //! Public API for interacting with the node.
 
+use std::net::Ipv4Addr;
+
 use anyhow::{Context, Result};
 pub use axum::Router;
 use axum::{
@@ -33,7 +35,7 @@ module_bus_client! {
 }
 
 pub struct RestApiRunContext {
-    pub rest_addr: String,
+    pub port: u16,
     pub info: NodeInfo,
     pub bus: SharedMessageBus,
     pub router: Router,
@@ -47,7 +49,7 @@ pub struct RouterState {
 }
 
 pub struct RestApi {
-    rest_addr: String,
+    port: u16,
     app: Option<Router>,
     bus: RestBusClient,
 }
@@ -88,7 +90,7 @@ impl Module for RestApi {
             //.layer(TraceLayer::new_for_http())
         ;
         Ok(RestApi {
-            rest_addr: ctx.rest_addr.clone(),
+            port: ctx.port,
             app: Some(app),
             bus: RestBusClient::new_from_bus(ctx.bus.new_handle()).await,
         })
@@ -137,11 +139,12 @@ pub async fn get_metrics(State(_): State<RouterState>) -> Result<impl IntoRespon
 impl RestApi {
     pub async fn serve(&mut self) -> Result<()> {
         info!(
-            "📡  Starting RestApi module, listening on {}",
-            self.rest_addr
+            "📡  Starting {} module, listening on port {}",
+            std::any::type_name::<Self>(),
+            self.port
         );
 
-        let listener = tokio::net::TcpListener::bind(&self.rest_addr)
+        let listener = tokio::net::TcpListener::bind(&(Ipv4Addr::UNSPECIFIED, self.port))
             .await
             .context("Starting rest server")?;
 
@@ -250,7 +253,10 @@ mod tests {
     async fn test_rest_api_shutdown_with_mocked_modules() {
         // Create a new integration test context with all modules mocked except REST API
         let builder = NodeIntegrationCtxBuilder::new().await;
-        let rest_client = builder.conf.rest_address.clone();
+        let rest_client = builder
+            .conf
+            .rest_server_port
+            .expect("Should have rest server port");
 
         // Mock Genesis with our RestApiListener, and skip other modules except mempool (for its API)
         let builder = builder
@@ -263,7 +269,7 @@ mod tests {
 
         let node = builder.build().await.expect("Failed to build node");
 
-        let client = NodeApiHttpClient::new(format!("http://{}", rest_client))
+        let client = NodeApiHttpClient::new(format!("http://localhost:{}", rest_client))
             .expect("Failed to create client");
 
         node.wait_for_rest_api(&client).await.unwrap();

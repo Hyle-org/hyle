@@ -16,7 +16,7 @@ use crate::{
     utils::integration_test::{NodeIntegrationCtx, NodeIntegrationCtxBuilder},
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use hyle_contract_sdk::BlobIndex;
 
@@ -47,7 +47,7 @@ async fn test_full_settlement_flow() -> Result<()> {
         .unwrap();
 
     let mut builder = NodeIntegrationCtxBuilder::new().await;
-    let rest_client = builder.conf.rest_address.clone();
+    let rest_server_port = builder.conf.rest_server_port.expect("rest server port");
     builder.conf.run_indexer = true;
     builder.conf.database_url = format!(
         "postgres://postgres:postgres@localhost:{}/postgres",
@@ -56,7 +56,7 @@ async fn test_full_settlement_flow() -> Result<()> {
     let mut hyle_node = builder.build().await?;
 
     hyle_node.wait_for_genesis_event().await?;
-    let client = NodeApiHttpClient::new(format!("http://{rest_client}/")).unwrap();
+    let client = NodeApiHttpClient::new(format!("http://locahost:{rest_server_port}/")).unwrap();
     hyle_node.wait_for_rest_api(&client).await?;
 
     info!("➡️  Registering contracts c1 & c2.hyle");
@@ -130,18 +130,18 @@ async fn test_full_settlement_flow() -> Result<()> {
     let contract = client.get_contract(&"c2.hyle".into()).await?;
     assert_eq!(contract.state.0, vec![8, 8, 8]);
 
-    let pg_client = IndexerApiHttpClient::new(format!("http://{rest_client}/")).unwrap();
+    let pg_client = IndexerApiHttpClient::new(format!("http://{rest_server_port}/")).unwrap();
     let contract = pg_client.get_indexer_contract(&"c1".into()).await?;
     assert_eq!(contract.state_commitment, vec![4, 5, 6]);
 
-    let pg_client = IndexerApiHttpClient::new(format!("http://{rest_client}/")).unwrap();
+    let pg_client = IndexerApiHttpClient::new(format!("http://{rest_server_port}/")).unwrap();
     let contract = pg_client.get_indexer_contract(&"c2.hyle".into()).await?;
     assert_eq!(contract.state_commitment, vec![8, 8, 8]);
 
     Ok(())
 }
 
-async fn build_hyle_node() -> Result<(String, NodeIntegrationCtx)> {
+async fn build_hyle_node() -> Result<(u16, NodeIntegrationCtx)> {
     // Start postgres DB with default settings for the indexer.
     let pg = Postgres::default()
         .with_tag("17-alpine")
@@ -151,7 +151,7 @@ async fn build_hyle_node() -> Result<(String, NodeIntegrationCtx)> {
         .unwrap();
 
     let mut builder = NodeIntegrationCtxBuilder::new().await;
-    let rest_client = builder.conf.rest_address.clone();
+    let rest_client = builder.conf.rest_server_port.context("Rest server port")?;
     builder.conf.run_indexer = true;
     builder.conf.database_url = format!(
         "postgres://postgres:postgres@localhost:{}/postgres",
@@ -343,12 +343,12 @@ async fn test_tx_settlement_duplicates() -> Result<()> {
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 2))]
 async fn test_contract_upgrade() -> Result<()> {
     let builder = NodeIntegrationCtxBuilder::new().await;
-    let rest_url = builder.conf.rest_address.clone();
+    let rest_server_port = builder.conf.rest_server_port.expect("Rest server port");
     let mut hyle_node = builder.build().await?;
 
     hyle_node.wait_for_genesis_event().await?;
 
-    let client = NodeApiHttpClient::new(format!("http://{rest_url}/")).unwrap();
+    let client = NodeApiHttpClient::new(format!("http://localhost:{rest_server_port}/")).unwrap();
     hyle_node.wait_for_rest_api(&client).await?;
 
     info!("➡️  Registering contracts c1.hyle");

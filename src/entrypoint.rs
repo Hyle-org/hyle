@@ -205,7 +205,7 @@ async fn common_main(
             .await?;
     }
 
-    if config.run_rest_server {
+    if let Some(port) = config.rest_server_port {
         // Should come last so the other modules have nested their own routes.
         let router = common_run_ctx
             .router
@@ -221,8 +221,8 @@ async fn common_main(
 
         handler
             .build_module::<RestApi>(RestApiRunContext {
-                rest_addr: config.rest_address.clone(),
-                max_body_size: config.rest_max_body_size,
+                port,
+                max_body_size: config.rest_server_max_body_size,
                 info: NodeInfo {
                     id: config.id.clone(),
                     pubkey: crypto.as_ref().map(|c| c.validator_pubkey()).cloned(),

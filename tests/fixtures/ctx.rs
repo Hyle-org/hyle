@@ -80,7 +80,11 @@ impl E2ECtx {
 
             // Request something on node1 to be sure it's alive and working
             let client = NodeApiHttpClient {
-                url: Url::parse(&format!("http://{}", &node.conf.rest_address)).unwrap(),
+                url: Url::parse(&format!(
+                    "http://localhost:{}",
+                    &node.conf.rest_server_port.expect("Rest server port")
+                ))
+                .unwrap(),
                 reqwest_client: Client::new(),
                 api_key: None,
             };
@@ -106,7 +110,11 @@ impl E2ECtx {
 
         // Request something on node1 to be sure it's alive and working
         let client = NodeApiHttpClient {
-            url: Url::parse(&format!("http://{}", &node.conf.rest_address)).unwrap(),
+            url: Url::parse(&format!(
+                "http://localhost:{}",
+                &node.conf.rest_server_port.expect("Rest server port")
+            ))
+            .unwrap(),
             reqwest_client: Client::new(),
             api_key: None,
         };
@@ -148,7 +156,11 @@ impl E2ECtx {
 
         // Request something on node1 to be sure it's alive and working
         let client = NodeApiHttpClient {
-            url: Url::parse(&format!("http://{}", &node.conf.rest_address)).unwrap(),
+            url: Url::parse(&format!(
+                "http://localhost:{}",
+                &node.conf.rest_server_port.expect("Rest server")
+            ))
+            .unwrap(),
             reqwest_client: Client::new(),
             api_key: None,
         };
@@ -158,7 +170,10 @@ impl E2ECtx {
         indexer_conf.da_address = node_conf.da_address.clone();
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
-        let url = format!("http://{}", &indexer_conf.rest_address);
+        let url = format!(
+            "http://localhost:{}",
+            &indexer_conf.rest_server_port.expect("Rest server port")
+        );
         let indexer_client = IndexerApiHttpClient::new(url).unwrap();
 
         while indexer_client.get_last_block().await.is_err() {
@@ -233,7 +248,11 @@ impl E2ECtx {
             .start();
         // Request something on node1 to be sure it's alive and working
         let client = NodeApiHttpClient {
-            url: Url::parse(&format!("http://{}", &node.conf.rest_address)).unwrap(),
+            url: Url::parse(&format!(
+                "http://localhost:{}",
+                &node.conf.rest_server_port.expect("Rest server port")
+            ))
+            .unwrap(),
             reqwest_client: Client::new(),
             api_key: None,
         };
@@ -264,7 +283,10 @@ impl E2ECtx {
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
         nodes.push(indexer);
-        let url = format!("http://{}", &indexer_conf.rest_address);
+        let url = format!(
+            "http://localhost:{}",
+            &indexer_conf.rest_server_port.expect("Rest server port")
+        );
 
         let indexer_client = IndexerApiHttpClient::new(url).unwrap();
 

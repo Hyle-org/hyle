@@ -101,7 +101,7 @@ impl NodeIntegrationCtxBuilder {
         conf.p2p.address = format!("localhost:{}", find_available_port().await);
         conf.da_address = format!("localhost:{}", find_available_port().await);
         conf.tcp_server_port = Some(find_available_port().await);
-        conf.rest_address = format!("localhost:{}", find_available_port().await);
+        conf.rest_server_port = Some(find_available_port().await);
 
         Self {
             tmpdir,
@@ -281,7 +281,7 @@ impl NodeIntegrationCtx {
 
         Self::build_module::<P2P>(&mut handler, &ctx, ctx.clone(), &mut mocks).await?;
 
-        if config.run_rest_server {
+        if let Some(port) = config.rest_server_port {
             // Should come last so the other modules have nested their own routes.
             #[allow(clippy::expect_used, reason = "Fail on misconfiguration")]
             let router = ctx
@@ -297,8 +297,8 @@ impl NodeIntegrationCtx {
                 &mut handler,
                 &ctx,
                 RestApiRunContext {
-                    rest_addr: ctx.common.config.rest_address.clone(),
-                    max_body_size: ctx.common.config.rest_max_body_size,
+                    port,
+                    max_body_size: ctx.common.config.rest_server_max_body_size,
                     info: NodeInfo {
                         id: config.id.clone(),
                         pubkey: Some(pubkey),

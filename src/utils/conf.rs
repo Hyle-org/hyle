@@ -66,14 +66,12 @@ pub struct Conf {
     /// If "None", this is instead the address to connect to.
     pub da_address: String,
 
-    /// Whether to run the REST API
-    pub run_rest_server: bool,
-    /// Server address for the REST API
-    pub rest_address: String,
+    /// Server port for the REST API (Some() == activated, None == deactivated)
+    pub rest_server_port: Option<u16>,
     /// Maximum body size for REST requests
-    pub rest_max_body_size: usize,
+    pub rest_server_max_body_size: usize,
 
-    /// Server port for the TCP API
+    /// Server port for the TCP API (Some() == activated, None == deactivated)
     pub tcp_server_port: Option<u16>,
 
     /// Whether to run the indexer

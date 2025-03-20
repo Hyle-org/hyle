@@ -11,9 +11,8 @@ data_directory = "data_node"
 da_address = "127.0.0.1:4141"
 
 # Rest API
-run_rest_server = true
-rest_address = "127.0.0.1:4321"
-rest_max_body_size = 10_485_760 # 10 MB
+rest_server_port = 4321
+rest_server_max_body_size = 10_485_760 # 10 MB
 
 # TCP API
 tcp_server_port = 1414

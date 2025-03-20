@@ -40,7 +40,7 @@ impl ConfMaker {
             },
             da_address: format!("localhost:{}", self.random_port + 1000 + self.i),
             tcp_server_port: Some((self.random_port + 2000 + self.i) as u16),
-            rest_address: format!("localhost:{}", self.random_port + 3000 + self.i),
+            rest_server_port: Some((self.random_port + 3000 + self.i) as u16),
             ..self.default.clone()
         }
     }
@@ -66,7 +66,7 @@ impl Default for ConfMaker {
 
         default.da_address = format!("localhost:{}", random_port + 1000);
         default.tcp_server_port = Some((random_port + 2000) as u16);
-        default.rest_address = format!("localhost:{}", random_port + 3000);
+        default.rest_server_port = Some((random_port + 3000) as u16);
 
         default.run_indexer = false; // disable indexer by default to avoid needed PG
 
