@@ -34,10 +34,18 @@ impl Drop for BranchTimer {
 
 macro_rules! time_branch {
     ($threshold_ms:expr, $description:expr) => {
-        let _timer = BranchTimer::new($threshold_ms, concat!(file!(), ":", line!()), $description);
+        let _timer = $crate::utils::profiling::BranchTimer::new(
+            $threshold_ms,
+            concat!(file!(), ":", line!()),
+            $description,
+        );
     };
     ($threshold_ms:expr) => {
-        let _timer = BranchTimer::new($threshold_ms, concat!(file!(), ":", line!()), "");
+        let _timer = $crate::utils::profiling::BranchTimer::new(
+            $threshold_ms,
+            concat!(file!(), ":", line!()),
+            "",
+        );
     };
 }
 pub(crate) use time_branch;
