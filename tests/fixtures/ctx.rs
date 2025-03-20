@@ -308,6 +308,14 @@ impl E2ECtx {
         Ok(())
     }
 
+    pub fn get_instructions_for(&mut self, index: usize) {
+        // Print instructions to start the node manually outside the test context.
+        tracing::warn!(
+            "🚀 Start node with the following command:\nhyle=$(pwd)/target/debug/hyle && (cd {} && \"$hyle\")",
+            self.nodes[index].dir.path().display()
+        );
+    }
+
     pub fn client(&self) -> &NodeApiHttpClient {
         &self.clients[self.client_index]
     }
