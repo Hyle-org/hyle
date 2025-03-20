@@ -15,14 +15,14 @@ use super::{KnownContracts, MempoolNetMessage};
 impl super::Mempool {
     pub(super) fn handle_api_message(&mut self, command: RestApiMessage) -> Result<()> {
         match command {
-            RestApiMessage::NewTx(tx) => self.on_new_api_tx(tx),
+            RestApiMessage::NewTx(tx) => self.on_new_api_tx(tx)?,
         }
         Ok(())
     }
 
     pub(super) fn handle_tcp_server_message(&mut self, command: TcpServerMessage) -> Result<()> {
         match command {
-            TcpServerMessage::NewTx(tx) => self.on_new_api_tx(tx),
+            TcpServerMessage::NewTx(tx) => self.on_new_api_tx(tx)?,
         }
         Ok(())
     }
@@ -199,11 +199,16 @@ impl super::Mempool {
         Ok(())
     }
 
-    pub(super) fn on_new_api_tx(&mut self, tx: Transaction) {
+    pub(super) fn on_new_api_tx(&mut self, tx: Transaction) -> Result<()> {
+        // This is annoying to run in tests because we don't have the event loop setup, so go synchronous.
+        #[cfg(test)]
+        self.on_new_tx(tx.clone())?;
+        #[cfg(not(test))]
         self.running_tasks.spawn_blocking(move || {
             tx.hashed();
             Ok(InternalMempoolEvent::OnProcessedNewTx(tx))
         });
+        Ok(())
     }
 
     pub(super) fn on_new_tx(&mut self, tx: Transaction) -> Result<()> {

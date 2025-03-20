@@ -34,6 +34,10 @@ impl super::Mempool {
         data_proposal: DataProposal,
     ) -> Result<()> {
         let lane_id = lane_id.clone();
+        // This is annoying to run in tests because we don't have the event loop setup, so go synchronous.
+        #[cfg(test)]
+        self.on_hashed_data_proposal(&lane_id, data_proposal.clone())?;
+        #[cfg(not(test))]
         self.running_tasks.spawn_blocking(move || {
             data_proposal.hashed();
             Ok(InternalMempoolEvent::OnHashedDataProposal((
