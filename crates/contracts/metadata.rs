@@ -15,6 +15,9 @@ mod metadata {
     pub const HYLLAR_ELF: &[u8] = crate::methods::HYLLAR_ELF;
     pub const HYLLAR_ID: [u8; 32] = sdk::to_u8_array(&crate::methods::HYLLAR_ID);
 
+    pub const SMT_TOKEN_ELF: &[u8] = crate::methods::SMT_TOKEN_ELF;
+    pub const SMT_TOKEN_ID: [u8; 32] = sdk::to_u8_array(&crate::methods::SMT_TOKEN_ID);
+
     pub const STAKING_ELF: &[u8] = crate::methods::STAKING_ELF;
     pub const STAKING_ID: [u8; 32] = sdk::to_u8_array(&crate::methods::STAKING_ID);
 
@@ -35,6 +38,9 @@ mod metadata {
 
     pub const HYLLAR_ELF: &[u8] = include_bytes!("hyllar/hyllar.img");
     pub const HYLLAR_ID: [u8; 32] = sdk::str_to_u8(include_str!("hyllar/hyllar.txt"));
+
+    pub const SMT_TOKEN_ELF: &[u8] = include_bytes!("smt-token/smt-token.img");
+    pub const SMT_TOKEN_ID: [u8; 32] = sdk::str_to_u8(include_str!("smt-token/smt-token.txt"));
 
     pub const STAKING_ELF: &[u8] = include_bytes!("staking/staking.img");
     pub const STAKING_ID: [u8; 32] = sdk::str_to_u8(include_str!("staking/staking.txt"));
