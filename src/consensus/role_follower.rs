@@ -5,15 +5,18 @@ use tracing::{debug, info, trace, warn};
 
 use super::Consensus;
 use crate::{
+    bus::BusClientSender,
     consensus::StateTag,
     log_error,
     mempool::MempoolNetMessage,
     model::{Hashed, Signed, ValidatorPublicKey},
+    p2p::P2PCommand,
     utils::crypto::BlstCrypto,
 };
 use anyhow::{bail, Context, Result};
 use hyle_model::{
-    ConsensusNetMessage, ConsensusProposal, ConsensusProposalHash, QuorumCertificate, Ticket,
+    ConsensusNetMessage, ConsensusProposal, ConsensusProposalHash, ConsensusStakingAction, Cut,
+    LaneBytesSize, LaneId, NewValidatorCandidate, QuorumCertificate, Ticket, ValidatorCandidacy,
 };
 
 #[derive(BorshSerialize, BorshDeserialize, Default)]
@@ -396,6 +399,109 @@ impl FollowerRole for Consensus {
 }
 
 impl Consensus {
+    fn try_process_timeout_qc(
+        &mut self,
+        timeout_qc: QuorumCertificate,
+        consensus_proposal: &ConsensusProposal,
+    ) -> Result<()> {
+        let slot = consensus_proposal.slot;
+        let view = consensus_proposal.view;
+        debug!(
+            "Trying to process timeout Certificate against consensus proposal slot: {}, view: {}",
+            slot, view,
+        );
+
+        self.verify_quorum_certificate(ConsensusNetMessage::Timeout(slot, view - 1), &timeout_qc)
+            .context("Verifying Timeout Ticket")?;
+
+        if slot == self.bft_round_state.consensus_proposal.slot {
+            self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc))
+            // if ticket for next slot && correct parent hash, fast forward
+        } else if slot == self.bft_round_state.consensus_proposal.slot + 1
+            && consensus_proposal.parent_hash == self.bft_round_state.consensus_proposal.hashed()
+        {
+            // We are not in the same slot as the timeout certificate
+            // So we force a fast-forward the current slot
+            self.carry_on_with_ticket(Ticket::ForcedCommitQc(timeout_qc.clone()))?;
+
+            info!(
+                "🔀 Fast forwarded slot {}",
+                &self.bft_round_state.consensus_proposal.slot - 1
+            );
+
+            self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc))
+        } else {
+            bail!(
+                "Timeout Certificate slot {} view {} is not the current slot {} nor next one",
+                slot,
+                view,
+                self.bft_round_state.consensus_proposal.slot
+            )
+        }
+    }
+
+    fn on_commit_while_joining(
+        &mut self,
+        commit_quorum_certificate: QuorumCertificate,
+        proposal_hash_hint: ConsensusProposalHash,
+    ) -> Result<()> {
+        // We are joining consensus, try to sync our state.
+        // First find the prepare message to this commit.
+        let Some(proposal_index) = self
+            .bft_round_state
+            .joining
+            .buffered_prepares
+            .iter()
+            .position(|p| p.hashed() == proposal_hash_hint)
+        else {
+            // Maybe we just missed it, carry on.
+            return Ok(());
+        };
+        // Use that as our proposal.
+        self.bft_round_state.consensus_proposal = self
+            .bft_round_state
+            .joining
+            .buffered_prepares
+            .swap_remove(proposal_index);
+        self.bft_round_state.joining.buffered_prepares.clear();
+
+        // At this point check that we're caught up enough that it's realistic to verify the QC.
+        if self.bft_round_state.joining.staking_updated_to + 1
+            < self.bft_round_state.consensus_proposal.slot
+        {
+            info!(
+                "🏃Ignoring commit message, we are only caught up to {} ({} needed).",
+                self.bft_round_state.joining.staking_updated_to,
+                self.bft_round_state.consensus_proposal.slot - 1
+            );
+            return Ok(());
+        }
+
+        info!(
+            "📦 Commit message received for slot {}, trying to synchronize.",
+            self.bft_round_state.consensus_proposal.slot
+        );
+
+        // Try to commit the proposal
+        self.bft_round_state.state_tag = StateTag::Follower;
+        if self
+            .try_commit_current_proposal(
+                commit_quorum_certificate,
+                self.bft_round_state.consensus_proposal.hashed(),
+            )
+            .is_err()
+        {
+            self.bft_round_state.state_tag = StateTag::Joining;
+            bail!("⛑️ Failed to synchronize, retrying soon.");
+        }
+        // We sucessfully joined the consensus
+        info!(
+            "🏁 Synchronized to slot {}",
+            self.bft_round_state.consensus_proposal.slot
+        );
+        Ok(())
+    }
+
     #[inline]
     pub(super) fn follower_state(&mut self) -> &mut FollowerState {
         &mut self.store.bft_round_state.follower
@@ -479,6 +585,78 @@ impl Consensus {
             );
         }
         commited_current_proposal.is_ok()
+    }
+
+    fn verify_staking_actions(&mut self, proposal: &ConsensusProposal) -> Result<()> {
+        for action in &proposal.staking_actions {
+            match action {
+                ConsensusStakingAction::Bond { candidate } => {
+                    self.verify_new_validators_to_bond(candidate)?;
+                }
+                ConsensusStakingAction::PayFeesForDaDi {
+                    lane_id,
+                    cumul_size,
+                } => Self::verify_dadi_fees(&proposal.cut, lane_id, cumul_size)?,
+            }
+        }
+        Ok(())
+    }
+
+    /// Verify that the fees paid by the disseminator are correct
+    fn verify_dadi_fees(cut: &Cut, lane_id: &LaneId, cumul_size: &LaneBytesSize) -> Result<()> {
+        cut.iter()
+            .find(|l| &l.0 == lane_id && &l.2 == cumul_size)
+            .map(|_| ())
+            .ok_or(anyhow::anyhow!(
+                "Malformed PayFeesForDadi. Not found in cut: {lane_id}, {cumul_size}"
+            ))
+    }
+
+    /// Verify that new validators have enough stake
+    /// and have a valid signature so can be bonded.
+    fn verify_new_validators_to_bond(
+        &mut self,
+        new_validator: &NewValidatorCandidate,
+    ) -> Result<()> {
+        // Verify that the new validator has enough stake
+        if let Some(stake) = self
+            .bft_round_state
+            .staking
+            .get_stake(&new_validator.pubkey)
+        {
+            if stake < staking::state::MIN_STAKE {
+                bail!("New bonded validator has not enough stake to be bonded");
+            }
+        } else {
+            bail!("New bonded validator has no stake");
+        }
+        // Verify that the new validator has a valid signature
+        if !BlstCrypto::verify(&new_validator.msg)? {
+            bail!("New bonded validator has an invalid signature");
+        }
+        // Verify that the signed message is a matching candidacy
+        if let ConsensusNetMessage::ValidatorCandidacy(ValidatorCandidacy {
+            pubkey,
+            peer_address,
+        }) = &new_validator.msg.msg
+        {
+            if pubkey != &new_validator.pubkey {
+                debug!("Invalid candidacy message");
+                debug!("Got - Expected");
+                debug!("{} - {}", pubkey, new_validator.pubkey);
+
+                bail!("New bonded validator has an invalid candidacy message");
+            }
+
+            self.validator_candidates
+                .retain(|v| v.pubkey != new_validator.pubkey);
+            self.bus.send(P2PCommand::ConnectTo {
+                peer: peer_address.clone(),
+            })?;
+        } else {
+            bail!("New bonded validator forwarded signed message is not a candidacy message");
+        }
+        Ok(())
     }
 }
 
