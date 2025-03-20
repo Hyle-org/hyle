@@ -226,7 +226,7 @@ async fn common_main(
                 info: NodeInfo {
                     id: config.id.clone(),
                     pubkey: crypto.as_ref().map(|c| c.validator_pubkey()).cloned(),
-                    da_address: format!("{}:{}", config.host_name, config.da_server_port),
+                    da_address: format!("{}:{}", config.hostname, config.da_server_port),
                 },
                 bus: common_run_ctx.bus.new_handle(),
                 metrics_layer: Some(metrics_layer),

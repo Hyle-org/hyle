@@ -49,7 +49,7 @@ pub struct Conf {
     pub id: String,
 
     // Network host name
-    pub host_name: String,
+    pub hostname: String,
     /// The log format to use - "json", "node" or "full" (default)
     pub log_format: String,
     /// Directory name to store node state.
@@ -117,7 +117,7 @@ impl Conf {
                     .and_then(|port| port.parse::<u16>().ok()), // Convertir en u16 si possible
             )?
             .set_override(
-                "host_name",
+                "hostname",
                 std::env::var("HOSTNAME").unwrap_or("localhost".to_string()),
             )?
             .set_override_option("run_indexer", run_indexer)?

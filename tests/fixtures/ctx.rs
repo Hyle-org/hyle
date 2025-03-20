@@ -68,7 +68,7 @@ impl E2ECtx {
             let mut node_conf = conf_maker.build("node");
             node_conf.p2p.peers = peers.clone();
             genesis_stakers.insert(node_conf.id.clone(), 100);
-            peers.push(format!("{}:{}", node_conf.host_name, node_conf.p2p.port));
+            peers.push(format!("{}:{}", node_conf.hostname, node_conf.p2p.port));
             confs.push(node_conf);
         }
 
@@ -233,7 +233,7 @@ impl E2ECtx {
         node_conf.p2p.peers = self
             .nodes
             .iter()
-            .map(|node| format!("{}:{}", node_conf.host_name, node.conf.p2p.port))
+            .map(|node| format!("{}:{}", node.conf.hostname, node.conf.p2p.port))
             .collect();
         node_conf
     }

@@ -302,7 +302,7 @@ impl NodeIntegrationCtx {
                     info: NodeInfo {
                         id: config.id.clone(),
                         pubkey: Some(pubkey),
-                        da_address: format!("{}:{}", config.host_name, config.da_server_port),
+                        da_address: format!("{}:{}", config.hostname, config.da_server_port),
                     },
                     bus: ctx.common.bus.new_handle(),
                     metrics_layer: None,

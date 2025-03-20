@@ -65,7 +65,7 @@ impl Module for P2P {
 impl P2P {
     fn spawn_peer(&mut self, peer_address: String) {
         if self.connected_peers.contains(&peer_address)
-            || peer_address == format!("{}:{}", self.config.host_name, self.config.p2p.port)
+            || peer_address == format!("{}:{}", self.config.hostname, self.config.p2p.port)
         {
             return;
         }
