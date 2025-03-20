@@ -15,7 +15,7 @@ use crate::{
 pub struct NodeInfo {
     pub id: String,
     pub pubkey: Option<ValidatorPublicKey>,
-    pub da_address: String,
+    pub da_server_address: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]

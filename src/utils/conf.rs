@@ -47,6 +47,9 @@ pub type SharedConf = Arc<Conf>;
 pub struct Conf {
     /// Human-readable identifier for this node.
     pub id: String,
+
+    // Network host name
+    pub host_name: String,
     /// The log format to use - "json", "node" or "full" (default)
     pub log_format: String,
     /// Directory name to store node state.
@@ -64,6 +67,9 @@ pub struct Conf {
     // Module options below
     /// If full node: server address for the DA layer, which streams historical & new blocks. It might be used by indexers.
     /// If "None", this is instead the address to connect to.
+    pub da_server_port: Option<u16>,
+
+    // For a Da client
     pub da_address: String,
 
     /// Server port for the REST API (Some() == activated, None == deactivated)
@@ -109,6 +115,10 @@ impl Conf {
                 std::env::var("HYLE_TCP_SERVER_PORT")
                     .ok()
                     .and_then(|port| port.parse::<u16>().ok()), // Convertir en u16 si possible
+            )?
+            .set_override(
+                "host_name",
+                std::env::var("HOSTNAME").unwrap_or("localhost".to_string()),
             )?
             .set_override_option("run_indexer", run_indexer)?
             .build()?

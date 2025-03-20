@@ -315,30 +315,34 @@ where
     Res: BorshDeserialize + std::fmt::Debug + Clone + Send + 'static,
     Req: BorshSerialize + Clone + Send + 'static,
 {
-    pub async fn connect(id: String, target: String) -> Result<TcpClient<ClientCodec, Req, Res>> {
+    pub async fn connect<A: tokio::net::ToSocketAddrs>(
+        id: String,
+        target: A,
+    ) -> Result<TcpClient<ClientCodec, Req, Res>> {
         let timeout = std::time::Duration::from_secs(10);
         let start = std::time::Instant::now();
         let tcp_stream = loop {
-            debug!("Trying to connect to {}", target);
+            debug!("TcpClient {} - Trying to connect", id);
             match TcpStream::connect(&target).await {
                 Ok(stream) => break stream,
                 Err(e) => {
                     if start.elapsed() >= timeout {
-                        bail!("Failed to connect to {}: {}. Timeout reached.", target, e);
+                        bail!(
+                            "TcpClient {} - Failed to connect: {}. Timeout reached.",
+                            id,
+                            e
+                        );
                     }
                     warn!(
-                        "Failed to connect to {}: {}. Retrying in 1 second...",
-                        target, e
+                        "TcpClient {} - Failed to connect: {}. Retrying in 1 second...",
+                        id, e
                     );
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 }
             }
         };
         let addr = tcp_stream.local_addr()?;
-        info!(
-            "Client {} connected to data stream to {} on {}.",
-            id, &target, addr
-        );
+        info!("TcpClient {} - Connected to data stream on {}.", id, addr);
 
         let (sender, receiver) =
             Framed::new(tcp_stream, TcpMessageCodec::<ClientCodec>::default()).split();
@@ -457,7 +461,7 @@ macro_rules! tcp_client_server {
             pub async fn start_server<A: tokio::net::ToSocketAddrs >(addr: A) -> Result<Server> {
                 $crate::tcp::TcpServer::<ServerCodec, $req, $res>::start(addr, stringify!($name)).await
             }
-            pub async fn connect(id: String, addr: String) -> Result<Client> {
+            pub async fn connect<A: tokio::net::ToSocketAddrs >(id: String, addr: A) -> Result<Client> {
                 $crate::tcp::TcpClient::<ClientCodec, $req, $res>::connect(id, addr).await
             }
         }

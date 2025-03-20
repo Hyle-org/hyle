@@ -29,7 +29,7 @@ use anyhow::{Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::str;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, net::Ipv4Addr};
 use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
@@ -100,13 +100,15 @@ impl Module for DataAvailability {
 
 impl DataAvailability {
     pub async fn start(&mut self) -> Result<()> {
+        let port = self.config.da_server_port.context("DA Server Port")?;
+
         info!(
-            "📡  Starting DataAvailability module, listening for stream requests on {}",
-            &self.config.da_address
+            "📡  Starting DataAvailability module, listening for stream requests on port {}",
+            port
         );
 
         let mut server: DaTcpServer =
-            codec_data_availability::start_server(self.config.da_address.clone()).await?;
+            codec_data_availability::start_server((Ipv4Addr::UNSPECIFIED, port)).await?;
 
         let (catchup_block_sender, mut catchup_block_receiver) =
             tokio::sync::mpsc::channel::<SignedBlock>(100);
@@ -435,6 +437,8 @@ impl DataAvailability {
 pub mod tests {
     #![allow(clippy::indexing_slicing)]
 
+    use std::net::Ipv4Addr;
+
     use crate::data_availability::codec::{codec_data_availability, DataAvailabilityRequest};
     use crate::log_error;
     use crate::node_state::NodeState;
@@ -472,7 +476,7 @@ pub mod tests {
 
             let node_state = NodeState::create(config.id.clone(), "data_availability");
 
-            config.da_address = format!("127.0.0.1:{}", find_available_port().await);
+            config.da_server_port = Some(find_available_port().await);
             let da = super::DataAvailability {
                 config: config.into(),
                 bus,
@@ -579,7 +583,7 @@ pub mod tests {
         let mut block_sender = TestBusClient::new_from_bus(global_bus).await;
 
         let mut config: Conf = Conf::new(None, None, None).unwrap();
-        config.da_address = format!("127.0.0.1:{}", find_available_port().await);
+        config.da_server_port = Some(find_available_port().await);
         let mut da = super::DataAvailability {
             config: config.clone().into(),
             bus,
@@ -604,10 +608,15 @@ pub mod tests {
             da.start().await.unwrap();
         });
 
-        let mut client =
-            codec_data_availability::connect("client_id".to_string(), config.da_address.clone())
-                .await
-                .unwrap();
+        let mut client = codec_data_availability::connect(
+            "client_id".to_string(),
+            (
+                Ipv4Addr::UNSPECIFIED,
+                config.da_server_port.expect("Da Server port"),
+            ),
+        )
+        .await
+        .unwrap();
 
         client
             .send(DataAvailabilityRequest(BlockHeight(0)))
@@ -661,10 +670,15 @@ pub mod tests {
 
         // End of the first stream
 
-        let mut client =
-            codec_data_availability::connect("client_id".to_string(), config.da_address)
-                .await
-                .unwrap();
+        let mut client = codec_data_availability::connect(
+            "client_id".to_string(),
+            (
+                Ipv4Addr::UNSPECIFIED,
+                config.da_server_port.expect("Da server port"),
+            ),
+        )
+        .await
+        .unwrap();
 
         client
             .send(DataAvailabilityRequest(BlockHeight(0)))
@@ -712,7 +726,7 @@ pub mod tests {
             da_sender.handle_signed_block(block, &mut server).await;
         }
 
-        let da_sender_address = da_sender.da.config.da_address.clone();
+        let da_sender_port = da_sender.da.config.da_server_port.expect("Da sender port");
 
         tokio::spawn(async move {
             da_sender.da.start().await.unwrap();
@@ -725,7 +739,7 @@ pub mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::channel(200);
         da_receiver
             .da
-            .ask_for_catchup_blocks(da_sender_address.clone(), tx.clone())
+            .ask_for_catchup_blocks(format!("localhost:{}", da_sender_port.clone()), tx.clone())
             .await
             .expect("Error while asking for catchup blocks");
 
@@ -801,7 +815,7 @@ pub mod tests {
         // Resubscribe - we should only receive the new ones.
         da_receiver
             .da
-            .ask_for_catchup_blocks(da_sender_address, tx)
+            .ask_for_catchup_blocks(format!("http://localhost:{}", da_sender_port), tx)
             .await
             .expect("Error while asking for catchup blocks");
 

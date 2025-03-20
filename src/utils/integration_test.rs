@@ -99,7 +99,7 @@ impl NodeIntegrationCtxBuilder {
         )
         .expect("conf ok");
         conf.p2p.address = format!("localhost:{}", find_available_port().await);
-        conf.da_address = format!("localhost:{}", find_available_port().await);
+        conf.da_server_port = Some(find_available_port().await);
         conf.tcp_server_port = Some(find_available_port().await);
         conf.rest_server_port = Some(find_available_port().await);
 
@@ -302,7 +302,11 @@ impl NodeIntegrationCtx {
                     info: NodeInfo {
                         id: config.id.clone(),
                         pubkey: Some(pubkey),
-                        da_address: config.da_address.clone(),
+                        da_server_address: format!(
+                            "{}:{}",
+                            config.host_name,
+                            config.da_server_port.context("Da Server port")?
+                        ),
                     },
                     bus: ctx.common.bus.new_handle(),
                     metrics_layer: None,

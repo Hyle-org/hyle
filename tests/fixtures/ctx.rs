@@ -167,7 +167,7 @@ impl E2ECtx {
 
         // Start indexer
         let mut indexer_conf = conf_maker.build("indexer");
-        indexer_conf.da_address = node_conf.da_address.clone();
+        indexer_conf.da_server_port = node_conf.da_server_port;
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
         let url = format!(
@@ -279,7 +279,7 @@ impl E2ECtx {
 
         // Start indexer
         let mut indexer_conf = conf_maker.build("indexer");
-        indexer_conf.da_address = nodes.last().unwrap().conf.da_address.clone();
+        indexer_conf.da_server_port = nodes.last().unwrap().conf.da_server_port;
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
         nodes.push(indexer);
