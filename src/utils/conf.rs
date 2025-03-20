@@ -106,6 +106,12 @@ impl Conf {
                     .try_parsing(true),
             )
             .set_override_option("data_directory", data_directory)?
+            .set_override_option(
+                "tcp_server_port",
+                std::env::var("HYLE_TCP_SERVER_PORT")
+                    .ok()
+                    .and_then(|port| port.parse::<u16>().ok()), // Convertir en u16 si possible
+            )?
             .set_override_option("run_indexer", run_indexer)?
             .build()?
             .try_deserialize()?;
@@ -132,5 +138,12 @@ mod tests {
     #[test]
     fn test_load_default_conf() {
         assert_ok!(Conf::new(None, None, None));
+    }
+
+    #[test]
+    fn test_override_tcp_server_port() {
+        std::env::set_var("HYLE_TCP_SERVER_PORT", "9090");
+        let conf = Conf::new(None, None, None).unwrap();
+        assert_eq!(conf.tcp_server_port, Some(9090));
     }
 }
