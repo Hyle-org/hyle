@@ -151,6 +151,8 @@ impl TestProcess {
             self.stdout = Some(tokio::task::spawn(stream_output(stdout)));
             self.stderr = Some(tokio::task::spawn(stream_output(stderr)));
 
+            info!("Started process ID: {:?}", process.id());
+
             process
         });
 

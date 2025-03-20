@@ -166,6 +166,7 @@ impl BusMessage for MempoolStatusEvent {}
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum InternalMempoolEvent {
     OnProcessedNewTx(Transaction),
+    OnHashedDataProposal((LaneId, DataProposal)),
     OnProcessedDataProposal((LaneId, DataProposalVerdict, DataProposal)),
 }
 impl BusMessage for InternalMempoolEvent {}
@@ -358,6 +359,9 @@ impl Mempool {
             InternalMempoolEvent::OnProcessedNewTx(tx) => {
                 self.on_new_tx(tx).context("Processing new tx")
             }
+            InternalMempoolEvent::OnHashedDataProposal((lane_id, data_proposal)) => self
+                .on_hashed_data_proposal(&lane_id, data_proposal)
+                .context("Hashing data proposal"),
             InternalMempoolEvent::OnProcessedDataProposal((lane_id, verdict, data_proposal)) => {
                 self.on_processed_data_proposal(lane_id, verdict, data_proposal)
                     .context("Processing data proposal")
