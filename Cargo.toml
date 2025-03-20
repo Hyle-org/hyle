@@ -4,6 +4,7 @@ members = [
     "crates/contracts/amm",
     "crates/contracts/hydentity",
     "crates/contracts/hyllar",
+    "crates/contracts/smt-token",
     "crates/contracts/staking",
     "crates/contracts/risc0-recursion",
     "crates/contracts/uuid-tld",
