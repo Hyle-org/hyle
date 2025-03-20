@@ -94,7 +94,7 @@ impl LeaderRole for Consensus {
         );
 
         let cut = match tokio::time::timeout(
-            std::time::Duration::from_millis(self.config.consensus.slot_duration / 2),
+            std::time::Duration::from_millis(self.config.consensus.slot_duration),
             self.bus
                 .request(QueryNewCut(self.bft_round_state.staking.clone())),
         )
