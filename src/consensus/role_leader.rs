@@ -128,6 +128,12 @@ impl LeaderRole for Consensus {
         self.bft_round_state.consensus_proposal.cut = cut;
         self.bft_round_state.consensus_proposal.staking_actions = staking_actions;
         self.bft_round_state.consensus_proposal.timestamp = current_timestamp;
+        let prepare = (
+            self.crypto.validator_pubkey().clone(),
+            self.bft_round_state.consensus_proposal.clone(),
+            ticket.clone(),
+        );
+        self.follower_state().buffered_prepares.push(prepare);
 
         self.metrics.start_new_round("consensus_proposal");
 
@@ -156,7 +162,12 @@ impl LeaderRole for Consensus {
         consensus_proposal_hash: ConsensusProposalHash,
     ) -> Result<()> {
         if !matches!(self.bft_round_state.state_tag, StateTag::Leader) {
-            bail!("PrepareVote received while not leader");
+            debug!(
+                sender = %msg.signature.validator,
+                proposal_hash = %consensus_proposal_hash,
+                "PrepareVote received while not leader. Ignoring."
+            );
+            return Ok(());
         }
         if !matches!(self.bft_round_state.leader.step, Step::PrepareVote) {
             debug!(
@@ -212,9 +223,10 @@ impl LeaderRole for Consensus {
             let aggregates: &Vec<&SignedByValidator<ConsensusNetMessage>> =
                 &self.bft_round_state.leader.prepare_votes.iter().collect();
 
+            let proposal_hash_hint = self.bft_round_state.consensus_proposal.hashed();
             // Aggregates them into a *Prepare* Quorum Certificate
             let prepvote_signed_aggregation = self.crypto.sign_aggregate(
-                ConsensusNetMessage::PrepareVote(self.bft_round_state.consensus_proposal.hashed()),
+                ConsensusNetMessage::PrepareVote(proposal_hash_hint.clone()),
                 aggregates,
             )?;
 
@@ -233,6 +245,7 @@ impl LeaderRole for Consensus {
             );
             self.broadcast_net_message(ConsensusNetMessage::Confirm(
                 prepvote_signed_aggregation.signature,
+                proposal_hash_hint,
             ))?;
         }
         // TODO(?): Update behaviour when having more ?
@@ -335,7 +348,10 @@ impl LeaderRole for Consensus {
             ))?;
 
             // Process the same locally.
-            self.try_commit_current_proposal(commit_quorum_certificate)?;
+            self.try_commit_current_proposal(
+                commit_quorum_certificate,
+                self.bft_round_state.consensus_proposal.hashed(),
+            )?;
         }
         // TODO(?): Update behaviour when having more ?
         Ok(())
