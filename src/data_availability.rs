@@ -100,7 +100,7 @@ impl Module for DataAvailability {
 
 impl DataAvailability {
     pub async fn start(&mut self) -> Result<()> {
-        let port = self.config.da_server_port.context("DA Server Port")?;
+        let port = self.config.da_server_port;
 
         info!(
             "📡  Starting DataAvailability module, listening for stream requests on port {}",
@@ -476,7 +476,7 @@ pub mod tests {
 
             let node_state = NodeState::create(config.id.clone(), "data_availability");
 
-            config.da_server_port = Some(find_available_port().await);
+            config.da_server_port = find_available_port().await;
             let da = super::DataAvailability {
                 config: config.into(),
                 bus,
@@ -583,7 +583,7 @@ pub mod tests {
         let mut block_sender = TestBusClient::new_from_bus(global_bus).await;
 
         let mut config: Conf = Conf::new(None, None, None).unwrap();
-        config.da_server_port = Some(find_available_port().await);
+        config.da_server_port = find_available_port().await;
         let mut da = super::DataAvailability {
             config: config.clone().into(),
             bus,
@@ -610,10 +610,7 @@ pub mod tests {
 
         let mut client = codec_data_availability::connect(
             "client_id".to_string(),
-            (
-                Ipv4Addr::UNSPECIFIED,
-                config.da_server_port.expect("Da Server port"),
-            ),
+            (Ipv4Addr::UNSPECIFIED, config.da_server_port),
         )
         .await
         .unwrap();
@@ -672,10 +669,7 @@ pub mod tests {
 
         let mut client = codec_data_availability::connect(
             "client_id".to_string(),
-            (
-                Ipv4Addr::UNSPECIFIED,
-                config.da_server_port.expect("Da server port"),
-            ),
+            (Ipv4Addr::UNSPECIFIED, config.da_server_port),
         )
         .await
         .unwrap();
@@ -726,7 +720,7 @@ pub mod tests {
             da_sender.handle_signed_block(block, &mut server).await;
         }
 
-        let da_sender_port = da_sender.da.config.da_server_port.expect("Da sender port");
+        let da_sender_port = da_sender.da.config.da_server_port;
 
         tokio::spawn(async move {
             da_sender.da.start().await.unwrap();

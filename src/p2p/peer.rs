@@ -264,11 +264,7 @@ impl Peer {
             HandshakeNetMessage::Hello(self.crypto.sign(Hello {
                 version: 1,
                 name: self.conf.id.clone(),
-                da_address: format!(
-                    "{}:{}",
-                    self.conf.host_name,
-                    self.conf.da_server_port.context("Da Server Port")?
-                ),
+                da_address: format!("{}:{}", self.conf.host_name, self.conf.da_server_port),
             })?)
             .into(),
         )

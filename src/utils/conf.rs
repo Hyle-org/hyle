@@ -67,7 +67,7 @@ pub struct Conf {
     // Module options below
     /// If full node: server address for the DA layer, which streams historical & new blocks. It might be used by indexers.
     /// If "None", this is instead the address to connect to.
-    pub da_server_port: Option<u16>,
+    pub da_server_port: u16,
 
     // For a Da client
     pub da_address: String,
