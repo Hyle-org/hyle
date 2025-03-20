@@ -226,7 +226,7 @@ async fn common_main(
                 info: NodeInfo {
                     id: config.id.clone(),
                     pubkey: crypto.as_ref().map(|c| c.validator_pubkey()).cloned(),
-                    da_server_address: format!(
+                    da_address: format!(
                         "{}:{}",
                         config.host_name,
                         config.da_server_port.context("Da Server Port")?
