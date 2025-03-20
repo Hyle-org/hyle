@@ -35,7 +35,7 @@ impl ConfMaker {
                 format!("{}-{}", prefix, self.i)
             },
             p2p: P2pConf {
-                address: format!("localhost:{}", self.random_port + self.i),
+                port: (self.random_port + self.i) as u16,
                 ..self.default.p2p.clone()
             },
             da_server_port: (self.random_port + 1000 + self.i) as u16,
@@ -53,7 +53,7 @@ impl Default for ConfMaker {
         let random_port: u32 = rng.random_range(1024..(65536 - 4000));
 
         default.log_format = "node".to_string(); // Activate node name in logs for convenience in tests.
-        default.p2p.address = format!("localhost:{}", random_port);
+        default.p2p.port = random_port as u16;
         default.p2p.mode = hyle::utils::conf::P2pMode::FullValidator;
         default.consensus.solo = false;
         default.genesis.stakers = {

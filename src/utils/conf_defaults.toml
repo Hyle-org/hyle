@@ -26,7 +26,7 @@ da_address = "127.0.0.1:4141"
 # "FullValidator" runs a full node, "LaneManager" skips consensus, or "None" to disable most modules.
 mode = "FullValidator"
 # TCP server for the p2p incoming connections.
-address = "127.0.0.1:1231"
+port = 1231
 # Peer IPs to connect to
 peers = []
 # Interval the p2p layer does a ping to check aliveness of other peers.

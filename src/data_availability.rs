@@ -809,7 +809,7 @@ pub mod tests {
         // Resubscribe - we should only receive the new ones.
         da_receiver
             .da
-            .ask_for_catchup_blocks(format!("http://localhost:{}", da_sender_port), tx)
+            .ask_for_catchup_blocks(format!("localhost:{}", da_sender_port), tx)
             .await
             .expect("Error while asking for catchup blocks");
 

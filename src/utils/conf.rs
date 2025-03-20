@@ -23,7 +23,7 @@ pub struct GenesisConf {
 pub struct P2pConf {
     pub mode: P2pMode,
     /// Server address for the P2P layer
-    pub address: String,
+    pub port: u16,
     /// IPs of peers to connect to
     pub peers: Vec<String>,
     /// Time in milliseconds between pings to peers
