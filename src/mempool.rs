@@ -13,7 +13,6 @@ use crate::{
         conf::{P2pMode, SharedConf},
         crypto::{BlstCrypto, SharedBlstCrypto},
         modules::{module_bus_client, Module},
-        profiling::time_branch,
         serialize::arc_rwlock_borsh,
     },
 };
@@ -247,23 +246,18 @@ impl Mempool {
                 self.running_tasks.is_empty()
             },
             listen<SignedByValidator<MempoolNetMessage>> cmd => {
-                time_branch!(200, "Handling MempoolNetMessage in Mempool");
                 let _ = log_error!(self.handle_net_message(cmd), "Handling MempoolNetMessage in Mempool");
             }
             listen<RestApiMessage> cmd => {
-                time_branch!(200, "Handling API Message in Mempool");
                 let _ = log_error!(self.handle_api_message(cmd), "Handling API Message in Mempool");
             }
             listen<TcpServerMessage> cmd => {
-                time_branch!(200, "Handling TCP Server message in Mempool");
                 let _ = log_error!(self.handle_tcp_server_message(cmd), "Handling TCP Server message in Mempool");
             }
             listen<ConsensusEvent> cmd => {
-                time_branch!(200, "Handling ConsensusEvent in Mempool");
                 let _ = log_error!(self.handle_consensus_event(cmd), "Handling ConsensusEvent in Mempool");
             }
             listen<NodeStateEvent> cmd => {
-                time_branch!(200, "Handling NodeStateEvent in Mempool");
                 let NodeStateEvent::NewBlock(block) = cmd;
                 // In this p2p mode we don't receive consensus events so we must update manually.
                 if self.conf.p2p.mode == P2pMode::LaneManager {
@@ -276,11 +270,9 @@ impl Mempool {
                 }
             }
             command_response<QueryNewCut, Cut> staking => {
-                time_branch!(200, "Handling QueryNewCut in Mempool");
                 self.handle_querynewcut(staking)
             }
             Some(event) = self.running_tasks.join_next() => {
-                time_branch!(200, "Processing InternalMempoolEvent from Blocker Joinset");
                 if let Ok(event) = log_error!(event, "Processing InternalMempoolEvent from Blocker Joinset") {
                     if let Ok(event) = log_error!(event, "Error in running task") {
                         let _ = log_error!(self.handle_internal_event(event),
@@ -289,7 +281,6 @@ impl Mempool {
                 }
             }
             _ = interval.tick() => {
-                time_branch!(200, "Handling data proposal (creation & broadcast) on tick");
                 let _ = log_error!(self.handle_data_proposal_management(), "Creating Data Proposal on tick");
             }
         };
