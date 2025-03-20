@@ -16,12 +16,13 @@ use hyle_model::api::*;
 use hyle_model::*;
 use prometheus::{Encoder, TextEncoder};
 use tokio::time::Instant;
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::utils::modules::Module;
 use crate::{bus::SharedMessageBus, module_handle_messages, utils::modules::module_bus_client};
+use crate::{log_error, utils::modules::Module};
 
 pub use client_sdk::contract_indexer::AppError;
 pub use client_sdk::rest_client as client;
@@ -140,15 +141,40 @@ impl RestApi {
             self.rest_addr
         );
 
+        let listener = tokio::net::TcpListener::bind(&self.rest_addr)
+            .await
+            .context("Starting rest server")?;
+
+        #[allow(
+            clippy::expect_used,
+            reason = "app is guaranteed to be set during initialization"
+        )]
+        let app = self.app.take().expect("app is not set");
+
+        // On module shutdown, we want to shutdown the axum server and wait for its shutdown to complete.
+        let axum_cancel_token = CancellationToken::new();
+        let axum_server = tokio::spawn({
+            let token = axum_cancel_token.clone();
+            async move {
+                log_error!(
+                    axum::serve(listener, app)
+                        .with_graceful_shutdown(async move {
+                            token.cancelled().await;
+                        })
+                        .await,
+                    "serving Axum"
+                )?;
+                Ok::<(), anyhow::Error>(())
+            }
+        });
         module_handle_messages! {
             on_bus self.bus,
-            _ = axum::serve(
-                tokio::net::TcpListener::bind(&self.rest_addr)
-                    .await
-                    .context("Starting rest server")?,
-                #[allow(clippy::expect_used, reason="incorrect setup logic")]
-                self.app.take().expect("app is not set")
-            ) => { }
+            delay_shutdown_until {
+                // When the module tries to shutdown it'll cancel the token
+                // and then we actually exit the loop when axum is done.
+                axum_cancel_token.cancel();
+                axum_server.is_finished()
+            },
         };
 
         Ok(())
@@ -160,5 +186,131 @@ impl Clone for RouterState {
         Self {
             info: self.info.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        bus::bus_client,
+        data_availability::DataAvailability,
+        genesis::Genesis,
+        mempool::api::RestApiMessage,
+        model::SharedRunContext,
+        node_state::module::NodeStateModule,
+        p2p::P2P,
+        single_node_consensus::SingleNodeConsensus,
+        tcp_server::TcpServer,
+        utils::{
+            integration_test::NodeIntegrationCtxBuilder,
+            modules::{signal::ShutdownModule, Module},
+        },
+    };
+    use anyhow::Result;
+    use client_sdk::rest_client::NodeApiHttpClient;
+    use hyle_model::BlobTransaction;
+    use std::time::Duration;
+
+    bus_client! {
+        struct MockBusClient {
+            receiver(RestApiMessage),
+            receiver(ShutdownModule),
+        }
+    }
+
+    // Mock module that listens to REST API
+    struct RestApiListener {
+        bus: MockBusClient,
+    }
+
+    impl Module for RestApiListener {
+        type Context = SharedRunContext;
+
+        async fn build(ctx: Self::Context) -> Result<Self> {
+            Ok(RestApiListener {
+                bus: MockBusClient::new_from_bus(ctx.common.bus.new_handle()).await,
+            })
+        }
+
+        async fn run(&mut self) -> Result<()> {
+            module_handle_messages! {
+                on_bus self.bus,
+                listen<RestApiMessage> msg => {
+                    info!("Received REST API message: {:?}", msg);
+                    // Just listen to messages to skip the shutdown timer.
+                }
+            };
+
+            Ok(())
+        }
+    }
+
+    #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 2))]
+    async fn test_rest_api_shutdown_with_mocked_modules() {
+        // Create a new integration test context with all modules mocked except REST API
+        let builder = NodeIntegrationCtxBuilder::new().await;
+        let rest_client = builder.conf.rest_address.clone();
+
+        // Mock Genesis with our RestApiListener, and skip other modules except mempool (for its API)
+        let builder = builder
+            .with_mock::<Genesis, RestApiListener>()
+            .skip::<SingleNodeConsensus>()
+            .skip::<DataAvailability>()
+            .skip::<NodeStateModule>()
+            .skip::<P2P>()
+            .skip::<TcpServer>();
+
+        let node = builder.build().await.expect("Failed to build node");
+
+        let client = NodeApiHttpClient::new(format!("http://{}", rest_client))
+            .expect("Failed to create client");
+
+        node.wait_for_rest_api(&client).await.unwrap();
+
+        // Spawn a task to send requests
+        let request_handle = tokio::spawn({
+            let client = NodeApiHttpClient::new(format!("http://{}", rest_client))
+                .expect("Failed to create client");
+            let dummy_tx = BlobTransaction::new(
+                "test.identity",
+                vec![Blob {
+                    contract_name: "identity".into(),
+                    data: BlobData(vec![0, 1, 2, 3]),
+                }],
+            );
+            async move {
+                let mut request_count = 0;
+                while client.send_tx_blob(&dummy_tx).await.is_ok() {
+                    request_count += 1;
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                request_count
+            }
+        });
+
+        // Let it send a few requests.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Drop the node context, which will trigger graceful shutdown
+        drop(node);
+
+        // Wait for the request task to complete and get the request count
+        let request_count = request_handle.await.expect("Request task failed");
+
+        // Ensure we made at least a few successful requests
+        assert!(request_count > 0, "No successful requests were made");
+
+        // Verify server has stopped by attempting a request
+        // Create a client using NodeApiHttpClient
+        let err = client
+            .get_node_info()
+            .await
+            .expect_err("Expected request to fail after shutdown");
+        assert!(
+            err.to_string().contains("etting node info request fai"),
+            "Expected connection error, got: {}",
+            err
+        );
     }
 }

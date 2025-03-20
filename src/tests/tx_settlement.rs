@@ -36,7 +36,7 @@ fn make_register_blob_action(
     )
 }
 
-#[test_log::test(tokio::test)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 2))]
 async fn test_full_settlement_flow() -> Result<()> {
     // Start postgres DB with default settings for the indexer.
     let pg = Postgres::default()
@@ -160,7 +160,7 @@ async fn build_hyle_node() -> Result<(String, NodeIntegrationCtx)> {
     Ok((rest_client, builder.build().await?))
 }
 
-#[test_log::test(tokio::test)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 2))]
 async fn test_tx_settlement_duplicates() -> Result<()> {
     let (rest_client, mut hyle_node) = build_hyle_node().await?;
     let client = NodeApiHttpClient::new(format!("http://{rest_client}/")).unwrap();
@@ -340,7 +340,7 @@ async fn test_tx_settlement_duplicates() -> Result<()> {
     Ok(())
 }
 
-#[test_log::test(tokio::test)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 2))]
 async fn test_contract_upgrade() -> Result<()> {
     let builder = NodeIntegrationCtxBuilder::new().await;
     let rest_url = builder.conf.rest_address.clone();

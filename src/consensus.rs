@@ -2314,7 +2314,7 @@ pub mod test {
         }
     }
 
-    #[test_log::test(tokio::test)]
+    #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 2))]
     async fn test_consensus_starts_after_genesis_is_processed() {
         let mut node_builder = NodeIntegrationCtxBuilder::new().await;
         node_builder.conf.run_indexer = false;
