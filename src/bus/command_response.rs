@@ -4,9 +4,12 @@ use std::time::Duration;
 use super::BusMessage;
 use anyhow::bail;
 use anyhow::Result;
+use opentelemetry::InstrumentationScope;
+use opentelemetry::KeyValue;
 use tokio::sync::Mutex;
 
 use crate::bus::BusClientSender;
+use crate::utils::profiling::LatencyMetricSink;
 
 pub const CLIENT_TIMEOUT_SECONDS: u64 = 10;
 
@@ -79,9 +82,31 @@ where
     }
 }
 
+pub struct EventLoopMetrics {
+    latency: opentelemetry::metrics::Histogram<u64>,
+}
+
+impl EventLoopMetrics {
+    pub fn global(node_name: String) -> EventLoopMetrics {
+        let scope = InstrumentationScope::builder(node_name).build();
+        let my_meter = opentelemetry::global::meter_with_scope(scope);
+
+        EventLoopMetrics {
+            latency: my_meter.u64_histogram("event_loop_latency").build(),
+        }
+    }
+}
+impl LatencyMetricSink for EventLoopMetrics {
+    fn latency(&self, latency: u64, labels: &[KeyValue]) {
+        self.latency.record(latency, labels);
+    }
+}
+
 pub mod handle_messages_helpers {
     use crate::bus::metrics::BusMetrics;
     use crate::utils::static_type_map::Pick;
+
+    use super::EventLoopMetrics;
     pub fn receive_bus_metrics<Msg: 'static, Client: Pick<BusMetrics> + 'static>(
         _bus: &mut Client,
     ) {
@@ -93,6 +118,9 @@ pub mod handle_messages_helpers {
     ) {
         Pick::<BusMetrics>::get_mut(_bus).latency::<Msg, Client>(latency);
     }
+    pub fn setup_metrics<T>(_t: &T) -> EventLoopMetrics {
+        EventLoopMetrics::global(BusMetrics::simplified_name::<T>())
+    }
 }
 
 #[macro_export]
@@ -102,21 +130,28 @@ macro_rules! handle_messages {
         #[allow(unused_imports)]
         use $crate::utils::static_type_map::Pick;
         #[allow(unused_imports)]
-        use $crate::bus::command_response::handle_messages_helpers::{receive_bus_metrics, latency_bus_metrics};
+        use $crate::bus::command_response::handle_messages_helpers::{receive_bus_metrics, latency_bus_metrics, setup_metrics};
+        let event_loop_metrics = setup_metrics(&$bus);
         $crate::handle_messages! {
-            bus($bus) index(bus_receiver) $($rest)*
+            metrics(event_loop_metrics) bus($bus) index(bus_receiver) $($rest)*
         }
     };
 
-    (bus($bus:expr) index($index:ident) command_response<$command:ty, $response:ty> $res:pat => $handler:block $($rest:tt)*) => {
+    (
+        $(processed $bind:pat = $fut:expr $(, if $cond:expr)? => $handle:block,)*
+        metrics($metrics:expr) bus($bus:expr) index($index:ident) $(,)?
+        command_response<$command:ty, $response:ty> $res:pat => $handler:block
+        $($rest:tt)*
+    ) => {
         // Create a receiver with a unique variable $index
         let $index = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<Query<$command, $response>>>::splitting_get_mut(&mut $bus) };
         $crate::utils::static_type_map::paste::paste! {
+        let [<branch_ $index>] = [opentelemetry::KeyValue::new("branch", $crate::bus::metrics::BusMetrics::simplified_name::<Query<$command, $response>>())];
         $crate::handle_messages! {
-            bus($bus) index([<$index a>]) $($rest)*
-            // Listen on receiver
-            Ok(_raw_query) = #[allow(clippy::macro_metavars_in_unsafe)] $index.recv() => {
+            $(processed $bind = $fut $(, if $cond)? => $handle,)*
+            processed Ok(_raw_query) = #[allow(clippy::macro_metavars_in_unsafe)] $index.recv() => {
                 receive_bus_metrics::<Query<$command, $response>,_>(&mut $bus);
+                let _latency = $crate::utils::profiling::LatencyTimer::new(&$metrics, &[<branch_ $index>]);
                 if let Ok(mut _value) = _raw_query.take() {
                     let $res = &mut _value.data;
                     let res: Result<$response> = $handler;
@@ -135,44 +170,61 @@ macro_rules! handle_messages {
                 } else {
                     tracing::error!("Query already answered");
                 }
-            }
+            },
+            metrics($metrics) bus($bus) index([<$index a>]) $($rest)*
         }
         }
     };
 
-    (bus($bus:expr) index($index:ident) listen<$message:ty> $res:pat => $handler:block $($rest:tt)*) => {
+    (
+        $(processed $bind:pat = $fut:expr $(, if $cond:expr)? => $handle:block,)*
+        metrics($metrics:expr) bus($bus:expr) index($index:ident) $(,)?
+        listen<$message:ty> $res:pat => $handler:block
+        $($rest:tt)*
+    ) => {
         let $index = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$message>>::splitting_get_mut(&mut $bus) };
         $crate::utils::static_type_map::paste::paste! {
+        let [<branch_ $index>] = [opentelemetry::KeyValue::new("branch", $crate::bus::metrics::BusMetrics::simplified_name::<$message>())];
         $crate::handle_messages! {
-            bus($bus) index([<$index a>]) $($rest)*
-            Ok($res) = $index.recv()  => {
+            $(processed $bind = $fut $(, if $cond)? => $handle,)*
+            processed Ok($res) = $index.recv() => {
                 receive_bus_metrics::<$message, _>(&mut $bus);
-                #[allow(unused_variables)]
-                let start = std::time::Instant::now();
-                {
-                    $handler
-                }
-                #[allow(unreachable_code)]
-                latency_bus_metrics::<$message, _>(&mut $bus, start.elapsed().as_millis() as u64)
-            }
+                let _latency = $crate::utils::profiling::LatencyTimer::new(&$metrics, &[<branch_ $index>]);
+                $handler
+            },
+            metrics($metrics) bus($bus) index([<$index a>]) $($rest)*
         }
         }
 
         tracing::trace!("Remaining messages in topic {}: {}", stringify!($message), $index.len());
     };
 
-    // Fallback to else case
-    (bus($bus:expr) index($index:ident) else => $h:block $($rest:tt)*) => {
-        loop {
-            tokio::select! {
-                $($rest)*
-                else => $h
-            }
+    // Process default tokio case (only with blocks - no expressions for parsing)
+    (
+        $(processed $bind:pat = $fut:expr $(, if $cond:expr)? => $handle:block,)*
+        metrics($metrics:expr) bus($bus:expr) index($index:ident) $(,)?
+        $bind2:pat = $fut2:expr $(, if $cond2:expr)? => $handler:block
+        $($rest:tt)*
+    ) => {
+        $crate::utils::static_type_map::paste::paste! {
+        let [<branch_ $index>] = [opentelemetry::KeyValue::new("branch", stringify!($fut2))];
+        $crate::handle_messages! {
+            $(processed $bind = $fut $(, if $cond)? => $handle,)*
+            processed $bind2 = $fut2 $(if $cond2)? => {
+                let _latency = $crate::utils::profiling::LatencyTimer::new(&$metrics, &[<branch_ $index>]);
+                $handler
+            },
+            metrics($metrics) bus($bus) index([<$index b>])
+            $($rest)*
+        }
         }
     };
 
-    // Fallback to normal select cases
-    (bus($bus:expr) index($index:ident) $($rest:tt)+) => {
+    // Print all processed items in the tokio select
+    (
+        $(processed $bind:pat = $fut:expr $(, if $cond:expr)? => $handle:block,)*
+        metrics($metrics:expr) bus($bus:expr) index($index:ident) $(,)?
+    ) => {
         loop {
             // if false is necessary here so rust understands the loop can be broken
             // and avoid warnings like "unreachable code"
@@ -180,7 +232,7 @@ macro_rules! handle_messages {
                 break;
             }
             tokio::select! {
-                $($rest)+
+                $($bind = $fut $(, if $cond)? => $handle,)*
             }
         }
     };

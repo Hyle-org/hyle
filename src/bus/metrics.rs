@@ -98,4 +98,8 @@ impl BusMetrics {
         self.get_or_insert_labels::<Msg, Client>(&key);
         self.latency.record(latency, self.labels.get(&key).unwrap());
     }
+
+    pub fn simplified_name<T>() -> String {
+        BusMetrics::simplify_type_name(type_name::<T>())
+    }
 }

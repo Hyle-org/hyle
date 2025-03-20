@@ -144,10 +144,10 @@ impl SingleNodeConsensus {
                 let round_leader = self.crypto.validator_pubkey().clone();
                 let validators = vec![];
                 Ok(ConsensusInfo { slot, view, round_leader, validators })
-            }
+            },
             _ = interval.tick() => {
                 self.handle_new_slot_tick().await?;
-            }
+            },
         };
         if let Some(file) = &self.file {
             if let Err(e) = Self::save_on_disk(file.as_path(), &self.store) {
