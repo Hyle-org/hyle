@@ -99,15 +99,9 @@ impl Genesis {
     }
 
     pub async fn do_genesis(&mut self) -> Result<()> {
-        let single_node = self.config.single_node.unwrap_or(false);
+        let single_node = self.config.consensus.solo;
         // Unless we're in single node mode, we must be a genesis staker to start the network.
-        if !single_node
-            && !self
-                .config
-                .consensus
-                .genesis_stakers
-                .contains_key(&self.config.id)
-        {
+        if !single_node && !self.config.genesis.stakers.contains_key(&self.config.id) {
             info!("📡 Not a genesis staker, need to catchup from peers.");
             _ = self.bus.send(GenesisEvent::NoGenesis {});
             return Ok(());
@@ -123,14 +117,14 @@ impl Genesis {
 
         // Wait until we've connected with all other genesis peers.
         // (We've already checked we're part of the stakers, so if we're alone carry on).
-        if !single_node && self.config.consensus.genesis_stakers.len() > 1 {
+        if !single_node && self.config.genesis.stakers.len() > 1 {
             info!("🌱 Waiting on other genesis peers to join");
             handle_messages! {
                 on_bus self.bus,
                 listen<PeerEvent> msg => {
                     match msg {
                         PeerEvent::NewPeer { name, pubkey, .. } => {
-                            if !self.config.consensus.genesis_stakers.contains_key(&name) {
+                            if !self.config.genesis.stakers.contains_key(&name) {
                                 continue;
                             }
                             info!("🌱 New peer {}({}) added to genesis", &name, &pubkey);
@@ -139,10 +133,10 @@ impl Genesis {
 
                             // Once we know everyone in the initial quorum, craft & process the genesis block.
                             if self.peer_pubkey.len()
-                                == self.config.consensus.genesis_stakers.len() {
+                                == self.config.genesis.stakers.len() {
                                 break
                             } else {
-                                info!("🌱 Waiting for {} more peers to join genesis", self.config.consensus.genesis_stakers.len() - self.peer_pubkey.len());
+                                info!("🌱 Waiting for {} more peers to join genesis", self.config.genesis.stakers.len() - self.peer_pubkey.len());
                             }
                         }
                     }
@@ -154,7 +148,7 @@ impl Genesis {
         initial_validators.sort();
 
         let genesis_txs = match self
-            .generate_genesis_txs(&self.peer_pubkey, &self.config.consensus.genesis_stakers)
+            .generate_genesis_txs(&self.peer_pubkey, &self.config.genesis.stakers)
             .await
         {
             Ok(t) => t,
@@ -257,7 +251,7 @@ impl Genesis {
         register_identity(
             &mut transaction,
             ContractName::new("hydentity"),
-            self.config.faucet_password.clone(),
+            self.config.genesis.faucet_password.clone(),
         )?;
         txs.push(tx_executor.process(transaction)?);
 
@@ -303,7 +297,7 @@ impl Genesis {
                 &mut transaction,
                 ContractName::new("hydentity"),
                 &tx_executor.hydentity,
-                self.config.faucet_password.clone(),
+                self.config.genesis.faucet_password.clone(),
             )?;
 
             // Transfer
@@ -572,15 +566,13 @@ mod tests {
     #[test_log::test(tokio::test)]
     async fn test_not_part_of_genesis() {
         let tmpdir = tempfile::Builder::new().tempdir().unwrap();
-        let config = Conf {
-            id: "node-4".to_string(),
-            data_directory: tmpdir.path().to_path_buf(),
-            consensus: crate::utils::conf::Consensus {
-                genesis_stakers: vec![("node-1".into(), 100)].into_iter().collect(),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
+
+        let mut config =
+            Conf::new(None, tmpdir.path().to_str().map(|s| s.to_owned()), None).unwrap();
+        config.id = "node-4".to_string();
+        config.consensus.solo = false;
+        config.genesis.stakers = [("node-1".into(), 100)].into_iter().collect();
+
         let (mut genesis, _) = new(config).await;
 
         // Start the Genesis module
@@ -593,16 +585,11 @@ mod tests {
     #[test_log::test(tokio::test)]
     async fn test_genesis_single() {
         let tmpdir = tempfile::Builder::new().tempdir().unwrap();
-        let config = Conf {
-            id: "single-node".to_string(),
-            single_node: Some(true),
-            data_directory: tmpdir.path().to_path_buf(),
-            consensus: crate::utils::conf::Consensus {
-                genesis_stakers: vec![("single-node".into(), 100)].into_iter().collect(),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
+        let mut config =
+            Conf::new(None, tmpdir.path().to_str().map(|s| s.to_owned()), None).unwrap();
+        config.id = "single-node".to_string();
+        config.consensus.solo = true;
+        config.genesis.stakers = [("single-node".into(), 100)].into_iter().collect();
         let (mut genesis, mut bus) = new(config).await;
 
         // Start the Genesis module
@@ -622,17 +609,15 @@ mod tests {
     #[test_log::test(tokio::test)]
     async fn test_genesis_as_leader() {
         let tmpdir = tempfile::Builder::new().tempdir().unwrap();
-        let config = Conf {
-            id: "node-1".to_string(),
-            data_directory: tmpdir.path().to_path_buf(),
-            consensus: crate::utils::conf::Consensus {
-                genesis_stakers: vec![("node-1".into(), 100), ("node-2".into(), 100)]
-                    .into_iter()
-                    .collect(),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
+
+        let mut config =
+            Conf::new(None, tmpdir.path().to_str().map(|s| s.to_owned()), None).unwrap();
+        config.id = "node-1".to_string();
+        config.consensus.solo = false;
+        config.genesis.stakers = [("node-1".into(), 100), ("node-2".into(), 100)]
+            .into_iter()
+            .collect();
+
         let (mut genesis, mut bus) = new(config).await;
 
         bus.send(PeerEvent::NewPeer {
@@ -658,17 +643,15 @@ mod tests {
     #[test_log::test(tokio::test)]
     async fn test_genesis_as_follower() {
         let tmpdir = tempfile::Builder::new().tempdir().unwrap();
-        let config = Conf {
-            id: "node-2".to_string(),
-            data_directory: tmpdir.path().to_path_buf(),
-            consensus: crate::utils::conf::Consensus {
-                genesis_stakers: vec![("node-1".into(), 100), ("node-2".into(), 100)]
-                    .into_iter()
-                    .collect(),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
+
+        let mut config =
+            Conf::new(None, tmpdir.path().to_str().map(|s| s.to_owned()), None).unwrap();
+        config.id = "node-2".to_string();
+        config.consensus.solo = false;
+        config.genesis.stakers = [("node-1".into(), 100), ("node-2".into(), 100)]
+            .into_iter()
+            .collect();
+
         let (mut genesis, mut bus) = new(config).await;
 
         let node_1_pubkey = ValidatorPublicKey("bbb".into());
@@ -697,22 +680,20 @@ mod tests {
     #[test_log::test(tokio::test)]
     async fn test_genesis_connect_order() {
         let tmpdir = tempfile::Builder::new().tempdir().unwrap();
-        let mut config = Conf {
-            id: "node-1".to_string(),
-            data_directory: tmpdir.path().to_path_buf(),
-            consensus: crate::utils::conf::Consensus {
-                genesis_stakers: vec![
-                    ("node-1".into(), 100),
-                    ("node-2".into(), 100),
-                    ("node-3".into(), 100),
-                    ("node-4".into(), 100),
-                ]
-                .into_iter()
-                .collect(),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
+
+        let mut config =
+            Conf::new(None, tmpdir.path().to_str().map(|s| s.to_owned()), None).unwrap();
+        config.id = "node-1".to_string();
+        config.consensus.solo = true;
+        config.genesis.stakers = [
+            ("node-1".into(), 100),
+            ("node-2".into(), 100),
+            ("node-3".into(), 100),
+            ("node-4".into(), 100),
+        ]
+        .into_iter()
+        .collect();
+
         let rec1 = {
             let (mut genesis, mut bus) = new(config.clone()).await;
             bus.send(PeerEvent::NewPeer {

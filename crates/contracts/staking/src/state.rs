@@ -2,7 +2,9 @@ use std::collections::BTreeMap;
 
 use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
-use sdk::{info, BlockHeight, Identity, LaneBytesSize, LaneId, ValidatorPublicKey};
+use sdk::{
+    info, Block, BlockHeight, Identity, LaneBytesSize, LaneId, StakingAction, ValidatorPublicKey,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::fees::Fees;
@@ -39,7 +41,7 @@ impl Staking {
     }
 
     pub fn is_known(&self, key: &ValidatorPublicKey) -> bool {
-        self.bonded.iter().any(|v| v == key)
+        self.delegations.keys().any(|v| v == key)
     }
 
     pub fn bonded(&self) -> &Vec<ValidatorPublicKey> {
@@ -153,6 +155,28 @@ impl Staking {
     /// This function is meant to be called by the consensus
     pub fn distribute(&mut self) -> Result<(), String> {
         self.fees.distribute(&self.bonded)
+    }
+
+    /// Update the state of staking with staking actions in a block
+    pub fn process_block(&mut self, block: &Block) -> Result<(), String> {
+        for action in &block.staking_actions {
+            match action.clone() {
+                (identity, StakingAction::Stake { amount }) => {
+                    self.stake(identity, amount)?;
+                }
+                (identity, StakingAction::Delegate { validator }) => {
+                    self.delegate_to(identity, validator)?;
+                }
+                (_identity, StakingAction::Distribute { claim: _ }) => todo!(),
+                (_identity, StakingAction::DepositForFees { holder, amount }) => {
+                    self.deposit_for_fees(holder, amount)?;
+                }
+            }
+        }
+        for validator in block.new_bounded_validators.iter() {
+            self.bond(validator.clone())?;
+        }
+        Ok(())
     }
 }
 

@@ -539,7 +539,7 @@ impl NodeState {
             unsettled_tx.blobs.iter(),
             vec![],
             events,
-            &NodeStateMetrics::global("node_name".to_string(), "module_name"),
+            &self.metrics,
         ) {
             Some(res) => res,
             None => {
@@ -567,7 +567,7 @@ impl NodeState {
         mut blob_iter: impl Iterator<Item = &'a UnsettledBlobMetadata> + Clone,
         mut blob_proof_output_indices: Vec<usize>,
         events: &mut Vec<TransactionStateEvent>,
-        metrics: &NodeStateMetrics,
+        _metrics: &NodeStateMetrics,
     ) -> Option<Result<SettlementResult, ()>> {
         // Recursion end-case: we succesfully settled all prior blobs, so success.
         let Some(current_blob) = blob_iter.next() else {
@@ -603,7 +603,7 @@ impl NodeState {
                         blob_iter.clone(),
                         blob_proof_output_indices.clone(),
                         events,
-                        metrics,
+                        _metrics,
                     )
                 }
                 Err(err) => {
@@ -655,7 +655,6 @@ impl NodeState {
                 events.push(TransactionStateEvent::SettleEvent(msg));
                 continue;
             }
-
             if !proof_metadata.1.success {
                 // We have a valid proof of failure, we short-circuit.
                 let msg = format!("Proven failure for blob {}", i);
@@ -665,14 +664,13 @@ impl NodeState {
             }
 
             tracing::trace!("Settlement - OK blob");
-            metrics.add_settled_transactions(1);
             match Self::settle_blobs_recursively(
                 contracts,
                 current_contracts,
                 blob_iter.clone(),
                 blob_proof_output_indices.clone(),
                 events,
-                metrics,
+                _metrics,
             ) {
                 // If this proof settles, early return, otherwise try the next one (with continue for explicitness)
                 Some(res) => return Some(res),

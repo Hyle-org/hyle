@@ -17,6 +17,7 @@ use tracing::info;
 use hyle::{
     model::*,
     rest::client::{IndexerApiHttpClient, NodeApiHttpClient},
+    utils::conf::Conf,
 };
 use hyle_contract_sdk::{
     flatten_blobs, BlobIndex, ContractName, HyleOutput, Identity, ProgramId, StateCommitment,
@@ -65,21 +66,21 @@ impl E2ECtx {
 
         for i in 0..count {
             let mut node_conf = conf_maker.build("node");
-            node_conf.peers = peers.clone();
+            node_conf.p2p.peers = peers.clone();
             genesis_stakers.insert(node_conf.id.clone(), 100);
-            peers.push(node_conf.host.clone());
+            peers.push(node_conf.p2p.address.clone());
             confs.push(node_conf);
         }
 
         for node_conf in confs.iter_mut() {
-            node_conf.consensus.genesis_stakers = genesis_stakers.clone();
+            node_conf.genesis.stakers = genesis_stakers.clone();
             let node = test_helpers::TestProcess::new("hyle", node_conf.clone())
                 //.log("hyle=info,tower_http=error")
                 .start();
 
             // Request something on node1 to be sure it's alive and working
             let client = NodeApiHttpClient {
-                url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
+                url: Url::parse(&format!("http://{}", &node.conf.rest_address)).unwrap(),
                 reqwest_client: Client::new(),
                 api_key: None,
             };
@@ -94,8 +95,8 @@ impl E2ECtx {
 
         let mut conf_maker = ConfMaker::default();
         conf_maker.default.consensus.slot_duration = slot_duration;
-        conf_maker.default.single_node = Some(true);
-        conf_maker.default.consensus.genesis_stakers =
+        conf_maker.default.consensus.solo = true;
+        conf_maker.default.genesis.stakers =
             vec![("single-node".to_string(), 100)].into_iter().collect();
 
         let node_conf = conf_maker.build("single-node");
@@ -105,12 +106,14 @@ impl E2ECtx {
 
         // Request something on node1 to be sure it's alive and working
         let client = NodeApiHttpClient {
-            url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
+            url: Url::parse(&format!("http://{}", &node.conf.rest_address)).unwrap(),
             reqwest_client: Client::new(),
             api_key: None,
         };
 
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        while client.get_node_info().await.is_err() {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
 
         info!("🚀 E2E test environment is ready!");
         Ok(E2ECtx {
@@ -130,8 +133,8 @@ impl E2ECtx {
 
         let mut conf_maker = ConfMaker::default();
         conf_maker.default.consensus.slot_duration = slot_duration;
-        conf_maker.default.single_node = Some(true);
-        conf_maker.default.consensus.genesis_stakers =
+        conf_maker.default.consensus.solo = true;
+        conf_maker.default.genesis.stakers =
             vec![("single-node".to_string(), 100)].into_iter().collect();
         conf_maker.default.database_url = format!(
             "postgres://postgres:postgres@localhost:{}/postgres",
@@ -145,7 +148,7 @@ impl E2ECtx {
 
         // Request something on node1 to be sure it's alive and working
         let client = NodeApiHttpClient {
-            url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
+            url: Url::parse(&format!("http://{}", &node.conf.rest_address)).unwrap(),
             reqwest_client: Client::new(),
             api_key: None,
         };
@@ -155,11 +158,15 @@ impl E2ECtx {
         indexer_conf.da_address = node_conf.da_address.clone();
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
-        let url = format!("http://{}", &indexer_conf.rest);
-        let indexer_client = Some(IndexerApiHttpClient::new(url).unwrap());
+        let url = format!("http://{}", &indexer_conf.rest_address);
+        let indexer_client = IndexerApiHttpClient::new(url).unwrap();
 
-        // Wait for node2 to properly spin up
-        wait_height(&client, 1).await?;
+        while indexer_client.get_last_block().await.is_err() {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        while client.get_node_info().await.is_err() {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
 
         info!("🚀 E2E test environment is ready!");
         Ok(E2ECtx {
@@ -167,7 +174,7 @@ impl E2ECtx {
             nodes: vec![node, indexer],
             clients: vec![client],
             client_index: 0,
-            indexer_client,
+            indexer_client: Some(indexer_client),
             slot_duration,
         })
     }
@@ -180,6 +187,19 @@ impl E2ECtx {
         let (nodes, clients) = Self::build_nodes(count, &mut conf_maker);
         wait_height_timeout(clients.first().unwrap(), 1, 120).await?;
 
+        loop {
+            let mut stop = true;
+            for client in clients.iter() {
+                if client.get_node_info().await.is_err() {
+                    stop = false
+                }
+            }
+            if stop {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+
         info!("🚀 E2E test environment is ready!");
         Ok(E2ECtx {
             pg: None,
@@ -191,26 +211,33 @@ impl E2ECtx {
         })
     }
 
-    pub async fn add_node(&mut self) -> Result<&NodeApiHttpClient> {
+    pub fn make_conf(&self, prefix: &str) -> Conf {
         let mut conf_maker = ConfMaker::default();
-        let mut node_conf = conf_maker.build("new-node");
+        let mut node_conf = conf_maker.build(prefix);
         node_conf.consensus.slot_duration = self.slot_duration;
-
-        //node_conf.peers = vec![self.nodes[0].conf.host.clone()];
-        node_conf.peers = self
+        node_conf.p2p.peers = self
             .nodes
             .iter()
-            .map(|node| node.conf.host.clone())
+            .map(|node| node.conf.p2p.address.clone())
             .collect();
+        node_conf
+    }
+
+    pub async fn add_node(&mut self) -> Result<&NodeApiHttpClient> {
+        self.add_node_with_conf(self.make_conf("new_node")).await
+    }
+
+    pub async fn add_node_with_conf(&mut self, node_conf: Conf) -> Result<&NodeApiHttpClient> {
         let node = test_helpers::TestProcess::new("hyle", node_conf)
             //.log("hyle=info,tower_http=error")
             .start();
         // Request something on node1 to be sure it's alive and working
         let client = NodeApiHttpClient {
-            url: Url::parse(&format!("http://{}", &node.conf.rest)).unwrap(),
+            url: Url::parse(&format!("http://{}", &node.conf.rest_address)).unwrap(),
             reqwest_client: Client::new(),
             api_key: None,
         };
+
         wait_height(&client, 1).await?;
         self.nodes.push(node);
         self.clients.push(client);
@@ -237,13 +264,25 @@ impl E2ECtx {
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
         nodes.push(indexer);
-        let url = format!("http://{}", &indexer_conf.rest);
-        clients.push(NodeApiHttpClient::new(url.clone()).unwrap());
-        let indexer_client = Some(IndexerApiHttpClient::new(url).unwrap());
+        let url = format!("http://{}", &indexer_conf.rest_address);
 
-        // Wait for node2 to properly spin up
-        let client = clients.first().unwrap();
-        wait_height(client, 1).await?;
+        let indexer_client = IndexerApiHttpClient::new(url).unwrap();
+
+        loop {
+            let mut stop = true;
+            for client in clients.iter() {
+                if client.get_node_info().await.is_err() {
+                    stop = false
+                }
+            }
+            if stop {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        while indexer_client.get_last_block().await.is_err() {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
 
         let pg = Some(pg);
 
@@ -253,7 +292,7 @@ impl E2ECtx {
             nodes,
             clients,
             client_index: 0,
-            indexer_client,
+            indexer_client: Some(indexer_client),
             slot_duration,
         })
     }
@@ -271,6 +310,23 @@ impl E2ECtx {
 
     pub fn client(&self) -> &NodeApiHttpClient {
         &self.clients[self.client_index]
+    }
+
+    pub fn client_by_id(&self, name: &str) -> &NodeApiHttpClient {
+        let mut post_indexer = false;
+        let mut i = self
+            .nodes
+            .iter()
+            .inspect(|node| {
+                tracing::warn!("totoro {:?}", node.conf.id);
+                if node.conf.id.contains("indexer") {
+                    post_indexer = true;
+                }
+            })
+            .position(|node| node.conf.id == name)
+            .unwrap();
+        i = if post_indexer { i - 1 } else { i };
+        &self.clients[i]
     }
 
     pub fn indexer_client(&self) -> &IndexerApiHttpClient {

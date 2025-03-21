@@ -91,7 +91,8 @@ impl super::Mempool {
             && log_error!(
                 self.bus
                     .send(MempoolBlockEvent::StartedBuildingBlocks(BlockHeight(slot))),
-                format!("Sending StartedBuilding event at height {}", slot)
+                "Sending StartedBuilding event at height {}",
+                slot
             )
             .is_ok()
         {

@@ -21,7 +21,7 @@ bus_client! {
     }
 }
 
-#[test_log::test(tokio::test)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 2))]
 async fn test_blst_native_verifier() {
     let contract_name: ContractName = "blst".into();
     let identity: Identity = format!("bob.{contract_name}").into();
@@ -45,7 +45,7 @@ async fn test_blst_native_verifier() {
     assert_ok!(res);
 }
 
-#[test_log::test(tokio::test)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 2))]
 async fn test_sha3_256_native_verifier() {
     let contract_name: ContractName = "sha3_256".into();
     let identity: Identity = format!("bob.{contract_name}").into();

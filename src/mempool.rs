@@ -10,7 +10,7 @@ use crate::{
     node_state::module::NodeStateEvent,
     p2p::network::OutboundMessage,
     utils::{
-        conf::SharedConf,
+        conf::{P2pMode, SharedConf},
         crypto::{BlstCrypto, SharedBlstCrypto},
         modules::{module_bus_client, Module},
         serialize::arc_rwlock_borsh,
@@ -166,6 +166,7 @@ impl BusMessage for MempoolStatusEvent {}
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum InternalMempoolEvent {
     OnProcessedNewTx(Transaction),
+    OnHashedDataProposal((LaneId, DataProposal)),
     OnProcessedDataProposal((LaneId, DataProposalVerdict, DataProposal)),
 }
 impl BusMessage for InternalMempoolEvent {}
@@ -258,6 +259,12 @@ impl Mempool {
             }
             listen<NodeStateEvent> cmd => {
                 let NodeStateEvent::NewBlock(block) = cmd;
+                // In this p2p mode we don't receive consensus events so we must update manually.
+                if self.conf.p2p.mode == P2pMode::LaneManager {
+                    if let Err(e) = self.staking.process_block(block.as_ref()) {
+                        tracing::error!("Error processing block in mempool: {:?}", e);
+                    }
+                }
                 for (_, contract) in block.registered_contracts {
                     self.handle_contract_registration(contract);
                 }
@@ -352,6 +359,9 @@ impl Mempool {
             InternalMempoolEvent::OnProcessedNewTx(tx) => {
                 self.on_new_tx(tx).context("Processing new tx")
             }
+            InternalMempoolEvent::OnHashedDataProposal((lane_id, data_proposal)) => self
+                .on_hashed_data_proposal(&lane_id, data_proposal)
+                .context("Hashing data proposal"),
             InternalMempoolEvent::OnProcessedDataProposal((lane_id, verdict, data_proposal)) => {
                 self.on_processed_data_proposal(lane_id, verdict, data_proposal)
                     .context("Processing data proposal")

@@ -11,6 +11,19 @@ use tracing_subscriber::{
 /// Macro designed to log warnings
 #[macro_export]
 macro_rules! log_warn {
+    // Pattern for format string with arguments
+    ($result:expr, $fmt:literal, $($arg:tt)*) => {
+        match $result {
+            Err(e) => {
+                let ae: anyhow::Error = e.into();
+                let ae = ae.context(format!($fmt, $($arg)*));
+                tracing::warn!(target: module_path!(), "{:#}", ae);
+                Err(ae)
+            }
+            Ok(t) => Ok(t),
+        }
+    };
+    // Pattern for a single expression (string or otherwise)
     ($result:expr, $context:expr) => {
         match $result {
             Err(e) => {
@@ -27,6 +40,19 @@ macro_rules! log_warn {
 /// Macro designed to log errors
 #[macro_export]
 macro_rules! log_error {
+    // Pattern for format string with arguments
+    ($result:expr, $fmt:literal, $($arg:tt)*) => {
+        match $result {
+            Err(e) => {
+                let ae: anyhow::Error = e.into();
+                let ae = ae.context(format!($fmt, $($arg)*));
+                tracing::error!(target: module_path!(), "{:#}", ae);
+                Err(ae)
+            }
+            Ok(t) => Ok(t),
+        }
+    };
+    // Pattern for a single expression (string or otherwise)
     ($result:expr, $context:expr) => {
         match $result {
             Err(e) => {
@@ -74,7 +100,7 @@ pub enum TracingMode {
 
 /// Setup tracing - stdout subscriber
 /// stdout defaults to INFO to INFO even if RUST_LOG is set to e.g. debug
-pub fn setup_tracing(mode: TracingMode, node_name: String) -> Result<()> {
+pub fn setup_tracing(conf: &crate::utils::conf::Conf, node_name: String) -> Result<()> {
     let mut filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
         .from_env()?;
@@ -103,6 +129,11 @@ pub fn setup_tracing(mode: TracingMode, node_name: String) -> Result<()> {
     }
 
     // Can't use match inline because these are different return types
+    let mode = match conf.log_format.as_str() {
+        "json" => TracingMode::Json,
+        "node" => TracingMode::NodeName,
+        _ => TracingMode::Full,
+    };
     match mode {
         TracingMode::Full => register_global_subscriber(filter, tracing_subscriber::fmt::layer()),
         TracingMode::Json => register_global_subscriber(

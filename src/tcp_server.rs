@@ -1,7 +1,9 @@
+use std::sync::Arc;
+
 use crate::{
     bus::{BusClientSender, BusMessage},
     log_error,
-    model::SharedRunContext,
+    model::CommonRunContext,
     module_handle_messages,
     utils::{
         conf::SharedConf,
@@ -29,13 +31,13 @@ pub struct TcpServer {
 }
 
 impl Module for TcpServer {
-    type Context = SharedRunContext;
+    type Context = Arc<CommonRunContext>;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus = TcpServerBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
+        let bus = TcpServerBusClient::new_from_bus(ctx.bus.new_handle()).await;
 
         Ok(TcpServer {
-            config: ctx.common.config.clone(),
+            config: ctx.config.clone(),
             bus,
         })
     }
@@ -49,7 +51,7 @@ impl TcpServer {
     pub async fn start(&mut self) -> Result<()> {
         let tcp_server_address = self
             .config
-            .tcp_server_address
+            .tcp_address
             .as_ref()
             .context("tcp_server_address not specified in conf file. Not Starting module.")?;
 

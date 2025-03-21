@@ -38,7 +38,8 @@ where
                 info!("Loaded data from disk {}", file.to_string_lossy());
                 log_error!(
                     borsh::from_reader(&mut reader),
-                    format!("Loading and decoding {}", file.to_string_lossy())
+                    "Loading and decoding {}",
+                    file.to_string_lossy()
                 )
                 .ok()
             }
@@ -86,7 +87,8 @@ where
 
         log_error!(
             buf_writer.flush(),
-            format!("Flushing Buffer writer for store {}", type_name::<S>())
+            "Flushing Buffer writer for store {}",
+            type_name::<S>()
         )?;
         debug!("Renaming {:?} to {:?}", &tmp, &file);
         log_error!(fs::rename(tmp, file), "Rename file")?;
@@ -120,7 +122,7 @@ pub mod signal {
         >,
     ) -> anyhow::Result<()> {
         if *should_shutdown {
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             return Ok(());
         }
         while let Ok(shutdown_event) = shutdown_receiver.recv().await {
@@ -130,7 +132,7 @@ pub mod signal {
                     std::any::type_name::<T>()
                 );
                 *should_shutdown = true;
-                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                 return Ok(());
             }
         }
@@ -330,7 +332,7 @@ impl ModulesHandler {
     }
 
     /// Shutdown modules in reverse order (start A, B, C, shutdown C, B, A)
-    pub async fn shutdown_next_module(&mut self) -> Result<()> {
+    async fn shutdown_next_module(&mut self) -> Result<()> {
         let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
         if let Some(module_name) = self.started_modules.pop() {
             // May be the shutdown message was skipped because the module failed somehow
@@ -377,6 +379,7 @@ impl ModulesHandler {
         M: Module + 'static + Send,
         <M as Module>::Context: std::marker::Send,
     {
+        debug!("Adding module {}", type_name::<M>());
         self.modules.push(ModuleStarter {
             name: type_name::<M>(),
             starter: Box::pin(Self::run_module(module)),

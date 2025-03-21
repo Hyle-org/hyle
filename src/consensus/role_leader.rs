@@ -9,7 +9,7 @@ use crate::{
         ValidatorPublicKey,
     },
 };
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_model::ConsensusStakingAction;
 use staking::state::MIN_STAKE;
@@ -93,13 +93,16 @@ impl LeaderRole for Consensus {
             self.bft_round_state.staking
         );
 
-        let cut = match self
-            .bus
-            .request(QueryNewCut(self.bft_round_state.staking.clone()))
-            .await
+        let cut = match tokio::time::timeout(
+            std::time::Duration::from_millis(self.config.consensus.slot_duration),
+            self.bus
+                .request(QueryNewCut(self.bft_round_state.staking.clone())),
+        )
+        .await
+        .context("Timeout while querying Mempool")
         {
-            Ok(cut) => cut,
-            Err(err) => {
+            Ok(Ok(cut)) => cut,
+            Ok(Err(err)) | Err(err) => {
                 // In case of an error, we reuse the last cut to avoid being considered byzantine
                 error!(
                     "Could not get a new cut from Mempool {:?}. Reusing previous one...",
@@ -128,6 +131,12 @@ impl LeaderRole for Consensus {
         self.bft_round_state.consensus_proposal.cut = cut;
         self.bft_round_state.consensus_proposal.staking_actions = staking_actions;
         self.bft_round_state.consensus_proposal.timestamp = current_timestamp;
+        let prepare = (
+            self.crypto.validator_pubkey().clone(),
+            self.bft_round_state.consensus_proposal.clone(),
+            ticket.clone(),
+        );
+        self.follower_state().buffered_prepares.push(prepare);
 
         self.metrics.start_new_round("consensus_proposal");
 
@@ -156,10 +165,17 @@ impl LeaderRole for Consensus {
         consensus_proposal_hash: ConsensusProposalHash,
     ) -> Result<()> {
         if !matches!(self.bft_round_state.state_tag, StateTag::Leader) {
-            bail!("PrepareVote received while not leader");
+            debug!(
+                sender = %msg.signature.validator,
+                proposal_hash = %consensus_proposal_hash,
+                "PrepareVote received while not leader. Ignoring."
+            );
+            return Ok(());
         }
         if !matches!(self.bft_round_state.leader.step, Step::PrepareVote) {
             debug!(
+                proposal_hash = %consensus_proposal_hash,
+                sender = %msg.signature.validator,
                 "PrepareVote received at wrong step (step = {:?})",
                 self.bft_round_state.leader.step
             );
@@ -196,7 +212,7 @@ impl LeaderRole for Consensus {
         // Waits for at least n-f = 2f+1 matching PrepareVote messages
         let f = self.bft_round_state.staking.compute_f();
 
-        trace!(
+        debug!(
             "📩 Slot {} validated votes: {} / {} ({} validators for a total bond = {})",
             self.bft_round_state.consensus_proposal.slot,
             voting_power,
@@ -210,9 +226,10 @@ impl LeaderRole for Consensus {
             let aggregates: &Vec<&SignedByValidator<ConsensusNetMessage>> =
                 &self.bft_round_state.leader.prepare_votes.iter().collect();
 
+            let proposal_hash_hint = self.bft_round_state.consensus_proposal.hashed();
             // Aggregates them into a *Prepare* Quorum Certificate
             let prepvote_signed_aggregation = self.crypto.sign_aggregate(
-                ConsensusNetMessage::PrepareVote(self.bft_round_state.consensus_proposal.hashed()),
+                ConsensusNetMessage::PrepareVote(proposal_hash_hint.clone()),
                 aggregates,
             )?;
 
@@ -231,6 +248,7 @@ impl LeaderRole for Consensus {
             );
             self.broadcast_net_message(ConsensusNetMessage::Confirm(
                 prepvote_signed_aggregation.signature,
+                proposal_hash_hint,
             ))?;
         }
         // TODO(?): Update behaviour when having more ?
@@ -244,12 +262,18 @@ impl LeaderRole for Consensus {
         consensus_proposal_hash: ConsensusProposalHash,
     ) -> Result<()> {
         if !matches!(self.bft_round_state.state_tag, StateTag::Leader) {
-            debug!("ConfirmAck received while not leader");
+            debug!(
+                proposal_hash = %consensus_proposal_hash,
+                sender = %msg.signature.validator,
+                "ConfirmAck received while not leader"
+            );
             return Ok(());
         }
 
         if !matches!(self.bft_round_state.leader.step, Step::ConfirmAck) {
             debug!(
+                proposal_hash = %consensus_proposal_hash,
+                sender = %msg.signature.validator,
                 "ConfirmAck received at wrong step (step ={:?})",
                 self.bft_round_state.leader.step
             );
@@ -260,6 +284,7 @@ impl LeaderRole for Consensus {
         if consensus_proposal_hash != self.bft_round_state.consensus_proposal.hashed() {
             self.metrics.confirm_ack_error("invalid_proposal_hash");
             debug!(
+                sender = %msg.signature.validator,
                 "Got {} expected {}",
                 consensus_proposal_hash,
                 self.bft_round_state.consensus_proposal.hashed()
@@ -326,7 +351,10 @@ impl LeaderRole for Consensus {
             ))?;
 
             // Process the same locally.
-            self.try_commit_current_proposal(commit_quorum_certificate)?;
+            self.try_commit_current_proposal(
+                commit_quorum_certificate,
+                self.bft_round_state.consensus_proposal.hashed(),
+            )?;
         }
         // TODO(?): Update behaviour when having more ?
         Ok(())
