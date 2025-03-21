@@ -67,14 +67,23 @@ impl OrderedTxMap {
 
     /// Returns true if the tx is the next unsettled tx for all the contracts it contains
     /// NB: not if the TX was already added to the map, which feels like it generally shouldn't happen?
-    pub fn add(&mut self, tx: UnsettledBlobTransaction) -> bool {
+    pub fn add(
+        &mut self,
+        tx: UnsettledBlobTransaction,
+        extra_contracts_to_block: HashSet<ContractName>,
+    ) -> bool {
         if self.map.contains_key(&tx.hash) {
             warn!("Trying to add a tx {} that is already in the map", tx.hash);
             return false;
         }
         let mut is_next = true;
-        let contract_names: HashSet<&ContractName> =
-            HashSet::from_iter(tx.blobs.iter().map(|b| &b.blob.contract_name));
+        // Collect into a hashset for unicity
+        let contract_names = tx
+            .blobs
+            .iter()
+            .map(|b| &b.blob.contract_name)
+            .chain(extra_contracts_to_block.iter())
+            .collect::<HashSet<_>>();
         for contract in contract_names {
             is_next = match self.tx_order.get_mut(contract) {
                 Some(vec) => {
@@ -113,6 +122,17 @@ impl OrderedTxMap {
             self.map.remove(hash)
         } else {
             None
+        }
+    }
+
+    /// Remove a contract from the tx_order map. This is used when a contract registration/deletion
+    /// action has been settled, so we no longer need to block on it.
+    pub fn remove_extra_contract(&mut self, contract_name: &ContractName) {
+        if let Some(queue) = self.tx_order.get_mut(contract_name) {
+            queue.pop_front();
+            if queue.is_empty() {
+                self.tx_order.remove(contract_name);
+            }
         }
     }
 }
@@ -155,7 +175,7 @@ mod tests {
         let mut map = OrderedTxMap::default();
         let tx = new_tx("tx1", "contract1");
 
-        map.add(tx);
+        map.add(tx, HashSet::new());
         assert_eq!(map.map.len(), 1);
         assert_eq!(map.tx_order.len(), 1);
     }
@@ -167,9 +187,9 @@ mod tests {
         let tx2 = TxHash::new("tx2");
         let tx3 = TxHash::new("tx3");
 
-        map.add(new_tx("tx1", "c1"));
-        map.add(new_tx("tx2", "c1"));
-        map.add(new_tx("tx3", "c2"));
+        map.add(new_tx("tx1", "c1"), HashSet::new());
+        map.add(new_tx("tx2", "c1"), HashSet::new());
+        map.add(new_tx("tx3", "c2"), HashSet::new());
 
         assert_eq!(tx1, map.get(&tx1).unwrap().hash);
         assert_eq!(tx2, map.get(&tx2).unwrap().hash);
@@ -184,8 +204,8 @@ mod tests {
         let mut map = OrderedTxMap::default();
         let tx1 = TxHash::new("tx1");
 
-        map.add(new_tx("tx1", "c1"));
-        map.add(new_tx("tx1", "c1"));
+        map.add(new_tx("tx1", "c1"), HashSet::new());
+        map.add(new_tx("tx1", "c1"), HashSet::new());
 
         assert_eq!(tx1, map.get(&tx1).unwrap().hash);
 
@@ -205,7 +225,7 @@ mod tests {
 
         let hash = tx.hash.clone();
 
-        assert!(map.add(tx));
+        assert!(map.add(tx, HashSet::new()));
         assert_eq!(
             map.tx_order.get(&"c1".into()),
             Some(&VecDeque::from_iter(vec![hash.clone()]))
@@ -224,9 +244,9 @@ mod tests {
         let tx3 = TxHash::new("tx3");
         let tx4 = TxHash::new("tx4");
 
-        map.add(new_tx("tx1", "c1"));
-        map.add(new_tx("tx2", "c1"));
-        map.add(new_tx("tx3", "c2"));
+        map.add(new_tx("tx1", "c1"), HashSet::new());
+        map.add(new_tx("tx2", "c1"), HashSet::new());
+        map.add(new_tx("tx3", "c2"), HashSet::new());
 
         assert!(is_next_unsettled_tx(&mut map, &tx1));
         assert!(!is_next_unsettled_tx(&mut map, &tx2));
@@ -243,9 +263,9 @@ mod tests {
         let tx3 = TxHash::new("tx3");
         let c1 = ContractName::new("c1");
 
-        map.add(new_tx("tx1", "c1"));
-        map.add(new_tx("tx2", "c1"));
-        map.add(new_tx("tx3", "c2"));
+        map.add(new_tx("tx1", "c1"), HashSet::new());
+        map.add(new_tx("tx2", "c1"), HashSet::new());
+        map.add(new_tx("tx3", "c2"), HashSet::new());
         map.remove(&tx1);
 
         assert!(!is_next_unsettled_tx(&mut map, &tx1));
@@ -260,5 +280,32 @@ mod tests {
         assert_eq!(map.map.len(), 1);
         assert_eq!(map.tx_order.len(), 2);
         assert_eq!(map.tx_order[&c1].len(), 0);
+    }
+
+    #[test]
+    fn test_remove_extra_contract() {
+        let mut map = OrderedTxMap::default();
+        let contract1 = ContractName::new("c1");
+        let contract2 = ContractName::new("c2");
+
+        // Add some transactions with extra contracts to block
+        let mut extra_contracts = HashSet::new();
+        extra_contracts.insert(contract2.clone());
+
+        map.add(new_tx("tx1", "c1"), extra_contracts.clone());
+        map.add(new_tx("tx2", "c1"), HashSet::new());
+
+        // Verify initial state
+        assert_eq!(map.tx_order.get(&contract1).unwrap().len(), 2);
+        assert_eq!(map.tx_order.get(&contract2).unwrap().len(), 1);
+
+        // Remove the extra contract
+        map.remove_extra_contract(&contract2);
+
+        // Verify the contract queue was removed since it's empty
+        assert!(!map.tx_order.contains_key(&contract2));
+
+        // Verify the original contract queue is unchanged
+        assert_eq!(map.tx_order.get(&contract1).unwrap().len(), 2);
     }
 }

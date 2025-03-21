@@ -14,7 +14,7 @@ use hyle_contract_sdk::{utils::parse_structured_blob, BlobIndex, HyleOutput, TxH
 use hyle_tld::handle_blob_for_hyle_tld;
 use metrics::NodeStateMetrics;
 use ordered_tx_map::OrderedTxMap;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use timeouts::Timeouts;
 use tracing::{debug, error, info, trace};
 
@@ -338,7 +338,7 @@ impl NodeState {
                         &tx.blobs,
                         verifier,
                     );
-                    tracing::trace!("Nativer verifier in blob tx - {:?}", hyle_output);
+                    tracing::trace!("Native verifier in blob tx - {:?}", hyle_output);
                     return UnsettledBlobMetadata {
                         blob: blob.clone(),
                         possible_proofs: vec![(verifier.into(), hyle_output)],
@@ -355,15 +355,33 @@ impl NodeState {
             })
             .collect();
 
+        // If the blob contains a RegisterContractAction / DeleteContractAction,
+        // we must add the TX to the pending map (or the DAG will be incorrect)
+        let mut extra_contracts_to_block = HashSet::new();
+        for blob in &tx.blobs {
+            if let Ok(data) =
+                StructuredBlobData::<RegisterContractAction>::try_from(blob.data.clone())
+            {
+                extra_contracts_to_block.insert(data.parameters.contract_name.clone());
+            } else if let Ok(data) =
+                StructuredBlobData::<DeleteContractAction>::try_from(blob.data.clone())
+            {
+                extra_contracts_to_block.insert(data.parameters.contract_name.clone());
+            }
+        }
+
         // If we're behind other pending transactions, we can't settle yet.
-        should_try_and_settle = self.unsettled_transactions.add(UnsettledBlobTransaction {
-            identity: tx.identity.clone(),
-            parent_dp_hash,
-            hash: tx_hash.clone(),
-            tx_context,
-            blobs_hash,
-            blobs,
-        }) && should_try_and_settle;
+        should_try_and_settle = self.unsettled_transactions.add(
+            UnsettledBlobTransaction {
+                identity: tx.identity.clone(),
+                parent_dp_hash,
+                hash: tx_hash.clone(),
+                tx_context,
+                blobs_hash,
+                blobs,
+            },
+            extra_contracts_to_block,
+        ) && should_try_and_settle;
 
         if self.unsettled_transactions.is_next_to_settle(&blob_tx_hash) {
             let block_height = self.current_height;
@@ -404,8 +422,7 @@ impl NodeState {
 
         // TODO: add diverse verifications ? (without the inital state checks!).
         // TODO: success to false is valid outcome and can be settled.
-        Self::verify_hyle_output(unsettled_tx, &blob_proof_data.hyle_output)
-            .context("Invalid HyleOutput")?;
+        Self::verify_hyle_output(unsettled_tx, &blob_proof_data.hyle_output)?;
 
         let Some(blob) = unsettled_tx
             .blobs
@@ -555,6 +572,21 @@ impl NodeState {
             .remove(unsettled_tx_hash)
             .unwrap();
 
+        // Remove the TX from any extra contract added from a register/delete blob as well
+        for blob_metadata in &unsettled_tx.blobs {
+            if let Ok(data) = StructuredBlobData::<RegisterContractAction>::try_from(
+                blob_metadata.blob.data.clone(),
+            ) {
+                self.unsettled_transactions
+                    .remove_extra_contract(&data.parameters.contract_name);
+            } else if let Ok(data) = StructuredBlobData::<DeleteContractAction>::try_from(
+                blob_metadata.blob.data.clone(),
+            ) {
+                self.unsettled_transactions
+                    .remove_extra_contract(&data.parameters.contract_name);
+            }
+        }
+
         Ok(SettledTxOutput {
             tx: unsettled_tx,
             result,
@@ -657,7 +689,11 @@ impl NodeState {
             }
             if !proof_metadata.1.success {
                 // We have a valid proof of failure, we short-circuit.
-                let msg = format!("Proven failure for blob {}", i);
+                let msg = format!(
+                    "Proven failure for blob {} - {:?}",
+                    i,
+                    String::from_utf8(proof_metadata.1.program_outputs.clone())
+                );
                 debug!("{msg}");
                 events.push(TransactionStateEvent::SettleEvent(msg));
                 return Some(Err(()));
@@ -880,6 +916,64 @@ impl NodeState {
                 extracted_blobs_hash,
                 unsettled_tx.blobs_hash
             )
+        }
+
+        // Get the specific blob we're verifying
+        let blob = &unsettled_tx
+            .blobs
+            .get(hyle_output.index.0)
+            .context("Blob index out of bounds")?
+            .blob;
+
+        // Verify that each side effect has a matching register/delete contract action in this specific blob
+        // (this doesn't really need to be a for loop but it's neaterthis way)
+        for effect in &hyle_output.onchain_effects {
+            match effect {
+                OnchainEffect::RegisterContract(reg) => {
+                    // For RegisterContract effects, check if this blob has a matching register action
+                    if let Ok(data) =
+                        StructuredBlobData::<RegisterContractAction>::try_from(blob.data.clone())
+                    {
+                        if data.parameters.contract_name != reg.contract_name
+                            || data.parameters.verifier != reg.verifier
+                            || data.parameters.program_id != reg.program_id
+                            || data.parameters.state_commitment != reg.state_commitment
+                        {
+                            bail!(
+                                "RegisterContract effect for '{}' does not match the registration action in blob #{}",
+                                reg.contract_name,
+                                hyle_output.index.0
+                            );
+                        }
+                    } else {
+                        bail!(
+                            "RegisterContract effect for '{}' found but blob #{} is not a registration action",
+                            reg.contract_name,
+                            hyle_output.index.0
+                        );
+                    }
+                }
+                OnchainEffect::DeleteContract(name) => {
+                    // For DeleteContract effects, check if this blob has a matching delete action
+                    if let Ok(data) =
+                        StructuredBlobData::<DeleteContractAction>::try_from(blob.data.clone())
+                    {
+                        if data.parameters.contract_name != *name {
+                            bail!(
+                                "DeleteContract effect for '{}' does not match the deletion action in blob #{}",
+                                name,
+                                hyle_output.index.0
+                            );
+                        }
+                    } else {
+                        bail!(
+                            "DeleteContract effect for '{}' found but blob #{} is not a deletion action",
+                            name,
+                            hyle_output.index.0
+                        );
+                    }
+                }
+            }
         }
 
         Ok(())
@@ -2022,6 +2116,50 @@ pub mod test {
         }
 
         #[test_log::test(tokio::test)]
+        async fn test_register_contract_proof_mismatch() {
+            let mut state = new_node_state().await;
+
+            // Create a valid registration transaction
+            let register_parent_tx =
+                make_register_tx("hyle.hyle".into(), "hyle".into(), "test.hyle".into());
+            let register_parent_tx_hash = register_parent_tx.hashed();
+            let register_tx = make_register_tx(
+                "hyle.test.hyle".into(),
+                "test.hyle".into(),
+                "sub.test.hyle".into(),
+            );
+            let tx_hash = register_tx.hashed();
+
+            // Create a proof with mismatched registration effect
+            let mut output = make_hyle_output(register_tx.clone(), BlobIndex(0));
+            output
+                .onchain_effects
+                .push(OnchainEffect::RegisterContract(RegisterContractEffect {
+                    verifier: "test".into(),
+                    program_id: ProgramId(vec![]),
+                    state_commitment: StateCommitment(vec![9, 9, 9, 9]), // Different state_commitment than in the blob action
+                    contract_name: "sub.test.hyle".into(),
+                }));
+
+            let proof_tx = new_proof_tx(&"test.hyle".into(), &output, &tx_hash);
+
+            // Submit both transactions
+            let block = state.handle_signed_block(&craft_signed_block(
+                1,
+                vec![
+                    register_parent_tx.into(),
+                    register_tx.into(),
+                    proof_tx.into(),
+                ],
+            ));
+
+            // The transaction should fail because the proof's registration effect doesn't match the blob action
+            tracing::warn!("{:?}", state.contracts);
+            assert_eq!(state.contracts.len(), 2); // sub.test.hyle shouldn't exist
+            assert_eq!(block.successful_txs, vec![register_parent_tx_hash]); // No successful transactions
+        }
+
+        #[test_log::test(tokio::test)]
         async fn test_register_contract_composition() {
             let mut state = new_node_state().await;
             let register = make_register_tx("hyle.hyle".into(), "hyle".into(), "hydentity".into());
@@ -2165,7 +2303,7 @@ pub mod test {
                 .onchain_effects
                 .push(OnchainEffect::RegisterContract(RegisterContractEffect {
                     verifier: "test".into(),
-                    program_id: ProgramId(vec![1]),
+                    program_id: ProgramId(vec![]),
                     state_commitment: StateCommitment(vec![0, 1, 2, 3]),
                     contract_name: "sub.c2.hyle".into(),
                 }));
@@ -2253,7 +2391,7 @@ pub mod test {
                 .onchain_effects
                 .push(OnchainEffect::RegisterContract(RegisterContractEffect {
                     verifier: "test".into(),
-                    program_id: ProgramId(vec![1]),
+                    program_id: ProgramId(vec![]),
                     state_commitment: StateCommitment(vec![0, 1, 2, 3]),
                     contract_name: "sub.c2.hyle".into(),
                 }));
@@ -2338,13 +2476,11 @@ pub mod test {
             test_combination(None, &[&delete_tx], 1, 0).await;
             test_combination(None, &[&register_tx, &delete_tx], 1, 2).await;
             test_combination(Some(&[&proof_update]), &[&register_tx, &update_tx], 2, 2).await;
-            // TODO: This actually deletes right away before update is settled, as it isn't blocked.
-            // This is arguably a bug and should be fixed.
             test_combination(
                 Some(&[&proof_update]),
                 &[&register_tx, &update_tx, &delete_tx],
                 1,
-                2,
+                3,
             )
             .await;
             test_combination(
