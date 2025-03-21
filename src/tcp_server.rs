@@ -12,7 +12,7 @@ use crate::{
 };
 
 use anyhow::Result;
-use client_sdk::tcp::{codec_tcp_server, TcpServerMessage};
+use client_sdk::tcp_client::{codec_tcp_server, TcpServerMessage};
 use tracing::info;
 
 impl BusMessage for TcpServerMessage {}

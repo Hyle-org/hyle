@@ -7,10 +7,10 @@ mod blocks_memory;
 
 // Pick one of the two implementations
 use blocks_fjall::Blocks;
-use client_sdk::tcp::TcpEvent;
 //use blocks_memory::Blocks;
 
 use codec::{codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequest};
+use hyle_net::tcp::TcpEvent;
 
 use crate::{
     bus::{BusClientSender, BusMessage},
@@ -52,7 +52,7 @@ struct DABusClient {
 }
 }
 
-type DaTcpServer = client_sdk::tcp::TcpServer<
+type DaTcpServer = hyle_net::tcp::TcpServer<
     codec_data_availability::ServerCodec,
     DataAvailabilityRequest,
     DataAvailabilityEvent,
@@ -197,11 +197,7 @@ impl DataAvailability {
     async fn handle_mempool_event(
         &mut self,
         evt: MempoolBlockEvent,
-        tcp_server: &mut client_sdk::tcp::TcpServer<
-            codec_data_availability::ServerCodec,
-            DataAvailabilityRequest,
-            DataAvailabilityEvent,
-        >,
+        tcp_server: &mut DaTcpServer,
     ) -> Result<()> {
         match evt {
             MempoolBlockEvent::BuiltSignedBlock(signed_block) => {
@@ -447,8 +443,8 @@ pub mod tests {
     };
 
     use super::codec::DataAvailabilityEvent;
-    use super::module_bus_client;
     use super::Blocks;
+    use super::{module_bus_client, DaTcpServer};
     use anyhow::Result;
     use staking::state::Staking;
 
@@ -493,11 +489,7 @@ pub mod tests {
         pub async fn handle_signed_block(
             &mut self,
             block: SignedBlock,
-            tcp_server: &mut client_sdk::tcp::TcpServer<
-                codec_data_availability::ServerCodec,
-                DataAvailabilityRequest,
-                DataAvailabilityEvent,
-            >,
+            tcp_server: &mut DaTcpServer,
         ) {
             let full_block = self.node_state.handle_signed_block(&block);
             _ = log_error!(

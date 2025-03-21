@@ -21,7 +21,7 @@ use anyhow::{bail, Context, Result};
 use api::RestApiMessage;
 use block_construction::BlockUnderConstruction;
 use borsh::{BorshDeserialize, BorshSerialize};
-use client_sdk::tcp::TcpServerMessage;
+use client_sdk::tcp_client::TcpServerMessage;
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
