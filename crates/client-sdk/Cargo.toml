@@ -8,9 +8,11 @@ homepage = { workspace = true }
 repository = { workspace = true }
 rust-version = { workspace = true }
 
-[dependencies]
-sdk = { workspace = true, default-features = false, features = ["full-model"] }
+sdk = { workspace = true, default-features = false, features = [
+    "full-model",
+] }
 bonsai-runner = { workspace = true, optional = true }
+hyle-net = { workspace = true }
 
 anyhow = "1.0.96"
 borsh = "1.5.6"

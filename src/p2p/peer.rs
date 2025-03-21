@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use anyhow::Context;
 use anyhow::{Error, Result};
-use tokio::net::TcpStream;
+use hyle_net::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tokio_util::codec::Framed;

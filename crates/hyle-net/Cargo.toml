@@ -1,0 +1,28 @@
+[package]
+name = "hyle-net"
+description = "Hyle network SDK"
+version = { workspace = true }
+edition = { workspace = true }
+# license = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+anyhow = "1.0.96"
+borsh = "1.5.5"
+serde = "1.0"
+serde_json = { version = "1" }
+tracing = "0.1"
+
+# Tcp feature
+tokio = { version = "1.42.0", features = ["full", "tracing"], optional = true }
+tokio-util = { version = "0.7.14"}
+futures = { version = "0.3.31" }
+
+bytes = { version = "1.10.0" }
+paste = { version = "1.0.15"}
+
+[features]
+default = ["tokio"]
+tokio = ["dep:tokio"]
