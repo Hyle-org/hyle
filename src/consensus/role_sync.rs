@@ -1,8 +1,11 @@
 use anyhow::Result;
-use hyle_model::{ConsensusProposal, ConsensusProposalHash, Ticket, ValidatorPublicKey};
+use hyle_model::{ConsensusProposalHash, ValidatorPublicKey};
 use tracing::debug;
 
-use super::{role_follower::FollowerRole, Consensus};
+use super::{
+    role_follower::{FollowerRole, Prepare},
+    Consensus,
+};
 
 pub(super) trait RoleSync {
     fn on_sync_request(
@@ -10,10 +13,7 @@ pub(super) trait RoleSync {
         sender: ValidatorPublicKey,
         proposal_hash: ConsensusProposalHash,
     ) -> Result<()>;
-    fn on_sync_reply(
-        &mut self,
-        prepare: (ValidatorPublicKey, ConsensusProposal, Ticket),
-    ) -> Result<()>;
+    fn on_sync_reply(&mut self, prepare: Prepare) -> Result<()>;
 }
 
 impl RoleSync for Consensus {
@@ -38,11 +38,14 @@ impl RoleSync for Consensus {
         Ok(())
     }
 
-    fn on_sync_reply(
-        &mut self,
-        prepare: (ValidatorPublicKey, ConsensusProposal, Ticket),
-    ) -> Result<()> {
-        let (sender, proposal, ticket) = prepare;
-        self.on_prepare(sender, proposal, ticket)
+    fn on_sync_reply(&mut self, prepare: Prepare) -> Result<()> {
+        let (sender, proposal, ticket, view) = prepare;
+        // Ignore obviously old messages
+        if proposal.slot < self.bft_round_state.slot
+            || proposal.slot == self.bft_round_state.slot && view <= self.bft_round_state.view
+        {
+            return Ok(());
+        }
+        self.on_prepare(sender, proposal, ticket, view)
     }
 }

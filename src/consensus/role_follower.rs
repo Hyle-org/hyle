@@ -17,6 +17,7 @@ use anyhow::{bail, Context, Result};
 use hyle_model::{
     ConsensusNetMessage, ConsensusProposal, ConsensusProposalHash, ConsensusStakingAction, Cut,
     LaneBytesSize, LaneId, NewValidatorCandidate, QuorumCertificate, Ticket, ValidatorCandidacy,
+    View,
 };
 
 #[derive(BorshSerialize, BorshDeserialize, Default)]
@@ -31,6 +32,7 @@ pub(super) trait FollowerRole {
         sender: ValidatorPublicKey,
         consensus_proposal: ConsensusProposal,
         ticket: Ticket,
+        view: View,
     ) -> Result<()>;
     fn on_confirm(
         &mut self,
@@ -54,19 +56,20 @@ impl FollowerRole for Consensus {
         sender: ValidatorPublicKey,
         consensus_proposal: ConsensusProposal,
         ticket: Ticket,
+        view: View,
     ) -> Result<()> {
         debug!(
             sender = %sender,
-            slot =%self.bft_round_state.consensus_proposal.slot,
+            slot = %self.bft_round_state.slot,
             "Received Prepare message: {}", consensus_proposal
         );
 
         if matches!(self.bft_round_state.state_tag, StateTag::Joining) {
             // Shortcut - if this is the prepare we expected, exit joining mode.
-            let is_next_prepare = consensus_proposal.view == 0
-                && consensus_proposal.slot == self.bft_round_state.consensus_proposal.slot + 1
-                || consensus_proposal.view == self.bft_round_state.consensus_proposal.view + 1
-                    && consensus_proposal.slot == self.bft_round_state.consensus_proposal.slot;
+            let is_next_prepare = view == 0
+                && consensus_proposal.slot == self.bft_round_state.slot + 1
+                || view == self.bft_round_state.view + 1
+                    && consensus_proposal.slot == self.bft_round_state.slot;
             if is_next_prepare {
                 info!(
                     "Received Prepare message for next slot while joining. Exiting joining mode."
@@ -79,13 +82,13 @@ impl FollowerRole for Consensus {
                 if consensus_proposal.slot <= self.bft_round_state.joining.staking_updated_to {
                     info!(
                             "🌑 Outdated Prepare message (Slot {} / view {} while at {}) received while joining. Ignoring.",
-                            consensus_proposal.slot, consensus_proposal.view, self.bft_round_state.joining.staking_updated_to
+                            consensus_proposal.slot, view, self.bft_round_state.joining.staking_updated_to
                         );
                     return Ok(());
                 }
                 info!(
                     "🌕 Prepare message (Slot {} / view {}) received while joining. Storing.",
-                    consensus_proposal.slot, consensus_proposal.view
+                    consensus_proposal.slot, view
                 );
                 // Store the message until we receive a matching Commit.
                 // Because we may receive old or rogue proposals, we store all of them.
@@ -96,27 +99,27 @@ impl FollowerRole for Consensus {
                 return Ok(());
             }
         }
+
         // If received proposal for next slot, we continue processing and will try to fast forward
         // if received proposal is for an even further slot, we buffer it
-        if consensus_proposal.slot > self.bft_round_state.consensus_proposal.slot + 1 {
+        if consensus_proposal.slot > self.bft_round_state.slot + 1 {
             warn!(
                 proposal_hash = %consensus_proposal.hashed(),
                 sender = %sender,
-                "Prepare message for slot {} while at slot {}. Buffering.",
-                consensus_proposal.slot, self.bft_round_state.consensus_proposal.slot
+                "🚚 Prepare message for slot {} while at slot {}. Buffering.",
+                consensus_proposal.slot, self.bft_round_state.slot
             );
             return self.buffer_prepare_message_and_fetch_missing_parent(
                 sender,
                 consensus_proposal,
                 ticket,
+                view,
             );
-        } else if consensus_proposal.slot < self.bft_round_state.consensus_proposal.slot {
+        } else if consensus_proposal.slot < self.bft_round_state.slot {
             // Ignore outdated messages.
             info!(
                 "🌑 Outdated Prepare message (Slot {} / view {} while at {}) received. Ignoring.",
-                consensus_proposal.slot,
-                consensus_proposal.view,
-                self.bft_round_state.consensus_proposal.slot
+                consensus_proposal.slot, view, self.bft_round_state.slot
             );
             return Ok(());
         }
@@ -124,7 +127,7 @@ impl FollowerRole for Consensus {
         // Process the ticket
         match &ticket {
             Ticket::Genesis => {
-                if self.bft_round_state.consensus_proposal.slot != 1 {
+                if self.bft_round_state.slot != 1 {
                     bail!("Genesis ticket is only valid for the first slot.");
                 }
             }
@@ -135,7 +138,7 @@ impl FollowerRole for Consensus {
             }
             Ticket::TimeoutQC(timeout_qc) => {
                 if log_error!(
-                    self.try_process_timeout_qc(timeout_qc.clone(), &consensus_proposal),
+                    self.try_process_timeout_qc(timeout_qc.clone(), &consensus_proposal, view),
                     "Processing Timeout ticket"
                 )
                 .is_err()
@@ -150,23 +153,26 @@ impl FollowerRole for Consensus {
 
         // TODO: check we haven't voted for a proposal this slot/view already.
 
-        // After processing the ticket, we should be in the right slot/view.
+        // Validate message comes from the correct leader
+        // (can't do this earlier as might need to process the ticket first)
+        let round_leader = self.round_leader()?;
+        if sender != round_leader {
+            self.metrics.prepare_error("wrong_leader");
+            bail!(
+                "Prepare consensus message for {} {} does not come from current leader {}. I won't vote for it.",
+                self.bft_round_state.slot, self.bft_round_state.view, round_leader
+            );
+        }
 
-        if consensus_proposal.slot != self.bft_round_state.consensus_proposal.slot {
+        // Sanity check: after processing the ticket, we should be in the right slot/view.
+        // TODO: these checks are almost entirely redundant at this point because we process the ticket above.
+        if consensus_proposal.slot != self.bft_round_state.slot {
             self.metrics.prepare_error("wrong_slot");
             bail!("Prepare message received for wrong slot");
         }
-        if consensus_proposal.view != self.bft_round_state.consensus_proposal.view {
+        if view != self.bft_round_state.view {
             self.metrics.prepare_error("wrong_view");
             bail!("Prepare message received for wrong view");
-        }
-
-        // Validate message comes from the correct leader
-        if sender != self.bft_round_state.consensus_proposal.round_leader {
-            self.metrics.prepare_error("wrong_leader");
-            bail!(
-                "Prepare consensus message does not come from current leader. I won't vote for it."
-            );
         }
 
         self.verify_poda(&consensus_proposal)?;
@@ -176,36 +182,38 @@ impl FollowerRole for Consensus {
         self.verify_timestamp(&consensus_proposal)?;
 
         // At this point we are OK with this new consensus proposal, update locally and vote.
-        self.bft_round_state.consensus_proposal = consensus_proposal.clone();
+        self.bft_round_state.current_proposal = consensus_proposal.clone();
+        let cp_hash = self.bft_round_state.current_proposal.hashed();
+
         self.follower_state().buffered_prepares.push((
             sender.clone(),
-            consensus_proposal.clone(),
+            consensus_proposal,
             ticket,
+            view,
         ));
 
+        // If we already have the next Prepare, fast-forward
         if let Some(prepare) = self
             .follower_state()
             .buffered_prepares
-            .next_prepare(consensus_proposal.hashed())
+            .next_prepare(cp_hash.clone())
         {
+            debug!("🏎️ Fast forwarding to next Prepare");
             // FIXME? In theory, we could have a stackoverflow if we need to catchup a lot of prepares
             // Note: If we want to vote on the passed proposal even if it's too late,
             // we can just remove the "return" here and continue.
-            return self.on_prepare(prepare.0, prepare.1, prepare.2);
+            return self.on_prepare(prepare.0, prepare.1, prepare.2, 0);
         }
 
         // Responds PrepareVote message to leader with validator's vote on this proposal
         if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
             debug!(
-                proposal_hash = %consensus_proposal.hashed(),
+                proposal_hash = %cp_hash,
                 sender = %sender,
                 "📤 Slot {} Prepare message validated. Sending PrepareVote to leader",
-                self.bft_round_state.consensus_proposal.slot
+                self.bft_round_state.slot
             );
-            self.send_net_message(
-                self.bft_round_state.consensus_proposal.round_leader.clone(),
-                ConsensusNetMessage::PrepareVote(consensus_proposal.hashed()),
-            )?;
+            self.send_net_message(round_leader, ConsensusNetMessage::PrepareVote(cp_hash))?;
         } else {
             info!(
                 "😥 Not part of consensus ({}), not sending PrepareVote",
@@ -239,7 +247,7 @@ impl FollowerRole for Consensus {
             }
         }
 
-        if proposal_hash_hint != self.bft_round_state.consensus_proposal.hashed() {
+        if proposal_hash_hint != self.bft_round_state.current_proposal.hashed() {
             warn!(
                 proposal_hash = %proposal_hash_hint,
                 sender = %sender,
@@ -263,10 +271,10 @@ impl FollowerRole for Consensus {
                 proposal_hash = %proposal_hash_hint,
                 sender = %sender,
                 "📤 Slot {} Confirm message validated. Sending ConfirmAck to leader",
-                self.bft_round_state.consensus_proposal.slot
+                self.bft_round_state.current_proposal.slot
             );
             self.send_net_message(
-                self.bft_round_state.consensus_proposal.round_leader.clone(),
+                self.round_leader()?,
                 ConsensusNetMessage::ConfirmAck(proposal_hash_hint),
             )?;
         } else {
@@ -327,7 +335,7 @@ impl FollowerRole for Consensus {
             // If this same data proposal was in the last cut, ignore.
             if self
                 .bft_round_state
-                .last_cut
+                .last_cut_seen
                 .iter()
                 .any(|(v, h, _, _)| v == lane_id && h == data_proposal_hash)
             {
@@ -367,7 +375,7 @@ impl FollowerRole for Consensus {
         &self,
         ConsensusProposal { timestamp, .. }: &ConsensusProposal,
     ) -> Result<()> {
-        let previous_timestamp = self.bft_round_state.consensus_proposal.timestamp;
+        let previous_timestamp = self.bft_round_state.current_proposal.timestamp;
 
         if previous_timestamp == 0 {
             warn!(
@@ -413,39 +421,62 @@ impl Consensus {
         &mut self,
         timeout_qc: QuorumCertificate,
         consensus_proposal: &ConsensusProposal,
+        prepare_view: View,
     ) -> Result<()> {
-        let slot = consensus_proposal.slot;
-        let view = consensus_proposal.view;
+        let prepare_slot = consensus_proposal.slot;
         debug!(
             "Trying to process timeout Certificate against consensus proposal slot: {}, view: {}",
-            slot, view,
+            prepare_slot, prepare_view,
         );
 
-        self.verify_quorum_certificate(ConsensusNetMessage::Timeout(slot, view - 1), &timeout_qc)
-            .context("Verifying Timeout Ticket")?;
+        // Same as the regular commit case - maybe this is the TC we already processed.
+        if let Some(qc) = &self.bft_round_state.follower.buffered_quorum_certificate {
+            if qc == &timeout_qc {
+                return Ok(());
+            }
+        }
 
-        if slot == self.bft_round_state.consensus_proposal.slot {
+        // Otherwise check it matches our expectations
+        self.verify_quorum_certificate(
+            ConsensusNetMessage::Timeout(prepare_slot, prepare_view - 1),
+            &timeout_qc,
+        )
+        .context("Verifying Timeout Ticket")?;
+
+        if prepare_slot == self.bft_round_state.slot {
             self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc))
             // if ticket for next slot && correct parent hash, fast forward
-        } else if slot == self.bft_round_state.consensus_proposal.slot + 1
-            && consensus_proposal.parent_hash == self.bft_round_state.consensus_proposal.hashed()
+        } else if prepare_slot == self.bft_round_state.slot + 1
+            && consensus_proposal.parent_hash == self.bft_round_state.current_proposal.hashed()
         {
-            // We are not in the same slot as the timeout certificate
-            // So we force a fast-forward the current slot
+            // Safety assumption: we can't actually verify a TC for the next slot, but since it matches our hash,
+            // since we have no staking actions in the prepare we're good.
+            if !self
+                .bft_round_state
+                .current_proposal
+                .staking_actions
+                .is_empty()
+            {
+                bail!("Timeout Certificate slot {} view {} is for the next slot, but we have staking actions in our prepare", prepare_slot, prepare_view);
+            }
+
+            // We have received a timeout certificate for the next slot,
+            // and it matches our know prepare for this slot, so try and commit that one then the TC.
             self.carry_on_with_ticket(Ticket::ForcedCommitQc(timeout_qc.clone()))?;
 
             info!(
-                "🔀 Fast forwarded slot {}",
-                &self.bft_round_state.consensus_proposal.slot - 1
+                "🔀 Fast forwarded to slot {} view 0",
+                &self.bft_round_state.slot
             );
 
+            // Then proceed to the latest view
             self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc))
         } else {
             bail!(
                 "Timeout Certificate slot {} view {} is not the current slot {} nor next one",
-                slot,
-                view,
-                self.bft_round_state.consensus_proposal.slot
+                prepare_slot,
+                prepare_view,
+                self.bft_round_state.current_proposal.slot
             )
         }
     }
@@ -468,11 +499,20 @@ impl Consensus {
             return Ok(());
         };
         // Use that as our proposal.
-        let mut potential_proposal = self
+        let potential_proposal = self
             .bft_round_state
             .joining
             .buffered_prepares
             .swap_remove(proposal_index);
+
+        // Check it's actually in the future
+        if potential_proposal.slot <= self.bft_round_state.slot {
+            info!(
+                "🏃Ignoring commit message, we are at slot {}, already beyond {}",
+                self.bft_round_state.slot, potential_proposal.slot
+            );
+            return Ok(());
+        }
 
         // At this point check that we're caught up enough that it's realistic to verify the QC.
         if self.bft_round_state.joining.staking_updated_to + 1 < potential_proposal.slot {
@@ -484,39 +524,36 @@ impl Consensus {
             return Ok(());
         }
 
-        std::mem::swap(
-            &mut self.bft_round_state.consensus_proposal,
-            &mut potential_proposal,
-        );
+        self.bft_round_state.current_proposal = potential_proposal;
         self.bft_round_state.joining.buffered_prepares.clear();
 
         info!(
             "📦 Commit message received for slot {}, trying to synchronize.",
-            self.bft_round_state.consensus_proposal.slot
+            self.bft_round_state.current_proposal.slot
         );
 
         // Try to commit the proposal
+        let old_slot = self.bft_round_state.slot;
+        let old_view = self.bft_round_state.view;
+
+        self.bft_round_state.slot = self.bft_round_state.current_proposal.slot;
+        self.bft_round_state.view = 0; // TODO
         self.bft_round_state.state_tag = StateTag::Follower;
         if self
             .try_commit_current_proposal(
                 commit_quorum_certificate,
-                self.bft_round_state.consensus_proposal.hashed(),
+                self.bft_round_state.current_proposal.hashed(),
             )
             .is_err()
         {
             // Swap back
-            std::mem::swap(
-                &mut self.bft_round_state.consensus_proposal,
-                &mut potential_proposal,
-            );
             self.bft_round_state.state_tag = StateTag::Joining;
+            self.bft_round_state.slot = old_slot;
+            self.bft_round_state.view = old_view;
             bail!("⛑️ Failed to synchronize, retrying soon.");
         }
         // We sucessfully joined the consensus
-        info!(
-            "🏁 Synchronized to slot {}",
-            self.bft_round_state.consensus_proposal.slot
-        );
+        info!("🏁 Synchronized to slot {}", self.bft_round_state.slot);
         Ok(())
     }
 
@@ -530,7 +567,7 @@ impl Consensus {
             .bft_round_state
             .follower
             .buffered_prepares
-            .next_prepare(self.bft_round_state.consensus_proposal.hashed())
+            .next_prepare(self.bft_round_state.current_proposal.hashed())
             .is_none()
     }
 
@@ -539,6 +576,7 @@ impl Consensus {
         sender: ValidatorPublicKey,
         consensus_proposal: ConsensusProposal,
         ticket: Ticket,
+        view: View,
     ) -> Result<()> {
         if self
             .follower_state()
@@ -558,7 +596,7 @@ impl Consensus {
             debug!(
                 proposal_hash = %consensus_proposal.hashed(),
                 to = %sender,
-                "Requesting missing parent proposal {}",
+                "🔉 Requesting missing parent proposal {}",
                 consensus_proposal.parent_hash
             );
             // TODO: use send & retry in case of no response instead of broadcast
@@ -569,7 +607,7 @@ impl Consensus {
             .context("Sending SyncRequest")?;
         }
 
-        let prepare_message = (sender, consensus_proposal, ticket);
+        let prepare_message = (sender, consensus_proposal, ticket, view);
         self.follower_state()
             .buffered_prepares
             .push(prepare_message);
@@ -591,16 +629,13 @@ impl Consensus {
         let commited_current_proposal = log_error!(
             self.try_commit_current_proposal(
                 commit_qc,
-                self.bft_round_state.consensus_proposal.hashed()
+                self.bft_round_state.current_proposal.hashed()
             ),
             "Processing Commit Ticket"
         );
 
         if commited_current_proposal.is_ok() {
-            info!(
-                "🔀 Fast forwarded slot {}",
-                &self.bft_round_state.consensus_proposal.slot - 1
-            );
+            info!("🔀 Fast forwarded to slot {}", &self.bft_round_state.slot);
         }
         commited_current_proposal.is_ok()
     }
@@ -678,7 +713,7 @@ impl Consensus {
     }
 }
 
-pub type Prepare = (ValidatorPublicKey, ConsensusProposal, Ticket);
+pub type Prepare = (ValidatorPublicKey, ConsensusProposal, Ticket, View);
 
 #[derive(BorshSerialize, BorshDeserialize, Default, Debug)]
 pub(super) struct BufferedPrepares {
@@ -710,10 +745,7 @@ impl BufferedPrepares {
         self.prepares.insert(proposal_hash, prepare_message);
     }
 
-    pub(super) fn get(
-        &self,
-        proposal_hash: &ConsensusProposalHash,
-    ) -> Option<&(ValidatorPublicKey, ConsensusProposal, Ticket)> {
+    pub(super) fn get(&self, proposal_hash: &ConsensusProposalHash) -> Option<&Prepare> {
         self.prepares.get(proposal_hash)
     }
 
@@ -740,6 +772,7 @@ mod tests {
             ValidatorPublicKey::default(),
             proposal,
             Ticket::CommitQC(QuorumCertificate::default()),
+            0,
         );
         buffered_prepares.push(prepare_message);
         assert!(buffered_prepares.contains(&proposal_hash));
@@ -755,6 +788,7 @@ mod tests {
             ValidatorPublicKey::default(),
             proposal.clone(),
             Ticket::CommitQC(QuorumCertificate::default()),
+            0,
         );
         buffered_prepares.push(prepare_message);
 

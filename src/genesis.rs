@@ -492,8 +492,6 @@ impl Genesis {
             },
             consensus_proposal: ConsensusProposal {
                 slot: 0,
-                view: 0,
-                round_leader: round_leader.clone(),
                 // TODO: genesis block should have a consistent, up-to-date timestamp
                 timestamp: 1735689600000, // 1st of Jan 25 for now
                 // TODO: We aren't actually storing the data proposal above, so we cannot store it here,
