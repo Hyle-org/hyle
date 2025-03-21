@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
     };
 
     log_error!(
-        hyle::entrypoint::common_main(true, config, Some(crypto)).await,
+        hyle::entrypoint::main_process(config, Some(crypto)).await,
         "Error running hyle"
     )?;
 

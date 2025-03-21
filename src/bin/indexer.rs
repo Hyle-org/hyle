@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
     };
 
     log_error!(
-        hyle::entrypoint::common_main(true, config, None).await,
+        hyle::entrypoint::main_process(config, None).await,
         "Error running hyle indexer"
     )?;
 

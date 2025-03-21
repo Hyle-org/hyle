@@ -360,42 +360,44 @@ impl ModulesHandler {
         Ok(())
     }
 
+    pub async fn exit_loop(&mut self) -> Result<()> {
+        _ = log_error!(self.shutdown_loop().await, "Shutdown Loop triggered");
+        _ = self.shutdown_modules().await;
+
+        Ok(())
+    }
+
     /// If the node is run as a process, we want to setup a proper exit loop with SIGINT/SIGTERM
-    pub async fn exit_loop(&mut self, process: bool) -> Result<()> {
-        if !process {
-            _ = log_error!(self.shutdown_loop().await, "Shutdown Loop triggered");
+    pub async fn exit_process(&mut self) -> Result<()> {
+        #[cfg(unix)]
+        {
+            use tokio::signal::unix;
+            let mut interrupt = unix::signal(unix::SignalKind::interrupt())?;
+            let mut terminate = unix::signal(unix::SignalKind::terminate())?;
+            tokio::select! {
+                res = self.shutdown_loop() => {
+                    _ = log_error!(res, "Shutdown Loop triggered");
+                }
+                _ = interrupt.recv() =>  {
+                    info!("SIGINT received, shutting down");
+                }
+                _ = terminate.recv() =>  {
+                    info!("SIGTERM received, shutting down");
+                }
+            }
             _ = self.shutdown_modules().await;
-        } else {
-            #[cfg(unix)]
-            {
-                use tokio::signal::unix;
-                let mut interrupt = unix::signal(unix::SignalKind::interrupt())?;
-                let mut terminate = unix::signal(unix::SignalKind::terminate())?;
-                tokio::select! {
-                    res = self.shutdown_loop() => {
-                        _ = log_error!(res, "Shutdown Loop triggered");
-                    }
-                    _ = interrupt.recv() =>  {
-                        info!("SIGINT received, shutting down");
-                    }
-                    _ = terminate.recv() =>  {
-                        info!("SIGTERM received, shutting down");
-                    }
+        }
+        #[cfg(not(unix))]
+        {
+            tokio::select! {
+                res = self.shutdown_loop() => {
+                    _ = log_error!(res, "Shutdown Loop triggered");
                 }
-                _ = self.shutdown_modules().await;
-            }
-            #[cfg(not(unix))]
-            {
-                tokio::select! {
-                    res = self.shutdown_loop() => {
-                        _ = log_error!(res, "Shutdown Loop triggered");
-                    }
-                    _ = tokio::signal::ctrl_c() => {
-                        info!("Ctrl-C received, shutting down");
-                    }
+                _ = tokio::signal::ctrl_c() => {
+                    info!("Ctrl-C received, shutting down");
                 }
-                _ = self.shutdown_modules().await;
             }
+            _ = self.shutdown_modules().await;
         }
         Ok(())
     }

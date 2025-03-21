@@ -82,11 +82,24 @@ impl Drop for RunPg {
     }
 }
 
-pub async fn common_main(
-    process: bool,
+pub async fn main_loop(config: conf::Conf, crypto: Option<SharedBlstCrypto>) -> Result<()> {
+    let mut handler = common_main(config, crypto).await?;
+    handler.exit_loop().await?;
+
+    Ok(())
+}
+
+pub async fn main_process(config: conf::Conf, crypto: Option<SharedBlstCrypto>) -> Result<()> {
+    let mut handler = common_main(config, crypto).await?;
+    handler.exit_process().await?;
+
+    Ok(())
+}
+
+async fn common_main(
     config: conf::Conf,
     crypto: Option<SharedBlstCrypto>,
-) -> Result<()> {
+) -> Result<ModulesHandler> {
     let config = Arc::new(config);
 
     info!("Starting node with config: {:?}", &config);
@@ -230,7 +243,6 @@ pub async fn common_main(
     }
 
     _ = handler.start_modules().await;
-    _ = handler.exit_loop(process).await;
 
-    Ok(())
+    Ok(handler)
 }
