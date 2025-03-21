@@ -47,7 +47,7 @@ pub trait DataSized {
 
 /// This struct is passed from the application backend to the contract as a zkvm input.
 #[derive(Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
-pub struct ContractInput {
+pub struct ProgramInput {
     /// Borsh serialization of the contract state
     pub state: Vec<u8>,
     /// TxHash of the BlobTransaction being proved

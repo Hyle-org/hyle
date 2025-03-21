@@ -6,8 +6,8 @@ The types are defined in separated files for clarity, but are almost all re-expo
 
 Example:
 ```rust
-use hyle_model::ContractInput; // Valid
-use hyle_model::contract::ContractInput; // NOT valid
+use hyle_model::ProgramInput; // Valid
+use hyle_model::contract::ProgramInput; // NOT valid
 ```
 
 The default feature `full` enables to access all the datamodel, this should be disabled in the contract's dependency (See [examples](https://github.com/Hyle-org/examples)).

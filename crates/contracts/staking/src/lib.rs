@@ -1,6 +1,6 @@
 use hyllar::HyllarAction;
 use sdk::{
-    utils::parse_contract_input, Blob, BlobIndex, ContractInput, HyleContract, RunResult,
+    utils::parse_program_input, Blob, BlobIndex, HyleContract, ProgramInput, RunResult,
     StakingAction,
 };
 use sha2::{Digest, Sha256};
@@ -13,12 +13,12 @@ pub mod fees;
 pub mod state;
 
 impl HyleContract for Staking {
-    fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
-        let (action, execution_ctx) = parse_contract_input::<StakingAction>(contract_input)?;
+    fn execute(&mut self, program_input: &ProgramInput) -> RunResult {
+        let (action, execution_ctx) = parse_program_input::<StakingAction>(program_input)?;
 
         let output = match action {
             StakingAction::Stake { amount } => {
-                check_transfer_blob(&contract_input.blobs, contract_input.index + 1, amount)?;
+                check_transfer_blob(&program_input.blobs, program_input.index + 1, amount)?;
                 self.stake(execution_ctx.caller.clone(), amount)
             }
             StakingAction::Delegate { validator } => {
@@ -26,7 +26,7 @@ impl HyleContract for Staking {
             }
             StakingAction::Distribute { claim: _ } => todo!(),
             StakingAction::DepositForFees { holder, amount } => {
-                check_transfer_blob(&contract_input.blobs, contract_input.index + 1, amount)?;
+                check_transfer_blob(&program_input.blobs, program_input.index + 1, amount)?;
                 self.deposit_for_fees(holder, amount)
             }
         };

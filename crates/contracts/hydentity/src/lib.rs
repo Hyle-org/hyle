@@ -1,7 +1,7 @@
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use identity_provider::IdentityVerification;
-use sdk::{utils::parse_raw_contract_input, Blob, ContractAction, ContractInput, ContractName};
+use sdk::{utils::parse_raw_program_input, Blob, ContractAction, ContractName, ProgramInput};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -16,9 +16,9 @@ pub mod indexer;
 pub mod identity_provider;
 
 impl HyleContract for Hydentity {
-    fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
-        let (action, exec_ctx) = parse_raw_contract_input(contract_input)?;
-        let private_input = std::str::from_utf8(&contract_input.private_input)
+    fn execute(&mut self, program_input: &ProgramInput) -> RunResult {
+        let (action, exec_ctx) = parse_raw_program_input(program_input)?;
+        let private_input = std::str::from_utf8(&program_input.private_input)
             .map_err(|_| "Invalid UTF-8 sequence")?;
         let output = self.execute_identity_action(action, private_input);
 

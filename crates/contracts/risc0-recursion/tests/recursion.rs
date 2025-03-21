@@ -4,7 +4,7 @@ use client_sdk::{
 };
 use hydentity::{client::register_identity, Hydentity};
 use hyle_risc0_recursion::ProofInput;
-use sdk::{guest, ContractInput, ContractName, HyleOutput};
+use sdk::{guest, ContractName, HyleOutput, ProgramInput};
 
 contract_states!(
     struct States {

@@ -11,8 +11,8 @@ use axum::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::{
-    guest, info, Blob, BlobIndex, BlobTransaction, ContractInput, ContractName, Hashed,
-    HyleContract, TxContext, TxId,
+    guest, info, Blob, BlobIndex, BlobTransaction, ContractName, Hashed, HyleContract,
+    ProgramInput, TxContext, TxId,
 };
 use utoipa::openapi::OpenApi;
 
@@ -59,7 +59,7 @@ where
         } = tx.blobs.get(index.0).context("Failed to get blob")?;
 
         let serialized_state = borsh::to_vec(&state)?;
-        let contract_input = ContractInput {
+        let program_input = ProgramInput {
             state: serialized_state,
             identity: tx.identity.clone(),
             index,
@@ -69,7 +69,7 @@ where
             private_input: vec![],
         };
 
-        let (state, hyle_output) = guest::execute::<Self>(&contract_input);
+        let (state, hyle_output) = guest::execute::<Self>(&program_input);
         let res = str::from_utf8(&hyle_output.program_outputs).unwrap_or("no output");
         info!("🚀 Executed {contract_name}: {}", res);
         debug!(

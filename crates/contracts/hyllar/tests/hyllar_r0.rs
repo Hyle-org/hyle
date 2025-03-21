@@ -1,14 +1,14 @@
 use core::str;
 
 use hyle_hyllar::{Hyllar, HyllarAction, FAUCET_ID};
-use sdk::{BlobIndex, ContractAction, ContractInput, ContractName, HyleOutput, TxHash};
+use sdk::{BlobIndex, ContractAction, ContractName, HyleOutput, ProgramInput, TxHash};
 
-fn execute(inputs: ContractInput) -> HyleOutput {
-    let contract_input = borsh::to_vec(&inputs).unwrap();
+fn execute(inputs: ProgramInput) -> HyleOutput {
+    let program_input = borsh::to_vec(&inputs).unwrap();
     let env = risc0_zkvm::ExecutorEnv::builder()
-        .write(&contract_input.len())
+        .write(&program_input.len())
         .unwrap()
-        .write_slice(&contract_input)
+        .write_slice(&program_input)
         .build()
         .unwrap();
     let prover = risc0_zkvm::default_executor();
@@ -22,7 +22,7 @@ fn execute(inputs: ContractInput) -> HyleOutput {
 #[test]
 fn execute_transfer_from() {
     let state = Hyllar::default();
-    let output = execute(ContractInput {
+    let output = execute(ProgramInput {
         state: borsh::to_vec(&state).unwrap(),
         identity: "caller".into(),
         tx_hash: TxHash::default(),
