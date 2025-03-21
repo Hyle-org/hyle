@@ -24,6 +24,8 @@ pub const TOTAL_SUPPLY: u128 = 100_000_000_000;
 pub const FAUCET_ID: &str = "faucet.hydentity";
 
 impl HyleContract for Hyllar {
+    type State = Hyllar;
+
     fn execute(&mut self, program_input: &ProgramInput) -> RunResult {
         let (action, execution_ctx) = parse_program_input::<HyllarAction>(program_input)?;
         let output = self.execute_token_action(action, &execution_ctx);
@@ -47,6 +49,10 @@ impl HyleContract for Hyllar {
             hasher.update(allowance.to_le_bytes());
         }
         sdk::StateCommitment(hasher.finalize().to_vec())
+    }
+
+    fn get_state(&self) -> Hyllar {
+        self.clone()
     }
 }
 

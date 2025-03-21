@@ -204,12 +204,10 @@ mod tests {
             fn allowance(&self, owner: &str, spender: &str) -> Result<u128, String>;
         }
         impl HyleContract for ERC20Contract {
-            fn execute(&mut self, program_input: &sdk::ProgramInput) -> crate::RunResult {
-                unimplemented!()
-            }
-            fn commit(&self) -> sdk::StateCommitment {
-                sdk::StateCommitment(vec![])
-            }
+            type State = ();
+            fn execute(&mut self, program_input: &sdk::ProgramInput) -> crate::RunResult;
+            fn commit(&self) -> sdk::StateCommitment;
+            fn get_state(&self) -> <Self as HyleContract>::State;
         }
     }
 

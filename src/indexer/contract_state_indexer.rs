@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use client_sdk::contract_indexer::{ContractHandler, ContractStateStore};
+use client_sdk::contract_indexer::{ContractHandler, ContractStore};
 use hyle_contract_sdk::{BlobIndex, ContractName, TxId};
 use hyle_model::{RegisterContractEffect, TxContext, HYLE_TESTNET_CHAIN_ID};
 use serde::{Deserialize, Serialize};
@@ -25,33 +25,32 @@ pub enum ProverEvent {
 }
 impl BusMessage for ProverEvent {}
 
-pub struct ContractStateIndexer<State> {
+pub struct ContractIndexer<Contract> {
     bus: IndexerBusClient,
-    store: Arc<RwLock<ContractStateStore<State>>>,
+    store: Arc<RwLock<ContractStore<Contract>>>,
     contract_name: ContractName,
     file: PathBuf,
     #[allow(dead_code)]
     config: Arc<Conf>,
 }
 
-pub struct ContractStateIndexerCtx {
+pub struct ContractIndexerCtx {
     pub common: Arc<CommonRunContext>,
     pub contract_name: ContractName,
 }
 
-impl<State> Module for ContractStateIndexer<State>
+impl<Contract> Module for ContractIndexer<Contract>
 where
-    State: Serialize
+    Contract: Serialize
         + Clone
         + Sync
         + Send
-        + std::fmt::Debug
         + ContractHandler
         + BorshSerialize
         + BorshDeserialize
         + 'static,
 {
-    type Context = ContractStateIndexerCtx;
+    type Context = ContractIndexerCtx;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
         let bus = IndexerBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
@@ -59,14 +58,13 @@ where
             .common
             .config
             .data_directory
-            .join(format!("state_indexer_{}.bin", ctx.contract_name).as_str());
+            .join(format!("contract_indexer_{}.bin", ctx.contract_name).as_str());
 
-        let mut store =
-            Self::load_from_disk_or_default::<ContractStateStore<State>>(file.as_path());
+        let mut store = Self::load_from_disk_or_default::<ContractStore<Contract>>(file.as_path());
         store.contract_name = ctx.contract_name.clone();
         let store = Arc::new(RwLock::new(store));
 
-        let (nested, mut api) = State::api(Arc::clone(&store)).await;
+        let (nested, mut api) = Contract::api(Arc::clone(&store)).await;
         if let Ok(mut o) = ctx.common.openapi.lock() {
             // Deduplicate operation ids
             for p in api.paths.paths.iter_mut() {
@@ -94,7 +92,7 @@ where
         }
         let config = ctx.common.config.clone();
 
-        Ok(ContractStateIndexer {
+        Ok(ContractIndexer {
             bus,
             config,
             file,
@@ -108,17 +106,9 @@ where
     }
 }
 
-impl<State> ContractStateIndexer<State>
+impl<Contract> ContractIndexer<Contract>
 where
-    State: Serialize
-        + Clone
-        + Sync
-        + Send
-        + std::fmt::Debug
-        + ContractHandler
-        + BorshSerialize
-        + BorshDeserialize
-        + 'static,
+    Contract: Clone + Sync + Send + ContractHandler,
 {
     pub async fn start(&mut self) -> Result<(), Error> {
         module_handle_messages! {
@@ -130,7 +120,7 @@ where
             }
         };
 
-        if let Err(e) = Self::save_on_disk::<ContractStateStore<State>>(
+        if let Err(e) = Self::save_on_disk::<ContractStore<Contract>>(
             self.file.as_path(),
             self.store.read().await.deref(),
         ) {
@@ -213,9 +203,9 @@ where
     }
 
     async fn handle_register_contract(&self, contract: RegisterContractEffect) -> Result<()> {
-        let state = State::default();
-        tracing::info!(cn = %self.contract_name, "📝 Registered suppored contract '{}' with initial state '{state:?}'", contract.contract_name);
-        self.store.write().await.state = Some(state);
+        let new_contract = Contract::default();
+        tracing::info!(cn = %self.contract_name, "📝 Registered suppored contract '{}'", contract.contract_name);
+        self.store.write().await.contract = Some(new_contract);
         Ok(())
     }
 
@@ -233,16 +223,17 @@ where
                 continue;
             }
 
-            let state = store
-                .state
+            let contract = store
+                .contract
                 .clone()
-                .ok_or(anyhow!("No state found for {contract_name}"))?;
+                .ok_or(anyhow!("No contract found for {contract_name}"))?;
 
-            let new_state = State::handle(&tx, BlobIndex(index), state, tx_context.clone())?;
+            let new_contract =
+                Contract::handle(&tx, BlobIndex(index), contract, tx_context.clone())?;
 
             debug!(cn = %self.contract_name, "📈 Updated state for {contract_name}");
 
-            store.state = Some(new_state);
+            store.contract = Some(new_contract);
         }
         Ok(())
     }
@@ -264,17 +255,18 @@ mod tests {
     use std::sync::Arc;
 
     #[derive(Clone, Debug, Default, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
-    struct MockState(Vec<u8>);
+    struct MockContract(Vec<u8>);
 
-    impl TryFrom<StateCommitment> for MockState {
+    impl TryFrom<StateCommitment> for MockContract {
         type Error = Error;
 
         fn try_from(value: StateCommitment) -> Result<Self> {
-            Ok(MockState(value.0))
+            Ok(MockContract(value.0))
         }
     }
 
-    impl HyleContract for MockState {
+    impl HyleContract for MockContract {
+        type State = MockContract;
         fn execute(&mut self, _: &hyle_model::ProgramInput) -> hyle_contract_sdk::RunResult {
             Err("not implemented".into())
         }
@@ -282,25 +274,29 @@ mod tests {
         fn commit(&self) -> StateCommitment {
             StateCommitment(self.0.clone())
         }
+
+        fn get_state(&self) -> Self::State {
+            self.clone()
+        }
     }
 
-    impl ContractHandler for MockState {
+    impl ContractHandler for MockContract {
         fn handle(
             tx: &BlobTransaction,
             index: BlobIndex,
-            mut state: Self,
+            mut contract: Self,
             _tx_context: TxContext,
         ) -> Result<Self> {
-            state.0 = tx.blobs.get(index.0).unwrap().data.0.clone();
-            Ok(state)
+            contract.0 = tx.blobs.get(index.0).unwrap().data.0.clone();
+            Ok(contract)
         }
 
-        async fn api(_store: Arc<RwLock<ContractStateStore<Self>>>) -> (axum::Router<()>, OpenApi) {
+        async fn api(_store: Arc<RwLock<ContractStore<Self>>>) -> (axum::Router<()>, OpenApi) {
             (axum::Router::new(), OpenApi::default())
         }
     }
 
-    async fn build_indexer(contract_name: ContractName) -> ContractStateIndexer<MockState> {
+    async fn build_indexer(contract_name: ContractName) -> ContractIndexer<MockContract> {
         let common = Arc::new(CommonRunContext {
             bus: SharedMessageBus::new(BusMetrics::global("global".to_string())),
             config: Arc::new(Conf::default()),
@@ -308,15 +304,15 @@ mod tests {
             openapi: Default::default(),
         });
 
-        let ctx = ContractStateIndexerCtx {
+        let ctx = ContractIndexerCtx {
             common: common.clone(),
             contract_name,
         };
 
-        ContractStateIndexer::<MockState>::build(ctx).await.unwrap()
+        ContractIndexer::<MockContract>::build(ctx).await.unwrap()
     }
 
-    async fn register_contract(indexer: &mut ContractStateIndexer<MockState>) {
+    async fn register_contract(indexer: &mut ContractIndexer<MockContract>) {
         let state_commitment = StateCommitment::default();
         let rce = RegisterContractEffect {
             contract_name: indexer.contract_name.clone(),
@@ -335,7 +331,7 @@ mod tests {
         register_contract(&mut indexer).await;
 
         let store = indexer.store.read().await;
-        assert!(store.state.is_some());
+        assert!(store.contract.is_some());
     }
 
     #[test_log::test(tokio::test)]
@@ -359,7 +355,7 @@ mod tests {
         assert!(store
             .unsettled_blobs
             .contains_key(&TxId(DataProposalHash::default(), tx_hash.clone())));
-        assert!(store.state.clone().unwrap().0.is_empty());
+        assert!(store.contract.clone().unwrap().0.is_empty());
     }
 
     #[test_log::test(tokio::test)]
@@ -385,7 +381,7 @@ mod tests {
 
         let store = indexer.store.read().await;
         assert!(!store.unsettled_blobs.contains_key(&tx_id));
-        assert_eq!(store.state.clone().unwrap().0, vec![1, 2, 3]);
+        assert_eq!(store.contract.clone().unwrap().0, vec![1, 2, 3]);
     }
 
     #[tokio::test]

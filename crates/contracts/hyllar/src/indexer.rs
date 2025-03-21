@@ -37,14 +37,17 @@ impl ContractHandler for Hyllar {
         (status = OK, description = "Get json state of contract")
     )
 )]
-pub async fn get_state<S: Serialize + Clone + 'static>(
+pub async fn get_state<S: HyleContract>(
     State(state): State<ContractHandlerStore<S>>,
 ) -> Result<impl IntoResponse, AppError> {
     let store = state.read().await;
-    store.state.clone().map(Json).ok_or(AppError(
+
+    let contract = store.contract.as_ref().ok_or(AppError(
         StatusCode::NOT_FOUND,
-        anyhow!("No state found for contract '{}'", store.contract_name),
-    ))
+        anyhow!("Contract '{}' not found", store.contract_name),
+    ))?;
+
+    Ok(Json(contract.get_state()))
 }
 
 #[derive(Serialize, ToSchema)]
@@ -68,10 +71,15 @@ pub async fn get_balance(
     State(state): State<ContractHandlerStore<Hyllar>>,
 ) -> Result<impl IntoResponse, AppError> {
     let store = state.read().await;
-    let state = store.state.clone().ok_or(AppError(
-        StatusCode::NOT_FOUND,
-        anyhow!("Contract '{}' not found", store.contract_name),
-    ))?;
+    let state = store
+        .contract
+        .as_ref()
+        .map(|contract| contract.get_state())
+        .map(Json)
+        .ok_or(AppError(
+            StatusCode::NOT_FOUND,
+            anyhow!("No state found for contract '{}'", store.contract_name),
+        ))?;
 
     state
         .balance_of(&account.0)
@@ -107,7 +115,7 @@ pub async fn get_allowance(
     State(state): State<ContractHandlerStore<Hyllar>>,
 ) -> Result<impl IntoResponse, AppError> {
     let store = state.read().await;
-    let state = store.state.clone().ok_or(AppError(
+    let state = store.contract.clone().ok_or(AppError(
         StatusCode::NOT_FOUND,
         anyhow!("Contract '{}' not found", store.contract_name),
     ))?;

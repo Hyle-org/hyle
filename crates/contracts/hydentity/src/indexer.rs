@@ -16,7 +16,7 @@ use client_sdk::contract_indexer::{
     utoipa::{self, ToSchema},
     AppError,
 };
-use sdk::{info, Blob, BlobIndex, BlobTransaction, Identity, TxContext};
+use sdk::{info, Blob, BlobIndex, BlobTransaction, HyleContract, Identity, TxContext};
 use serde::Serialize;
 
 use client_sdk::contract_indexer::axum;
@@ -33,7 +33,7 @@ impl ContractHandler for Hydentity {
     fn handle(
         tx: &BlobTransaction,
         index: BlobIndex,
-        mut state: Self,
+        mut contract: Self,
         _tx_context: TxContext,
     ) -> Result<Self> {
         let Blob {
@@ -47,19 +47,19 @@ impl ContractHandler for Hydentity {
             HydentityAction::RegisterIdentity { account } => {
                 let (name, hash) = Hydentity::parse_id(&account)?;
                 info!("🚀 Executed {contract_name}: {name} registered");
-                state
+                contract
                     .identities
                     .insert(name, AccountInfo { hash, nonce: 0 });
             }
             HydentityAction::VerifyIdentity { account, nonce: _ } => {
-                if let Some(id) = state.identities.get_mut(&account) {
+                if let Some(id) = contract.identities.get_mut(&account) {
                     id.nonce += 1;
                 }
             }
             _ => {}
         }
 
-        Ok(state)
+        Ok(contract)
     }
 }
 
@@ -75,10 +75,13 @@ pub async fn get_state(
     State(state): State<ContractHandlerStore<Hydentity>>,
 ) -> Result<impl IntoResponse, AppError> {
     let store = state.read().await;
-    store.state.clone().map(Json).ok_or(AppError(
+
+    let contract = store.contract.as_ref().ok_or(AppError(
         StatusCode::NOT_FOUND,
-        anyhow::anyhow!("No state found for contract '{}'", store.contract_name),
-    ))
+        anyhow!("Contract '{}' not found", store.contract_name),
+    ))?;
+
+    Ok(Json(contract.get_state()))
 }
 
 #[derive(Serialize, ToSchema)]
@@ -103,10 +106,15 @@ pub async fn get_nonce(
     State(state): State<ContractHandlerStore<Hydentity>>,
 ) -> Result<impl IntoResponse, AppError> {
     let store = state.read().await;
-    let state = store.state.clone().ok_or(AppError(
-        StatusCode::NOT_FOUND,
-        anyhow!("Contract '{}' not found", store.contract_name),
-    ))?;
+    let state = store
+        .contract
+        .as_ref()
+        .map(|contract| contract.get_state())
+        .map(Json)
+        .ok_or(AppError(
+            StatusCode::NOT_FOUND,
+            anyhow!("No state found for contract '{}'", store.contract_name),
+        ))?;
 
     let info = state
         .get_identity_info(&account.0)

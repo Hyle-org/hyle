@@ -31,6 +31,7 @@ use caller::ExecutionContext;
 // re-export hyle-model
 pub use hyle_model::*;
 
+use serde::Serialize;
 #[cfg(feature = "tracing")]
 pub use tracing;
 
@@ -91,6 +92,8 @@ enum MyContractAction{
 }
 
 impl HyleContract for MyContract {
+    type State = ();
+
     fn execute(&mut self, program_input: &ProgramInput) -> RunResult {
         let (action, exec_ctx) = parse_raw_program_input(program_input)?;
 
@@ -100,6 +103,9 @@ impl HyleContract for MyContract {
     }
     fn commit(&self) -> StateCommitment {
         StateCommitment(vec![])
+    }
+    fn get_state(&self) -> Self::State {
+        ()
     }
 }
 
@@ -113,6 +119,8 @@ impl MyContract {
 ```
 */
 pub trait HyleContract {
+    type State: Clone + Serialize;
+
     /// Entry point of the contract
     fn execute(&mut self, program_input: &ProgramInput) -> RunResult;
 
@@ -121,6 +129,9 @@ pub trait HyleContract {
     /// The [StateCommitment] will be stored on chain, and will be used as initial_state for
     /// next contract execution.
     fn commit(&self) -> StateCommitment;
+
+    /// This function is used to get the current state of the contract.
+    fn get_state(&self) -> Self::State;
 }
 
 pub const fn to_u8_array(val: &[u32; 8]) -> [u8; 32] {

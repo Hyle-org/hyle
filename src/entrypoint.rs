@@ -6,7 +6,7 @@ use crate::{
     data_availability::DataAvailability,
     genesis::Genesis,
     indexer::{
-        contract_state_indexer::{ContractStateIndexer, ContractStateIndexerCtx},
+        contract_state_indexer::{ContractIndexer, ContractIndexerCtx},
         da_listener::{DAListener, DAListenerCtx},
         Indexer,
     },
@@ -138,19 +138,19 @@ async fn common_main(
             .build_module::<Indexer>(common_run_ctx.clone())
             .await?;
         handler
-            .build_module::<ContractStateIndexer<Hyllar>>(ContractStateIndexerCtx {
+            .build_module::<ContractIndexer<Hyllar>>(ContractIndexerCtx {
                 contract_name: "hyllar".into(),
                 common: common_run_ctx.clone(),
             })
             .await?;
         handler
-            .build_module::<ContractStateIndexer<Hyllar>>(ContractStateIndexerCtx {
+            .build_module::<ContractIndexer<Hyllar>>(ContractIndexerCtx {
                 contract_name: "hyllar2".into(),
                 common: common_run_ctx.clone(),
             })
             .await?;
         handler
-            .build_module::<ContractStateIndexer<Hydentity>>(ContractStateIndexerCtx {
+            .build_module::<ContractIndexer<Hydentity>>(ContractIndexerCtx {
                 contract_name: "hydentity".into(),
                 common: common_run_ctx.clone(),
             })

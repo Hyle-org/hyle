@@ -297,12 +297,12 @@ impl ContractRunner {
         &mut self,
         tx_context: Option<TxContext>,
         blobs: Vec<Blob>,
-        state: Vec<u8>,
+        contract: Vec<u8>,
     ) {
         let tx_hash = BlobTransaction::new(self.identity.clone(), blobs.clone()).hashed();
 
         self.program_input.get_or_init(|| ProgramInput {
-            state,
+            contract,
             identity: self.identity.clone(),
             index: self.index,
             blobs,
