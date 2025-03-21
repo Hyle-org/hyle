@@ -23,7 +23,7 @@ fn execute(inputs: ProgramInput) -> HyleOutput {
 fn execute_transfer_from() {
     let state = Hyllar::default();
     let output = execute(ProgramInput {
-        state: borsh::to_vec(&state).unwrap(),
+        contract: borsh::to_vec(&state).unwrap(),
         identity: "caller".into(),
         tx_hash: TxHash::default(),
         tx_ctx: None,

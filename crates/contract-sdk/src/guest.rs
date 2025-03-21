@@ -139,32 +139,33 @@ pub fn fail(
 ///
 /// # Type Parameters
 ///
-/// * `State` - The type of the state that must implement the `HyleContract` and `BorshDeserialize` traits.
+/// * `Contract` - The type of the contract that must implement the `HyleContract` and `BorshDeserialize` traits.
 ///
 /// # Returns
 ///
-/// A pair containing the new state and the contract output as `HyleOutput`.
+/// A pair containing the contract with its updated state and the execution output as `HyleOutput`.
 ///
 /// # Panics
 ///
 /// Panics if the contract initialization fails.
-pub fn execute<State>(program_input: &ProgramInput) -> (State, HyleOutput)
+pub fn execute<Contract>(program_input: &ProgramInput) -> (Contract, HyleOutput)
 where
-    State: HyleContract + BorshDeserialize + 'static,
+    Contract: HyleContract + BorshDeserialize,
 {
-    let mut state: State = borsh::from_slice(&program_input.state).expect("Failed to decode state");
-    let initial_state_commitment = state.commit();
+    let mut contract: Contract =
+        borsh::from_slice(&program_input.contract).expect("Failed to decode state");
+    let initial_state_commitment = contract.commit();
 
-    let mut res: RunResult = state.execute(program_input);
+    let mut res: RunResult = contract.execute(program_input);
 
-    let next_state_commitment = state.commit();
+    let next_state_commitment = contract.commit();
 
-    let output = as_hyle_output::<State>(
+    let output = as_hyle_output(
         initial_state_commitment,
         next_state_commitment,
         program_input.clone(),
         &mut res,
     );
 
-    (state, output)
+    (contract, output)
 }

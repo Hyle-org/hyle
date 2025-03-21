@@ -13,6 +13,8 @@ pub mod fees;
 pub mod state;
 
 impl HyleContract for Staking {
+    type State = Staking;
+
     fn execute(&mut self, program_input: &ProgramInput) -> RunResult {
         let (action, execution_ctx) = parse_program_input::<StakingAction>(program_input)?;
 
@@ -59,6 +61,10 @@ impl HyleContract for Staking {
             }
         }
         sdk::StateCommitment(hasher.finalize().to_vec())
+    }
+
+    fn get_state(&self) -> Staking {
+        self.clone()
     }
 }
 

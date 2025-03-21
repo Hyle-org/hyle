@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use core::str;
 use reqwest::StatusCode;
+use serde::Serialize;
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::debug;
@@ -21,18 +22,18 @@ pub use utoipa;
 pub use utoipa_axum;
 
 #[derive(BorshSerialize, BorshDeserialize)]
-pub struct ContractStateStore<State> {
-    pub state: Option<State>,
+pub struct ContractStore<Contract> {
+    pub contract: Option<Contract>,
     pub contract_name: ContractName,
     pub unsettled_blobs: BTreeMap<TxId, BlobTransaction>,
 }
 
-pub type ContractHandlerStore<T> = Arc<RwLock<ContractStateStore<T>>>;
+pub type ContractHandlerStore<T> = Arc<RwLock<ContractStore<T>>>;
 
-impl<State> Default for ContractStateStore<State> {
+impl<Contract> Default for ContractStore<Contract> {
     fn default() -> Self {
-        ContractStateStore {
-            state: None,
+        ContractStore {
+            contract: None,
             contract_name: Default::default(),
             unsettled_blobs: BTreeMap::new(),
         }
@@ -41,7 +42,14 @@ impl<State> Default for ContractStateStore<State> {
 
 pub trait ContractHandler
 where
-    Self: Sized + Default + HyleContract + BorshSerialize + BorshDeserialize + 'static,
+    Self: Sized
+        + std::fmt::Debug
+        + Default
+        + HyleContract
+        + Serialize
+        + BorshSerialize
+        + BorshDeserialize
+        + 'static,
 {
     fn api(
         store: ContractHandlerStore<Self>,
@@ -50,7 +58,7 @@ where
     fn handle(
         tx: &BlobTransaction,
         index: BlobIndex,
-        state: Self,
+        contract: Self,
         tx_context: TxContext,
     ) -> Result<Self> {
         let Blob {
@@ -58,9 +66,9 @@ where
             data: _,
         } = tx.blobs.get(index.0).context("Failed to get blob")?;
 
-        let serialized_state = borsh::to_vec(&state)?;
+        let serialized_contract = borsh::to_vec(&contract)?;
         let program_input = ProgramInput {
-            state: serialized_state,
+            contract: serialized_contract,
             identity: tx.identity.clone(),
             index,
             blobs: tx.blobs.clone(),
@@ -69,14 +77,14 @@ where
             private_input: vec![],
         };
 
-        let (state, hyle_output) = guest::execute::<Self>(&program_input);
+        let (contract, hyle_output) = guest::execute::<Self>(&program_input);
         let res = str::from_utf8(&hyle_output.program_outputs).unwrap_or("no output");
         info!("🚀 Executed {contract_name}: {}", res);
         debug!(
             handler = %contract_name,
             "hyle_output: {:?}", hyle_output
         );
-        Ok(state)
+        Ok(contract)
     }
 }
 

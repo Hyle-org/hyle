@@ -8,6 +8,7 @@ use sdk::{
     HyleContract, OnchainEffect, ProgramId, ProgramInput, RegisterContractEffect, RunResult,
     StateCommitment, Verifier,
 };
+use serde::Serialize;
 use uuid::Uuid;
 
 #[cfg(feature = "client")]
@@ -42,6 +43,8 @@ impl ContractAction for UuidTldAction {
 }
 
 impl HyleContract for UuidTld {
+    type State = UuidTld;
+
     fn execute(&mut self, program_input: &ProgramInput) -> RunResult {
         let (action, exec_ctx) = parse_raw_program_input::<UuidTldAction>(program_input)?;
         // Not an identity provider
@@ -73,9 +76,13 @@ impl HyleContract for UuidTld {
     fn commit(&self) -> sdk::StateCommitment {
         sdk::StateCommitment(self.serialize().unwrap())
     }
+
+    fn get_state(&self) -> UuidTld {
+        self.clone()
+    }
 }
 
-#[derive(Default, Debug, Clone, BorshSerialize, BorshDeserialize)]
+#[derive(Default, Debug, Clone, Serialize, BorshSerialize, BorshDeserialize)]
 pub struct UuidTld {
     registered_contracts: BTreeSet<u128>,
 }
@@ -125,7 +132,7 @@ mod test {
 
     fn make_program_input(action: UuidTldAction, state: Vec<u8>) -> ProgramInput {
         ProgramInput {
-            state,
+            contract: state,
             identity: "toto.test".into(),
             tx_hash: TxHash::default(),
             tx_ctx: Some(TxContext {

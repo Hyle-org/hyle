@@ -163,7 +163,7 @@ pub mod test {
 
     pub fn execute(program_input: &ProgramInput) -> Result<HyleOutput> {
         // FIXME: this is a hack to make the test pass.
-        let initial_state = StateCommitment(program_input.state.clone());
+        let initial_state = StateCommitment(program_input.contract.clone());
         let hyle_output = HyleOutput {
             version: 1,
             initial_state: initial_state.clone(),

@@ -105,10 +105,14 @@ mod tests {
         }
 
         impl HyleContract for IdentityVerification {
+            type State = ();
             fn execute(&mut self, program_input: &sdk::ProgramInput) -> crate::RunResult {
                 unimplemented!()
             }
             fn commit(&self) -> sdk::StateCommitment;
+            fn get_state(&self) -> <Self as HyleContract>::State {
+                ()
+            }
         }
 
     }

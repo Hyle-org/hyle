@@ -23,7 +23,7 @@ It allows you to only depends on crate `contract-sdk` in your contract's code.
 The inputs of the zkVM should be of type ProgramInput defined in
 ```rust
 pub struct ProgramInput {
-    pub state: Vec<u8>,
+    pub contract: Vec<u8>,
     pub identity: Identity,
     pub tx_hash: TxHash,
     pub private_blob: BlobData,
@@ -45,7 +45,7 @@ pub fn init_with_caller<Action>(
 At the end of your contract, you need to output a `HyleOutput`, you can use the helper in `utils.rs`:
 
 ```rust
-pub fn as_hyle_output<State>(
+pub fn as_hyle_output(
     input: ProgramInput,
     new_state: State,
     res: crate::RunResult,

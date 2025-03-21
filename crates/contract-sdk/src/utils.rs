@@ -2,7 +2,7 @@ use crate::{
     alloc::string::{String, ToString},
     caller::ExecutionContext,
     guest::fail,
-    HyleContract, Identity, StructuredBlobData,
+    Identity, StructuredBlobData,
 };
 use alloc::{format, vec};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -35,12 +35,12 @@ where
         }
     };
 
-    let Ok(parameters) = borsh::from_slice::<Action>(blob.data.0.as_slice()) else {
+    let Ok(action) = borsh::from_slice::<Action>(blob.data.0.as_slice()) else {
         return Err(format!("Could not deserialize Blob at index {index}"));
     };
 
     let exec_ctx = ExecutionContext::new(input.identity.clone(), blob.contract_name.clone());
-    Ok((parameters, exec_ctx))
+    Ok((action, exec_ctx))
 }
 
 /// This function is used to parse the program input blob data.
@@ -124,9 +124,9 @@ where
     Some(parsed_blob)
 }
 
-pub fn as_hyle_output<State: HyleContract + BorshDeserialize>(
+pub fn as_hyle_output(
     initial_state_commitment: StateCommitment,
-    nex_state_commitment: StateCommitment,
+    next_state_commitment: StateCommitment,
     program_input: ProgramInput,
     res: &mut crate::RunResult,
 ) -> HyleOutput {
@@ -145,7 +145,7 @@ pub fn as_hyle_output<State: HyleContract + BorshDeserialize>(
             HyleOutput {
                 version: 1,
                 initial_state: initial_state_commitment,
-                next_state: nex_state_commitment,
+                next_state: next_state_commitment,
                 identity: program_input.identity,
                 index: program_input.index,
                 blobs: flatten_blobs(&program_input.blobs),

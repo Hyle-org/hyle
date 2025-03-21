@@ -16,6 +16,8 @@ pub mod indexer;
 pub mod identity_provider;
 
 impl HyleContract for Hydentity {
+    type State = Hydentity;
+
     fn execute(&mut self, program_input: &ProgramInput) -> RunResult {
         let (action, exec_ctx) = parse_raw_program_input(program_input)?;
         let private_input = std::str::from_utf8(&program_input.private_input)
@@ -36,6 +38,10 @@ impl HyleContract for Hydentity {
             hasher.update(info.nonce.to_be_bytes());
         }
         sdk::StateCommitment(hasher.finalize().to_vec())
+    }
+
+    fn get_state(&self) -> Hydentity {
+        self.clone()
     }
 }
 

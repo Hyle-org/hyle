@@ -55,6 +55,8 @@ pub struct Amm {
 }
 
 impl HyleContract for Amm {
+    type State = Amm;
+
     fn execute(&mut self, program_input: &ProgramInput) -> RunResult {
         let (action, mut execution_ctx) = parse_program_input::<AmmAction>(program_input)?;
         let output = match action {
@@ -111,6 +113,10 @@ impl HyleContract for Amm {
 
     fn commit(&self) -> sdk::StateCommitment {
         sdk::StateCommitment(self.as_bytes())
+    }
+
+    fn get_state(&self) -> Self::State {
+        self.clone()
     }
 }
 
