@@ -61,12 +61,6 @@ impl FollowerRole for Consensus {
             "Received Prepare message: {}", consensus_proposal
         );
 
-        info!(
-            "At round {} {}",
-            self.bft_round_state.consensus_proposal.slot,
-            self.bft_round_state.consensus_proposal.view
-        );
-
         if matches!(self.bft_round_state.state_tag, StateTag::Joining) {
             // Shortcut - if this is the prepare we expected, exit joining mode.
             let is_next_prepare = consensus_proposal.view == 0
@@ -95,8 +89,6 @@ impl FollowerRole for Consensus {
                 );
                 // Store the message until we receive a matching Commit.
                 // Because we may receive old or rogue proposals, we store all of them.
-                // TODO: it would be slightly DOS-safer to only save those from validators we know,
-                // but I'm not sure it's an actual problem in practice.
                 self.bft_round_state
                     .joining
                     .buffered_prepares

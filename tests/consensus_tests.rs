@@ -334,7 +334,7 @@ mod e2e_consensus {
 
         _ = ctx.wait_height(2).await;
 
-        ctx.stop_all().await?;
+        ctx.stop_all().await;
 
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
@@ -346,10 +346,7 @@ mod e2e_consensus {
         ctx.restart_node(3)?;
         ctx.restart_node(4)?;
 
-        ctx.wait_height(0).await?;
-
-        // Give it some time - they might take a few rounds to connect to each other.
-        tokio::time::sleep(tokio::time::Duration::from_secs(6)).await;
+        ctx.wait_height(2).await?;
 
         for i in 2..4 {
             _ = gen_txs(&mut ctx, &mut tx_ctx, format!("alex{}", i), 100 + i).await;

@@ -736,7 +736,7 @@ impl Consensus {
                         break;
                     },
                     GenesisEvent::NoGenesis => {
-                        // First wait a coupld seconds to hopefully have reconnected with all peers.
+                        // First wait a couple seconds to hopefully have reconnected with all peers.
                         info!("🧳 Waiting a few seconds before processing with rejoin to connect with peers.");
                         tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
                         // If we deserialized, we might be a follower or a leader.
