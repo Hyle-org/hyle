@@ -11,8 +11,6 @@ rust-version = { workspace = true }
 [dependencies]
 anyhow = "1.0.96"
 borsh = "1.5.5"
-serde = "1.0"
-serde_json = { version = "1" }
 tracing = "0.1"
 
 # Tcp feature
