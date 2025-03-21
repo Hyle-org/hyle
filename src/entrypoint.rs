@@ -221,12 +221,12 @@ async fn common_main(
 
         handler
             .build_module::<RestApi>(RestApiRunContext {
-                rest_addr: config.rest_address.clone(),
-                max_body_size: config.rest_max_body_size,
+                port: config.rest_server_port,
+                max_body_size: config.rest_server_max_body_size,
                 info: NodeInfo {
                     id: config.id.clone(),
                     pubkey: crypto.as_ref().map(|c| c.validator_pubkey()).cloned(),
-                    da_address: config.da_address.clone(),
+                    da_address: format!("{}:{}", config.hostname, config.da_server_port),
                 },
                 bus: common_run_ctx.bus.new_handle(),
                 metrics_layer: Some(metrics_layer),

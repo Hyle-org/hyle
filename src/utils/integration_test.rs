@@ -98,10 +98,10 @@ impl NodeIntegrationCtxBuilder {
             Some(false),
         )
         .expect("conf ok");
-        conf.p2p.address = format!("localhost:{}", find_available_port().await);
-        conf.da_address = format!("localhost:{}", find_available_port().await);
-        conf.tcp_address = Some(format!("localhost:{}", find_available_port().await));
-        conf.rest_address = format!("localhost:{}", find_available_port().await);
+        conf.p2p.server_port = find_available_port().await;
+        conf.da_server_port = find_available_port().await;
+        conf.tcp_server_port = find_available_port().await;
+        conf.rest_server_port = find_available_port().await;
 
         Self {
             tmpdir,
@@ -297,12 +297,12 @@ impl NodeIntegrationCtx {
                 &mut handler,
                 &ctx,
                 RestApiRunContext {
-                    rest_addr: ctx.common.config.rest_address.clone(),
-                    max_body_size: ctx.common.config.rest_max_body_size,
+                    port: config.rest_server_port,
+                    max_body_size: ctx.common.config.rest_server_max_body_size,
                     info: NodeInfo {
                         id: config.id.clone(),
                         pubkey: Some(pubkey),
-                        da_address: config.da_address.clone(),
+                        da_address: format!("{}:{}", config.hostname, config.da_server_port),
                     },
                     bus: ctx.common.bus.new_handle(),
                     metrics_layer: None,

@@ -68,7 +68,10 @@ impl E2ECtx {
             let mut node_conf = conf_maker.build("node");
             node_conf.p2p.peers = peers.clone();
             genesis_stakers.insert(node_conf.id.clone(), 100);
-            peers.push(node_conf.p2p.address.clone());
+            peers.push(format!(
+                "{}:{}",
+                node_conf.hostname, node_conf.p2p.server_port
+            ));
             confs.push(node_conf);
         }
 
@@ -80,7 +83,11 @@ impl E2ECtx {
 
             // Request something on node1 to be sure it's alive and working
             let client = NodeApiHttpClient {
-                url: Url::parse(&format!("http://{}", &node.conf.rest_address)).unwrap(),
+                url: Url::parse(&format!(
+                    "http://localhost:{}/",
+                    &node.conf.rest_server_port
+                ))
+                .unwrap(),
                 reqwest_client: Client::new(),
                 api_key: None,
             };
@@ -106,7 +113,11 @@ impl E2ECtx {
 
         // Request something on node1 to be sure it's alive and working
         let client = NodeApiHttpClient {
-            url: Url::parse(&format!("http://{}", &node.conf.rest_address)).unwrap(),
+            url: Url::parse(&format!(
+                "http://localhost:{}/",
+                &node.conf.rest_server_port
+            ))
+            .unwrap(),
             reqwest_client: Client::new(),
             api_key: None,
         };
@@ -148,17 +159,21 @@ impl E2ECtx {
 
         // Request something on node1 to be sure it's alive and working
         let client = NodeApiHttpClient {
-            url: Url::parse(&format!("http://{}", &node.conf.rest_address)).unwrap(),
+            url: Url::parse(&format!(
+                "http://localhost:{}/",
+                &node.conf.rest_server_port
+            ))
+            .unwrap(),
             reqwest_client: Client::new(),
             api_key: None,
         };
 
         // Start indexer
         let mut indexer_conf = conf_maker.build("indexer");
-        indexer_conf.da_address = node_conf.da_address.clone();
+        indexer_conf.da_address = format!("localhost:{}", node_conf.da_server_port);
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
-        let url = format!("http://{}", &indexer_conf.rest_address);
+        let url = format!("http://localhost:{}/", &indexer_conf.rest_server_port);
         let indexer_client = IndexerApiHttpClient::new(url).unwrap();
 
         while indexer_client.get_last_block().await.is_err() {
@@ -218,7 +233,7 @@ impl E2ECtx {
         node_conf.p2p.peers = self
             .nodes
             .iter()
-            .map(|node| node.conf.p2p.address.clone())
+            .map(|node| format!("{}:{}", node.conf.hostname, node.conf.p2p.server_port))
             .collect();
         node_conf
     }
@@ -233,7 +248,11 @@ impl E2ECtx {
             .start();
         // Request something on node1 to be sure it's alive and working
         let client = NodeApiHttpClient {
-            url: Url::parse(&format!("http://{}", &node.conf.rest_address)).unwrap(),
+            url: Url::parse(&format!(
+                "http://localhost:{}/",
+                &node.conf.rest_server_port
+            ))
+            .unwrap(),
             reqwest_client: Client::new(),
             api_key: None,
         };
@@ -260,11 +279,13 @@ impl E2ECtx {
 
         // Start indexer
         let mut indexer_conf = conf_maker.build("indexer");
-        indexer_conf.da_address = nodes.last().unwrap().conf.da_address.clone();
+        indexer_conf.run_indexer = true;
+        indexer_conf.da_address =
+            format!("localhost:{}", nodes.last().unwrap().conf.da_server_port);
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
         nodes.push(indexer);
-        let url = format!("http://{}", &indexer_conf.rest_address);
+        let url = format!("http://localhost:{}/", &indexer_conf.rest_server_port);
 
         let indexer_client = IndexerApiHttpClient::new(url).unwrap();
 

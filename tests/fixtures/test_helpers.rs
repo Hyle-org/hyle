@@ -35,12 +35,12 @@ impl ConfMaker {
                 format!("{}-{}", prefix, self.i)
             },
             p2p: P2pConf {
-                address: format!("localhost:{}", self.random_port + self.i),
+                server_port: (self.random_port + self.i) as u16,
                 ..self.default.p2p.clone()
             },
-            da_address: format!("localhost:{}", self.random_port + 1000 + self.i),
-            tcp_address: Some(format!("localhost:{}", self.random_port + 2000 + self.i)),
-            rest_address: format!("localhost:{}", self.random_port + 3000 + self.i),
+            da_server_port: (self.random_port + 1000 + self.i) as u16,
+            tcp_server_port: (self.random_port + 2000 + self.i) as u16,
+            rest_server_port: (self.random_port + 3000 + self.i) as u16,
             ..self.default.clone()
         }
     }
@@ -53,7 +53,7 @@ impl Default for ConfMaker {
         let random_port: u32 = rng.random_range(1024..(65536 - 4000));
 
         default.log_format = "node".to_string(); // Activate node name in logs for convenience in tests.
-        default.p2p.address = format!("localhost:{}", random_port);
+        default.p2p.server_port = random_port as u16;
         default.p2p.mode = hyle::utils::conf::P2pMode::FullValidator;
         default.consensus.solo = false;
         default.genesis.stakers = {
@@ -64,9 +64,9 @@ impl Default for ConfMaker {
         };
         default.genesis.faucet_password = "password".into();
 
-        default.da_address = format!("localhost:{}", random_port + 1000);
-        default.tcp_address = Some(format!("localhost:{}", random_port + 2000));
-        default.rest_address = format!("localhost:{}", random_port + 3000);
+        default.da_server_port = (random_port + 1000) as u16;
+        default.tcp_server_port = (random_port + 2000) as u16;
+        default.rest_server_port = (random_port + 3000) as u16;
 
         default.run_indexer = false; // disable indexer by default to avoid needed PG
 
