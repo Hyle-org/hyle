@@ -183,6 +183,7 @@ impl FollowerRole for Consensus {
 
         // At this point we are OK with this new consensus proposal, update locally and vote.
         self.bft_round_state.current_proposal = consensus_proposal.clone();
+        self.bft_round_state.last_cut_seen = consensus_proposal.cut.clone();
         let cp_hash = self.bft_round_state.current_proposal.hashed();
 
         self.follower_state().buffered_prepares.push((
@@ -624,6 +625,21 @@ impl Consensus {
             if qc == &commit_qc {
                 return true;
             }
+        }
+
+        // Edge case: we have already committed a different CQC. We are kinda stuck.
+        if self.bft_round_state.current_proposal.slot != self.bft_round_state.slot {
+            warn!(
+                "Received an unknown commit QC for slot {}. This is unsafe to verify as we have updated staking. Proceeding with current staking anyways.",
+                self.bft_round_state.slot
+            );
+            // To still sorta make this work, verify the CQC with our current staking and hope for the best.
+            return self
+                .verify_quorum_certificate(
+                    ConsensusNetMessage::ConfirmAck(self.bft_round_state.parent_hash.clone()),
+                    &commit_qc,
+                )
+                .is_ok();
         }
 
         let commited_current_proposal = log_error!(

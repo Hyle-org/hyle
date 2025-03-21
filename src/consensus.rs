@@ -534,10 +534,7 @@ impl Consensus {
             "Failed to send ConsensusEvent::CommittedConsensusProposal on the bus"
         );
 
-        debug!(
-            "📈 Slot {} committed",
-            &self.bft_round_state.current_proposal.slot
-        );
+        debug!("📈 Slot {} committed", &self.bft_round_state.slot);
 
         self.carry_on_with_ticket(Ticket::CommitQC(commit_quorum_certificate))
     }
