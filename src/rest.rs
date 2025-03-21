@@ -276,7 +276,7 @@ mod tests {
 
         // Spawn a task to send requests
         let request_handle = tokio::spawn({
-            let client = NodeApiHttpClient::new(format!("http://{}", rest_client))
+            let client = NodeApiHttpClient::new(format!("http://localhost:{}", rest_client))
                 .expect("Failed to create client");
             let dummy_tx = BlobTransaction::new(
                 "test.identity",

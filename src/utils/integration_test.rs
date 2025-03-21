@@ -98,7 +98,7 @@ impl NodeIntegrationCtxBuilder {
             Some(false),
         )
         .expect("conf ok");
-        conf.p2p.port = find_available_port().await;
+        conf.p2p.server_port = find_available_port().await;
         conf.da_server_port = find_available_port().await;
         conf.tcp_server_port = Some(find_available_port().await);
         conf.rest_server_port = Some(find_available_port().await);

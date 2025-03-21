@@ -65,7 +65,7 @@ impl Module for P2P {
 impl P2P {
     fn spawn_peer(&mut self, peer_address: String) {
         if self.connected_peers.contains(&peer_address)
-            || peer_address == format!("{}:{}", self.config.hostname, self.config.p2p.port)
+            || peer_address == format!("{}:{}", self.config.hostname, self.config.p2p.server_port)
         {
             return;
         }
@@ -131,7 +131,8 @@ impl P2P {
         // Wait all other threads to start correctly
         sleep(Duration::from_secs(1)).await;
 
-        let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, self.config.p2p.port)).await?;
+        let listener =
+            TcpListener::bind((Ipv4Addr::UNSPECIFIED, self.config.p2p.server_port)).await?;
         info!(
             "📡  Starting P2P module, listening on {}",
             listener.local_addr()?
