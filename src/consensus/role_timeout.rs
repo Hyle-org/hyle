@@ -4,9 +4,12 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use tracing::{debug, info, trace, warn};
 
 use super::Consensus;
-use crate::model::{
-    utils::get_current_timestamp, ConsensusNetMessage, QuorumCertificate, SignedByValidator, Slot,
-    Ticket, ValidatorPublicKey, View,
+use crate::{
+    consensus::StateTag,
+    model::{
+        utils::get_current_timestamp, ConsensusNetMessage, QuorumCertificate, SignedByValidator,
+        Slot, Ticket, ValidatorPublicKey, View,
+    },
 };
 use anyhow::{bail, Context, Result};
 
@@ -132,6 +135,11 @@ impl TimeoutRole for Consensus {
             self.bft_round_state.consensus_proposal.view
         ))?;
 
+        // This TC is for our current slot and view, so we can leave Joining mode
+        if matches!(self.bft_round_state.state_tag, StateTag::Joining) {
+            self.bft_round_state.state_tag = StateTag::Leader;
+        }
+
         self.carry_on_with_ticket(Ticket::TimeoutQC(received_timeout_certificate.clone()))
     }
 
@@ -254,6 +262,10 @@ impl TimeoutRole for Consensus {
                 .schedule_next(get_current_timestamp());
 
             if &self.next_leader()? == self.crypto.validator_pubkey() {
+                // This TC is for our current slot and view (by construction), so we can leave Joining mode
+                if matches!(self.bft_round_state.state_tag, StateTag::Joining) {
+                    self.bft_round_state.state_tag = StateTag::Leader;
+                }
                 self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_certificate))?;
             } else {
                 // Broadcast the Timeout Certificate to all validators

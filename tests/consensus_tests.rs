@@ -316,4 +316,55 @@ mod e2e_consensus {
 
         Ok(())
     }
+
+    #[test_log::test(tokio::test)]
+    async fn can_restart_multi_node_after_txs() -> Result<()> {
+        let mut ctx = E2ECtx::new_multi_with_indexer(4, 500).await?;
+
+        _ = ctx.wait_height(1).await;
+
+        // Gen a few txs
+        let mut tx_ctx = init_states(&mut ctx).await;
+
+        warn!("Starting generating txs");
+
+        for i in 0..2 {
+            _ = gen_txs(&mut ctx, &mut tx_ctx, format!("alex{}", i), 100 + i).await;
+        }
+
+        _ = ctx.wait_height(2).await;
+
+        ctx.stop_all().await;
+
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+
+        warn!("Restarting nodes");
+
+        ctx.restart_node(0)?;
+        ctx.restart_node(1)?;
+        ctx.restart_node(2)?;
+        ctx.restart_node(3)?;
+        ctx.restart_node(4)?;
+
+        ctx.wait_height(2).await?;
+
+        for i in 2..4 {
+            _ = gen_txs(&mut ctx, &mut tx_ctx, format!("alex{}", i), 100 + i).await;
+        }
+
+        ctx.wait_height(3).await?;
+
+        let state: Hyllar = ctx
+            .indexer_client()
+            .fetch_current_state(&ContractName::new("hyllar"))
+            .await?;
+
+        for i in 0..4 {
+            let balance = state.balance_of(&format!("alex{}.hydentity", i));
+            info!("Checking alex{}.hydentity balance: {:?}", i, balance);
+            assert_eq!(balance.unwrap(), ((100 + i) as u128));
+        }
+
+        Ok(())
+    }
 }
