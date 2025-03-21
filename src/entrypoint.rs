@@ -82,7 +82,24 @@ impl Drop for RunPg {
     }
 }
 
-pub async fn common_main(config: conf::Conf, crypto: Option<SharedBlstCrypto>) -> Result<()> {
+pub async fn main_loop(config: conf::Conf, crypto: Option<SharedBlstCrypto>) -> Result<()> {
+    let mut handler = common_main(config, crypto).await?;
+    handler.exit_loop().await?;
+
+    Ok(())
+}
+
+pub async fn main_process(config: conf::Conf, crypto: Option<SharedBlstCrypto>) -> Result<()> {
+    let mut handler = common_main(config, crypto).await?;
+    handler.exit_process().await?;
+
+    Ok(())
+}
+
+async fn common_main(
+    config: conf::Conf,
+    crypto: Option<SharedBlstCrypto>,
+) -> Result<ModulesHandler> {
     let config = Arc::new(config);
 
     info!("Starting node with config: {:?}", &config);
@@ -227,40 +244,5 @@ pub async fn common_main(config: conf::Conf, crypto: Option<SharedBlstCrypto>) -
 
     _ = handler.start_modules().await;
 
-    #[cfg(unix)]
-    {
-        use tokio::signal::unix;
-        let mut interrupt = unix::signal(unix::SignalKind::interrupt())?;
-        let mut terminate = unix::signal(unix::SignalKind::terminate())?;
-        tokio::select! {
-            res = handler.shutdown_loop() => {
-                if let Err(e) = res {
-                    error!("Error running modules: {:?}", e);
-                }
-            }
-            _ = interrupt.recv() =>  {
-                info!("SIGINT received, shutting down");
-            }
-            _ = terminate.recv() =>  {
-                info!("SIGTERM received, shutting down");
-            }
-        }
-        _ = handler.shutdown_modules().await;
-    }
-    #[cfg(not(unix))]
-    {
-        tokio::select! {
-            res = handler.shutdown_loop() => {
-                if let Err(e) = res {
-                    error!("Error running modules: {:?}", e);
-                }
-            }
-            _ = tokio::signal::ctrl_c() => {
-                info!("Ctrl-C received, shutting down");
-            }
-        }
-        _ = handler.shutdown_modules().await;
-    }
-
-    Ok(())
+    Ok(handler)
 }
