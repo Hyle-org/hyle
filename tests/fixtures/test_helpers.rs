@@ -39,8 +39,8 @@ impl ConfMaker {
                 ..self.default.p2p.clone()
             },
             da_server_port: (self.random_port + 1000 + self.i) as u16,
-            tcp_server_port: Some((self.random_port + 2000 + self.i) as u16),
-            rest_server_port: Some((self.random_port + 3000 + self.i) as u16),
+            tcp_server_port: (self.random_port + 2000 + self.i) as u16,
+            rest_server_port: (self.random_port + 3000 + self.i) as u16,
             ..self.default.clone()
         }
     }
@@ -65,8 +65,8 @@ impl Default for ConfMaker {
         default.genesis.faucet_password = "password".into();
 
         default.da_server_port = (random_port + 1000) as u16;
-        default.tcp_server_port = Some((random_port + 2000) as u16);
-        default.rest_server_port = Some((random_port + 3000) as u16);
+        default.tcp_server_port = (random_port + 2000) as u16;
+        default.rest_server_port = (random_port + 3000) as u16;
 
         default.run_indexer = false; // disable indexer by default to avoid needed PG
 

@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
     // The indexer binary runs none of the consensus/p2p layer
     config.p2p.mode = P2pMode::None;
     // The indexer binary skips the TCP server
-    config.tcp_server_port = None;
+    config.run_tcp_server = false;
 
     setup_tracing(&config, format!("{}(nopkey)", config.id.clone()))?;
 

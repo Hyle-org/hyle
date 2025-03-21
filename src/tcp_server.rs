@@ -11,7 +11,7 @@ use crate::{
     },
 };
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use client_sdk::tcp::{codec_tcp_server, TcpServerMessage};
 use tracing::info;
 
@@ -49,10 +49,7 @@ impl Module for TcpServer {
 
 impl TcpServer {
     pub async fn start(&mut self) -> Result<()> {
-        let tcp_server_port = self
-            .config
-            .tcp_server_port
-            .context("tcp_server_port not specified in conf file. Not Starting module.")?;
+        let tcp_server_port = self.config.tcp_server_port;
 
         info!(
             "📡  Starting TcpServer module, listening for stream requests on port {}",

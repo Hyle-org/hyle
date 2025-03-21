@@ -253,10 +253,7 @@ mod tests {
     async fn test_rest_api_shutdown_with_mocked_modules() {
         // Create a new integration test context with all modules mocked except REST API
         let builder = NodeIntegrationCtxBuilder::new().await;
-        let rest_client = builder
-            .conf
-            .rest_server_port
-            .expect("Should have rest server port");
+        let rest_client = builder.conf.rest_server_port;
 
         // Mock Genesis with our RestApiListener, and skip other modules except mempool (for its API)
         let builder = builder

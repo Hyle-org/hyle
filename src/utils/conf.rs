@@ -69,16 +69,18 @@ pub struct Conf {
     /// If "None", this is instead the address to connect to.
     pub da_server_port: u16,
 
-    // For a Da client
+    /// For a Da client
     pub da_address: String,
 
-    /// Server port for the REST API (Some() == activated, None == deactivated)
-    pub rest_server_port: Option<u16>,
+    pub run_rest_server: bool,
+    /// Server port for the REST API
+    pub rest_server_port: u16,
     /// Maximum body size for REST requests
     pub rest_server_max_body_size: usize,
 
-    /// Server port for the TCP API (Some() == activated, None == deactivated)
-    pub tcp_server_port: Option<u16>,
+    pub run_tcp_server: bool,
+    /// Server port for the TCP API
+    pub tcp_server_port: u16,
 
     /// Whether to run the indexer
     pub run_indexer: bool,
@@ -112,7 +114,25 @@ impl Conf {
             .set_override_option("data_directory", data_directory)?
             .set_override_option(
                 "tcp_server_port",
-                std::env::var("HYLE_TCP_SERVER_PORT")
+                std::env::var("HYLE_TCP__SERVER__PORT")
+                    .ok()
+                    .and_then(|port| port.parse::<u16>().ok()), // Convertir en u16 si possible
+            )?
+            .set_override_option(
+                "rest_server_port",
+                std::env::var("HYLE_REST__SERVER__PORT")
+                    .ok()
+                    .and_then(|port| port.parse::<u16>().ok()), // Convertir en u16 si possible
+            )?
+            .set_override_option(
+                "da_server_port",
+                std::env::var("HYLE_DA__SERVER__PORT")
+                    .ok()
+                    .and_then(|port| port.parse::<u16>().ok()), // Convertir en u16 si possible
+            )?
+            .set_override_option(
+                "da_server_port",
+                std::env::var("HYLE_DA__SERVER__PORT")
                     .ok()
                     .and_then(|port| port.parse::<u16>().ok()), // Convertir en u16 si possible
             )?
@@ -150,8 +170,35 @@ mod tests {
 
     #[test]
     fn test_override_tcp_server_port() {
-        std::env::set_var("HYLE_TCP_SERVER_PORT", "9090");
         let conf = Conf::new(None, None, None).unwrap();
-        assert_eq!(conf.tcp_server_port, Some(9090));
+        assert_eq!(conf.tcp_server_port, 1414);
+
+        std::env::set_var("HYLE_TCP__SERVER__PORT", "9090");
+        let conf = Conf::new(None, None, None).unwrap();
+        assert_eq!(conf.tcp_server_port, 9090);
+    }
+    #[test]
+    fn test_override_rest_server_port() {
+        let conf = Conf::new(None, None, None).unwrap();
+        assert_eq!(conf.rest_server_port, 4321);
+        std::env::set_var("HYLE_REST__SERVER__PORT", "9090");
+        let conf = Conf::new(None, None, None).unwrap();
+        assert_eq!(conf.rest_server_port, 9090);
+    }
+    #[test]
+    fn test_override_da_server_port() {
+        let conf = Conf::new(None, None, None).unwrap();
+        assert_eq!(conf.da_server_port, 4141);
+        std::env::set_var("HYLE_DA__SERVER__PORT", "9090");
+        let conf = Conf::new(None, None, None).unwrap();
+        assert_eq!(conf.da_server_port, 9090);
+    }
+    #[test]
+    fn test_override_hostname() {
+        let conf = Conf::new(None, None, None).unwrap();
+        assert_eq!(conf.hostname, "localhost");
+        std::env::set_var("HOSTNAME", "hyli-node");
+        let conf = Conf::new(None, None, None).unwrap();
+        assert_eq!(conf.hostname, "hyli-node");
     }
 }

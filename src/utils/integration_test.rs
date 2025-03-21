@@ -100,8 +100,8 @@ impl NodeIntegrationCtxBuilder {
         .expect("conf ok");
         conf.p2p.server_port = find_available_port().await;
         conf.da_server_port = find_available_port().await;
-        conf.tcp_server_port = Some(find_available_port().await);
-        conf.rest_server_port = Some(find_available_port().await);
+        conf.tcp_server_port = find_available_port().await;
+        conf.rest_server_port = find_available_port().await;
 
         Self {
             tmpdir,
@@ -281,7 +281,7 @@ impl NodeIntegrationCtx {
 
         Self::build_module::<P2P>(&mut handler, &ctx, ctx.clone(), &mut mocks).await?;
 
-        if let Some(port) = config.rest_server_port {
+        if config.run_rest_server {
             // Should come last so the other modules have nested their own routes.
             #[allow(clippy::expect_used, reason = "Fail on misconfiguration")]
             let router = ctx
@@ -297,7 +297,7 @@ impl NodeIntegrationCtx {
                 &mut handler,
                 &ctx,
                 RestApiRunContext {
-                    port,
+                    port: config.rest_server_port,
                     max_body_size: ctx.common.config.rest_server_max_body_size,
                     info: NodeInfo {
                         id: config.id.clone(),
@@ -314,7 +314,7 @@ impl NodeIntegrationCtx {
             .await?;
         }
 
-        if config.tcp_server_port.is_some() {
+        if config.run_tcp_server {
             Self::build_module::<TcpServer>(&mut handler, &ctx, ctx.common.clone(), &mut mocks)
                 .await?;
         }

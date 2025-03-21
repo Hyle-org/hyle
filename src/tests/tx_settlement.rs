@@ -16,7 +16,7 @@ use crate::{
     utils::integration_test::{NodeIntegrationCtx, NodeIntegrationCtxBuilder},
 };
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 use hyle_contract_sdk::BlobIndex;
 
@@ -47,7 +47,7 @@ async fn test_full_settlement_flow() -> Result<()> {
         .unwrap();
 
     let mut builder = NodeIntegrationCtxBuilder::new().await;
-    let rest_server_port = builder.conf.rest_server_port.context("Rest server port")?;
+    let rest_server_port = builder.conf.rest_server_port;
     builder.conf.run_indexer = true;
     builder.conf.database_url = format!(
         "postgres://postgres:postgres@localhost:{}/postgres",
@@ -154,7 +154,7 @@ async fn build_hyle_node() -> Result<(String, NodeIntegrationCtx)> {
         .unwrap();
 
     let mut builder = NodeIntegrationCtxBuilder::new().await;
-    let rest_port = builder.conf.rest_server_port.context("Rest server port")?;
+    let rest_port = builder.conf.rest_server_port;
     builder.conf.run_indexer = true;
     builder.conf.database_url = format!(
         "postgres://postgres:postgres@localhost:{}/postgres",
@@ -349,7 +349,7 @@ async fn test_tx_settlement_duplicates() -> Result<()> {
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 2))]
 async fn test_contract_upgrade() -> Result<()> {
     let builder = NodeIntegrationCtxBuilder::new().await;
-    let rest_server_port = builder.conf.rest_server_port.expect("Rest server port");
+    let rest_server_port = builder.conf.rest_server_port;
     let mut hyle_node = builder.build().await?;
 
     hyle_node.wait_for_genesis_event().await?;
