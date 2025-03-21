@@ -9,18 +9,18 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use core::result::Result;
 
 use hyle_model::{
-    flatten_blobs, Blob, BlobIndex, ContractInput, DropEndOfReader, HyleOutput, StateCommitment,
+    flatten_blobs, Blob, BlobIndex, DropEndOfReader, HyleOutput, ProgramInput, StateCommitment,
     StructuredBlob,
 };
 
-/// This function is used to parse the contract input blob data into a given template `Action`
+/// This function is used to parse the program input blob data into a given template `Action`
 /// It assumes that the blob data is the `Action` serialized with borsh.
 /// It returns a tuple with the parsed `Action` and an [ExecutionContext] that can be used
 /// by the contract, and will be needed by the sdk to build the [HyleOutput].
 ///
-/// Alternative: [parse_contract_input]
-pub fn parse_raw_contract_input<Action>(
-    input: &ContractInput,
+/// Alternative: [parse_program_input]
+pub fn parse_raw_program_input<Action>(
+    input: &ProgramInput,
 ) -> Result<(Action, ExecutionContext), String>
 where
     Action: BorshDeserialize,
@@ -43,7 +43,7 @@ where
     Ok((parameters, exec_ctx))
 }
 
-/// This function is used to parse the contract input blob data.
+/// This function is used to parse the program input blob data.
 /// It assumes that the blob data is a [StructuredBlobData] serialized with borsh.
 /// It returns a tuple with the parsed `Action` and an [ExecutionContext] that can be used
 /// by the contract, and will be needed by the sdk to build the [HyleOutput].
@@ -51,9 +51,9 @@ where
 /// The [ExecutionContext] will holds the caller/callees information.
 /// See [StructuredBlobData] page for more information on caller/callees.
 ///
-/// Alternative: [parse_raw_contract_input]
-pub fn parse_contract_input<Action>(
-    input: &ContractInput,
+/// Alternative: [parse_raw_program_input]
+pub fn parse_program_input<Action>(
+    input: &ProgramInput,
 ) -> Result<(Action, ExecutionContext), String>
 where
     Action: BorshSerialize + BorshDeserialize,
@@ -127,14 +127,14 @@ where
 pub fn as_hyle_output<State: HyleContract + BorshDeserialize>(
     initial_state_commitment: StateCommitment,
     nex_state_commitment: StateCommitment,
-    contract_input: ContractInput,
+    program_input: ProgramInput,
     res: &mut crate::RunResult,
 ) -> HyleOutput {
     match res {
         Ok((ref mut program_output, execution_context, ref mut onchain_effects)) => {
             if !execution_context.callees_blobs.is_empty() {
                 return fail(
-                    contract_input,
+                    program_input,
                     initial_state_commitment,
                     &format!(
                         "Execution context has not been fully consumed {:?}",
@@ -146,22 +146,22 @@ pub fn as_hyle_output<State: HyleContract + BorshDeserialize>(
                 version: 1,
                 initial_state: initial_state_commitment,
                 next_state: nex_state_commitment,
-                identity: contract_input.identity,
-                index: contract_input.index,
-                blobs: flatten_blobs(&contract_input.blobs),
+                identity: program_input.identity,
+                index: program_input.index,
+                blobs: flatten_blobs(&program_input.blobs),
                 success: true,
-                tx_hash: contract_input.tx_hash,
-                tx_ctx: contract_input.tx_ctx,
+                tx_hash: program_input.tx_hash,
+                tx_ctx: program_input.tx_ctx,
                 onchain_effects: core::mem::take(onchain_effects),
                 program_outputs: core::mem::take(program_output).into_bytes(),
             }
         }
-        Err(message) => fail(contract_input, initial_state_commitment, message),
+        Err(message) => fail(program_input, initial_state_commitment, message),
     }
 }
 
 pub fn check_caller_callees<Action>(
-    input: &ContractInput,
+    input: &ProgramInput,
     parameters: &StructuredBlob<Action>,
 ) -> Result<Identity, String>
 where

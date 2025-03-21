@@ -10,8 +10,8 @@ risc0_zkvm::guest::entry!(main);
 
 fn main() {
     let env = Risc0Env {};
-    let contract_input = env.read();
+    let program_input = env.read();
 
-    let (_, output) = execute::<UuidTld>(&contract_input);
+    let (_, output) = execute::<UuidTld>(&program_input);
     env.commit(&output);
 }

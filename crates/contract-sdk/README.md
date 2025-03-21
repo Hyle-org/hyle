@@ -10,9 +10,9 @@ Some of the models are defined in `hyle-model` crates, which is re-exported by t
 
 For example, you can do either of these two:
 ```rust 
-use contract_sdk::ContractInput;
+use contract_sdk::ProgramInput;
 // or 
-use hyle_model::ContractInput;
+use hyle_model::ProgramInput;
 ```
 
 It allows you to only depends on crate `contract-sdk` in your contract's code.
@@ -20,9 +20,9 @@ It allows you to only depends on crate `contract-sdk` in your contract's code.
 
 # Entrypoints
 
-The inputs of the zkVM should be of type ContractInput defined in
+The inputs of the zkVM should be of type ProgramInput defined in
 ```rust
-pub struct ContractInput {
+pub struct ProgramInput {
     pub state: Vec<u8>,
     pub identity: Identity,
     pub tx_hash: TxHash,
@@ -35,18 +35,18 @@ pub struct ContractInput {
 In `guest.rs` you will find 2 functions that are entry points of smart contracts. You should call at least one of them at the beginning of your contract.
 
 ```rust 
-pub fn init_raw<Action>(input: ContractInput) -> (ContractInput, Action)
+pub fn init_raw<Action>(input: ProgramInput) -> (ProgramInput, Action)
 
 pub fn init_with_caller<Action>(
-    input: ContractInput,
-) -> Result<(ContractInput, StructuredBlob<Action>, Identity), String>
+    input: ProgramInput,
+) -> Result<(ProgramInput, StructuredBlob<Action>, Identity), String>
 ```
 
 At the end of your contract, you need to output a `HyleOutput`, you can use the helper in `utils.rs`:
 
 ```rust
 pub fn as_hyle_output<State>(
-    input: ContractInput,
+    input: ProgramInput,
     new_state: State,
     res: crate::RunResult,
 ) -> HyleOutput

@@ -4,9 +4,9 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use rand::Rng;
 use rand_seeder::SipHasher;
 use sdk::{
-    info, utils::parse_raw_contract_input, Blob, BlobData, BlobIndex, ContractAction,
-    ContractInput, ContractName, HyleContract, OnchainEffect, ProgramId, RegisterContractEffect,
-    RunResult, StateCommitment, Verifier,
+    info, utils::parse_raw_program_input, Blob, BlobData, BlobIndex, ContractAction, ContractName,
+    HyleContract, OnchainEffect, ProgramId, ProgramInput, RegisterContractEffect, RunResult,
+    StateCommitment, Verifier,
 };
 use uuid::Uuid;
 
@@ -42,17 +42,17 @@ impl ContractAction for UuidTldAction {
 }
 
 impl HyleContract for UuidTld {
-    fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
-        let (action, exec_ctx) = parse_raw_contract_input::<UuidTldAction>(contract_input)?;
+    fn execute(&mut self, program_input: &ProgramInput) -> RunResult {
+        let (action, exec_ctx) = parse_raw_program_input::<UuidTldAction>(program_input)?;
         // Not an identity provider
-        if contract_input.identity.0.ends_with(&format!(
+        if program_input.identity.0.ends_with(&format!(
             ".{}",
-            contract_input.blobs[contract_input.index.0].contract_name.0
+            program_input.blobs[program_input.index.0].contract_name.0
         )) {
             return Err("Invalid identity".to_string());
         }
 
-        let id = self.register_contract(contract_input)?;
+        let id = self.register_contract(program_input)?;
 
         Ok((
             format!("registered {}", id.clone()),
@@ -60,7 +60,7 @@ impl HyleContract for UuidTld {
             vec![OnchainEffect::RegisterContract(RegisterContractEffect {
                 contract_name: format!(
                     "{}.{}",
-                    id, contract_input.blobs[contract_input.index.0].contract_name.0
+                    id, program_input.blobs[program_input.index.0].contract_name.0
                 )
                 .into(),
                 verifier: action.verifier,
@@ -93,15 +93,15 @@ impl UuidTld {
         self.serialize().expect("Failed to encode UuidTldState")
     }
 
-    pub fn register_contract(&mut self, contract_input: &ContractInput) -> Result<Uuid, String> {
-        let Some(ref tx_ctx) = contract_input.tx_ctx else {
+    pub fn register_contract(&mut self, program_input: &ProgramInput) -> Result<Uuid, String> {
+        let Some(ref tx_ctx) = program_input.tx_ctx else {
             return Err("Missing tx context".to_string());
         };
 
         // Create UUID
         let mut hasher = SipHasher::new();
         hasher.write(&self.commit().0);
-        hasher.write(contract_input.tx_hash.0.as_bytes());
+        hasher.write(program_input.tx_hash.0.as_bytes());
         hasher.write(tx_ctx.block_hash.0.as_bytes());
         hasher.write_u128(tx_ctx.timestamp);
         let mut hasher_rng = hasher.into_rng();
@@ -123,8 +123,8 @@ mod test {
     use crate::*;
     use sdk::*;
 
-    fn make_contract_input(action: UuidTldAction, state: Vec<u8>) -> ContractInput {
-        ContractInput {
+    fn make_program_input(action: UuidTldAction, state: Vec<u8>) -> ProgramInput {
+        ProgramInput {
             state,
             identity: "toto.test".into(),
             tx_hash: TxHash::default(),
@@ -154,9 +154,9 @@ mod test {
         };
         let mut state = UuidTld::default();
 
-        let contract_input = make_contract_input(action.clone(), borsh::to_vec(&state).unwrap());
+        let program_input = make_program_input(action.clone(), borsh::to_vec(&state).unwrap());
 
-        let (_, _, onchain_effects) = state.execute(&contract_input).unwrap();
+        let (_, _, onchain_effects) = state.execute(&program_input).unwrap();
 
         let OnchainEffect::RegisterContract(effect) = onchain_effects.first().unwrap() else {
             panic!("Expected RegisterContract effect");
@@ -166,9 +166,9 @@ mod test {
             "7de07efe-e91d-45f7-a5d2-0b813c1d3e10.uuid"
         );
 
-        let contract_input = make_contract_input(action.clone(), borsh::to_vec(&state).unwrap());
+        let program_input = make_program_input(action.clone(), borsh::to_vec(&state).unwrap());
 
-        let (_, _, onchain_effects) = state.execute(&contract_input).unwrap();
+        let (_, _, onchain_effects) = state.execute(&program_input).unwrap();
 
         let OnchainEffect::RegisterContract(effect) = onchain_effects.first().unwrap() else {
             panic!("Expected RegisterContract effect");

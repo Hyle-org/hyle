@@ -8,8 +8,8 @@ use std::{
 
 use anyhow::{bail, Result};
 use sdk::{
-    Blob, BlobIndex, BlobTransaction, ContractAction, ContractInput, ContractName, Hashed,
-    HyleOutput, Identity, ProofTransaction, TxContext,
+    Blob, BlobIndex, BlobTransaction, ContractAction, ContractName, Hashed, HyleOutput, Identity,
+    ProgramInput, ProofTransaction, TxContext,
 };
 
 use crate::helpers::ClientSdkProver;
@@ -97,7 +97,7 @@ impl ProofTxBuilder {
                 .clone();
             async move {
                 let proof = prover
-                    .prove(runner.contract_input.take().expect("no input for prover"))
+                    .prove(runner.program_input.take().expect("no input for prover"))
                     .await;
                 proof.map(|proof| ProofTransaction {
                     proof,
@@ -122,7 +122,7 @@ where
     fn execute(
         &self,
         contract_name: &ContractName,
-        contract_input: &ContractInput,
+        program_input: &ProgramInput,
     ) -> anyhow::Result<(Box<dyn Any>, sdk::HyleOutput)>;
 }
 
@@ -203,7 +203,7 @@ impl<S: StateUpdater> TxExecutor<S> {
     /// Executes the transaction and updates the state of the associated contracts.
     ///
     /// This function processes a given `ProvableBlobTx` by iterating over each blob,
-    /// building the contract input, executing the contract, and updating the state
+    /// building the program input, executing the contract, and updating the state
     /// accordingly. If the execution fails, it returns an error with the program output.
     ///
     /// # Arguments
@@ -226,12 +226,12 @@ impl<S: StateUpdater> TxExecutor<S> {
         for runner in tx.runners.iter_mut() {
             let state = self.states.get(&runner.contract_name)?;
 
-            runner.build_contract_input(tx.tx_context.clone(), tx.blobs.clone(), state);
+            runner.build_program_input(tx.tx_context.clone(), tx.blobs.clone(), state);
 
             tracing::info!("Checking transition for {}...", runner.contract_name);
             let (mut state, out) = match self
                 .states
-                .execute(&runner.contract_name, runner.contract_input.get().unwrap())
+                .execute(&runner.contract_name, runner.program_input.get().unwrap())
             {
                 Ok(result) => result,
                 Err(e) => {
@@ -247,7 +247,7 @@ impl<S: StateUpdater> TxExecutor<S> {
                 let program_error = std::str::from_utf8(&out.program_outputs).unwrap();
                 bail!(
                     "Execution failed on runner for blob {:?} on contrat {:?} ! Program output: {}",
-                    runner.contract_input.get().unwrap().index,
+                    runner.program_input.get().unwrap().index,
                     runner.contract_name,
                     program_error
                 );
@@ -274,7 +274,7 @@ pub struct ContractRunner {
     identity: Identity,
     index: BlobIndex,
     private_input: Option<Vec<u8>>,
-    contract_input: OnceLock<ContractInput>,
+    program_input: OnceLock<ProgramInput>,
 }
 
 impl ContractRunner {
@@ -289,11 +289,11 @@ impl ContractRunner {
             identity,
             index,
             private_input,
-            contract_input: OnceLock::new(),
+            program_input: OnceLock::new(),
         })
     }
 
-    fn build_contract_input(
+    fn build_program_input(
         &mut self,
         tx_context: Option<TxContext>,
         blobs: Vec<Blob>,
@@ -301,7 +301,7 @@ impl ContractRunner {
     ) {
         let tx_hash = BlobTransaction::new(self.identity.clone(), blobs.clone()).hashed();
 
-        self.contract_input.get_or_init(|| ContractInput {
+        self.program_input.get_or_init(|| ProgramInput {
             state,
             identity: self.identity.clone(),
             index: self.index,
@@ -354,10 +354,10 @@ macro_rules! contract_states {
                 }
             }
 
-            fn execute(&self, contract_name: &ContractName, contract_input: &ContractInput) -> anyhow::Result<(Box<dyn std::any::Any>, HyleOutput)> {
+            fn execute(&self, contract_name: &ContractName, program_input: &ProgramInput) -> anyhow::Result<(Box<dyn std::any::Any>, HyleOutput)> {
                 match contract_name.0.as_str() {
                     $(stringify!($contract_name) => {
-                        let (state, output) = guest::execute::<$contract_state>(contract_input);
+                        let (state, output) = guest::execute::<$contract_state>(program_input);
                         Ok((Box::new(state) as Box<dyn std::any::Any>, output))
                     })*
                     _ => anyhow::bail!("Unknown contract name: {contract_name}"),

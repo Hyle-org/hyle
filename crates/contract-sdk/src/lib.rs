@@ -67,20 +67,20 @@ This trait is used to define the contract's entrypoint.
 By using it and the [execute](function@crate::guest::execute) function, you let the sdk
 generate for you the [HyleOutput] struct with correct fields.
 
-The [ContractInput] struct is built by the application backend and given as input to
+The [ProgramInput] struct is built by the application backend and given as input to
 the zkvm.
 
-The contract input is generic to any contract, and holds all the blobs of the blob transaction
+The program input is generic to any contract, and holds all the blobs of the blob transaction
 being proved. These blobs are stored as vec of bytes, so contract need to parse them into the
-expected type. For this, it can call either [utils::parse_raw_contract_input] or
-[utils::parse_contract_input]. Check the [utils] documentation for details on these functions.
+expected type. For this, it can call either [utils::parse_raw_program_input] or
+[utils::parse_program_input]. Check the [utils] documentation for details on these functions.
 
 ## Example of execute implementation:
 
 ```rust
 use hyle_contract_sdk::{StateCommitment, HyleContract, RunResult};
-use hyle_contract_sdk::utils::parse_raw_contract_input;
-use hyle_model::ContractInput;
+use hyle_contract_sdk::utils::parse_raw_program_input;
+use hyle_model::ProgramInput;
 
 use borsh::{BorshSerialize, BorshDeserialize};
 
@@ -91,8 +91,8 @@ enum MyContractAction{
 }
 
 impl HyleContract for MyContract {
-    fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
-        let (action, exec_ctx) = parse_raw_contract_input(contract_input)?;
+    fn execute(&mut self, program_input: &ProgramInput) -> RunResult {
+        let (action, exec_ctx) = parse_raw_program_input(program_input)?;
 
         let output = self.execute_action(action)?;
 
@@ -114,7 +114,7 @@ impl MyContract {
 */
 pub trait HyleContract {
     /// Entry point of the contract
-    fn execute(&mut self, contract_input: &ContractInput) -> RunResult;
+    fn execute(&mut self, program_input: &ProgramInput) -> RunResult;
 
     /// This function builds the on-chain state commitment of the contract
     /// It can compute a state hash, or a merkle root of the state, or any other commitment.

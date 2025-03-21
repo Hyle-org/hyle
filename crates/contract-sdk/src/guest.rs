@@ -3,7 +3,7 @@
 The `guest` module provides the `GuestEnv` trait that defines a common interface for the guests accross different zkvm.
 It provides `Risc0Env` and `SP1Env` structs that implement the `GuestEnv` trait for both zkvm.
 
-The [execute] function is used to execute an action on a given contract using the provided state and contract input.
+The [execute] function is used to execute an action on a given contract using the provided state and program input.
 
 The `fail` function is used to generate a failure output for a contract action.
 
@@ -23,8 +23,8 @@ risc0_zkvm::guest::entry!(main);
 
 fn main() {
    let env = Risc0Env {};
-   let contract_input = env.read();
-   let (_, output) = execute::<Hydentity>(&contract_input);
+   let program_input = env.read();
+   let (_, output) = execute::<Hydentity>(&program_input);
    env.commit(&output);
 }
 ```
@@ -61,7 +61,7 @@ use alloc::vec;
 use borsh::BorshDeserialize;
 use hyle_model::StateCommitment;
 
-use crate::{flatten_blobs, utils::as_hyle_output, ContractInput, HyleOutput};
+use crate::{flatten_blobs, utils::as_hyle_output, HyleOutput, ProgramInput};
 use crate::{HyleContract, RunResult};
 
 pub trait GuestEnv {
@@ -112,7 +112,7 @@ impl GuestEnv for SP1Env {
 }
 
 pub fn fail(
-    input: ContractInput,
+    input: ProgramInput,
     initial_state_commitment: StateCommitment,
     message: &str,
 ) -> HyleOutput {
@@ -131,11 +131,11 @@ pub fn fail(
     }
 }
 
-/// Executes an action on a given contract using the provided state and contract input.
+/// Executes an action on a given contract using the provided state and program input.
 ///
 /// # Arguments
 ///
-/// * `contract_input` - A reference to the contract input that contains the current state, blobs, identity, etc.
+/// * `program_input` - A reference to the program input that contains the current state, blobs, identity, etc.
 ///
 /// # Type Parameters
 ///
@@ -148,22 +148,21 @@ pub fn fail(
 /// # Panics
 ///
 /// Panics if the contract initialization fails.
-pub fn execute<State>(contract_input: &ContractInput) -> (State, HyleOutput)
+pub fn execute<State>(program_input: &ProgramInput) -> (State, HyleOutput)
 where
     State: HyleContract + BorshDeserialize + 'static,
 {
-    let mut state: State =
-        borsh::from_slice(&contract_input.state).expect("Failed to decode state");
+    let mut state: State = borsh::from_slice(&program_input.state).expect("Failed to decode state");
     let initial_state_commitment = state.commit();
 
-    let mut res: RunResult = state.execute(contract_input);
+    let mut res: RunResult = state.execute(program_input);
 
     let next_state_commitment = state.commit();
 
     let output = as_hyle_output::<State>(
         initial_state_commitment,
         next_state_commitment,
-        contract_input.clone(),
+        program_input.clone(),
         &mut res,
     );
 
