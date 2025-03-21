@@ -153,17 +153,6 @@ impl FollowerRole for Consensus {
 
         // TODO: check we haven't voted for a proposal this slot/view already.
 
-        // Validate message comes from the correct leader
-        // (can't do this earlier as might need to process the ticket first)
-        let round_leader = self.round_leader()?;
-        if sender != round_leader {
-            self.metrics.prepare_error("wrong_leader");
-            bail!(
-                "Prepare consensus message for {} {} does not come from current leader {}. I won't vote for it.",
-                self.bft_round_state.slot, self.bft_round_state.view, round_leader
-            );
-        }
-
         // Sanity check: after processing the ticket, we should be in the right slot/view.
         // TODO: these checks are almost entirely redundant at this point because we process the ticket above.
         if consensus_proposal.slot != self.bft_round_state.slot {
@@ -173,6 +162,17 @@ impl FollowerRole for Consensus {
         if view != self.bft_round_state.view {
             self.metrics.prepare_error("wrong_view");
             bail!("Prepare message received for wrong view");
+        }
+
+        // Validate message comes from the correct leader
+        // (can't do this earlier as might need to process the ticket first)
+        let round_leader = self.round_leader()?;
+        if sender != round_leader {
+            self.metrics.prepare_error("wrong_leader");
+            bail!(
+                "Prepare consensus message for {} {} does not come from current leader {}. I won't vote for it.",
+                self.bft_round_state.slot, self.bft_round_state.view, round_leader
+            );
         }
 
         self.verify_poda(&consensus_proposal)?;
