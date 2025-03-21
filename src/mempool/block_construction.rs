@@ -319,8 +319,6 @@ pub mod test {
                     staking: ctx.mempool.staking.clone(),
                     consensus_proposal: model::ConsensusProposal {
                         slot: 1,
-                        view: 0,
-                        round_leader: crypto2.validator_pubkey().clone(),
                         cut: cut1.clone(),
                         staking_actions: vec![],
                         timestamp: 777,
@@ -364,8 +362,6 @@ pub mod test {
                     staking: ctx.mempool.staking.clone(),
                     consensus_proposal: model::ConsensusProposal {
                         slot: 2,
-                        view: 0,
-                        round_leader: crypto2.validator_pubkey().clone(),
                         cut: cut2.clone(),
                         staking_actions: vec![],
                         timestamp: 888,
