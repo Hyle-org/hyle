@@ -40,12 +40,6 @@ impl RoleSync for Consensus {
 
     fn on_sync_reply(&mut self, prepare: Prepare) -> Result<()> {
         let (sender, proposal, ticket, view) = prepare;
-        // Ignore obviously old messages
-        if proposal.slot < self.bft_round_state.slot
-            || proposal.slot == self.bft_round_state.slot && view <= self.bft_round_state.view
-        {
-            return Ok(());
-        }
         self.on_prepare(sender, proposal, ticket, view)
     }
 }
