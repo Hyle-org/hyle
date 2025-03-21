@@ -40,6 +40,58 @@ impl ContractAction for UuidTldAction {
     }
 }
 
+impl HyleContract for UuidTld {
+    fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
+        // Not an identity provider
+        if contract_input.identity.0.ends_with(&format!(
+            ".{}",
+            contract_input.blobs[contract_input.index.0].contract_name.0
+        )) {
+            return Err("Invalid identity".to_string());
+        }
+
+        if let Ok((action, exec_ctx)) = parse_raw_contract_input::<UuidTldAction>(contract_input) {
+            match action {
+                UuidTldAction::Claim => {
+                    let id = self.claim_contract(contract_input)?;
+                    let uuid = Uuid::from_u128(id);
+                    return Ok((format!("claimed {}", uuid), exec_ctx, vec![]));
+                }
+            }
+        }
+
+        if let Ok((action, exec_ctx)) =
+            parse_contract_input::<RegisterContractAction>(contract_input)
+        {
+            // Extract UUID from contract name
+            let parts: Vec<&str> = action.contract_name.0.split('.').collect();
+            let uuid = match Uuid::parse_str(parts[0]) {
+                Ok(uuid) => uuid,
+                Err(_) => return Err("Invalid UUID in contract name".to_string()),
+            };
+
+            self.register_contract(uuid.as_u128(), contract_input.identity.0.clone())?;
+
+            return Ok((
+                format!("registered {} ({})", uuid, uuid.as_u128()),
+                exec_ctx,
+                vec![OnchainEffect::RegisterContract(RegisterContractEffect {
+                    contract_name: action.contract_name,
+                    verifier: action.verifier,
+                    program_id: action.program_id,
+                    state_commitment: action.state_commitment,
+                })],
+            ));
+        }
+
+        Err("Unknown action".to_string())
+    }
+
+    fn commit(&self) -> sdk::StateCommitment {
+        sdk::StateCommitment(self.serialize().unwrap())
+    }
+}
+
 #[derive(Default, Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct UuidTld {
     // Maps UUID to the identity that claimed it
@@ -100,58 +152,6 @@ impl UuidTld {
             Some(_) => Err("UUID claimed by different identity".to_string()),
             None => Err("UUID not claimed".to_string()),
         }
-    }
-}
-
-impl HyleContract for UuidTld {
-    fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
-        // Not an identity provider
-        if contract_input.identity.0.ends_with(&format!(
-            ".{}",
-            contract_input.blobs[contract_input.index.0].contract_name.0
-        )) {
-            return Err("Invalid identity".to_string());
-        }
-
-        if let Ok((action, exec_ctx)) = parse_raw_contract_input::<UuidTldAction>(contract_input) {
-            match action {
-                UuidTldAction::Claim => {
-                    let id = self.claim_contract(contract_input)?;
-                    let uuid = Uuid::from_u128(id);
-                    return Ok((format!("claimed {}", uuid), exec_ctx, vec![]));
-                }
-            }
-        }
-
-        if let Ok((action, exec_ctx)) =
-            parse_contract_input::<RegisterContractAction>(contract_input)
-        {
-            // Extract UUID from contract name
-            let parts: Vec<&str> = action.contract_name.0.split('.').collect();
-            let uuid = match Uuid::parse_str(parts[0]) {
-                Ok(uuid) => uuid,
-                Err(_) => return Err("Invalid UUID in contract name".to_string()),
-            };
-
-            self.register_contract(uuid.as_u128(), contract_input.identity.0.clone())?;
-
-            return Ok((
-                format!("registered {} ({})", uuid, uuid.as_u128()),
-                exec_ctx,
-                vec![OnchainEffect::RegisterContract(RegisterContractEffect {
-                    contract_name: action.contract_name,
-                    verifier: action.verifier,
-                    program_id: action.program_id,
-                    state_commitment: action.state_commitment,
-                })],
-            ));
-        }
-
-        Err("Unknown action".to_string())
-    }
-
-    fn commit(&self) -> sdk::StateCommitment {
-        sdk::StateCommitment(self.serialize().unwrap())
     }
 }
 

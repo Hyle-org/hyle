@@ -321,40 +321,39 @@ impl NodeState {
 
         let mut should_try_and_settle = true;
 
-        let mut blobs = Vec::new();
-        for (index, blob) in tx.blobs.iter().enumerate() {
-            tracing::trace!("Handling blob - {:?}", blob);
-            let blob_metadata = if let Some(Ok(verifier)) = self
-                .contracts
-                .get(&blob.contract_name)
-                .map(|b| TryInto::<NativeVerifiers>::try_into(&b.verifier))
-            {
-                let hyle_output = verifiers::verify_native(
-                    blob_tx_hash.clone(),
-                    BlobIndex(index),
-                    &tx.blobs,
-                    verifier,
-                );
-                tracing::trace!("Nativer verifier in blob tx - {:?}", hyle_output);
-                UnsettledBlobMetadata {
-                    blob: blob.clone(),
-                    possible_proofs: vec![(verifier.into(), hyle_output)],
+        let blobs: Vec<UnsettledBlobMetadata> = tx
+            .blobs
+            .iter()
+            .enumerate()
+            .map(|(index, blob)| {
+                tracing::trace!("Handling blob - {:?}", blob);
+                if let Some(Ok(verifier)) = self
+                    .contracts
+                    .get(&blob.contract_name)
+                    .map(|b| TryInto::<NativeVerifiers>::try_into(&b.verifier))
+                {
+                    let hyle_output = verifiers::verify_native(
+                        blob_tx_hash.clone(),
+                        BlobIndex(index),
+                        &tx.blobs,
+                        verifier,
+                    );
+                    tracing::trace!("Native verifier in blob tx - {:?}", hyle_output);
+                    return UnsettledBlobMetadata {
+                        blob: blob.clone(),
+                        possible_proofs: vec![(verifier.into(), hyle_output)],
+                    };
+                } else if blob.contract_name.0 == "hyle" {
+                    // 'hyle' is a special case -> See settlement logic.
+                } else {
+                    should_try_and_settle = false;
                 }
-            } else if blob.contract_name.0 == "hyle" {
-                // 'hyle' is a special case -> See settlement logic.
                 UnsettledBlobMetadata {
                     blob: blob.clone(),
                     possible_proofs: vec![],
                 }
-            } else {
-                should_try_and_settle = false;
-                UnsettledBlobMetadata {
-                    blob: blob.clone(),
-                    possible_proofs: vec![],
-                }
-            };
-            blobs.push(blob_metadata);
-        }
+            })
+            .collect();
 
         // If the blob contains a RegisterContractAction / DeleteContractAction,
         // we must add the TX to the pending map (or the DAG will be incorrect)

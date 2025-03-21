@@ -77,26 +77,15 @@ impl OrderedTxMap {
             return false;
         }
         let mut is_next = true;
-        let contract_names: HashSet<&ContractName> =
-            HashSet::from_iter(tx.blobs.iter().map(|b| &b.blob.contract_name));
+        // Collect into a hashset for unicity
+        let contract_names = tx
+            .blobs
+            .iter()
+            .map(|b| &b.blob.contract_name)
+            .chain(extra_contracts_to_block.iter())
+            .collect::<HashSet<_>>();
         for contract in contract_names {
             is_next = match self.tx_order.get_mut(contract) {
-                Some(vec) => {
-                    vec.push_back(tx.hash.clone());
-                    vec.len() == 1
-                }
-                None => {
-                    self.tx_order.insert(contract.clone(), {
-                        let mut vec = VecDeque::new();
-                        vec.push_back(tx.hash.clone());
-                        vec
-                    });
-                    true
-                }
-            } && is_next;
-        }
-        for contract in extra_contracts_to_block {
-            is_next = match self.tx_order.get_mut(&contract) {
                 Some(vec) => {
                     vec.push_back(tx.hash.clone());
                     vec.len() == 1
