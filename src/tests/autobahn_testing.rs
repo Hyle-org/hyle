@@ -177,8 +177,6 @@ macro_rules! assert_chanmsg_matches {
     }};
 }
 
-use std::net::Ipv4Addr;
-
 pub(crate) use assert_chanmsg_matches;
 pub(crate) use broadcast;
 pub(crate) use build_tuple;
@@ -674,9 +672,7 @@ async fn mempool_fail_to_vote_on_fork() {
 
 #[test_log::test(tokio::test)]
 async fn autobahn_rejoin_flow() {
-    let mut server = codec_data_availability::start_server((Ipv4Addr::UNSPECIFIED, 7890))
-        .await
-        .unwrap();
+    let mut server = codec_data_availability::start_server(7890).await.unwrap();
     let (mut node1, mut node2) = build_nodes!(2).await;
 
     // Let's setup the consensus so our joining node has some blocks to catch up.

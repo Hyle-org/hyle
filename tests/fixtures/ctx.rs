@@ -84,7 +84,7 @@ impl E2ECtx {
             // Request something on node1 to be sure it's alive and working
             let client = NodeApiHttpClient {
                 url: Url::parse(&format!(
-                    "http://localhost:{}",
+                    "http://localhost:{}/",
                     &node.conf.rest_server_port.expect("Rest server port")
                 ))
                 .unwrap(),
@@ -114,7 +114,7 @@ impl E2ECtx {
         // Request something on node1 to be sure it's alive and working
         let client = NodeApiHttpClient {
             url: Url::parse(&format!(
-                "http://localhost:{}",
+                "http://localhost:{}/",
                 &node.conf.rest_server_port.expect("Rest server port")
             ))
             .unwrap(),
@@ -160,7 +160,7 @@ impl E2ECtx {
         // Request something on node1 to be sure it's alive and working
         let client = NodeApiHttpClient {
             url: Url::parse(&format!(
-                "http://localhost:{}",
+                "http://localhost:{}/",
                 &node.conf.rest_server_port.expect("Rest server")
             ))
             .unwrap(),
@@ -170,11 +170,11 @@ impl E2ECtx {
 
         // Start indexer
         let mut indexer_conf = conf_maker.build("indexer");
-        indexer_conf.da_server_port = node_conf.da_server_port;
+        indexer_conf.da_address = format!("localhost:{}", node_conf.da_server_port);
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
         let url = format!(
-            "http://localhost:{}",
+            "http://localhost:{}/",
             &indexer_conf.rest_server_port.expect("Rest server port")
         );
         let indexer_client = IndexerApiHttpClient::new(url).unwrap();
@@ -252,7 +252,7 @@ impl E2ECtx {
         // Request something on node1 to be sure it's alive and working
         let client = NodeApiHttpClient {
             url: Url::parse(&format!(
-                "http://localhost:{}",
+                "http://localhost:{}/",
                 &node.conf.rest_server_port.expect("Rest server port")
             ))
             .unwrap(),
@@ -282,12 +282,14 @@ impl E2ECtx {
 
         // Start indexer
         let mut indexer_conf = conf_maker.build("indexer");
-        indexer_conf.da_server_port = nodes.last().unwrap().conf.da_server_port;
+        indexer_conf.run_indexer = true;
+        indexer_conf.da_address =
+            format!("localhost:{}", nodes.last().unwrap().conf.da_server_port);
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
         nodes.push(indexer);
         let url = format!(
-            "http://localhost:{}",
+            "http://localhost:{}/",
             &indexer_conf.rest_server_port.expect("Rest server port")
         );
 

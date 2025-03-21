@@ -29,7 +29,7 @@ use anyhow::{Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::str;
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeSet, net::Ipv4Addr};
+use std::collections::BTreeSet;
 use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
@@ -100,15 +100,13 @@ impl Module for DataAvailability {
 
 impl DataAvailability {
     pub async fn start(&mut self) -> Result<()> {
-        let port = self.config.da_server_port;
-
         info!(
             "📡  Starting DataAvailability module, listening for stream requests on port {}",
-            port
+            self.config.da_server_port
         );
 
         let mut server: DaTcpServer =
-            codec_data_availability::start_server((Ipv4Addr::UNSPECIFIED, port)).await?;
+            codec_data_availability::start_server(self.config.da_server_port).await?;
 
         let (catchup_block_sender, mut catchup_block_receiver) =
             tokio::sync::mpsc::channel::<SignedBlock>(100);
@@ -437,8 +435,6 @@ impl DataAvailability {
 pub mod tests {
     #![allow(clippy::indexing_slicing)]
 
-    use std::net::Ipv4Addr;
-
     use crate::data_availability::codec::{codec_data_availability, DataAvailabilityRequest};
     use crate::log_error;
     use crate::node_state::NodeState;
@@ -534,9 +530,7 @@ pub mod tests {
         let tmpdir = tempfile::tempdir().unwrap().into_path();
         let blocks = Blocks::new(&tmpdir).unwrap();
 
-        let mut server = codec_data_availability::start_server("127.0.0.1:7898".to_string())
-            .await
-            .unwrap();
+        let mut server = codec_data_availability::start_server(7898).await.unwrap();
 
         let bus = super::DABusClient::new_from_bus(crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
@@ -610,7 +604,7 @@ pub mod tests {
 
         let mut client = codec_data_availability::connect(
             "client_id".to_string(),
-            (Ipv4Addr::UNSPECIFIED, config.da_server_port),
+            format!("localhost:{}", config.da_server_port),
         )
         .await
         .unwrap();
@@ -669,7 +663,7 @@ pub mod tests {
 
         let mut client = codec_data_availability::connect(
             "client_id".to_string(),
-            (Ipv4Addr::UNSPECIFIED, config.da_server_port),
+            format!("localhost:{}", config.da_server_port),
         )
         .await
         .unwrap();
@@ -698,9 +692,7 @@ pub mod tests {
         );
         let mut block_sender = TestBusClient::new_from_bus(sender_global_bus.new_handle()).await;
         let mut da_sender = DataAvailabilityTestCtx::new(sender_global_bus).await;
-        let mut server = codec_data_availability::start_server("127.0.0.1:7890".to_string())
-            .await
-            .unwrap();
+        let mut server = codec_data_availability::start_server(7890).await.unwrap();
 
         let receiver_global_bus = crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),

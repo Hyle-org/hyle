@@ -1,4 +1,4 @@
-use std::{net::Ipv4Addr, sync::Arc};
+use std::sync::Arc;
 
 use crate::{
     bus::{BusClientSender, BusMessage},
@@ -59,8 +59,7 @@ impl TcpServer {
             &tcp_server_port
         );
 
-        let mut server =
-            codec_tcp_server::start_server((Ipv4Addr::UNSPECIFIED, tcp_server_port)).await?;
+        let mut server = codec_tcp_server::start_server(tcp_server_port).await?;
 
         module_handle_messages! {
             on_bus self.bus,
