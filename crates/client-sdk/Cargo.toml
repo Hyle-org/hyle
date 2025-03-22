@@ -39,16 +39,11 @@ utoipa-axum = { version = "0.2.0", optional = true }
 paste = { version = "1.0.15", optional = true }
 bytes = { version = "1.10.0" , optional = true }
 
+
 [features]
 rest = ["dep:reqwest"]
-tcp = [
-  "dep:reqwest",
-  "dep:tokio",
-  "dep:tokio-util",
-  "dep:futures",
-  "dep:bytes",
-  "dep:paste",
-]
+
+tcp = ["dep:tokio-util", "dep:futures", "dep:bytes", "dep:paste"]
 indexer = ["dep:utoipa", "dep:axum", "dep:utoipa-axum", "dep:tokio"]
 risc0 = ["dep:risc0-zkvm", "dep:bonsai-runner"]
 sp1 = ["dep:sp1-sdk", "dep:bincode"]
