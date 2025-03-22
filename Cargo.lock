@@ -2529,7 +2529,7 @@ dependencies = [
  "paste",
  "prometheus",
  "quote",
- "rand 0.9.0",
+ "rand 0.8.5",
  "reqwest",
  "risc0-zkvm",
  "serde",

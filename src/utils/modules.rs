@@ -15,7 +15,7 @@ use crate::{
 };
 use anyhow::{bail, Error, Result};
 use futures::future::select_all;
-use rand::{distr::Alphanumeric, Rng};
+use rand::{distributions::Alphanumeric, Rng};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, trace};
 
@@ -71,7 +71,7 @@ where
         // State 2 starts creating a tmp file data.state2.tmp
         // rename data.state2.tmp into store (atomic override)
         // renemae data.state1.tmp into
-        let salt: String = rand::rng()
+        let salt: String = rand::thread_rng()
             .sample_iter(&Alphanumeric)
             .take(8)
             .map(char::from)
