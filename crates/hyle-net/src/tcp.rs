@@ -10,14 +10,13 @@ use futures::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
-use sdk::Transaction;
 use tokio::{
-    net::{TcpListener, TcpStream},
     sync::mpsc::{Receiver, Sender},
     task::JoinHandle,
 };
 use tokio_util::codec::{Decoder, Encoder, Framed, LengthDelimitedCodec};
 
+use crate::net::{TcpListener, TcpStream};
 use anyhow::{anyhow, bail, Context, Result};
 use tracing::{debug, error, info, trace, warn};
 
@@ -473,23 +472,6 @@ macro_rules! tcp_client_server {
 
 pub use tcp_client_server;
 
-// Client - servers
-//
-// TCP Client
-
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
-pub enum TcpServerMessage {
-    NewTx(Transaction),
-}
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
-pub struct TcpServerResponse;
-
-tcp_client_server! {
-    pub TcpServer,
-    request: TcpServerMessage,
-    response: TcpServerResponse
-}
-
 #[cfg(test)]
 pub mod tests {
     use std::time::Duration;
@@ -499,14 +481,13 @@ pub mod tests {
     use anyhow::Result;
     use borsh::{BorshDeserialize, BorshSerialize};
     use futures::TryStreamExt;
-    use sdk::{BlockHeight, SignedBlock};
 
     #[derive(BorshDeserialize, BorshSerialize, Clone, Debug, PartialEq, Eq)]
-    pub struct DataAvailabilityRequest(pub BlockHeight);
+    pub struct DataAvailabilityRequest(pub usize);
 
     #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
     pub enum DataAvailabilityEvent {
-        SignedBlock(SignedBlock),
+        SignedBlock(String),
     }
 
     tcp_client_server! {
@@ -525,23 +506,23 @@ pub mod tests {
         client.ping().await?;
 
         // Send data to server
-        client.send(DataAvailabilityRequest(BlockHeight(2))).await?;
+        client.send(DataAvailabilityRequest(2)).await?;
 
         tokio::time::sleep(Duration::from_secs(1)).await;
 
         let d = server.listen_next().await.unwrap().data;
 
-        assert_eq!(DataAvailabilityRequest(BlockHeight(2)), *d);
+        assert_eq!(DataAvailabilityRequest(2), *d);
         assert!(server.pool_receiver.try_recv().is_err());
 
         // From server to client
         _ = server
-            .broadcast(DataAvailabilityEvent::SignedBlock(SignedBlock::default()))
+            .broadcast(DataAvailabilityEvent::SignedBlock("blabla".to_string()))
             .await;
 
         assert_eq!(
             client.receiver.try_next().await.unwrap().unwrap(),
-            TcpMessage::Data(DataAvailabilityEvent::SignedBlock(SignedBlock::default()))
+            TcpMessage::Data(DataAvailabilityEvent::SignedBlock("blabla".to_string()))
         );
 
         Ok(())

@@ -4,7 +4,7 @@ use anyhow::Result;
 use client_sdk::helpers::risc0::Risc0Prover;
 use client_sdk::helpers::test::TestProver;
 use client_sdk::rest_client::NodeApiHttpClient;
-use client_sdk::tcp::{codec_tcp_server, TcpServerMessage};
+use client_sdk::tcp_client::{codec_tcp_server, TcpServerMessage};
 use client_sdk::transaction_builder::{
     ProvableBlobTx, StateUpdater, TxExecutor, TxExecutorBuilder,
 };

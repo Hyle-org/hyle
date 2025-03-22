@@ -1499,9 +1499,10 @@ mod test {
         assert!(!transactions_response.text().is_empty());
 
         // Websocket
-        let listener = tokio::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)))
-            .await
-            .unwrap();
+        let listener =
+            hyle_net::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)))
+                .await
+                .unwrap();
         let addr = listener.local_addr().unwrap();
 
         tokio::spawn(axum::serve(listener, indexer.api(None)).into_future());
