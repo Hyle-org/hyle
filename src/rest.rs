@@ -16,7 +16,7 @@ use axum::{
 use axum_otel_metrics::HttpMetricsLayer;
 use hyle_model::api::*;
 use hyle_model::*;
-use prometheus::{Encoder, TextEncoder};
+use prometheus::{Encoder, Registry, TextEncoder};
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -39,6 +39,7 @@ pub struct RestApiRunContext {
     pub info: NodeInfo,
     pub bus: SharedMessageBus,
     pub router: Router,
+    pub registry: Registry,
     pub metrics_layer: Option<HttpMetricsLayer>,
     pub max_body_size: usize,
     pub openapi: utoipa::openapi::OpenApi,
@@ -46,6 +47,7 @@ pub struct RestApiRunContext {
 
 pub struct RouterState {
     info: NodeInfo,
+    registry: Registry,
 }
 
 pub struct RestApi {
@@ -77,7 +79,10 @@ impl Module for RestApi {
                 .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ctx.openapi))
                 .route("/v1/info", get(get_info))
                 .route("/v1/metrics", get(get_metrics))
-                .with_state(RouterState { info: ctx.info }),
+                .with_state(RouterState {
+                    info: ctx.info,
+                    registry: ctx.registry,
+                }),
         );
         let app = match ctx.metrics_layer {
             Some(ml) => app.layer(ml),
@@ -86,9 +91,7 @@ impl Module for RestApi {
         let app = app
             .layer(DefaultBodyLimit::max(ctx.max_body_size)) // 10 MB
             .layer(tower_http::cors::CorsLayer::permissive())
-            .layer(axum::middleware::from_fn(request_logger))
-            //.layer(TraceLayer::new_for_http())
-        ;
+            .layer(axum::middleware::from_fn(request_logger));
         Ok(RestApi {
             port: ctx.port,
             app: Some(app),
@@ -129,10 +132,10 @@ pub async fn get_info(State(state): State<RouterState>) -> Result<impl IntoRespo
     Ok(Json(state.info))
 }
 
-pub async fn get_metrics(State(_): State<RouterState>) -> Result<impl IntoResponse, AppError> {
+pub async fn get_metrics(State(s): State<RouterState>) -> Result<impl IntoResponse, AppError> {
     let mut buffer = Vec::new();
     let encoder = TextEncoder::new();
-    encoder.encode(&prometheus::gather(), &mut buffer)?;
+    encoder.encode(&s.registry.gather(), &mut buffer)?;
     String::from_utf8(buffer).map_err(Into::into)
 }
 
@@ -188,6 +191,7 @@ impl Clone for RouterState {
     fn clone(&self) -> Self {
         Self {
             info: self.info.clone(),
+            registry: self.registry.clone(),
         }
     }
 }

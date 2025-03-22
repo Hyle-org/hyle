@@ -10,6 +10,7 @@ use axum::Router;
 use client_sdk::rest_client::NodeApiHttpClient;
 use hyle_model::api::NodeInfo;
 use hyle_model::TxHash;
+use prometheus::Registry;
 use tracing::info;
 
 use crate::bus::metrics::BusMetrics;
@@ -306,6 +307,7 @@ impl NodeIntegrationCtx {
                     },
                     bus: ctx.common.bus.new_handle(),
                     metrics_layer: None,
+                    registry: Registry::new(),
                     router: router.clone(),
                     openapi: Default::default(),
                 },
