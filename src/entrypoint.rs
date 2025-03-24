@@ -25,6 +25,7 @@ use axum::Router;
 use axum_otel_metrics::HttpMetricsLayerBuilder;
 use hydentity::Hydentity;
 use hyllar::Hyllar;
+use prometheus::Registry;
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -104,11 +105,12 @@ async fn common_main(
 
     info!("Starting node with config: {:?}", &config);
 
+    let registry = Registry::new();
     // Init global metrics meter we expose as an endpoint
     let provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
         .with_reader(
             opentelemetry_prometheus::exporter()
-                .with_registry(prometheus::default_registry().clone())
+                .with_registry(registry.clone())
                 .build()
                 .context("starting prometheus exporter")?,
         )
@@ -229,6 +231,7 @@ async fn common_main(
                     da_address: format!("{}:{}", config.hostname, config.da_server_port),
                 },
                 bus: common_run_ctx.bus.new_handle(),
+                registry,
                 metrics_layer: Some(metrics_layer),
                 router: router.clone(),
                 openapi,
