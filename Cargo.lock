@@ -2490,7 +2490,7 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "hyle"
-version = "0.13.0-rc.1"
+version = "0.13.0-rc.2"
 dependencies = [
  "anyhow",
  "anymap",
@@ -2558,7 +2558,7 @@ dependencies = [
 
 [[package]]
 name = "hyle-amm"
-version = "0.13.0-rc.1"
+version = "0.13.0-rc.2"
 dependencies = [
  "anyhow",
  "borsh",
@@ -2571,7 +2571,7 @@ dependencies = [
 
 [[package]]
 name = "hyle-bonsai-runner"
-version = "0.13.0-rc.1"
+version = "0.13.0-rc.2"
 dependencies = [
  "anyhow",
  "axum 0.8.1",
@@ -2590,7 +2590,7 @@ dependencies = [
 
 [[package]]
 name = "hyle-client-sdk"
-version = "0.13.0-rc.1"
+version = "0.13.0-rc.2"
 dependencies = [
  "anyhow",
  "axum 0.8.1",
@@ -2615,7 +2615,7 @@ dependencies = [
 
 [[package]]
 name = "hyle-contract-sdk"
-version = "0.13.0-rc.1"
+version = "0.13.0-rc.2"
 dependencies = [
  "borsh",
  "hyle-model",
@@ -2627,7 +2627,7 @@ dependencies = [
 
 [[package]]
 name = "hyle-contracts"
-version = "0.13.0-rc.1"
+version = "0.13.0-rc.2"
 dependencies = [
  "hyle-contract-sdk",
  "risc0-build",
@@ -2635,7 +2635,7 @@ dependencies = [
 
 [[package]]
 name = "hyle-hydentity"
-version = "0.13.0-rc.1"
+version = "0.13.0-rc.2"
 dependencies = [
  "anyhow",
  "borsh",
@@ -2655,7 +2655,7 @@ dependencies = [
 
 [[package]]
 name = "hyle-hyllar"
-version = "0.13.0-rc.1"
+version = "0.13.0-rc.2"
 dependencies = [
  "anyhow",
  "borsh",
@@ -2671,7 +2671,7 @@ dependencies = [
 
 [[package]]
 name = "hyle-loadtest"
-version = "0.13.0-rc.1"
+version = "0.13.0-rc.2"
 dependencies = [
  "anyhow",
  "borsh",
@@ -2689,7 +2689,7 @@ dependencies = [
 
 [[package]]
 name = "hyle-model"
-version = "0.13.0-rc.1"
+version = "0.13.0-rc.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2710,7 +2710,7 @@ dependencies = [
 
 [[package]]
 name = "hyle-risc0-recursion"
-version = "0.13.0-rc.1"
+version = "0.13.0-rc.2"
 dependencies = [
  "anyhow",
  "borsh",
@@ -2729,7 +2729,7 @@ dependencies = [
 
 [[package]]
 name = "hyle-staking"
-version = "0.13.0-rc.1"
+version = "0.13.0-rc.2"
 dependencies = [
  "anyhow",
  "borsh",
@@ -2743,7 +2743,7 @@ dependencies = [
 
 [[package]]
 name = "hyle-uuid-tld"
-version = "0.13.0-rc.1"
+version = "0.13.0-rc.2"
 dependencies = [
  "borsh",
  "hyle-client-sdk",
@@ -2756,7 +2756,7 @@ dependencies = [
 
 [[package]]
 name = "hyle-verifiers"
-version = "0.13.0-rc.1"
+version = "0.13.0-rc.2"
 dependencies = [
  "anyhow",
  "bincode",
