@@ -18,7 +18,7 @@ pub(super) enum TimeoutState {
     #[default]
     // Initial state
     Inactive,
-    // A new slot was created, and its timeout is scheduled
+    // A new slot was created, and its (timeout) is scheduled
     Scheduled {
         timestamp: u64,
     },
@@ -105,18 +105,17 @@ impl TimeoutRole for Consensus {
         received_slot: Slot,
         received_view: View,
     ) -> Result<()> {
-        if received_slot != self.bft_round_state.consensus_proposal.slot
-            || received_view != self.bft_round_state.consensus_proposal.view
+        if received_slot != self.bft_round_state.slot || received_view != self.bft_round_state.view
         {
             bail!(
                 "Timeout Certificate (Slot: {}, view: {}) does not match expected (Slot: {}, view: {})",
                 received_slot,
                 received_view,
-                self.bft_round_state.consensus_proposal.slot,
-                self.bft_round_state.consensus_proposal.view,
+                self.bft_round_state.slot,
+                self.bft_round_state.view,
             );
         }
-        if &self.next_leader()? != self.crypto.validator_pubkey() {
+        if &self.next_view_leader()? != self.crypto.validator_pubkey() {
             return Ok(());
         }
 
@@ -131,8 +130,7 @@ impl TimeoutRole for Consensus {
         )
         .context(format!(
             "Verifying timeout certificate for (slot: {}, view: {})",
-            self.bft_round_state.consensus_proposal.slot,
-            self.bft_round_state.consensus_proposal.view
+            self.bft_round_state.slot, self.bft_round_state.view
         ))?;
 
         // This TC is for our current slot and view, so we can leave Joining mode
@@ -157,15 +155,14 @@ impl TimeoutRole for Consensus {
             );
         }
 
-        if received_slot != self.bft_round_state.consensus_proposal.slot
-            || received_view != self.bft_round_state.consensus_proposal.view
+        if received_slot != self.bft_round_state.slot || received_view != self.bft_round_state.view
         {
             bail!(
                 "Timeout (Slot: {}, view: {}) does not match expected (Slot: {}, view: {})",
                 received_slot,
                 received_view,
-                self.bft_round_state.consensus_proposal.slot,
-                self.bft_round_state.consensus_proposal.view,
+                self.bft_round_state.slot,
+                self.bft_round_state.view,
             );
         }
 
@@ -203,7 +200,7 @@ impl TimeoutRole for Consensus {
             .staking
             .compute_voting_power(&timeout_validators);
 
-        info!("Got {voting_power} voting power with {len} timeout requests for the same view {}. f is {f}", self.store.bft_round_state.consensus_proposal.view);
+        info!("Got {voting_power} voting power with {len} timeout requests for the same view {}. f is {f}", self.store.bft_round_state.view);
 
         // Count requests and if f+1 requests, and not already part of it, join the mutiny
         if voting_power > f && !timeout_validators.contains(self.crypto.validator_pubkey()) {
@@ -221,8 +218,7 @@ impl TimeoutRole for Consensus {
             self.broadcast_net_message(timeout_message)
                 .context(format!(
                     "Sending timeout message for slot:{} view:{}",
-                    self.bft_round_state.consensus_proposal.slot,
-                    self.bft_round_state.consensus_proposal.view,
+                    self.bft_round_state.slot, self.bft_round_state.view,
                 ))?;
 
             len += 1;
@@ -261,7 +257,8 @@ impl TimeoutRole for Consensus {
                 .state
                 .schedule_next(get_current_timestamp());
 
-            if &self.next_leader()? == self.crypto.validator_pubkey() {
+            let round_leader = self.next_view_leader()?;
+            if &round_leader == self.crypto.validator_pubkey() {
                 // This TC is for our current slot and view (by construction), so we can leave Joining mode
                 if matches!(self.bft_round_state.state_tag, StateTag::Joining) {
                     self.bft_round_state.state_tag = StateTag::Leader;

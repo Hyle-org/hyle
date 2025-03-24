@@ -1075,8 +1075,6 @@ pub mod test {
                         staking: self.mempool.staking.clone(),
                         consensus_proposal: model::ConsensusProposal {
                             slot,
-                            view: 0,
-                            round_leader: leader.clone(),
                             cut: cut.clone(),
                             staking_actions: vec![],
                             timestamp: 777,

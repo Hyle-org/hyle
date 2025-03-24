@@ -158,19 +158,11 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for ConsensusProposalHash {
     PartialOrd,
 )]
 pub struct ConsensusProposal {
-    // These first few items are checked when receiving the proposal from the leader.
     pub slot: Slot,
-    pub view: View,
-    // This field is necessary for joining the network.
-    // Without it, new joiners cannot safely know who the leader is
-    // as we cannot verify that the sender of the Prepare message is indeed the leader.
-    // Additionally, this information is not present in any other message.
-    pub round_leader: ValidatorPublicKey,
-    // Below items aren't.
+    pub parent_hash: ConsensusProposalHash,
     pub cut: Cut,
     pub staking_actions: Vec<ConsensusStakingAction>,
     pub timestamp: u64,
-    pub parent_hash: ConsensusProposalHash,
 }
 
 /// This is the hash of the proposal, signed by validators
@@ -179,8 +171,6 @@ impl Hashed<ConsensusProposalHash> for ConsensusProposal {
     fn hashed(&self) -> ConsensusProposalHash {
         let mut hasher = Sha3_256::new();
         hasher.update(self.slot.to_le_bytes());
-        hasher.update(self.view.to_le_bytes());
-        hasher.update(&self.round_leader.0);
         self.cut.iter().for_each(|(lane_id, hash, _, _)| {
             hasher.update(&lane_id.0 .0);
             hasher.update(hash.0.as_bytes());
@@ -258,7 +248,7 @@ impl From<NewValidatorCandidate> for ConsensusStakingAction {
     PartialOrd,
 )]
 pub enum ConsensusNetMessage {
-    Prepare(ConsensusProposal, Ticket),
+    Prepare(ConsensusProposal, Ticket, View),
     PrepareVote(ConsensusProposalHash),
     Confirm(QuorumCertificate, ConsensusProposalHash),
     ConfirmAck(ConsensusProposalHash),
@@ -267,7 +257,7 @@ pub enum ConsensusNetMessage {
     TimeoutCertificate(QuorumCertificate, Slot, View),
     ValidatorCandidacy(ValidatorCandidacy),
     SyncRequest(ConsensusProposalHash),
-    SyncReply((ValidatorPublicKey, ConsensusProposal, Ticket)),
+    SyncReply((ValidatorPublicKey, ConsensusProposal, Ticket, View)),
 }
 
 impl Hashed<QuorumCertificateHash> for QuorumCertificate {
@@ -298,11 +288,10 @@ impl Display for ConsensusProposal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Hash: {}, Parent Hash: {}, Slot: {}, View: {}, Cut: {:?}, staking_actions: {:?}",
+            "Hash: {}, Parent Hash: {}, Slot: {}, Cut: {:?}, staking_actions: {:?}",
             self.hashed(),
             self.parent_hash,
             self.slot,
-            self.view,
             self.cut,
             self.staking_actions,
         )
@@ -329,8 +318,12 @@ impl Display for ConsensusNetMessage {
         let enum_variant: &'static str = self.into();
 
         match self {
-            ConsensusNetMessage::Prepare(cp, ticket) => {
-                write!(f, "{} CP: {}, ticket: {}", enum_variant, cp, ticket)
+            ConsensusNetMessage::Prepare(cp, ticket, view) => {
+                write!(
+                    f,
+                    "{} CP: {}, ticket: {}, view: {}",
+                    enum_variant, cp, ticket, view
+                )
             }
             ConsensusNetMessage::PrepareVote(cphash) => {
                 write!(f, "{} (CP hash: {})", enum_variant, cphash)
@@ -343,7 +336,7 @@ impl Display for ConsensusNetMessage {
                 }
                 write!(f, "")
             }
-            ConsensusNetMessage::ConfirmAck(cphash) => {
+            ConsensusNetMessage::ConfirmAck(cphash, ..) => {
                 write!(f, "{} (CP hash: {})", enum_variant, cphash)
             }
             ConsensusNetMessage::Commit(cert, cphash) => {
@@ -372,11 +365,11 @@ impl Display for ConsensusNetMessage {
             ConsensusNetMessage::SyncRequest(consensus_proposal_hash) => {
                 write!(f, "{} (CP hash: {})", enum_variant, consensus_proposal_hash)
             }
-            ConsensusNetMessage::SyncReply((sender, consensus_proposal, ticket)) => {
+            ConsensusNetMessage::SyncReply((sender, consensus_proposal, ticket, view)) => {
                 write!(
                     f,
-                    "{} sender: {}, CP: {}, ticket: {}",
-                    enum_variant, sender, consensus_proposal, ticket
+                    "{} sender: {}, CP: {}, ticket: {}, view: {}",
+                    enum_variant, sender, consensus_proposal, ticket, view
                 )
             }
         }
@@ -391,8 +384,6 @@ mod tests {
         use super::*;
         let proposal = ConsensusProposal {
             slot: 1,
-            view: 1,
-            round_leader: ValidatorPublicKey(vec![1, 2, 3]),
             cut: Cut::default(),
             staking_actions: vec![],
             timestamp: 1,
@@ -402,12 +393,10 @@ mod tests {
         assert_eq!(hash.0.len(), 64);
     }
     #[test]
-    fn test_consensus_proposal_hash_ignored_fields() {
+    fn test_consensus_proposal_hash_all_items() {
         use super::*;
         let mut a = ConsensusProposal {
             slot: 1,
-            view: 1,
-            round_leader: ValidatorPublicKey(vec![1, 2, 3]),
             cut: vec![(
                 LaneId(ValidatorPublicKey(vec![1])),
                 DataProposalHash("propA".to_string()),
@@ -430,8 +419,6 @@ mod tests {
         };
         let mut b = ConsensusProposal {
             slot: 1,
-            view: 1,
-            round_leader: ValidatorPublicKey(vec![1, 2, 3]),
             cut: vec![(
                 LaneId(ValidatorPublicKey(vec![1])),
                 DataProposalHash("propA".to_string()),
@@ -466,16 +453,6 @@ mod tests {
         a.slot = 2;
         assert_ne!(a.hashed(), b.hashed());
         b.slot = 2;
-        assert_eq!(a.hashed(), b.hashed());
-
-        a.view = 2;
-        assert_ne!(a.hashed(), b.hashed());
-        b.view = 2;
-        assert_eq!(a.hashed(), b.hashed());
-
-        a.round_leader = ValidatorPublicKey(vec![4, 5, 6]);
-        assert_ne!(a.hashed(), b.hashed());
-        b.round_leader = ValidatorPublicKey(vec![4, 5, 6]);
         assert_eq!(a.hashed(), b.hashed());
 
         a.parent_hash = ConsensusProposalHash("different".to_string());

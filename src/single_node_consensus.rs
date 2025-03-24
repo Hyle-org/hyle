@@ -179,9 +179,7 @@ impl SingleNodeConsensus {
         let new_slot = self.store.last_slot + 1;
         let consensus_proposal = ConsensusProposal {
             slot: new_slot,
-            view: 0,
             timestamp: get_current_timestamp_ms(),
-            round_leader: self.crypto.validator_pubkey().clone(),
             cut: self.store.last_cut.clone(),
             staking_actions: vec![],
             parent_hash: std::mem::take(&mut self.store.last_consensus_proposal_hash),
