@@ -197,6 +197,7 @@ impl Consensus {
 
         // Reset some state
         self.bft_round_state.leader = LeaderState::default();
+        self.bft_round_state.timeout.requests.clear();
 
         match ticket {
             // We finished the round with a committed proposal for the slot
@@ -476,7 +477,7 @@ impl Consensus {
     fn carry_on_with_ticket(&mut self, ticket: Ticket) -> Result<()> {
         self.finish_round(Some(ticket.clone()))?;
 
-        if self.is_round_leader() && self.has_buffered_children() {
+        if self.is_round_leader() && self.has_no_buffered_children() {
             // Setup our ticket for the next round
             // Send Prepare message to all validators
             self.delay_start_new_round(ticket)
