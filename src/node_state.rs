@@ -14,7 +14,7 @@ use hyle_contract_sdk::{utils::parse_structured_blob, BlobIndex, HyleOutput, TxH
 use hyle_tld::handle_blob_for_hyle_tld;
 use metrics::NodeStateMetrics;
 use ordered_tx_map::OrderedTxMap;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use timeouts::Timeouts;
 use tracing::{debug, error, info, trace};
 
@@ -355,33 +355,15 @@ impl NodeState {
             })
             .collect();
 
-        // If the blob contains a RegisterContractAction / DeleteContractAction,
-        // we must add the TX to the pending map (or the DAG will be incorrect)
-        let mut extra_contracts_to_block = HashSet::new();
-        for blob in &tx.blobs {
-            if let Ok(data) =
-                StructuredBlobData::<RegisterContractAction>::try_from(blob.data.clone())
-            {
-                extra_contracts_to_block.insert(data.parameters.contract_name.clone());
-            } else if let Ok(data) =
-                StructuredBlobData::<DeleteContractAction>::try_from(blob.data.clone())
-            {
-                extra_contracts_to_block.insert(data.parameters.contract_name.clone());
-            }
-        }
-
         // If we're behind other pending transactions, we can't settle yet.
-        should_try_and_settle = self.unsettled_transactions.add(
-            UnsettledBlobTransaction {
-                identity: tx.identity.clone(),
-                parent_dp_hash,
-                hash: tx_hash.clone(),
-                tx_context,
-                blobs_hash,
-                blobs,
-            },
-            extra_contracts_to_block,
-        ) && should_try_and_settle;
+        should_try_and_settle = self.unsettled_transactions.add(UnsettledBlobTransaction {
+            identity: tx.identity.clone(),
+            parent_dp_hash,
+            hash: tx_hash.clone(),
+            tx_context,
+            blobs_hash,
+            blobs,
+        }) && should_try_and_settle;
 
         if self.unsettled_transactions.is_next_to_settle(&blob_tx_hash) {
             let block_height = self.current_height;
@@ -571,21 +553,6 @@ impl NodeState {
             .unsettled_transactions
             .remove(unsettled_tx_hash)
             .unwrap();
-
-        // Remove the TX from any extra contract added from a register/delete blob as well
-        for blob_metadata in &unsettled_tx.blobs {
-            if let Ok(data) = StructuredBlobData::<RegisterContractAction>::try_from(
-                blob_metadata.blob.data.clone(),
-            ) {
-                self.unsettled_transactions
-                    .remove_extra_contract(&data.parameters.contract_name);
-            } else if let Ok(data) = StructuredBlobData::<DeleteContractAction>::try_from(
-                blob_metadata.blob.data.clone(),
-            ) {
-                self.unsettled_transactions
-                    .remove_extra_contract(&data.parameters.contract_name);
-            }
-        }
 
         Ok(SettledTxOutput {
             tx: unsettled_tx,
@@ -926,7 +893,7 @@ impl NodeState {
             .blob;
 
         // Verify that each side effect has a matching register/delete contract action in this specific blob
-        // (this doesn't really need to be a for loop but it's neaterthis way)
+        // (this doesn't really need to be a for loop but it's neater this way)
         for effect in &hyle_output.onchain_effects {
             match effect {
                 OnchainEffect::RegisterContract(reg) => {
