@@ -2517,6 +2517,7 @@ dependencies = [
  "hyle-hydentity",
  "hyle-hyllar",
  "hyle-model",
+ "hyle-net",
  "hyle-risc0-recursion",
  "hyle-staking",
  "hyle-uuid-tld",
@@ -2580,6 +2581,7 @@ dependencies = [
  "borsh",
  "bytemuck",
  "hex",
+ "hyle-net",
  "risc0-zkvm",
  "serde",
  "serde_json",
@@ -2596,18 +2598,15 @@ dependencies = [
  "axum 0.8.1",
  "bincode",
  "borsh",
- "bytes",
- "futures",
  "hyle-bonsai-runner",
  "hyle-contract-sdk",
- "paste",
+ "hyle-net",
  "reqwest",
  "risc0-zkvm",
  "serde",
  "serde_json",
  "sp1-sdk",
  "tokio",
- "tokio-util",
  "tracing",
  "utoipa",
  "utoipa-axum",
@@ -2706,6 +2705,21 @@ dependencies = [
  "strum 0.27.1",
  "strum_macros 0.27.1",
  "utoipa",
+]
+
+[[package]]
+name = "hyle-net"
+version = "0.13.0-rc.1"
+dependencies = [
+ "anyhow",
+ "borsh",
+ "bytes",
+ "futures",
+ "hyle-contract-sdk",
+ "paste",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]

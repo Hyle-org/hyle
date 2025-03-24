@@ -21,6 +21,7 @@ default-members = [
   "crates/contracts/hydentity",
   "crates/hyle-loadtest",
   "crates/hyle-model",
+  "crates/hyle-net",
   ".",
 ]
 resolver = "2"
@@ -39,6 +40,7 @@ sdk = { version = "0.13.0-rc.2", default-features = false, path = "crates/contra
 hyle-contract-sdk = { version = "0.13.0-rc.2", default-features = false, path = "crates/contract-sdk", package = "hyle-contract-sdk" }
 client-sdk = { version = "0.13.0-rc.2", default-features = false, path = "crates/client-sdk", package = "hyle-client-sdk" }
 hyle-contracts = { version = "0.13.0-rc.2", default-features = false, path = "crates/contracts", package = "hyle-contracts" }
+hyle-net = { version = "0.13.0-rc.2", default-features = false, path = "crates/hyle-net", package = "hyle-net" }
 hyle-model = { version = "0.13.0-rc.2", default-features = false, path = "crates/hyle-model", package = "hyle-model" }
 hyle-verifiers = { version = "0.13.0-rc.2", default-features = false, path = "crates/hyle-verifiers", package = "hyle-verifiers" }
 risc0-recursion = { version = "0.13.0-rc.2", default-features = false, path = "crates/contracts/risc0-recursion", package = "hyle-risc0-recursion" }
@@ -77,7 +79,8 @@ hyle-contract-sdk = { workspace = true, default-features = false, features = [
   "tracing",
 ] }
 staking = { workspace = true, default-features = false, features = ["client"] }
-client-sdk = { workspace = true, features = ["rest", "tcp", "indexer"] }
+client-sdk = { workspace = true, features = ["rest", "indexer"] }
+hyle-net = { workspace = true, features = ["tokio"] }
 hyle-model = { workspace = true, default-features = false, features = [
   "full",
   "sqlx",
@@ -156,7 +159,6 @@ amm = { workspace = true, features = ["client"] }
 uuid-tld = { workspace = true, features = ["client"] }
 client-sdk = { workspace = true, default-features = false, features = [
   "rest",
-  "tcp",
   "risc0",
 ] }
 

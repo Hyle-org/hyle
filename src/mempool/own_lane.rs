@@ -3,7 +3,7 @@
 use crate::{bus::BusClientSender, mempool::InternalMempoolEvent, model::*};
 
 use anyhow::{bail, Context, Result};
-use client_sdk::tcp::TcpServerMessage;
+use client_sdk::tcp_client::TcpServerMessage;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tracing::{debug, trace};

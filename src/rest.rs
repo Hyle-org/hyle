@@ -147,7 +147,7 @@ impl RestApi {
             self.port
         );
 
-        let listener = tokio::net::TcpListener::bind(&(Ipv4Addr::UNSPECIFIED, self.port))
+        let listener = hyle_net::net::TcpListener::bind(&(Ipv4Addr::UNSPECIFIED, self.port))
             .await
             .context("Starting rest server")?;
 
