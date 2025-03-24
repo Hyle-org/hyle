@@ -1,5 +1,7 @@
 //! Public API for interacting with the node.
 
+use std::net::Ipv4Addr;
+
 use anyhow::{Context, Result};
 pub use axum::Router;
 use axum::{
@@ -14,7 +16,7 @@ use axum::{
 use axum_otel_metrics::HttpMetricsLayer;
 use hyle_model::api::*;
 use hyle_model::*;
-use prometheus::{Encoder, TextEncoder};
+use prometheus::{Encoder, Registry, TextEncoder};
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -33,10 +35,11 @@ module_bus_client! {
 }
 
 pub struct RestApiRunContext {
-    pub rest_addr: String,
+    pub port: u16,
     pub info: NodeInfo,
     pub bus: SharedMessageBus,
     pub router: Router,
+    pub registry: Registry,
     pub metrics_layer: Option<HttpMetricsLayer>,
     pub max_body_size: usize,
     pub openapi: utoipa::openapi::OpenApi,
@@ -44,10 +47,11 @@ pub struct RestApiRunContext {
 
 pub struct RouterState {
     info: NodeInfo,
+    registry: Registry,
 }
 
 pub struct RestApi {
-    rest_addr: String,
+    port: u16,
     app: Option<Router>,
     bus: RestBusClient,
 }
@@ -75,7 +79,10 @@ impl Module for RestApi {
                 .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ctx.openapi))
                 .route("/v1/info", get(get_info))
                 .route("/v1/metrics", get(get_metrics))
-                .with_state(RouterState { info: ctx.info }),
+                .with_state(RouterState {
+                    info: ctx.info,
+                    registry: ctx.registry,
+                }),
         );
         let app = match ctx.metrics_layer {
             Some(ml) => app.layer(ml),
@@ -84,11 +91,9 @@ impl Module for RestApi {
         let app = app
             .layer(DefaultBodyLimit::max(ctx.max_body_size)) // 10 MB
             .layer(tower_http::cors::CorsLayer::permissive())
-            .layer(axum::middleware::from_fn(request_logger))
-            //.layer(TraceLayer::new_for_http())
-        ;
+            .layer(axum::middleware::from_fn(request_logger));
         Ok(RestApi {
-            rest_addr: ctx.rest_addr.clone(),
+            port: ctx.port,
             app: Some(app),
             bus: RestBusClient::new_from_bus(ctx.bus.new_handle()).await,
         })
@@ -127,21 +132,22 @@ pub async fn get_info(State(state): State<RouterState>) -> Result<impl IntoRespo
     Ok(Json(state.info))
 }
 
-pub async fn get_metrics(State(_): State<RouterState>) -> Result<impl IntoResponse, AppError> {
+pub async fn get_metrics(State(s): State<RouterState>) -> Result<impl IntoResponse, AppError> {
     let mut buffer = Vec::new();
     let encoder = TextEncoder::new();
-    encoder.encode(&prometheus::gather(), &mut buffer)?;
+    encoder.encode(&s.registry.gather(), &mut buffer)?;
     String::from_utf8(buffer).map_err(Into::into)
 }
 
 impl RestApi {
     pub async fn serve(&mut self) -> Result<()> {
         info!(
-            "📡  Starting RestApi module, listening on {}",
-            self.rest_addr
+            "📡  Starting {} module, listening on port {}",
+            std::any::type_name::<Self>(),
+            self.port
         );
 
-        let listener = tokio::net::TcpListener::bind(&self.rest_addr)
+        let listener = tokio::net::TcpListener::bind(&(Ipv4Addr::UNSPECIFIED, self.port))
             .await
             .context("Starting rest server")?;
 
@@ -185,6 +191,7 @@ impl Clone for RouterState {
     fn clone(&self) -> Self {
         Self {
             info: self.info.clone(),
+            registry: self.registry.clone(),
         }
     }
 }
@@ -250,7 +257,7 @@ mod tests {
     async fn test_rest_api_shutdown_with_mocked_modules() {
         // Create a new integration test context with all modules mocked except REST API
         let builder = NodeIntegrationCtxBuilder::new().await;
-        let rest_client = builder.conf.rest_address.clone();
+        let rest_client = builder.conf.rest_server_port;
 
         // Mock Genesis with our RestApiListener, and skip other modules except mempool (for its API)
         let builder = builder
@@ -263,14 +270,14 @@ mod tests {
 
         let node = builder.build().await.expect("Failed to build node");
 
-        let client = NodeApiHttpClient::new(format!("http://{}", rest_client))
+        let client = NodeApiHttpClient::new(format!("http://localhost:{}", rest_client))
             .expect("Failed to create client");
 
         node.wait_for_rest_api(&client).await.unwrap();
 
         // Spawn a task to send requests
         let request_handle = tokio::spawn({
-            let client = NodeApiHttpClient::new(format!("http://{}", rest_client))
+            let client = NodeApiHttpClient::new(format!("http://localhost:{}", rest_client))
                 .expect("Failed to create client");
             let dummy_tx = BlobTransaction::new(
                 "test.identity",
