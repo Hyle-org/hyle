@@ -1,8 +1,8 @@
 use client_sdk::rest_client::{IndexerApiHttpClient, NodeApiHttpClient};
 use hyle_model::{
-    api::APIRegisterContract, BlobTransaction, ContractAction, ContractName, Hashed, OnchainEffect,
-    ProgramId, ProofData, ProofTransaction, RegisterContractAction, RegisterContractEffect,
-    StateCommitment,
+    api::{APIRegisterContract, TransactionStatusDb},
+    BlobTransaction, ContractAction, ContractName, Hashed, OnchainEffect, ProgramId, ProofData,
+    ProofTransaction, RegisterContractAction, RegisterContractEffect, StateCommitment,
 };
 use testcontainers_modules::{
     postgres::Postgres,
@@ -409,6 +409,74 @@ async fn test_contract_upgrade() -> Result<()> {
     assert_eq!(contract.program_id, ProgramId(vec![7, 7, 7]));
     // We use the next_state, not the state_commitment of the update effect.
     assert_eq!(contract.state.0, vec![8, 8, 8]);
+
+    Ok(())
+}
+
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 2))]
+async fn test_configure_timeouts() -> Result<()> {
+    // Start postgres DB with default settings for the indexer.
+    let pg = Postgres::default()
+        .with_tag("17-alpine")
+        .with_cmd(["postgres", "-c", "log_statement=all"])
+        .start()
+        .await
+        .unwrap();
+
+    let mut builder = NodeIntegrationCtxBuilder::new().await;
+    let rest_server_port = builder.conf.rest_server_port;
+    builder.conf.run_indexer = true;
+    builder.conf.database_url = format!(
+        "postgres://postgres:postgres@localhost:{}/postgres",
+        pg.get_host_port_ipv4(5432).await.unwrap()
+    );
+    builder.conf.node_state.timeout_window = 5;
+    builder.conf.consensus.slot_duration = 200;
+
+    let mut hyle_node = builder.build().await?;
+
+    hyle_node.wait_for_genesis_event().await?;
+    let client = NodeApiHttpClient::new(format!("http://localhost:{rest_server_port}/")).unwrap();
+    hyle_node.wait_for_rest_api(&client).await?;
+
+    info!("➡️  Registering contract c1.hyle");
+
+    client
+        .register_contract(&APIRegisterContract {
+            verifier: "test".into(),
+            program_id: ProgramId(vec![1, 2, 3]),
+            state_commitment: StateCommitment(vec![7, 7, 7]),
+            contract_name: "c1.hyle".into(),
+        })
+        .await
+        .unwrap();
+
+    info!("➡️  Sending blob");
+    let tx = BlobTransaction::new(
+        "test.c1.hyle",
+        vec![Blob {
+            contract_name: "c1.hyle".into(),
+            data: BlobData(vec![0, 1, 2, 3]),
+        }],
+    );
+    client.send_tx_blob(&tx).await.unwrap();
+
+    hyle_node.wait_for_n_blocks(7).await?;
+
+    let contract = client.get_contract(&"c1.hyle".into()).await?;
+    assert_eq!(
+        contract.state.0,
+        vec![7, 7, 7],
+        "Contract state did not update"
+    );
+
+    let pg_client =
+        IndexerApiHttpClient::new(format!("http://localhost:{rest_server_port}/")).unwrap();
+    let contract = pg_client.get_indexer_contract(&"c1.hyle".into()).await?;
+    assert_eq!(contract.state_commitment, vec![7, 7, 7]);
+
+    let tx = pg_client.get_transaction_with_hash(&tx.hashed()).await?;
+    assert_eq!(tx.transaction_status, TransactionStatusDb::TimedOut);
 
     Ok(())
 }
