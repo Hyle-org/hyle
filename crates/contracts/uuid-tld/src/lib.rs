@@ -1,12 +1,13 @@
-use std::{collections::BTreeSet, hash::Hasher};
+use std::{collections::BTreeMap, hash::Hasher};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use rand::Rng;
 use rand_seeder::SipHasher;
 use sdk::{
-    info, utils::parse_raw_contract_input, Blob, BlobData, BlobIndex, ContractAction,
-    ContractInput, ContractName, HyleContract, OnchainEffect, ProgramId, RegisterContractEffect,
-    RunResult, StateCommitment, Verifier,
+    info,
+    utils::{parse_contract_input, parse_raw_contract_input},
+    Blob, BlobData, BlobIndex, ContractAction, ContractInput, ContractName, HyleContract,
+    OnchainEffect, RegisterContractAction, RegisterContractEffect, RunResult,
 };
 use uuid::Uuid;
 
@@ -14,10 +15,8 @@ use uuid::Uuid;
 pub mod client;
 
 #[derive(Clone, BorshSerialize, BorshDeserialize)]
-pub struct UuidTldAction {
-    pub verifier: Verifier,
-    pub program_id: ProgramId,
-    pub state_commitment: StateCommitment,
+pub enum UuidTldAction {
+    Claim,
 }
 
 impl UuidTldAction {
@@ -43,7 +42,6 @@ impl ContractAction for UuidTldAction {
 
 impl HyleContract for UuidTld {
     fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
-        let (action, exec_ctx) = parse_raw_contract_input::<UuidTldAction>(contract_input)?;
         // Not an identity provider
         if contract_input.identity.0.ends_with(&format!(
             ".{}",
@@ -52,22 +50,41 @@ impl HyleContract for UuidTld {
             return Err("Invalid identity".to_string());
         }
 
-        let id = self.register_contract(contract_input)?;
+        if let Ok((action, exec_ctx)) = parse_raw_contract_input::<UuidTldAction>(contract_input) {
+            match action {
+                UuidTldAction::Claim => {
+                    let id = self.claim_contract(contract_input)?;
+                    let uuid = Uuid::from_u128(id);
+                    return Ok((format!("claimed {}", uuid), exec_ctx, vec![]));
+                }
+            }
+        }
 
-        Ok((
-            format!("registered {}", id.clone()),
-            exec_ctx,
-            vec![OnchainEffect::RegisterContract(RegisterContractEffect {
-                contract_name: format!(
-                    "{}.{}",
-                    id, contract_input.blobs[contract_input.index.0].contract_name.0
-                )
-                .into(),
-                verifier: action.verifier,
-                program_id: action.program_id,
-                state_commitment: action.state_commitment,
-            })],
-        ))
+        if let Ok((action, exec_ctx)) =
+            parse_contract_input::<RegisterContractAction>(contract_input)
+        {
+            // Extract UUID from contract name
+            let parts: Vec<&str> = action.contract_name.0.split('.').collect();
+            let uuid = match Uuid::parse_str(parts[0]) {
+                Ok(uuid) => uuid,
+                Err(_) => return Err("Invalid UUID in contract name".to_string()),
+            };
+
+            self.register_contract(uuid.as_u128(), contract_input.identity.0.clone())?;
+
+            return Ok((
+                format!("registered {} ({})", uuid, uuid.as_u128()),
+                exec_ctx,
+                vec![OnchainEffect::RegisterContract(RegisterContractEffect {
+                    contract_name: action.contract_name,
+                    verifier: action.verifier,
+                    program_id: action.program_id,
+                    state_commitment: action.state_commitment,
+                })],
+            ));
+        }
+
+        Err("Unknown action".to_string())
     }
 
     fn commit(&self) -> sdk::StateCommitment {
@@ -77,7 +94,8 @@ impl HyleContract for UuidTld {
 
 #[derive(Default, Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct UuidTld {
-    registered_contracts: BTreeSet<u128>,
+    // Maps UUID to the identity that claimed it
+    registered_contracts: BTreeMap<u128, String>,
 }
 
 impl UuidTld {
@@ -93,7 +111,7 @@ impl UuidTld {
         self.serialize().expect("Failed to encode UuidTldState")
     }
 
-    pub fn register_contract(&mut self, contract_input: &ContractInput) -> Result<Uuid, String> {
+    pub fn claim_contract(&mut self, contract_input: &ContractInput) -> Result<u128, String> {
         let Some(ref tx_ctx) = contract_input.tx_ctx else {
             return Err("Missing tx context".to_string());
         };
@@ -105,16 +123,35 @@ impl UuidTld {
         hasher.write(tx_ctx.block_hash.0.as_bytes());
         hasher.write_u128(tx_ctx.timestamp);
         let mut hasher_rng = hasher.into_rng();
-        let id = uuid::Builder::from_random_bytes(hasher_rng.random()).into_uuid();
+        let id = uuid::Builder::from_random_bytes(hasher_rng.random())
+            .into_uuid()
+            .as_u128();
 
         // _really_ shouldn't happen but let's handle it regardless.
-        if !self.registered_contracts.insert(id.as_u128()) {
+        if self.registered_contracts.contains_key(&id) {
             return Err("Contract already registered".to_string());
         }
 
-        info!("Registering new contract with UUID {}", id);
-
+        self.registered_contracts
+            .insert(id, contract_input.identity.0.clone());
+        let uuid = Uuid::from_u128(id);
+        info!("Claimed new contract with UUID {} ({})", uuid, id);
         Ok(id)
+    }
+
+    pub fn register_contract(&mut self, uuid: u128, identity: String) -> Result<(), String> {
+        match self.registered_contracts.get(&uuid) {
+            Some(claimer) if claimer == &identity => {
+                info!(
+                    "Registering contract with UUID {} ({})",
+                    Uuid::from_u128(uuid),
+                    uuid
+                );
+                Ok(())
+            }
+            Some(_) => Err("UUID claimed by different identity".to_string()),
+            None => Err("UUID not claimed".to_string()),
+        }
     }
 }
 
@@ -123,10 +160,14 @@ mod test {
     use crate::*;
     use sdk::*;
 
-    fn make_contract_input(action: UuidTldAction, state: Vec<u8>) -> ContractInput {
+    fn make_contract_input<T: ContractAction>(
+        action: T,
+        state: Vec<u8>,
+        identity: &str,
+    ) -> ContractInput {
         ContractInput {
             state,
-            identity: "toto.test".into(),
+            identity: identity.into(),
             tx_hash: TxHash::default(),
             tx_ctx: Some(TxContext {
                 block_hash: ConsensusProposalHash("0xcafefade".to_owned()),
@@ -139,7 +180,7 @@ mod test {
                     contract_name: "test".into(),
                     data: BlobData(vec![]),
                 },
-                action.as_blob("uuid".into()),
+                action.as_blob("uuid".into(), None, None),
             ],
             index: BlobIndex(1),
         }
@@ -147,36 +188,59 @@ mod test {
 
     #[test]
     fn test_execute() {
-        let action = UuidTldAction {
+        let mut state = UuidTld::default();
+
+        // First claim a UUID
+        let claim_input = make_contract_input(
+            UuidTldAction::Claim,
+            borsh::to_vec(&state).unwrap(),
+            "toto.test",
+        );
+        let (msg, _, _) = state.execute(&claim_input).unwrap();
+        let uuid = msg.replace("claimed ", "");
+
+        // Then register it with the same identity
+        let register_action = RegisterContractAction {
+            contract_name: format!("{}.test", uuid).into(),
             verifier: "test".into(),
             program_id: ProgramId(vec![1, 2, 3]),
             state_commitment: StateCommitment(vec![0, 1, 2, 3]),
         };
-        let mut state = UuidTld::default();
 
-        let contract_input = make_contract_input(action.clone(), borsh::to_vec(&state).unwrap());
-
+        let contract_input = make_contract_input(
+            register_action.clone(),
+            borsh::to_vec(&state).unwrap(),
+            "toto.test",
+        );
         let (_, _, onchain_effects) = state.execute(&contract_input).unwrap();
 
         let OnchainEffect::RegisterContract(effect) = onchain_effects.first().unwrap() else {
             panic!("Expected RegisterContract effect");
         };
-        assert_eq!(
-            effect.contract_name.0,
-            "7de07efe-e91d-45f7-a5d2-0b813c1d3e10.uuid"
+        assert_eq!(effect.contract_name.0, format!("{}.test", uuid));
+        assert_eq!(effect.verifier, Verifier("test".into()));
+        assert_eq!(effect.program_id, ProgramId(vec![1, 2, 3]));
+        assert_eq!(effect.state_commitment, StateCommitment(vec![0, 1, 2, 3]));
+
+        // Try to register with a different identity
+        let contract_input = make_contract_input(
+            register_action.clone(),
+            borsh::to_vec(&state).unwrap(),
+            "other.test",
         );
+        assert!(state.execute(&contract_input).is_err());
 
-        let contract_input = make_contract_input(action.clone(), borsh::to_vec(&state).unwrap());
-
-        let (_, _, onchain_effects) = state.execute(&contract_input).unwrap();
-
-        let OnchainEffect::RegisterContract(effect) = onchain_effects.first().unwrap() else {
-            panic!("Expected RegisterContract effect");
+        // Try to register with unclaimed UUID
+        let unclaimed_uuid = Uuid::from_u128(12345);
+        let register_action = RegisterContractAction {
+            contract_name: format!("{}.test", unclaimed_uuid).into(),
+            verifier: "test".into(),
+            program_id: ProgramId(vec![1, 2, 3]),
+            state_commitment: StateCommitment(vec![0, 1, 2, 3]),
         };
 
-        assert_eq!(
-            effect.contract_name.0,
-            "fe6d874b-7b90-496e-8328-1ea817be889a.uuid"
-        );
+        let contract_input =
+            make_contract_input(register_action, borsh::to_vec(&state).unwrap(), "toto.test");
+        assert!(state.execute(&contract_input).is_err());
     }
 }
