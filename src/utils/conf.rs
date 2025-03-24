@@ -18,6 +18,12 @@ pub struct GenesisConf {
     pub faucet_password: String,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct NodeStateConf {
+    /// Timeout window for blob transactions
+    pub timeout_window: u64,
+}
+
 /// Configuration for the P2P layer
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct P2pConf {
@@ -63,6 +69,8 @@ pub struct Conf {
     pub consensus: Consensus,
     /// Genesis block configuration
     pub genesis: GenesisConf,
+    /// NodeState configuration
+    pub node_state: NodeStateConf,
 
     // Module options below
     /// If full node: server address for the DA layer, which streams historical & new blocks. It might be used by indexers.

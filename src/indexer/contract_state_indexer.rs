@@ -257,8 +257,7 @@ mod tests {
     use super::*;
     use crate::bus::metrics::BusMetrics;
     use crate::model::SignedBlock;
-    use crate::node_state::metrics::NodeStateMetrics;
-    use crate::node_state::{NodeState, NodeStateStore};
+    use crate::node_state::NodeState;
     use crate::utils::conf::Conf;
     use crate::{bus::SharedMessageBus, model::CommonRunContext};
     use std::sync::Arc;
@@ -394,10 +393,7 @@ mod tests {
         let mut indexer = build_indexer(contract_name.clone()).await;
         register_contract(&mut indexer).await;
 
-        let mut node_state = NodeState {
-            metrics: NodeStateMetrics::global("test".to_string(), "test"),
-            store: NodeStateStore::default(),
-        };
+        let mut node_state = NodeState::create("test", "test");
         let block = node_state.handle_signed_block(&SignedBlock::default());
 
         let event = NodeStateEvent::NewBlock(Box::new(block));
