@@ -126,7 +126,6 @@ enum StateTag {
 #[derive(BorshSerialize, BorshDeserialize, Default)]
 pub struct JoiningState {
     staking_updated_to: Slot,
-    buffered_prepares: Vec<ConsensusProposal>,
 }
 #[derive(BorshSerialize, BorshDeserialize, Default)]
 pub struct GenesisState {
