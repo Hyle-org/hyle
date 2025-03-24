@@ -101,12 +101,12 @@ impl Module for DataAvailability {
 impl DataAvailability {
     pub async fn start(&mut self) -> Result<()> {
         info!(
-            "📡  Starting DataAvailability module, listening for stream requests on {}",
-            &self.config.da_address
+            "📡  Starting DataAvailability module, listening for stream requests on port {}",
+            self.config.da_server_port
         );
 
         let mut server: DaTcpServer =
-            codec_data_availability::start_server(self.config.da_address.clone()).await?;
+            codec_data_availability::start_server(self.config.da_server_port).await?;
 
         let (catchup_block_sender, mut catchup_block_receiver) =
             tokio::sync::mpsc::channel::<SignedBlock>(100);
@@ -472,7 +472,7 @@ pub mod tests {
 
             let node_state = NodeState::create(config.id.clone(), "data_availability");
 
-            config.da_address = format!("127.0.0.1:{}", find_available_port().await);
+            config.da_server_port = find_available_port().await;
             let da = super::DataAvailability {
                 config: config.into(),
                 bus,
@@ -530,9 +530,7 @@ pub mod tests {
         let tmpdir = tempfile::tempdir().unwrap().into_path();
         let blocks = Blocks::new(&tmpdir).unwrap();
 
-        let mut server = codec_data_availability::start_server("127.0.0.1:7898".to_string())
-            .await
-            .unwrap();
+        let mut server = codec_data_availability::start_server(7898).await.unwrap();
 
         let bus = super::DABusClient::new_from_bus(crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
@@ -579,7 +577,7 @@ pub mod tests {
         let mut block_sender = TestBusClient::new_from_bus(global_bus).await;
 
         let mut config: Conf = Conf::new(None, None, None).unwrap();
-        config.da_address = format!("127.0.0.1:{}", find_available_port().await);
+        config.da_server_port = find_available_port().await;
         let mut da = super::DataAvailability {
             config: config.clone().into(),
             bus,
@@ -604,10 +602,12 @@ pub mod tests {
             da.start().await.unwrap();
         });
 
-        let mut client =
-            codec_data_availability::connect("client_id".to_string(), config.da_address.clone())
-                .await
-                .unwrap();
+        let mut client = codec_data_availability::connect(
+            "client_id".to_string(),
+            format!("localhost:{}", config.da_server_port),
+        )
+        .await
+        .unwrap();
 
         client
             .send(DataAvailabilityRequest(BlockHeight(0)))
@@ -661,10 +661,12 @@ pub mod tests {
 
         // End of the first stream
 
-        let mut client =
-            codec_data_availability::connect("client_id".to_string(), config.da_address)
-                .await
-                .unwrap();
+        let mut client = codec_data_availability::connect(
+            "client_id".to_string(),
+            format!("localhost:{}", config.da_server_port),
+        )
+        .await
+        .unwrap();
 
         client
             .send(DataAvailabilityRequest(BlockHeight(0)))
@@ -690,9 +692,7 @@ pub mod tests {
         );
         let mut block_sender = TestBusClient::new_from_bus(sender_global_bus.new_handle()).await;
         let mut da_sender = DataAvailabilityTestCtx::new(sender_global_bus).await;
-        let mut server = codec_data_availability::start_server("127.0.0.1:7890".to_string())
-            .await
-            .unwrap();
+        let mut server = codec_data_availability::start_server(7890).await.unwrap();
 
         let receiver_global_bus = crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
@@ -712,7 +712,7 @@ pub mod tests {
             da_sender.handle_signed_block(block, &mut server).await;
         }
 
-        let da_sender_address = da_sender.da.config.da_address.clone();
+        let da_sender_port = da_sender.da.config.da_server_port;
 
         tokio::spawn(async move {
             da_sender.da.start().await.unwrap();
@@ -725,7 +725,7 @@ pub mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::channel(200);
         da_receiver
             .da
-            .ask_for_catchup_blocks(da_sender_address.clone(), tx.clone())
+            .ask_for_catchup_blocks(format!("localhost:{}", da_sender_port.clone()), tx.clone())
             .await
             .expect("Error while asking for catchup blocks");
 
@@ -801,7 +801,7 @@ pub mod tests {
         // Resubscribe - we should only receive the new ones.
         da_receiver
             .da
-            .ask_for_catchup_blocks(da_sender_address, tx)
+            .ask_for_catchup_blocks(format!("localhost:{}", da_sender_port), tx)
             .await
             .expect("Error while asking for catchup blocks");
 

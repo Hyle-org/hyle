@@ -433,7 +433,7 @@ impl Genesis {
         register_hyle_contract(
             &mut register_tx,
             "staking".into(),
-            hyle_verifiers::versions::RISC0_1.into(),
+            hyle_model::verifiers::RISC0_1.into(),
             staking_program_id.clone().into(),
             ctx.staking.commit(),
         )
@@ -442,7 +442,7 @@ impl Genesis {
         register_hyle_contract(
             &mut register_tx,
             "hyllar".into(),
-            hyle_verifiers::versions::RISC0_1.into(),
+            hyle_model::verifiers::RISC0_1.into(),
             hyllar_program_id.clone().into(),
             ctx.hyllar.commit(),
         )
@@ -451,7 +451,7 @@ impl Genesis {
         register_hyle_contract(
             &mut register_tx,
             "hydentity".into(),
-            hyle_verifiers::versions::RISC0_1.into(),
+            hyle_model::verifiers::RISC0_1.into(),
             hydentity_program_id.clone().into(),
             ctx.hydentity.commit(),
         )
@@ -460,7 +460,7 @@ impl Genesis {
         register_hyle_contract(
             &mut register_tx,
             "risc0-recursion".into(),
-            hyle_verifiers::versions::RISC0_1.into(),
+            hyle_model::verifiers::RISC0_1.into(),
             hyle_contracts::RISC0_RECURSION_ID.to_vec().into(),
             StateCommitment::default(),
         )
@@ -492,8 +492,6 @@ impl Genesis {
             },
             consensus_proposal: ConsensusProposal {
                 slot: 0,
-                view: 0,
-                round_leader: round_leader.clone(),
                 // TODO: genesis block should have a consistent, up-to-date timestamp
                 timestamp: 1735689600000, // 1st of Jan 25 for now
                 // TODO: We aren't actually storing the data proposal above, so we cannot store it here,

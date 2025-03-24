@@ -9,9 +9,9 @@ use crate::{
         ValidatorPublicKey,
     },
 };
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_model::ConsensusStakingAction;
+use hyle_model::{ConsensusProposal, ConsensusStakingAction};
 use staking::state::MIN_STAKE;
 use tracing::{debug, error, trace};
 
@@ -58,7 +58,13 @@ impl LeaderRole for Consensus {
         }
 
         if !self.is_round_leader() {
-            bail!("I'm not the leader for this slot");
+            bail!(
+                "I ({}) am not the leader for slot {} view {}, expected {}",
+                self.crypto.validator_pubkey(),
+                self.bft_round_state.slot,
+                self.bft_round_state.view,
+                self.round_leader()?,
+            );
         }
 
         let ticket = self
@@ -80,8 +86,9 @@ impl LeaderRole for Consensus {
         });
 
         debug!(
-            "🚀 Starting new slot {} with {} existing validators and {} candidates",
-            self.bft_round_state.consensus_proposal.slot,
+            "🚀 Starting new slot {} (view {}) with {} existing validators and {} candidates",
+            self.bft_round_state.slot,
+            self.bft_round_state.view,
             self.bft_round_state.staking.bonded().len(),
             new_validators_to_bond.len()
         );
@@ -93,19 +100,22 @@ impl LeaderRole for Consensus {
             self.bft_round_state.staking
         );
 
-        let cut = match self
-            .bus
-            .request(QueryNewCut(self.bft_round_state.staking.clone()))
-            .await
+        let cut = match tokio::time::timeout(
+            std::time::Duration::from_millis(self.config.consensus.slot_duration),
+            self.bus
+                .request(QueryNewCut(self.bft_round_state.staking.clone())),
+        )
+        .await
+        .context("Timeout while querying Mempool")
         {
-            Ok(cut) => cut,
-            Err(err) => {
+            Ok(Ok(cut)) => cut,
+            Ok(Err(err)) | Err(err) => {
                 // In case of an error, we reuse the last cut to avoid being considered byzantine
                 error!(
                     "Could not get a new cut from Mempool {:?}. Reusing previous one...",
                     err
                 );
-                self.bft_round_state.last_cut.clone()
+                self.bft_round_state.last_cut_seen.clone()
             }
         };
 
@@ -125,13 +135,18 @@ impl LeaderRole for Consensus {
         }
 
         // Start Consensus with following cut
-        self.bft_round_state.consensus_proposal.cut = cut;
-        self.bft_round_state.consensus_proposal.staking_actions = staking_actions;
-        self.bft_round_state.consensus_proposal.timestamp = current_timestamp;
+        self.bft_round_state.current_proposal = ConsensusProposal {
+            slot: self.bft_round_state.slot,
+            cut,
+            staking_actions,
+            timestamp: current_timestamp,
+            parent_hash: self.bft_round_state.parent_hash.clone(),
+        };
         let prepare = (
             self.crypto.validator_pubkey().clone(),
-            self.bft_round_state.consensus_proposal.clone(),
+            self.bft_round_state.current_proposal.clone(),
             ticket.clone(),
+            self.bft_round_state.view,
         );
         self.follower_state().buffered_prepares.push(prepare);
 
@@ -141,12 +156,13 @@ impl LeaderRole for Consensus {
 
         // Broadcasts Prepare message to all validators
         debug!(
-            proposal_hash = %self.bft_round_state.consensus_proposal.hashed(),
-            "🌐 Slot {} started. Broadcasting Prepare message", self.bft_round_state.consensus_proposal.slot,
+            proposal_hash = %self.bft_round_state.current_proposal.hashed(),
+            "🌐 Slot {} started. Broadcasting Prepare message", self.bft_round_state.slot,
         );
         self.broadcast_net_message(ConsensusNetMessage::Prepare(
-            self.bft_round_state.consensus_proposal.clone(),
+            self.bft_round_state.current_proposal.clone(),
             ticket,
+            self.bft_round_state.view,
         ))?;
 
         Ok(())
@@ -181,7 +197,7 @@ impl LeaderRole for Consensus {
 
         // Verify that the PrepareVote is for the correct proposal.
         // This also checks slot/view as those are part of the hash.
-        if consensus_proposal_hash != self.bft_round_state.consensus_proposal.hashed() {
+        if consensus_proposal_hash != self.bft_round_state.current_proposal.hashed() {
             self.metrics.prepare_vote_error("invalid_proposal_hash");
             bail!("PrepareVote has not received valid consensus proposal hash");
         }
@@ -211,7 +227,7 @@ impl LeaderRole for Consensus {
 
         debug!(
             "📩 Slot {} validated votes: {} / {} ({} validators for a total bond = {})",
-            self.bft_round_state.consensus_proposal.slot,
+            self.bft_round_state.slot,
             voting_power,
             2 * f + 1,
             self.bft_round_state.staking.bonded().len(),
@@ -223,7 +239,7 @@ impl LeaderRole for Consensus {
             let aggregates: &Vec<&SignedByValidator<ConsensusNetMessage>> =
                 &self.bft_round_state.leader.prepare_votes.iter().collect();
 
-            let proposal_hash_hint = self.bft_round_state.consensus_proposal.hashed();
+            let proposal_hash_hint = self.bft_round_state.current_proposal.hashed();
             // Aggregates them into a *Prepare* Quorum Certificate
             let prepvote_signed_aggregation = self.crypto.sign_aggregate(
                 ConsensusNetMessage::PrepareVote(proposal_hash_hint.clone()),
@@ -241,7 +257,7 @@ impl LeaderRole for Consensus {
             // Broadcast the *Prepare* Quorum Certificate to all validators
             debug!(
                 "Slot {} PrepareVote message validated. Broadcasting Confirm",
-                self.bft_round_state.consensus_proposal.slot
+                self.bft_round_state.slot
             );
             self.broadcast_net_message(ConsensusNetMessage::Confirm(
                 prepvote_signed_aggregation.signature,
@@ -278,13 +294,13 @@ impl LeaderRole for Consensus {
         }
 
         // Verify that the ConfirmAck is for the correct proposal
-        if consensus_proposal_hash != self.bft_round_state.consensus_proposal.hashed() {
+        if consensus_proposal_hash != self.bft_round_state.current_proposal.hashed() {
             self.metrics.confirm_ack_error("invalid_proposal_hash");
             debug!(
                 sender = %msg.signature.validator,
                 "Got {} expected {}",
                 consensus_proposal_hash,
-                self.bft_round_state.consensus_proposal.hashed()
+                self.bft_round_state.current_proposal.hashed()
             );
             bail!("ConfirmAck got invalid consensus proposal hash");
         }
@@ -316,7 +332,7 @@ impl LeaderRole for Consensus {
 
         debug!(
             "✅ Slot {} confirmed acks: {} / {} ({} validators for a total bond = {})",
-            self.bft_round_state.consensus_proposal.slot,
+            self.bft_round_state.slot,
             voting_power,
             2 * f + 1,
             self.bft_round_state.staking.bonded().len(),
@@ -332,7 +348,7 @@ impl LeaderRole for Consensus {
 
             // Aggregates them into a *Commit* Quorum Certificate
             let commit_signed_aggregation = self.crypto.sign_aggregate(
-                ConsensusNetMessage::ConfirmAck(self.bft_round_state.consensus_proposal.hashed()),
+                ConsensusNetMessage::ConfirmAck(self.bft_round_state.current_proposal.hashed()),
                 aggregates,
             )?;
 
@@ -350,7 +366,7 @@ impl LeaderRole for Consensus {
             // Process the same locally.
             self.try_commit_current_proposal(
                 commit_quorum_certificate,
-                self.bft_round_state.consensus_proposal.hashed(),
+                self.bft_round_state.current_proposal.hashed(),
             )?;
         }
         // TODO(?): Update behaviour when having more ?

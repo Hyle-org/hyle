@@ -15,14 +15,16 @@ use super::{KnownContracts, MempoolNetMessage};
 impl super::Mempool {
     pub(super) fn handle_api_message(&mut self, command: RestApiMessage) -> Result<()> {
         match command {
-            RestApiMessage::NewTx(tx) => self.on_new_tx(tx).context("New Tx"),
+            RestApiMessage::NewTx(tx) => self.on_new_api_tx(tx)?,
         }
+        Ok(())
     }
 
     pub(super) fn handle_tcp_server_message(&mut self, command: TcpServerMessage) -> Result<()> {
         match command {
-            TcpServerMessage::NewTx(tx) => self.on_new_tx(tx).context("New Tx"),
+            TcpServerMessage::NewTx(tx) => self.on_new_api_tx(tx)?,
         }
+        Ok(())
     }
 
     fn get_last_data_prop_hash_in_own_lane(&self) -> Option<DataProposalHash> {
@@ -133,7 +135,7 @@ impl super::Mempool {
                 self.metrics.add_data_proposal(&lane_entry.data_proposal);
                 self.metrics.add_proposed_txs(&lane_entry.data_proposal);
                 debug!(
-                    "🚗 Broadcast DataProposal {} (only for {} validators, {} txs)",
+                    "🚗 Rebroadcast DataProposal {} (only for {} validators, {} txs)",
                     &lane_entry.data_proposal.hashed(),
                     only_for.len(),
                     &lane_entry.data_proposal.txs.len()
@@ -197,17 +199,27 @@ impl super::Mempool {
         Ok(())
     }
 
+    pub(super) fn on_new_api_tx(&mut self, tx: Transaction) -> Result<()> {
+        // This is annoying to run in tests because we don't have the event loop setup, so go synchronous.
+        #[cfg(test)]
+        self.on_new_tx(tx.clone())?;
+        #[cfg(not(test))]
+        self.running_tasks.spawn_blocking(move || {
+            tx.hashed();
+            Ok(InternalMempoolEvent::OnProcessedNewTx(tx))
+        });
+        Ok(())
+    }
+
     pub(super) fn on_new_tx(&mut self, tx: Transaction) -> Result<()> {
         // TODO: Verify fees ?
 
         let tx_type: &'static str = (&tx.transaction_data).into();
         trace!("Tx {} received in mempool", tx_type);
 
-        let tx_hash = tx.hashed();
-
         match tx.transaction_data {
             TransactionData::Blob(ref blob_tx) => {
-                debug!("Got new blob tx {}", tx_hash);
+                debug!("Got new blob tx {}", tx.hashed());
                 // TODO: we should check if the registration handler contract exists.
                 // TODO: would be good to not need to clone here.
                 self.handle_hyle_contract_registration(blob_tx);
@@ -230,7 +242,7 @@ impl super::Mempool {
             TransactionData::VerifiedProof(ref proof_tx) => {
                 debug!(
                     "Got verified proof tx {} for {}",
-                    tx_hash,
+                    tx.hashed(),
                     proof_tx.contract_name.clone()
                 );
             }
@@ -251,7 +263,7 @@ impl super::Mempool {
 
         self.bus
             .send(status_event)
-            .context(format!("Sending Status event for TX {}", tx_hash))?;
+            .context("Sending Status event for TX")?;
 
         Ok(())
     }

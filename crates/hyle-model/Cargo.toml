@@ -1,15 +1,15 @@
 [package]
 name = "hyle-model"
 description = "Hyle datamodel"
+license = "MIT"
 version = { workspace = true }
 edition = { workspace = true }
-# license = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }
 rust-version = "1.81"
 
 [dependencies]
-borsh = { version ="1.5.5", features = ["derive", "rc"] }
+borsh = { version = "1.5.6", features = ["derive", "rc"] }
 hex = "0.4.3"
 serde = { version = "1.0", features = ["derive", "rc"] }
 
@@ -23,11 +23,12 @@ anyhow = { version = "1.0.96", optional = true }
 sqlx = { version = "0.8.3", features = ["postgres"], optional = true }
 serde_with = { version = "3.12.0", features = ["hex"], optional = true }
 serde_json = { version = "1", optional = true }
-utoipa = { version = "5.3.1", optional = true}
+utoipa = { version = "5.3.1", optional = true }
 strum = "0.27.1"
 
 [features]
-default = ["full"] # disable default feature if you want minimalist definitions for contracts
+# disable default feature if you want minimalist definitions for contracts
+default = ["full"]
 full = [
   "dep:sha3",
   "dep:strum_macros",
@@ -37,6 +38,6 @@ full = [
   "dep:serde_json",
   "dep:serde_with",
   "dep:anyhow",
-  "dep:utoipa"
+  "dep:utoipa",
 ]
 sqlx = ["dep:sqlx"]

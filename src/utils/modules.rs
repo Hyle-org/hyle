@@ -15,7 +15,7 @@ use crate::{
 };
 use anyhow::{bail, Error, Result};
 use futures::future::select_all;
-use rand::{distr::Alphanumeric, Rng};
+use rand::{distributions::Alphanumeric, Rng};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, trace};
 
@@ -71,7 +71,7 @@ where
         // State 2 starts creating a tmp file data.state2.tmp
         // rename data.state2.tmp into store (atomic override)
         // renemae data.state1.tmp into
-        let salt: String = rand::rng()
+        let salt: String = rand::thread_rng()
             .sample_iter(&Alphanumeric)
             .take(8)
             .map(char::from)
@@ -271,6 +271,7 @@ impl ModulesHandler {
         Ok(())
     }
 
+    /// Setup a loop waiting for shutdown signals from modules
     pub async fn shutdown_loop(&mut self) -> Result<()> {
         if self.started_modules.is_empty() {
             return Ok(());
@@ -306,7 +307,8 @@ impl ModulesHandler {
             })?;
 
         let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
-        // Return a future that waits for the first error or the abort command.
+
+        // Trigger shutdown chain when one shutdown message is received for a long running module
         handle_messages! {
             on_bus shutdown_client,
             listen<signal::ShutdownCompleted> msg => {
@@ -355,6 +357,48 @@ impl ModulesHandler {
         self.shutdown_next_module().await?;
         self.shutdown_loop().await?;
 
+        Ok(())
+    }
+
+    pub async fn exit_loop(&mut self) -> Result<()> {
+        _ = log_error!(self.shutdown_loop().await, "Shutdown Loop triggered");
+        _ = self.shutdown_modules().await;
+
+        Ok(())
+    }
+
+    /// If the node is run as a process, we want to setup a proper exit loop with SIGINT/SIGTERM
+    pub async fn exit_process(&mut self) -> Result<()> {
+        #[cfg(unix)]
+        {
+            use tokio::signal::unix;
+            let mut interrupt = unix::signal(unix::SignalKind::interrupt())?;
+            let mut terminate = unix::signal(unix::SignalKind::terminate())?;
+            tokio::select! {
+                res = self.shutdown_loop() => {
+                    _ = log_error!(res, "Shutdown Loop triggered");
+                }
+                _ = interrupt.recv() =>  {
+                    info!("SIGINT received, shutting down");
+                }
+                _ = terminate.recv() =>  {
+                    info!("SIGTERM received, shutting down");
+                }
+            }
+            _ = self.shutdown_modules().await;
+        }
+        #[cfg(not(unix))]
+        {
+            tokio::select! {
+                res = self.shutdown_loop() => {
+                    _ = log_error!(res, "Shutdown Loop triggered");
+                }
+                _ = tokio::signal::ctrl_c() => {
+                    info!("Ctrl-C received, shutting down");
+                }
+            }
+            _ = self.shutdown_modules().await;
+        }
         Ok(())
     }
 
