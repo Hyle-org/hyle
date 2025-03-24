@@ -226,6 +226,11 @@ where
             return Ok(());
         };
 
+        let state = store
+            .state
+            .as_mut()
+            .ok_or(anyhow!("No state found for {}", self.contract_name))?;
+
         debug!(cn = %self.contract_name, "🔨 Settling transaction: {}", tx.hashed());
 
         for (index, Blob { contract_name, .. }) in tx.blobs.iter().enumerate() {
@@ -233,16 +238,9 @@ where
                 continue;
             }
 
-            let state = store
-                .state
-                .clone()
-                .ok_or(anyhow!("No state found for {contract_name}"))?;
-
-            let new_state = State::handle(&tx, BlobIndex(index), state, tx_context.clone())?;
+            state.handle_transaction(&tx, BlobIndex(index), tx_context.clone())?;
 
             debug!(cn = %self.contract_name, "📈 Updated state for {contract_name}");
-
-            store.state = Some(new_state);
         }
         Ok(())
     }
@@ -285,14 +283,14 @@ mod tests {
     }
 
     impl ContractHandler for MockState {
-        fn handle(
+        fn handle_transaction(
+            &mut self,
             tx: &BlobTransaction,
             index: BlobIndex,
-            mut state: Self,
             _tx_context: TxContext,
-        ) -> Result<Self> {
-            state.0 = tx.blobs.get(index.0).unwrap().data.0.clone();
-            Ok(state)
+        ) -> Result<()> {
+            self.0 = tx.blobs.get(index.0).unwrap().data.0.clone();
+            Ok(())
         }
 
         async fn api(_store: Arc<RwLock<ContractStateStore<Self>>>) -> (axum::Router<()>, OpenApi) {

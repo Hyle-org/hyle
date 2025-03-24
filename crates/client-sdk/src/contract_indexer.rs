@@ -11,8 +11,8 @@ use axum::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::{
-    guest, info, Blob, BlobIndex, BlobTransaction, ContractInput, ContractName, Hashed,
-    HyleContract, TxContext, TxId,
+    info, utils::as_hyle_output, Blob, BlobIndex, BlobTransaction, ContractInput, ContractName,
+    Hashed, HyleContract, RunResult, TxContext, TxId,
 };
 use utoipa::openapi::OpenApi;
 
@@ -41,26 +41,25 @@ impl<State> Default for ContractStateStore<State> {
 
 pub trait ContractHandler
 where
-    Self: Sized + Default + HyleContract + BorshSerialize + BorshDeserialize + 'static,
+    Self: Sized + Default + HyleContract + 'static,
 {
     fn api(
         store: ContractHandlerStore<Self>,
     ) -> impl std::future::Future<Output = (Router<()>, OpenApi)> + std::marker::Send;
 
-    fn handle(
+    fn handle_transaction(
+        &mut self,
         tx: &BlobTransaction,
         index: BlobIndex,
-        state: Self,
         tx_context: TxContext,
-    ) -> Result<Self> {
+    ) -> Result<()> {
         let Blob {
             contract_name,
             data: _,
         } = tx.blobs.get(index.0).context("Failed to get blob")?;
 
-        let serialized_state = borsh::to_vec(&state)?;
         let contract_input = ContractInput {
-            state: serialized_state,
+            state: vec![], // Execution happens on that field once it's deserialized. So we can leave it empty here.
             identity: tx.identity.clone(),
             index,
             blobs: tx.blobs.clone(),
@@ -69,14 +68,26 @@ where
             private_input: vec![],
         };
 
-        let (state, hyle_output) = guest::execute::<Self>(&contract_input);
-        let res = str::from_utf8(&hyle_output.program_outputs).unwrap_or("no output");
-        info!("🚀 Executed {contract_name}: {}", res);
+        let initial_state_commitment = self.commit();
+
+        let mut res: RunResult = self.execute(&contract_input);
+
+        let next_state_commitment = self.commit();
+
+        let hyle_output = as_hyle_output(
+            initial_state_commitment,
+            next_state_commitment,
+            contract_input.clone(),
+            &mut res,
+        );
+        let program_outputs = str::from_utf8(&hyle_output.program_outputs).unwrap_or("no output");
+        info!("🚀 Executed {contract_name}: {}", program_outputs);
         debug!(
             handler = %contract_name,
             "hyle_output: {:?}", hyle_output
         );
-        Ok(state)
+
+        Ok(())
     }
 }
 

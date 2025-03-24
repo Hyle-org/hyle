@@ -30,12 +30,12 @@ impl ContractHandler for Hydentity {
         (router.with_state(store), api)
     }
 
-    fn handle(
+    fn handle_transaction(
+        &mut self,
         tx: &BlobTransaction,
         index: BlobIndex,
-        mut state: Self,
         _tx_context: TxContext,
-    ) -> Result<Self> {
+    ) -> Result<()> {
         let Blob {
             contract_name,
             data,
@@ -47,19 +47,17 @@ impl ContractHandler for Hydentity {
             HydentityAction::RegisterIdentity { account } => {
                 let (name, hash) = Hydentity::parse_id(&account)?;
                 info!("🚀 Executed {contract_name}: {name} registered");
-                state
-                    .identities
-                    .insert(name, AccountInfo { hash, nonce: 0 });
+                self.identities.insert(name, AccountInfo { hash, nonce: 0 });
             }
             HydentityAction::VerifyIdentity { account, nonce: _ } => {
-                if let Some(id) = state.identities.get_mut(&account) {
+                if let Some(id) = self.identities.get_mut(&account) {
                     id.nonce += 1;
                 }
             }
             _ => {}
         }
 
-        Ok(state)
+        Ok(())
     }
 }
 

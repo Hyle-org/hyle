@@ -160,7 +160,7 @@ where
 
     let next_state_commitment = state.commit();
 
-    let output = as_hyle_output::<State>(
+    let output = as_hyle_output(
         initial_state_commitment,
         next_state_commitment,
         contract_input.clone(),

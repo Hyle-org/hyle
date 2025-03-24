@@ -2,7 +2,7 @@ use crate::{
     alloc::string::{String, ToString},
     caller::ExecutionContext,
     guest::fail,
-    HyleContract, Identity, StructuredBlobData,
+    Identity, StructuredBlobData,
 };
 use alloc::{format, vec};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -124,7 +124,7 @@ where
     Some(parsed_blob)
 }
 
-pub fn as_hyle_output<State: HyleContract + BorshDeserialize>(
+pub fn as_hyle_output(
     initial_state_commitment: StateCommitment,
     nex_state_commitment: StateCommitment,
     contract_input: ContractInput,
