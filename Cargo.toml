@@ -89,7 +89,7 @@ hyle-verifiers = { workspace = true }
 
 
 anyhow = "1.0.96"
-borsh = { version = "1.5.5", features = ["rc"] }
+borsh = { version = "1.5.6", features = ["rc"] }
 blst = { version = "0.3.14" }
 chrono = { version = "0.4", features = ["serde"] }
 hex = { version = "0.4.3" }
