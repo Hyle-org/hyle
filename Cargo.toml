@@ -183,6 +183,7 @@ signal-child = "1.0.6"
 [features]
 default = []
 
+turmoil = ["hyle-net/turmoil", "client-sdk/turmoil"]
 sp1 = ["hyle-verifiers/sp1"]
 
 dhat = ["dep:dhat"]

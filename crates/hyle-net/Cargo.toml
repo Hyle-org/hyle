@@ -22,9 +22,12 @@ tokio = { version = "1.42.0", features = ["full", "tracing"], optional = true }
 tokio-util = { version = "0.7.14"}
 futures = { version = "0.3.31" }
 
+turmoil = { version = "0.6.6", optional = true }
+
 bytes = { version = "1.10.0" }
 paste = { version = "1.0.15"}
 
 [features]
-default = ["tokio"]
+default = ["turmoil"]
 tokio = ["dep:tokio"]
+turmoil = ["dep:turmoil"]
