@@ -26,7 +26,7 @@ serde = { version = "1.0", default-features = false, features = [
     "alloc",
 ] }
 anyhow = "1.0.96"
-borsh = { version = "1.5.5", features = ["derive"] }
+borsh = { version = "1.5.6", features = ["derive"] }
 hex = "0.4.3"
 
 risc0-zkvm = { version = "1.2.4", default-features = false, optional = true, features = [

@@ -9,7 +9,7 @@ repository = { workspace = true }
 rust-version = "1.81"
 
 [dependencies]
-borsh = { version ="1.5.5", features = ["derive", "rc"] }
+borsh = { version ="1.5.6", features = ["derive", "rc"] }
 hex = "0.4.3"
 serde = { version = "1.0", features = ["derive", "rc"] }
 

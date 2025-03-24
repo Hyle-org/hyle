@@ -22,7 +22,7 @@ serde = { version = "1.0", default-features = false, features = [
 ] }
 anyhow = "1.0.96"
 sha2 = "=0.10.8" # precompile patched at workspace root
-borsh = { version = "1.5.5", features = ["derive"] }
+borsh = { version = "1.5.6", features = ["derive"] }
 serde_with = "3.12.0"
 
 risc0-zkvm = { version = "1.2.4", default-features = false, optional = true, features = [
