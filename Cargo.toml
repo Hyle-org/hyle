@@ -79,7 +79,7 @@ hyle-contract-sdk = { workspace = true, default-features = false, features = [
   "tracing",
 ] }
 staking = { workspace = true, default-features = false, features = ["client"] }
-client-sdk = { workspace = true, features = ["rest", "tcp", "indexer"] }
+client-sdk = { workspace = true, features = ["rest", "indexer"] }
 hyle-net = { workspace = true, features = ["tokio"] }
 hyle-model = { workspace = true, default-features = false, features = [
   "full",
@@ -159,7 +159,6 @@ amm = { workspace = true, features = ["client"] }
 uuid-tld = { workspace = true, features = ["client"] }
 client-sdk = { workspace = true, default-features = false, features = [
   "rest",
-  "tcp",
   "risc0",
 ] }
 
