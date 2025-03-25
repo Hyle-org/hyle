@@ -2709,16 +2709,24 @@ dependencies = [
 
 [[package]]
 name = "hyle-net"
-version = "0.13.0-rc.1"
+version = "0.13.0-rc.2"
 dependencies = [
  "anyhow",
+ "axum 0.8.1",
  "borsh",
  "bytes",
  "futures",
+ "http-body-util",
  "hyle-contract-sdk",
+ "hyper",
+ "hyper-util",
  "paste",
+ "pin-project-lite",
+ "serde",
+ "serde_json",
  "tokio",
  "tokio-util",
+ "tower",
  "tracing",
  "turmoil",
 ]

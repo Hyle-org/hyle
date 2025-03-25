@@ -181,7 +181,7 @@ risc0-zkvm = { version = "1.2.4", default-features = false, features = [
 signal-child = "1.0.6"
 
 [features]
-default = []
+default = ["turmoil"]
 
 turmoil = ["hyle-net/turmoil", "client-sdk/turmoil"]
 sp1 = ["hyle-verifiers/sp1"]

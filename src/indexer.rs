@@ -821,6 +821,7 @@ mod test {
     use axum_test::TestServer;
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateCommitment, TxHash};
     use hyle_model::api::{APIBlock, APIContract, APITransaction};
+    use hyle_net::net::HyleNetTcpListener;
     use serde_json::json;
     use std::{
         future::IntoFuture,
@@ -1505,7 +1506,7 @@ mod test {
                 .unwrap();
         let addr = listener.local_addr().unwrap();
 
-        tokio::spawn(axum::serve(listener, indexer.api(None)).into_future());
+        tokio::spawn(axum::serve(HyleNetTcpListener(listener), indexer.api(None)).into_future());
 
         let _ = tokio_tungstenite::connect_async(format!(
             "ws://{addr}/blob_transactions/contract/contract_1/ws"

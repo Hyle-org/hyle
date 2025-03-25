@@ -3,6 +3,7 @@ use std::time::SystemTime;
 
 use anyhow::Context;
 use anyhow::{Error, Result};
+use hyle_net::net;
 use hyle_net::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
@@ -66,7 +67,7 @@ enum Cmd {
 impl Peer {
     pub async fn new(
         id: u64,
-        stream: TcpStream,
+        stream: net::TcpStream,
         bus: SharedMessageBus,
         crypto: SharedBlstCrypto,
         conf: SharedConf,

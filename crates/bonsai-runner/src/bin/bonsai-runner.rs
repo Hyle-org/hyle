@@ -1,4 +1,5 @@
 use axum::{extract::Json, http::StatusCode, response::IntoResponse, routing::post, Router};
+use hyle_net::net::HyleNetTcpListener;
 use risc0_zkvm::Receipt;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fs, net::SocketAddr, sync::Arc};
@@ -34,7 +35,9 @@ async fn main() {
     info!("Server listening on {}", addr);
 
     let listener = hyle_net::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(HyleNetTcpListener(listener), app)
+        .await
+        .unwrap();
 }
 
 async fn prove_handler(

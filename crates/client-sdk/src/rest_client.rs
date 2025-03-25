@@ -6,6 +6,7 @@ use sdk::{
     ContractName, ProofTransaction, TxHash, UnsettledBlobTransaction,
 };
 
+#[derive(Clone)]
 pub struct NodeApiHttpClient {
     pub url: Url,
     pub reqwest_client: reqwest::Client,

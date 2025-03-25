@@ -163,7 +163,7 @@ impl RestApi {
             let token = axum_cancel_token.clone();
             async move {
                 log_error!(
-                    axum::serve(listener, app)
+                    axum::serve(hyle_net::net::HyleNetTcpListener(listener), app)
                         .with_graceful_shutdown(async move {
                             token.cancelled().await;
                         })
