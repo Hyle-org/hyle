@@ -3,10 +3,8 @@ use std::hash::{Hash, Hasher};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyllar::HyllarAction;
-use sdk::utils::parse_contract_input;
-use sdk::{
-    Blob, BlobIndex, ContractAction, ContractInput, HyleContract, RunResult, StateCommitment,
-};
+use sdk::utils::parse_calldata;
+use sdk::{Blob, BlobIndex, Calldata, ContractAction, HyleContract, RunResult, StateCommitment};
 use sdk::{BlobData, ContractName, StructuredBlobData};
 use serde::{Deserialize, Serialize};
 
@@ -55,8 +53,8 @@ pub struct Amm {
 }
 
 impl HyleContract for Amm {
-    fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
-        let (action, mut execution_ctx) = parse_contract_input::<AmmAction>(contract_input)?;
+    fn execute(&mut self, calldata: &Calldata) -> RunResult {
+        let (action, mut execution_ctx) = parse_calldata::<AmmAction>(calldata)?;
         let output = match action {
             AmmAction::Swap {
                 pair,
