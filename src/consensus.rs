@@ -459,10 +459,20 @@ impl Consensus {
             ConsensusNetMessage::Commit(commit_quorum_certificate, proposal_hash_hint) => {
                 self.on_commit(sender, commit_quorum_certificate, proposal_hash_hint)
             }
-            ConsensusNetMessage::Timeout(slot, view) => self.on_timeout(msg, slot, view),
-            ConsensusNetMessage::TimeoutCertificate(timeout_certificate, slot, view) => {
-                self.on_timeout_certificate(&timeout_certificate, slot, view)
+            ConsensusNetMessage::Timeout(signed_slot_view, cp) => {
+                self.on_timeout(msg, signed_slot_view, cp)
             }
+            ConsensusNetMessage::TimeoutCertificate(
+                certificate_of_timeout,
+                certificate_of_proposal,
+                slot,
+                view,
+            ) => self.on_timeout_certificate(
+                &certificate_of_timeout,
+                &certificate_of_proposal,
+                slot,
+                view,
+            ),
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
                 self.on_validator_candidacy(msg, candidacy)
             }
@@ -616,9 +626,18 @@ impl Consensus {
                         self.bft_round_state.slot, self.bft_round_state.view
                     );
 
+                    let proposal = self
+                        .bft_round_state
+                        .timeout
+                        .highest_seen_prepare_qc
+                        .as_ref()
+                        .map(|(_, _, qc)| {
+                            (qc.clone(), self.bft_round_state.current_proposal.clone())
+                        });
                     let timeout_message = ConsensusNetMessage::Timeout(
                         self.bft_round_state.slot,
                         self.bft_round_state.view,
+                        proposal.clone(),
                     );
 
                     let signed_timeout_message = self
@@ -629,6 +648,7 @@ impl Consensus {
                         signed_timeout_message,
                         self.bft_round_state.slot,
                         self.bft_round_state.view,
+                        proposal,
                     )?;
 
                     self.broadcast_net_message(timeout_message)?;
