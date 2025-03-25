@@ -45,7 +45,7 @@ pub fn init_with_caller<Action>(
 At the end of your contract, you need to output a `HyleOutput`, you can use the helper in `utils.rs`:
 
 ```rust
-pub fn as_hyle_output<State>(
+pub fn as_hyle_output(
     input: ContractInput,
     new_state: State,
     res: crate::RunResult,

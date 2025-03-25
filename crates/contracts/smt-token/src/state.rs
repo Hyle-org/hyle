@@ -1,22 +1,42 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
+use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::{utils::parse_contract_input, ContractInput, HyleContract, RunResult};
+use sparse_merkle_tree::traits::StoreReadOps;
 
 use crate::{
     account::{Account, AccountSMT},
-    SmtTokenAction,
+    SmtTokenAction, FAUCET_ID, TOTAL_SUPPLY,
 };
 
 /// This struct is necessary to allow the indexer to access the full state
 /// (including all accounts, their balances, and allowances) as the other
 /// implementation only uses the commitment.
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct SmtTokenState {
     pub accounts: AccountSMT,
 }
 
+impl Default for SmtTokenState {
+    fn default() -> Self {
+        let mut accounts = AccountSMT::default();
+        let faucet_account = Account {
+            address: FAUCET_ID.to_string(),
+            balance: TOTAL_SUPPLY,
+            allowances: BTreeMap::new(),
+        };
+        let faucet_key = faucet_account.get_key();
+        accounts
+            .update(faucet_key, faucet_account)
+            .expect("Failed to initialize faucet account");
+
+        Self { accounts }
+    }
+}
+
 impl SmtTokenState {
+    // Refactor using SparseMerkleTree::new_with_store
     pub fn new(accounts: AccountSMT) -> Self {
         Self { accounts }
     }
@@ -88,7 +108,7 @@ impl HyleContract for SmtTokenState {
                 amount,
             } => {
                 let owner_key = owner_account.get_key();
-                owner_account.update_allowance(spender.clone(), amount);
+                owner_account.update_allowances(spender.clone(), amount);
                 if let Err(e) = self.accounts.update(owner_key, owner_account) {
                     return Err(format!("Failed to update owner account: {e}"));
                 }
@@ -115,13 +135,20 @@ impl SmtTokenState {
             .map(|(_, account)| (account.address.clone(), account.clone()))
             .collect()
     }
+
+    pub fn get_account(&self, address: &str) -> Result<Option<Account>> {
+        let key = Account::compute_key(address.to_string());
+        self.accounts
+            .store()
+            .get_leaf(&key)
+            .map_err(anyhow::Error::from)
+    }
 }
 
 impl BorshSerialize for SmtTokenState {
-    fn serialize<W: std::io::Write>(&self, _writer: &mut W) -> std::io::Result<()> {
-        unreachable!("This function should not be called");
-        // self.accounts.root().as_slice().serialize(writer)?;
-        // Ok(())
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        self.accounts.root().as_slice().serialize(writer)?;
+        Ok(())
     }
 }
 

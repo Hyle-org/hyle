@@ -15,7 +15,7 @@ pub type AccountSMT = SparseMerkleTree<SHA256Hasher, Account, DefaultStore<Accou
 pub struct Account {
     pub address: String,
     pub balance: u128,
-    pub allowance: BTreeMap<String, u128>,
+    pub allowances: BTreeMap<String, u128>,
 }
 
 impl Account {
@@ -23,22 +23,26 @@ impl Account {
         Account {
             address,
             balance,
-            allowance: BTreeMap::new(),
+            allowances: BTreeMap::new(),
         }
     }
 
     // Helper function to create key from address
     pub fn get_key(&self) -> H256 {
+        Account::compute_key(self.address.clone())
+    }
+
+    pub fn compute_key(address: String) -> H256 {
         let mut hasher = Sha256::new();
-        hasher.update(self.address.as_bytes());
+        hasher.update(address.as_bytes());
         let result = hasher.finalize();
         let mut h = [0u8; 32];
         h.copy_from_slice(&result);
         H256::from(h)
     }
 
-    pub fn update_allowance(&mut self, spender: String, amount: u128) {
-        self.allowance.insert(spender, amount);
+    pub fn update_allowances(&mut self, spender: String, amount: u128) {
+        self.allowances.insert(spender, amount);
     }
 }
 

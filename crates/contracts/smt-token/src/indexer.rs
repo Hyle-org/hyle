@@ -16,7 +16,9 @@ use serde::Serialize;
 use client_sdk::contract_indexer::axum;
 use client_sdk::contract_indexer::utoipa;
 
-use crate::indexer_state::SmtTokenState;
+use crate::state::SmtTokenState;
+
+// TODO: faire une nouvelle struct spé pour l'indexer/juste une hashmap
 
 impl ContractHandler for SmtTokenState {
     async fn api(store: ContractHandlerStore<SmtTokenState>) -> (Router<()>, OpenApi) {
@@ -28,6 +30,15 @@ impl ContractHandler for SmtTokenState {
 
         (router.with_state(store), api)
     }
+    // fn handle_transaction(
+    //     &mut self,
+    //     tx: &BlobTransaction,
+    //     index: BlobIndex,
+    //     tx_context: TxContext,
+    // ) -> Result<()> {
+    //     // update hashmap
+    //     Ok(())
+    // }
 }
 
 #[utoipa::path(
@@ -129,7 +140,7 @@ pub async fn get_allowance(
         .map(|account| AllowanceResponse {
             owner: account.address,
             spender: spender.0.clone(),
-            allowance: account.allowance.get(&spender.0).cloned().unwrap_or(0),
+            allowance: account.allowances.get(&spender.0).cloned().unwrap_or(0),
         })
         .map(Json)
         .ok_or_else(|| AppError(StatusCode::NOT_FOUND, anyhow!("Account not found")))

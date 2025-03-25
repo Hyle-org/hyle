@@ -14,7 +14,7 @@ use hydentity::Hydentity;
 use hyle_contract_sdk::HyleContract;
 use hyle_contract_sdk::Identity;
 use hyle_contract_sdk::TxHash;
-use hyle_contract_sdk::{guest, ContractInput, ContractName, HyleOutput};
+use hyle_contract_sdk::{guest, utils, ContractInput, ContractName, HyleOutput};
 use hyle_contract_sdk::{Blob, BlobData, ContractAction, RegisterContractAction};
 use hyle_contract_sdk::{BlobTransaction, Transaction};
 use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF};
@@ -85,16 +85,16 @@ impl transaction_builder::StateUpdater for CanonicalStates {
     }
 
     fn execute(
-        &self,
+        &mut self,
         contract_name: &ContractName,
         contract_input: &ContractInput,
-    ) -> anyhow::Result<(Box<dyn std::any::Any>, HyleOutput)> {
+    ) -> anyhow::Result<HyleOutput> {
         if contract_name == &self.hydentity_name {
-            let (state, output) = guest::execute::<Hydentity>(contract_input);
-            Ok((Box::new(state) as Box<dyn std::any::Any>, output))
+            let (_, output) = guest::execute::<Hydentity>(contract_input);
+            Ok(output)
         } else if contract_name == &self.hyllar_name {
-            let (state, output) = guest::execute::<Hyllar>(contract_input);
-            Ok((Box::new(state) as Box<dyn std::any::Any>, output))
+            let (_, output) = guest::execute::<Hyllar>(contract_input);
+            Ok(output)
         } else {
             anyhow::bail!("Unknown contract name: {contract_name}");
         }

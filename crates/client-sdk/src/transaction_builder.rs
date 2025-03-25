@@ -120,10 +120,10 @@ where
     fn update(&mut self, contract_name: &ContractName, new_state: &mut dyn Any) -> Result<()>;
     fn get(&self, contract_name: &ContractName) -> Result<Vec<u8>>;
     fn execute(
-        &self,
+        &mut self,
         contract_name: &ContractName,
         contract_input: &ContractInput,
-    ) -> anyhow::Result<(Box<dyn Any>, sdk::HyleOutput)>;
+    ) -> anyhow::Result<sdk::HyleOutput>;
 }
 
 pub struct TxExecutor<S: StateUpdater> {
@@ -229,7 +229,7 @@ impl<S: StateUpdater> TxExecutor<S> {
             runner.build_contract_input(tx.tx_context.clone(), tx.blobs.clone(), state);
 
             tracing::info!("Checking transition for {}...", runner.contract_name);
-            let (mut state, out) = match self
+            let out = match self
                 .states
                 .execute(&runner.contract_name, runner.contract_input.get().unwrap())
             {
@@ -237,6 +237,7 @@ impl<S: StateUpdater> TxExecutor<S> {
                 Err(e) => {
                     // Revert all state changes
                     for (contract_name, state) in old_states.iter_mut() {
+                        // FIXME: We need to deserialize the state before adding it back
                         self.states.update(contract_name, &mut *state)?;
                     }
                     bail!("Execution failed for {}: {}", runner.contract_name, e);
@@ -253,7 +254,7 @@ impl<S: StateUpdater> TxExecutor<S> {
                 );
             }
 
-            self.states.update(&runner.contract_name, &mut *state)?;
+            // self.states.u!pdate(&runner.contract_name, &mut *state)?;
 
             outputs.push((runner.contract_name.clone(), out));
         }
@@ -308,7 +309,7 @@ impl ContractRunner {
             blobs,
             tx_hash,
             tx_ctx: tx_context,
-            private_input: self.private_input.clone().unwrap_or_default(),
+            private_input: self.private_input.clone().unwrap_or_default(), // être en mesure de récupere les infos depuis le state complet (merkle proof)
         });
     }
 }
@@ -354,11 +355,20 @@ macro_rules! contract_states {
                 }
             }
 
-            fn execute(&self, contract_name: &ContractName, contract_input: &ContractInput) -> anyhow::Result<(Box<dyn std::any::Any>, HyleOutput)> {
+            fn execute(&mut self, contract_name: &ContractName, contract_input: &ContractInput) -> anyhow::Result<HyleOutput> {
                 match contract_name.0.as_str() {
                     $(stringify!($contract_name) => {
-                        let (state, output) = guest::execute::<$contract_state>(contract_input);
-                        Ok((Box::new(state) as Box<dyn std::any::Any>, output))
+                        let initial_state_commitment = self.$contract_name.commit();
+                        let mut res = self.$contract_name.execute(contract_input);
+                        let next_state_commitment = self.$contract_name.commit();
+
+                        let hyle_output = utils::as_hyle_output(
+                            initial_state_commitment,
+                            next_state_commitment,
+                            contract_input.clone(),
+                            &mut res,
+                        );
+                        Ok(hyle_output)
                     })*
                     _ => anyhow::bail!("Unknown contract name: {contract_name}"),
                 }

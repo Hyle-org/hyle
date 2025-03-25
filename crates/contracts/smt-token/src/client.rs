@@ -1,10 +1,10 @@
 use client_sdk::{
     helpers::risc0::Risc0Prover,
-    transaction_builder::{StateUpdater, TxExecutorBuilder},
+    transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
 use sdk::ContractName;
 
-use crate::SmtToken;
+use crate::{account::Account, state::SmtTokenState, SmtTokenAction};
 
 pub mod metadata {
     pub const SMT_TOKEN_ELF: &[u8] = include_bytes!("../smt-token.img");
@@ -12,7 +12,7 @@ pub mod metadata {
 }
 use metadata::*;
 
-impl SmtToken {
+impl SmtTokenState {
     pub fn setup_builder<S: StateUpdater>(
         &self,
         contract_name: ContractName,
@@ -20,69 +20,115 @@ impl SmtToken {
     ) {
         builder.init_with(contract_name, Risc0Prover::new(SMT_TOKEN_ELF));
     }
+
+    pub fn transfer(
+        &self,
+        builder: &mut ProvableBlobTx,
+        contract_name: ContractName,
+        sender: String,
+        recipient: String,
+        amount: u128,
+    ) -> anyhow::Result<()> {
+        let sender_account = match self.get_account(&sender) {
+            Ok(Some(account)) => account,
+            Ok(None) => return Err(anyhow::anyhow!("Sender account not found")),
+            Err(e) => return Err(e),
+        };
+
+        let recipient_account = match self.get_account(&recipient) {
+            Ok(Some(account)) => account,
+            Ok(None) => Account::new(recipient, 0),
+            Err(e) => return Err(e),
+        };
+
+        let proof = self
+            .accounts
+            .merkle_proof(vec![sender_account.get_key(), recipient_account.get_key()])?;
+
+        builder.add_action(
+            contract_name,
+            SmtTokenAction::Transfer {
+                proof: proof.into(),
+                sender_account,
+                recipient_account,
+                amount,
+            },
+            None,
+            None,
+            None,
+        )?;
+        Ok(())
+    }
+
+    pub fn transfer_from(
+        &self,
+        builder: &mut ProvableBlobTx,
+        contract_name: ContractName,
+        owner: String,
+        spender: String,
+        recipient: String,
+        amount: u128,
+    ) -> anyhow::Result<()> {
+        let owner_account = match self.get_account(&owner) {
+            Ok(Some(account)) => account,
+            Ok(None) => return Err(anyhow::anyhow!("Sender account not found")),
+            Err(e) => return Err(e),
+        };
+
+        let recipient_account = match self.get_account(&recipient) {
+            Ok(Some(account)) => account,
+            Ok(None) => Account::new(recipient, 0),
+            Err(e) => return Err(e),
+        };
+
+        let proof = self
+            .accounts
+            .merkle_proof(vec![owner_account.get_key(), recipient_account.get_key()])?;
+
+        builder.add_action(
+            contract_name,
+            SmtTokenAction::TransferFrom {
+                proof: proof.into(),
+                owner_account,
+                spender,
+                recipient_account,
+                amount,
+            },
+            None,
+            None,
+            None,
+        )?;
+        Ok(())
+    }
+
+    pub fn approve(
+        &self,
+        builder: &mut ProvableBlobTx,
+        contract_name: ContractName,
+        owner: String,
+        spender: String,
+        amount: u128,
+    ) -> anyhow::Result<()> {
+        let owner_account = match self.get_account(&owner) {
+            Ok(Some(account)) => account,
+            Ok(None) => return Err(anyhow::anyhow!("Sender account not found")),
+            Err(e) => return Err(e),
+        };
+
+        let proof = self.accounts.merkle_proof(vec![owner_account.get_key()])?;
+
+        builder.add_action(
+            contract_name,
+            SmtTokenAction::Approve {
+                proof: proof.into(),
+                owner_account,
+                spender,
+                amount,
+            },
+            None,
+            None,
+            None,
+        )?;
+        Ok(())
+    }
 }
-
-// pub fn transfer(
-//     builder: &mut ProvableBlobTx,
-//     contract_name: ContractName,
-//     recipient: String,
-//     amount: u128,
-// ) -> anyhow::Result<()> {
-//     builder.add_action(
-//         contract_name,
-//         SmtTokenAction::Transfer {
-//             proof: todo!(),
-//             sender_account: todo!(),
-//             recipient_account: todo!(),
-//             amount,
-//         },
-//         None,
-//         None,
-//         None,
-//     )?;
-//     Ok(())
-// }
-
-// pub fn transfer_from(
-//     builder: &mut ProvableBlobTx,
-//     contract_name: ContractName,
-//     sender: String,
-//     recipient: String,
-//     amount: u128,
-// ) -> anyhow::Result<()> {
-//     builder.add_action(
-//         contract_name,
-//         SmtTokenAction::TransferFrom {
-//             proof: todo!(),
-//             owner_account: todo!(),
-//             spender: todo!(),
-//             recipient_account: todo!(),
-//             amount,
-//         },
-//         None,
-//         None,
-//         None,
-//     )?;
-//     Ok(())
-// }
-
-// pub fn approve(
-//     builder: &mut ProvableBlobTx,
-//     contract_name: ContractName,
-//     spender: String,
-//     amount: u128,
-// ) -> anyhow::Result<()> {
-//     builder.add_action(
-//         contract_name,
-//         SmtTokenAction::Approve {
-//             proof: todo!(),
-//             owner_account: todo!(),
-//             spender,
-//             amount,
-//         },
-//         None,
-//         None,
-//         None,
-//     )?;
-//     Ok(())
-// }

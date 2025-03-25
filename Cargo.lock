@@ -2540,6 +2540,7 @@ dependencies = [
  "hyle-hyllar",
  "hyle-model",
  "hyle-risc0-recursion",
+ "hyle-smt-token",
  "hyle-staking",
  "hyle-uuid-tld",
  "hyle-verifiers",

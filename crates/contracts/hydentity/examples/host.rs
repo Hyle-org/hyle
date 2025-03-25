@@ -8,7 +8,7 @@ use client_sdk::transaction_builder::TxExecutorBuilder;
 use hyle_hydentity::Hydentity;
 use hyle_hydentity::HydentityAction;
 use sdk::Hashed;
-use sdk::{guest, ContractInput, ContractName, HyleOutput};
+use sdk::{utils, ContractInput, ContractName, HyleContract, HyleOutput};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

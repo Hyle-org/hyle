@@ -8,6 +8,7 @@ use sdk::{
 use sdk::{HyleContract, RunResult};
 use serde::{Deserialize, Serialize};
 use sparse_merkle_tree::traits::Value;
+use state::SmtTokenState;
 use utils::{BorshableMerkleProof, SHA256Hasher};
 
 extern crate alloc;
@@ -17,15 +18,17 @@ pub mod account;
 pub mod client;
 #[cfg(feature = "client")]
 pub mod indexer;
-#[cfg(feature = "client")]
-pub mod indexer_state;
+pub mod state;
 pub mod utils;
+
+pub const TOTAL_SUPPLY: u128 = 100_000_000_000;
+pub const FAUCET_ID: &str = "faucet.hydentity";
 
 /// Enum representing possible calls to Token contract functions.
 #[derive(Clone, PartialEq, BorshDeserialize, BorshSerialize)]
 pub enum SmtTokenAction {
     Transfer {
-        proof: BorshableMerkleProof,
+        proof: BorshableMerkleProof, // TODO: à mettre en private_input
         sender_account: Account,
         recipient_account: Account,
         amount: u128,
@@ -46,9 +49,18 @@ pub enum SmtTokenAction {
 }
 
 /// Struct representing the SMT token.
-#[derive(Default, BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone)]
+#[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Debug, Clone)]
 pub struct SmtToken {
     pub commitment: sdk::StateCommitment,
+}
+
+impl Default for SmtToken {
+    fn default() -> Self {
+        let default_state = SmtTokenState::default();
+        SmtToken {
+            commitment: default_state.commit(),
+        }
+    }
 }
 
 impl SmtToken {
@@ -156,12 +168,12 @@ impl SmtToken {
         recipient_account: Account,
         amount: u128,
     ) -> Result<String, String> {
-        if owner_account.allowance.get(&spender).unwrap_or(&0) < &amount {
+        if owner_account.allowances.get(&spender).unwrap_or(&0) < &amount {
             return Err(format!(
                 "Allowance exceeded for spender={} owner={} allowance={}",
                 spender,
                 owner_account.address,
-                owner_account.allowance.get(&spender).unwrap_or(&0)
+                owner_account.allowances.get(&spender).unwrap_or(&0)
             ));
         }
 
@@ -193,7 +205,7 @@ impl SmtToken {
             return Err("Failed to verify proof".to_string());
         }
 
-        owner_account.update_allowance(spender.clone(), amount);
+        owner_account.update_allowances(spender.clone(), amount);
 
         let new_root = proof
             .0
@@ -372,7 +384,7 @@ mod tests {
         let spender = "spender".to_string();
 
         // Set allowance for spender
-        owner_account.update_allowance(spender.clone(), 500);
+        owner_account.update_allowances(spender.clone(), 500);
 
         // Create keys for the accounts
         let owner_key = owner_account.get_key();
@@ -477,7 +489,7 @@ mod tests {
             .unwrap();
 
         // Update allowance
-        owner_account.update_allowance(spender.clone(), 500);
+        owner_account.update_allowances(spender.clone(), 500);
 
         let expected_root = smt
             .update_all(vec![(owner_account.get_key(), owner_account)])

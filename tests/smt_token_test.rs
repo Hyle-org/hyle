@@ -6,7 +6,7 @@ mod fixtures;
 
 use anyhow::Result;
 
-mod e2e_hyllar {
+mod e2e_smt_token {
     use client_sdk::{
         contract_states,
         helpers::risc0::Risc0Prover,
@@ -17,34 +17,40 @@ mod e2e_hyllar {
         Hydentity,
     };
     use hyle_contract_sdk::{utils, ContractInput, ContractName, HyleContract, HyleOutput};
-    use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF};
-    use hyllar::{client::transfer, erc20::ERC20, Hyllar, FAUCET_ID};
+    use hyle_contracts::{HYDENTITY_ELF, SMT_TOKEN_ELF};
+    use smt_token::{state::SmtTokenState, FAUCET_ID};
 
     use super::*;
 
     contract_states!(
         struct States {
             hydentity: Hydentity,
-            hyllar: Hyllar,
+            smt_token: SmtTokenState,
         }
     );
 
-    async fn scenario_hyllar(ctx: E2ECtx) -> Result<E2ECtx> {
+    async fn scenario_smt_token(ctx: E2ECtx) -> Result<E2ECtx> {
         info!("➡️  Setting up the executor with the initial state");
 
         let hydentity: hydentity::Hydentity = ctx
             .indexer_client()
             .fetch_current_state(&"hydentity".into())
             .await?;
-        let hyllar: Hyllar = ctx
-            .indexer_client()
-            .fetch_current_state(&"hyllar".into())
-            .await?;
-        let mut executor = TxExecutorBuilder::new(States { hydentity, hyllar })
-            // Replace prover binaries for non-reproducible mode.
-            .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
-            .with_prover("hyllar".into(), Risc0Prover::new(HYLLAR_ELF))
-            .build();
+        // TODO: indexer toutes les transactions hihi
+        // let token: SmtToken = ctx
+        //     .indexer_client()
+        //     .fetch_current_state(&"smt_token".into())
+        //     .await?;
+        let smt_token = SmtTokenState::default();
+
+        let mut executor = TxExecutorBuilder::new(States {
+            hydentity,
+            smt_token,
+        })
+        // Replace prover binaries for non-reproducible mode.
+        .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
+        .with_prover("smt_token".into(), Risc0Prover::new(SMT_TOKEN_ELF))
+        .build();
 
         info!("➡️  Sending blob to register bob identity");
 
@@ -74,7 +80,13 @@ mod e2e_hyllar {
             "password".to_string(),
         )?;
 
-        transfer(&mut tx, "hyllar".into(), "bob.hydentity".to_string(), 25)?;
+        executor.smt_token.transfer(
+            &mut tx,
+            "smt_token".into(),
+            FAUCET_ID.to_string(),
+            "bob.hydentity".to_string(),
+            25,
+        )?;
 
         ctx.send_provable_blob_tx(&tx).await?;
 
@@ -82,40 +94,43 @@ mod e2e_hyllar {
         let mut proofs = tx.iter_prove();
 
         let hydentity_proof = proofs.next().unwrap().await?;
-        let hyllar_proof = proofs.next().unwrap().await?;
+        let smt_token_proof = proofs.next().unwrap().await?;
 
         info!("➡️  Sending proof for hydentity");
         ctx.send_proof_single(hydentity_proof).await?;
 
-        info!("➡️  Sending proof for hyllar");
-        ctx.send_proof_single(hyllar_proof).await?;
+        info!("➡️  Sending proof for smt_token");
+        ctx.send_proof_single(smt_token_proof).await?;
 
         info!("➡️  Waiting for height 5");
         ctx.wait_height(5).await?;
 
-        let state: Hyllar = ctx
-            .indexer_client()
-            .fetch_current_state(&"hyllar".into())
-            .await?;
+        // let state: SmtToken = ctx
+        //     .indexer_client()
+        //     .fetch_current_state(&"smt_token".into())
+        //     .await?;
+        let state = executor.smt_token.get_state();
         assert_eq!(
             state
-                .balance_of("bob.hydentity")
-                .expect("bob identity not found"),
+                .get("bob.hydentity")
+                .expect("bob identity not found")
+                .balance,
             25
         );
+
         Ok(ctx)
     }
 
     #[ignore = "need new_single_with_indexer"]
     #[test_log::test(tokio::test)]
-    async fn hyllar_single_node() -> Result<()> {
+    async fn smt_token_single_node() -> Result<()> {
         let ctx = E2ECtx::new_single(500).await?;
-        scenario_hyllar(ctx).await?;
+        scenario_smt_token(ctx).await?;
         Ok(())
     }
 
     #[test_log::test(tokio::test)]
-    async fn hyllar_multi_nodes() -> Result<()> {
+    async fn smt_token_multi_nodes() -> Result<()> {
         let ctx = E2ECtx::new_multi_with_indexer(2, 500).await?;
 
         let node = ctx.client().get_node_info().await?;
@@ -126,7 +141,7 @@ mod e2e_hyllar {
             .get(node.pubkey.as_ref().unwrap())
             .expect("balance");
 
-        let ctx = scenario_hyllar(ctx).await?;
+        let ctx = scenario_smt_token(ctx).await?;
 
         let staking = ctx.client().get_consensus_staking_state().await?;
         let balance = staking

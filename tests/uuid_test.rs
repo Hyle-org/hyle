@@ -9,7 +9,7 @@ use fixtures::ctx::{E2EContract, E2ECtx};
 use hydentity::{client::register_identity, Hydentity};
 use hyle::mempool::verifiers::verify_proof;
 use hyle_contract_sdk::{
-    guest, BlobTransaction, ContractInput, ContractName, Hashed, HyleContract, HyleOutput,
+    utils, BlobTransaction, ContractInput, ContractName, Hashed, HyleContract, HyleOutput,
     ProgramId, StateCommitment, Verifier,
 };
 use hyle_contracts::{HYDENTITY_ELF, UUID_TLD_ELF, UUID_TLD_ID};

@@ -11,6 +11,11 @@ impl From<BorshableMerkleProof> for MerkleProof {
         proof.0
     }
 }
+impl From<MerkleProof> for BorshableMerkleProof {
+    fn from(proof: MerkleProof) -> Self {
+        BorshableMerkleProof(proof)
+    }
+}
 
 impl BorshSerialize for BorshableMerkleProof {
     fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {

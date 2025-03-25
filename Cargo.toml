@@ -45,6 +45,7 @@ hyle-verifiers = { version = "0.13.0-rc.1", default-features = false, path = "cr
 risc0-recursion = { version = "0.13.0-rc.1", default-features = false, path = "crates/contracts/risc0-recursion", package = "hyle-risc0-recursion" }
 hydentity = { version = "0.13.0-rc.1", default-features = false, path = "crates/contracts/hydentity", package = "hyle-hydentity" }
 hyllar = { version = "0.13.0-rc.1", default-features = false, path = "crates/contracts/hyllar", package = "hyle-hyllar" }
+smt-token = { version = "0.13.0-rc.1", default-features = false, path = "crates/contracts/smt-token", package = "hyle-smt-token" }
 staking = { version = "0.13.0-rc.1", default-features = false, path = "crates/contracts/staking", package = "hyle-staking" }
 amm = { version = "0.13.0-rc.1", default-features = false, path = "crates/contracts/amm", package = "hyle-amm" }
 uuid-tld = { version = "0.13.0-rc.1", default-features = false, path = "crates/contracts/uuid-tld", package = "hyle-uuid-tld" }
@@ -155,6 +156,7 @@ sha2 = { git = "https://github.com/risc0/RustCrypto-hashes", tag = "sha2-v0.10.8
 [dev-dependencies]
 amm = { workspace = true, features = ["client"] }
 uuid-tld = { workspace = true, features = ["client"] }
+smt-token = { workspace = true, features = ["client"] }
 client-sdk = { workspace = true, default-features = false, features = [
     "rest",
     "tcp",
