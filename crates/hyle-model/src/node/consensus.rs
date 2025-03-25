@@ -107,7 +107,7 @@ pub enum Ticket {
     // Special value for the initial Cut, needed because we don't have a quorum certificate for the genesis block.
     Genesis,
     CommitQC(QuorumCertificate),
-    TimeoutQC(QuorumCertificate),
+    TimeoutQC(QuorumCertificate, TCKind),
     ForcedCommitQc(QuorumCertificate),
 }
 
@@ -247,14 +247,38 @@ impl From<NewValidatorCandidate> for ConsensusStakingAction {
     Ord,
     PartialOrd,
 )]
+pub enum TCKind {
+    NilProposal,
+    PrepareQC(QuorumCertificate),
+}
+
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    BorshSerialize,
+    BorshDeserialize,
+    PartialEq,
+    Eq,
+    IntoStaticStr,
+    Hash,
+    Ord,
+    PartialOrd,
+)]
 pub enum ConsensusNetMessage {
     Prepare(ConsensusProposal, Ticket, View),
     PrepareVote(ConsensusProposalHash),
     Confirm(QuorumCertificate, ConsensusProposalHash),
     ConfirmAck(ConsensusProposalHash),
     Commit(QuorumCertificate, ConsensusProposalHash),
-    Timeout(Slot, View),
-    TimeoutCertificate(QuorumCertificate, Slot, View),
+    // TODO: don't double-sign
+    Timeout(
+        // Here we add the parent hash purely to avoid replay attacks
+        SignedByValidator<(Slot, View, ConsensusProposalHash)>,
+        Option<(QuorumCertificate, ConsensusProposal)>,
+    ),
+    TimeoutCertificate(QuorumCertificate, TCKind, Slot, View),
     ValidatorCandidacy(ValidatorCandidacy),
     SyncRequest(ConsensusProposalHash),
     SyncReply((ValidatorPublicKey, ConsensusProposal, Ticket, View)),
@@ -351,14 +375,34 @@ impl Display for ConsensusNetMessage {
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
                 write!(f, "{} (Candidacy {})", enum_variant, candidacy)
             }
-            ConsensusNetMessage::Timeout(slot, view) => {
-                write!(f, "{} - Slot: {} View: {}", enum_variant, slot, view)
+            ConsensusNetMessage::Timeout(signed_slot_view, cp) => {
+                write!(
+                    f,
+                    "{} - Slot: {} View: {} - with CP? {}",
+                    enum_variant,
+                    signed_slot_view.msg.0,
+                    signed_slot_view.msg.1,
+                    cp.as_ref()
+                        .map(|cp| cp.1.hashed().to_string())
+                        .unwrap_or("None".to_string())
+                )
             }
-            ConsensusNetMessage::TimeoutCertificate(cert, slot, view) => {
+            ConsensusNetMessage::TimeoutCertificate(cert, kindcert, slot, view) => {
                 _ = writeln!(f, "{} - Slot: {} View: {}", enum_variant, slot, view);
-                _ = write!(f, "Certificate {} with validators ", cert.signature);
+                _ = writeln!(f, "Validators {}", cert.signature);
                 for v in cert.validators.iter() {
                     _ = write!(f, "{},", v);
+                }
+                match kindcert {
+                    TCKind::NilProposal => {
+                        _ = writeln!(f, "NilProposal certificate");
+                    }
+                    TCKind::PrepareQC(kindcert) => {
+                        _ = writeln!(f, "PrepareQC certificate {}", kindcert.signature);
+                        for v in kindcert.validators.iter() {
+                            _ = write!(f, "{},", v);
+                        }
+                    }
                 }
                 write!(f, "")
             }

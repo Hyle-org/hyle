@@ -1,6 +1,9 @@
 use std::collections::HashSet;
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use hyle_model::{
+    AggregateSignature, ConsensusProposal, ConsensusProposalHash, Hashed, Signed, TCKind,
+};
 use tracing::{debug, info, trace, warn};
 
 use super::Consensus;
@@ -81,20 +84,38 @@ impl TimeoutState {
 pub(super) struct TimeoutRoleState {
     pub(super) requests: HashSet<SignedByValidator<ConsensusNetMessage>>,
     pub(super) state: TimeoutState,
+    pub(super) highest_seen_prepare_qc: Option<(Slot, View, QuorumCertificate)>,
+}
+
+impl TimeoutRoleState {
+    pub(super) fn update_highest_seen_prepare_qc(
+        &mut self,
+        slot: Slot,
+        view: View,
+        qc: QuorumCertificate,
+    ) {
+        if let Some((s, v, _)) = &self.highest_seen_prepare_qc {
+            if slot <= *s || (slot == *s && view <= *v) {
+                return;
+            }
+            self.highest_seen_prepare_qc = Some((slot, view, qc));
+        }
+    }
 }
 
 pub(super) trait TimeoutRole {
     fn on_timeout_certificate(
         &mut self,
         received_timeout_certificate: &QuorumCertificate,
+        received_proposal_qc: &TCKind,
         received_slot: Slot,
         received_view: View,
     ) -> Result<()>;
     fn on_timeout(
         &mut self,
         received_msg: SignedByValidator<ConsensusNetMessage>,
-        received_slot: Slot,
-        received_view: View,
+        received_slot_view: SignedByValidator<(Slot, View, ConsensusProposalHash)>,
+        received_cp: Option<(QuorumCertificate, ConsensusProposal)>,
     ) -> Result<()>;
 }
 
@@ -102,6 +123,7 @@ impl TimeoutRole for Consensus {
     fn on_timeout_certificate(
         &mut self,
         received_timeout_certificate: &QuorumCertificate,
+        received_proposal_qc: &TCKind,
         received_slot: Slot,
         received_view: View,
     ) -> Result<()> {
@@ -151,8 +173,8 @@ impl TimeoutRole for Consensus {
     fn on_timeout(
         &mut self,
         received_msg: SignedByValidator<ConsensusNetMessage>,
-        received_slot: Slot,
-        received_view: View,
+        received_slot_view: SignedByValidator<(Slot, View, ConsensusProposalHash)>,
+        received_cp: Option<(QuorumCertificate, ConsensusProposal)>,
     ) -> Result<()> {
         // Only timeout if it is in consensus
         if !self.is_part_of_consensus(self.crypto.validator_pubkey()) {
@@ -163,7 +185,19 @@ impl TimeoutRole for Consensus {
             return Ok(());
         }
 
-        if received_slot < self.bft_round_state.slot {
+        let Signed::<_, _> {
+            msg: (received_slot, received_view, received_parent_hash),
+            ..
+        } = &received_slot_view;
+
+        if received_parent_hash != &self.bft_round_state.parent_hash {
+            debug!(
+                "🌘 Ignoring timeout with incorrect parent hash {}, expected {}",
+                received_parent_hash, self.bft_round_state.parent_hash
+            );
+            return Ok(());
+        }
+        if received_slot < &self.bft_round_state.slot {
             debug!(
                 "🌘 Ignoring timeout for slot {}, am at {}",
                 received_slot, self.bft_round_state.slot
@@ -171,7 +205,8 @@ impl TimeoutRole for Consensus {
             return Ok(());
         }
 
-        if received_slot != self.bft_round_state.slot || received_view != self.bft_round_state.view
+        if received_slot != &self.bft_round_state.slot
+            || received_view != &self.bft_round_state.view
         {
             bail!(
                 "Timeout (Slot: {}, view: {}) does not match expected (Slot: {}, view: {})",
@@ -181,9 +216,6 @@ impl TimeoutRole for Consensus {
                 self.bft_round_state.view,
             );
         }
-
-        // In the paper, a replica returns a commit if present
-        // TODO ?
 
         // Insert timeout request and if already present notify
         if !self
@@ -196,6 +228,19 @@ impl TimeoutRole for Consensus {
             // self.metrics.timeout_request("already_processed");
             info!("Timeout has already been processed");
             return Ok(());
+        }
+
+        // If there is a prepareQC along with this message, verify it (we can, it's the same slot), and then potentially update our highest seen PrepareQC
+        if let Some((qc, cp)) = &received_cp {
+            if cp.slot == *received_slot {
+                self.verify_quorum_certificate(ConsensusNetMessage::PrepareVote(cp.hashed()), &qc)
+                    .context("Verifying PrepareQC")?;
+                self.store
+                    .bft_round_state
+                    .timeout
+                    .update_highest_seen_prepare_qc(*received_slot, *received_view, qc.clone());
+                debug!("Highest seen PrepareQC updated");
+            }
         }
 
         let f = self.bft_round_state.staking.compute_f();
@@ -222,7 +267,8 @@ impl TimeoutRole for Consensus {
         if voting_power > f && !timeout_validators.contains(self.crypto.validator_pubkey()) {
             info!("Joining timeout mutiny!");
 
-            let timeout_message = ConsensusNetMessage::Timeout(received_slot, received_view);
+            let timeout_message =
+                ConsensusNetMessage::Timeout(received_slot_view.clone(), received_cp.clone());
 
             self.store
                 .bft_round_state
@@ -254,19 +300,40 @@ impl TimeoutRole for Consensus {
             )
         {
             debug!("⏲️ ⏲️ Creating a timeout certificate with {len} timeout requests and {voting_power} voting power");
-            // Get all signatures received and change ValidatorId for ValidatorPubKey
-            let aggregates: &Vec<&SignedByValidator<ConsensusNetMessage>> =
-                &self.bft_round_state.timeout.requests.iter().collect();
 
-            // Aggregates them into a Timeout Certificate
-            let timeout_signed_aggregation = self.crypto.sign_aggregate(
-                ConsensusNetMessage::Timeout(received_slot, received_view),
-                aggregates.as_slice(),
-            )?;
-
-            // self.metrics.timeout_certificate_aggregate();
-
-            let timeout_certificate = timeout_signed_aggregation.signature;
+            let ticket = (|| -> Result<(AggregateSignature, TCKind)> {
+                {
+                    if let Some((s, v, qc)) = &self.bft_round_state.timeout.highest_seen_prepare_qc
+                    {
+                        if s == received_slot && v == received_view {
+                            let signatures: Vec<_> = self
+                                .bft_round_state
+                                .timeout
+                                .requests
+                                .iter()
+                                .map(|s| {let ConsensusNetMessage::Timeout(signed_slot_view, ..) = &s.msg else {
+                                    unreachable!("All messages in the timeout set should be Timeout messages")
+                                };
+                                signed_slot_view
+                            }
+                            )
+                                .collect();
+                            return Result::Ok((self.crypto.sign_aggregate(
+                                received_slot_view.msg.clone(),
+                                signatures.as_slice(),
+                            )?.signature, TCKind::PrepareQC(qc.clone())));
+                        }
+                    }
+                    let signatures: Vec<_> = self.bft_round_state.timeout.requests.iter().collect();
+                    Result::Ok((
+                        self.crypto
+                            .sign_aggregate(received_msg.msg, signatures.as_slice())?
+                            .signature,
+                        TCKind::NilProposal,
+                    ))
+                }
+            })()
+            .context("Creating Timeout Certificate")?;
 
             self.bft_round_state
                 .timeout
@@ -279,13 +346,14 @@ impl TimeoutRole for Consensus {
                 if matches!(self.bft_round_state.state_tag, StateTag::Joining) {
                     self.bft_round_state.state_tag = StateTag::Leader;
                 }
-                self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_certificate))?;
+                self.carry_on_with_ticket(Ticket::TimeoutQC(ticket.0, ticket.1))?;
             } else {
                 // Broadcast the Timeout Certificate to all validators
                 self.broadcast_net_message(ConsensusNetMessage::TimeoutCertificate(
-                    timeout_certificate.clone(),
-                    received_slot,
-                    received_view,
+                    ticket.0,
+                    ticket.1,
+                    *received_slot,
+                    *received_view,
                 ))?;
                 self.bft_round_state.timeout.state.certificate_emitted();
             }
