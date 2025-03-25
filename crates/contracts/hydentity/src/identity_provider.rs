@@ -105,7 +105,7 @@ mod tests {
         }
 
         impl HyleContract for IdentityVerification {
-            fn execute(&mut self, contract_input: &sdk::ContractInput) -> crate::RunResult {
+            fn execute(&mut self, calldata: &sdk::Calldata) -> crate::RunResult {
                 unimplemented!()
             }
             fn commit(&self) -> sdk::StateCommitment;

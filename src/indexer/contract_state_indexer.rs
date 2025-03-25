@@ -275,7 +275,7 @@ mod tests {
     }
 
     impl HyleContract for MockState {
-        fn execute(&mut self, _: &hyle_model::ContractInput) -> hyle_contract_sdk::RunResult {
+        fn execute(&mut self, _: &hyle_model::Calldata) -> hyle_contract_sdk::RunResult {
             Err("not implemented".into())
         }
 
