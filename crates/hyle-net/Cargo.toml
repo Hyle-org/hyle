@@ -19,12 +19,11 @@ tracing = "0.1"
 
 # Tcp feature
 tokio = { version = "1.42.0", features = ["full", "tracing"], optional = true }
-tokio-util = { version = "0.7.14"}
+tokio-util = { version = "0.7.14", features = ["codec"]}
 futures = { version = "0.3.31" }
 
 bytes = { version = "1.10.0" }
 paste = { version = "1.0.15"}
 
 [features]
-default = ["tokio"]
 tokio = ["dep:tokio"]

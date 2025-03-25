@@ -13,7 +13,7 @@ sdk = { workspace = true, default-features = false, features = [
     "full-model",
 ] }
 bonsai-runner = { workspace = true, optional = true }
-hyle-net = { workspace = true }
+hyle-net = { workspace = true, features = ["tokio"] }
 
 anyhow = "1.0.96"
 borsh = "1.5.6"
