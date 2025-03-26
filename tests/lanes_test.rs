@@ -12,13 +12,16 @@ use hydentity::{
     Hydentity,
 };
 use hyle::genesis::States;
-use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF, STAKING_ELF};
+use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF, PONZHYLE_ELF, STAKING_ELF};
 use hyle_model::{api::APIRegisterContract, ContractName, Identity, ProgramId, StateCommitment};
 use hyllar::{client::transfer, Hyllar, FAUCET_ID};
+use passport::Passport;
+use ponzhyle::Ponzhyle;
 use staking::{
     client::{delegate, deposit_for_fees, stake},
     state::Staking,
 };
+use twitter::Twitter;
 
 mod fixtures;
 
@@ -31,6 +34,18 @@ async fn faucet_and_delegate(
         .indexer_client()
         .fetch_current_state(&"hyllar".into())
         .await?;
+    let ponzhyle: Ponzhyle = ctx
+        .indexer_client()
+        .fetch_current_state(&"ponzhyle".into())
+        .await?;
+    let twitter: Twitter = ctx
+        .indexer_client()
+        .fetch_current_state(&"twitter".into())
+        .await?;
+    let passport: Passport = ctx
+        .indexer_client()
+        .fetch_current_state(&"passport".into())
+        .await?;
     let hydentity: Hydentity = ctx
         .indexer_client()
         .fetch_current_state(&"hydentity".into())
@@ -40,6 +55,9 @@ async fn faucet_and_delegate(
 
     let states = States {
         hyllar,
+        ponzhyle,
+        twitter,
+        passport,
         hydentity,
         staking,
     };
@@ -48,6 +66,7 @@ async fn faucet_and_delegate(
         // Replace prover binaries for non-reproducible mode.
         .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
         .with_prover("hyllar".into(), Risc0Prover::new(HYLLAR_ELF))
+        .with_prover("ponzhyle".into(), Risc0Prover::new(PONZHYLE_ELF))
         .with_prover("staking".into(), Risc0Prover::new(STAKING_ELF))
         .build();
 

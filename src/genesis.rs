@@ -20,12 +20,15 @@ use hydentity::{
 use hyle_contract_sdk::{guest, Identity, StateCommitment};
 use hyle_contract_sdk::{ContractName, HyleContract, ProgramId};
 use hyllar::{client::transfer, Hyllar, FAUCET_ID};
+use passport::Passport;
+use ponzhyle::Ponzhyle;
 use serde::{Deserialize, Serialize};
 use staking::{
     client::{delegate, deposit_for_fees, stake},
     state::Staking,
 };
 use tracing::{debug, error, info};
+use twitter::Twitter;
 use verifiers::NativeVerifiers;
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
@@ -72,6 +75,9 @@ contract_states!(
     #[derive(Debug, Clone)]
     pub struct States {
         pub hyllar: Hyllar,
+        pub ponzhyle: Ponzhyle,
+        pub twitter: Twitter,
+        pub passport: Passport,
         pub hydentity: Hydentity,
         pub staking: Staking,
     }
@@ -387,12 +393,21 @@ impl Genesis {
     ) {
         let staking_program_id = hyle_contracts::STAKING_ID.to_vec();
         let hyllar_program_id = hyle_contracts::HYLLAR_ID.to_vec();
+        let twitter_program_id = hyle_contracts::TWITTER_ID.to_vec();
+        let passport_program_id = hyle_contracts::PASSPORT_ID.to_vec();
+        let ponzhyle_program_id = hyle_contracts::PONZHYLE_ID.to_vec();
         let hydentity_program_id = hyle_contracts::HYDENTITY_ID.to_vec();
 
         let hydentity_state = hydentity::Hydentity::default();
         let staking_state = staking::state::Staking::new();
+        let ponzhyle = ponzhyle::Ponzhyle::default();
+        let passport: passport::Passport = passport::Passport::default();
+        let twitter = twitter::Twitter::default();
 
         let ctx = TxExecutorBuilder::new(States {
+            ponzhyle,
+            twitter,
+            passport,
             hyllar: hyllar::Hyllar::default(),
             hydentity: hydentity_state,
             staking: staking_state,
@@ -403,6 +418,9 @@ impl Genesis {
         map.insert("blst".into(), NativeVerifiers::Blst.into());
         map.insert("sha3_256".into(), NativeVerifiers::Sha3_256.into());
         map.insert("hyllar".into(), ProgramId(hyllar_program_id.clone()));
+        map.insert("ponzhyle".into(), ProgramId(ponzhyle_program_id.clone()));
+        map.insert("twitter".into(), ProgramId(twitter_program_id.clone()));
+        map.insert("passport".into(), ProgramId(passport_program_id.clone()));
         map.insert("hydentity".into(), ProgramId(hydentity_program_id.clone()));
         map.insert("staking".into(), ProgramId(staking_program_id.clone()));
         map.insert(
@@ -447,6 +465,33 @@ impl Genesis {
             ctx.hyllar.commit(),
         )
         .expect("register hyllar");
+
+        register_hyle_contract(
+            &mut register_tx,
+            "ponzhyle".into(),
+            hyle_model::verifiers::RISC0_1.into(),
+            ponzhyle_program_id.clone().into(),
+            ctx.ponzhyle.commit(),
+        )
+        .expect("register ponzhyle");
+
+        register_hyle_contract(
+            &mut register_tx,
+            "twitter".into(),
+            hyle_model::verifiers::RISC0_1.into(),
+            twitter_program_id.clone().into(),
+            ctx.twitter.commit(),
+        )
+        .expect("register twitter");
+
+        register_hyle_contract(
+            &mut register_tx,
+            "passport".into(),
+            hyle_model::verifiers::RISC0_1.into(),
+            passport_program_id.clone().into(),
+            ctx.passport.commit(),
+        )
+        .expect("register passport");
 
         register_hyle_contract(
             &mut register_tx,

@@ -2518,8 +2518,11 @@ dependencies = [
  "hyle-hyllar",
  "hyle-model",
  "hyle-net",
+ "hyle-passport",
+ "hyle-ponzhyle",
  "hyle-risc0-recursion",
  "hyle-staking",
+ "hyle-twitter",
  "hyle-uuid-tld",
  "hyle-verifiers",
  "indexmap 2.8.0",
@@ -2532,6 +2535,14 @@ dependencies = [
  "quote",
  "rand 0.8.5",
  "reqwest",
+ "risc0-binfmt",
+ "risc0-circuit-keccak",
+ "risc0-circuit-keccak-sys",
+ "risc0-circuit-recursion",
+ "risc0-circuit-recursion-sys",
+ "risc0-groth16",
+ "risc0-sys",
+ "risc0-zkp",
  "risc0-zkvm",
  "serde",
  "serde_json",
@@ -2709,7 +2720,7 @@ dependencies = [
 
 [[package]]
 name = "hyle-net"
-version = "0.13.0-rc.1"
+version = "0.13.0-rc.2"
 dependencies = [
  "anyhow",
  "borsh",
@@ -2720,6 +2731,43 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+]
+
+[[package]]
+name = "hyle-passport"
+version = "0.13.0-rc.2"
+dependencies = [
+ "anyhow",
+ "borsh",
+ "clap",
+ "hex",
+ "hyle-client-sdk",
+ "hyle-contract-sdk",
+ "hyle-passport",
+ "mockall",
+ "risc0-zkvm",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tracing-subscriber 0.3.19",
+]
+
+[[package]]
+name = "hyle-ponzhyle"
+version = "0.13.0-rc.2"
+dependencies = [
+ "anyhow",
+ "borsh",
+ "hyle-client-sdk",
+ "hyle-contract-sdk",
+ "hyle-passport",
+ "hyle-ponzhyle",
+ "mockall",
+ "risc0-zkvm",
+ "serde",
+ "serde_with",
+ "sha2",
 ]
 
 [[package]]
@@ -2753,6 +2801,26 @@ dependencies = [
  "risc0-zkvm",
  "serde",
  "sha2",
+]
+
+[[package]]
+name = "hyle-twitter"
+version = "0.13.0-rc.2"
+dependencies = [
+ "anyhow",
+ "borsh",
+ "clap",
+ "hex",
+ "hyle-client-sdk",
+ "hyle-contract-sdk",
+ "hyle-twitter",
+ "mockall",
+ "risc0-zkvm",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tracing-subscriber 0.3.19",
 ]
 
 [[package]]

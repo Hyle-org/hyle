@@ -22,9 +22,12 @@ mod e2e_consensus {
     use hyllar::client::transfer;
     use hyllar::erc20::ERC20;
     use hyllar::{Hyllar, FAUCET_ID};
+    use passport::Passport;
+    use ponzhyle::Ponzhyle;
     use staking::client::{delegate, stake};
     use staking::state::Staking;
     use tracing::{info, warn};
+    use twitter::Twitter;
 
     use super::*;
 
@@ -61,6 +64,31 @@ mod e2e_consensus {
             "fetch state failed"
         )
         .unwrap();
+
+        let ponzhyle: Ponzhyle = log_error!(
+            ctx.indexer_client()
+                .fetch_current_state(&"ponzhyle".into())
+                .await,
+            "fetch state failed"
+        )
+        .unwrap();
+
+        let twitter: Twitter = log_error!(
+            ctx.indexer_client()
+                .fetch_current_state(&"twitter".into())
+                .await,
+            "fetch state failed"
+        )
+        .unwrap();
+
+        let passport: Passport = log_error!(
+            ctx.indexer_client()
+                .fetch_current_state(&"passport".into())
+                .await,
+            "fetch state failed"
+        )
+        .unwrap();
+
         let hydentity: Hydentity = ctx
             .indexer_client()
             .fetch_current_state(&"hydentity".into())
@@ -83,6 +111,9 @@ mod e2e_consensus {
         assert_eq!(staking_state, staking.commit());
         let states = States {
             hyllar,
+            ponzhyle,
+            twitter,
+            passport,
             hydentity,
             staking,
         };
@@ -260,6 +291,21 @@ mod e2e_consensus {
             .fetch_current_state(&"hyllar".into())
             .await
             .unwrap();
+        let ponzhyle: Ponzhyle = ctx
+            .indexer_client()
+            .fetch_current_state(&"ponzhyle".into())
+            .await
+            .unwrap();
+        let twitter: Twitter = ctx
+            .indexer_client()
+            .fetch_current_state(&"twitter".into())
+            .await
+            .unwrap();
+        let passport: Passport = ctx
+            .indexer_client()
+            .fetch_current_state(&"passport".into())
+            .await
+            .unwrap();
         let hydentity: Hydentity = ctx
             .indexer_client()
             .fetch_current_state(&"hydentity".into())
@@ -268,6 +314,9 @@ mod e2e_consensus {
 
         let states = States {
             hyllar,
+            ponzhyle,
+            twitter,
+            passport,
             hydentity,
             staking: Staking::default(),
         };

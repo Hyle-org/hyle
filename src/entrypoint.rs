@@ -25,6 +25,7 @@ use axum::Router;
 use axum_otel_metrics::HttpMetricsLayerBuilder;
 use hydentity::Hydentity;
 use hyllar::Hyllar;
+use ponzhyle::Ponzhyle;
 use prometheus::Registry;
 use std::{
     path::PathBuf,
@@ -154,6 +155,12 @@ async fn common_main(
         handler
             .build_module::<ContractStateIndexer<Hydentity>>(ContractStateIndexerCtx {
                 contract_name: "hydentity".into(),
+                common: common_run_ctx.clone(),
+            })
+            .await?;
+        handler
+            .build_module::<ContractStateIndexer<Ponzhyle>>(ContractStateIndexerCtx {
+                contract_name: "ponzhyle".into(),
                 common: common_run_ctx.clone(),
             })
             .await?;

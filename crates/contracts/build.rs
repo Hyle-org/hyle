@@ -20,6 +20,9 @@ fn main() {
     [
         "hyle-amm",
         "hyle-hydentity",
+        "hyle-ponzhyle",
+        "hyle-passport",
+        "hyle-twitter",
         "hyle-hyllar",
         "hyle-staking",
         "hyle-risc0-recursion",

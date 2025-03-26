@@ -3,6 +3,9 @@ members = [
   "crates/contracts",
   "crates/contracts/amm",
   "crates/contracts/hydentity",
+  "crates/contracts/ponzhyle",
+  "crates/contracts/passport",
+  "crates/contracts/twitter",
   "crates/contracts/hyllar",
   "crates/contracts/staking",
   "crates/contracts/risc0-recursion",
@@ -46,6 +49,9 @@ hyle-verifiers = { version = "0.13.0-rc.2", default-features = false, path = "cr
 risc0-recursion = { version = "0.13.0-rc.2", default-features = false, path = "crates/contracts/risc0-recursion", package = "hyle-risc0-recursion" }
 hydentity = { version = "0.13.0-rc.2", default-features = false, path = "crates/contracts/hydentity", package = "hyle-hydentity" }
 hyllar = { version = "0.13.0-rc.2", default-features = false, path = "crates/contracts/hyllar", package = "hyle-hyllar" }
+passport = { version = "0.13.0-rc.2", default-features = false, path = "crates/contracts/passport", package = "hyle-passport" }
+twitter = { version = "0.13.0-rc.2", default-features = false, path = "crates/contracts/twitter", package = "hyle-twitter" }
+ponzhyle = { version = "0.13.0-rc.2", default-features = false, path = "crates/contracts/ponzhyle", package = "hyle-ponzhyle" }
 staking = { version = "0.13.0-rc.2", default-features = false, path = "crates/contracts/staking", package = "hyle-staking" }
 amm = { version = "0.13.0-rc.2", default-features = false, path = "crates/contracts/amm", package = "hyle-amm" }
 uuid-tld = { version = "0.13.0-rc.2", default-features = false, path = "crates/contracts/uuid-tld", package = "hyle-uuid-tld" }
@@ -87,6 +93,9 @@ hyle-model = { workspace = true, default-features = false, features = [
 ] }
 hydentity = { workspace = true, features = ["client"] }
 hyllar = { workspace = true, features = ["client"] }
+passport = { workspace = true, features = ["client"] }
+twitter = { workspace = true, features = ["client"] }
+ponzhyle = { workspace = true, features = ["client"] }
 risc0-recursion = { workspace = true }
 hyle-verifiers = { workspace = true }
 
@@ -102,6 +111,16 @@ serde_json = { version = "1" }
 sha3 = "0.10.8"
 strum_macros = "0.27.1"
 tracing = "0.1"
+
+risc0-binfmt = "=1.2.5"
+risc0-circuit-keccak = "=1.2.5"
+risc0-zkp = "=1.2.5"
+risc0-circuit-keccak-sys = "=1.2.5"
+risc0-circuit-recursion = "=1.2.5"
+risc0-sys = "=1.2.5"
+risc0-circuit-recursion-sys = "=1.2.5"
+risc0-groth16 = "=1.2.5"
+
 
 anymap = { version = "0.12.1" }
 assertables = { version = "9.5.1" }
