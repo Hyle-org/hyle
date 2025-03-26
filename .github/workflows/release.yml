@@ -52,7 +52,7 @@ jobs:
           cargo publish -p hyle-model
           cargo publish -p hyle-bonsai-runner
           cargo publish -p hyle-contract-sdk
-          cargo publish -p hyle-client-sdk --all-features
-          cargo publish -p hyle-hyllar -F client
-          cargo publish -p hyle-hydentity -F client
-          cargo publish -p hyle-amm -F client
+          cargo publish -p hyle-client-sdk
+          cargo publish -p hyle-hyllar
+          cargo publish -p hyle-hydentity
+          cargo publish -p hyle-amm
