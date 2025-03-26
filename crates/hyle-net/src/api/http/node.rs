@@ -1,64 +1,24 @@
-use std::time::Duration;
-
 use anyhow::{Context, Result};
 use http_body_util::BodyExt;
 use hyper::client::conn::http1;
 use hyper::{Method, Request, Uri};
-use hyper_util::rt::TokioIo;
-use hyper_util::{client::legacy::Client, rt::TokioExecutor};
+pub use hyper_util::rt::TokioIo;
 use sdk::{
     api::*, BlobTransaction, BlockHeight, ConsensusInfo, Contract, ContractName, ProofTransaction,
     TxHash, UnsettledBlobTransaction,
 };
 use serde::{de::DeserializeOwned, Serialize};
-use tower::Service;
-
-use crate::http::connector::{self, TurmoilConnection};
 
 #[derive(Clone)]
 pub struct NodeApiHttpClient {
     pub url: Uri,
-    pub client: Box<
-        Client<
-            dyn Service<
-                Uri,
-                Response = TurmoilConnection,
-                Error = std::io::Error,
-                Future = connector::Fut,
-            >,
-            String,
-        >,
-    >,
     pub api_key: Option<String>,
 }
 
-impl<Connector: Clone> NodeApiHttpClient<Connector> {
-    type Client = impl Service<
-        Uri,
-        Response = TurmoilConnection,
-        Error = std::io::Error,
-        Future = connector::Fut,
-    >;
-    pub fn new(
-        url: String,
-    ) -> Result<
-        NodeApiHttpClient<
-            impl Service<
-                    Uri,
-                    Response = TurmoilConnection,
-                    Error = std::io::Error,
-                    Future = connector::Fut,
-                > + Clone,
-        >,
-    > {
-        let client = Client::builder(TokioExecutor::new())
-            .pool_idle_timeout(Duration::from_secs(30))
-            .http2_only(true)
-            .build(connector::connector());
-
+impl NodeApiHttpClient {
+    pub fn new(url: String) -> Result<NodeApiHttpClient> {
         Ok(NodeApiHttpClient {
             url: url.parse()?,
-            client,
             api_key: None,
         })
     }

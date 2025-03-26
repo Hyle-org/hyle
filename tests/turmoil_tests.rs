@@ -11,11 +11,11 @@ mod turmoil_tests {
         BlobTransaction, ContractAction, ContractName, ProgramId, RegisterContractAction,
         StateCommitment, Transaction,
     };
-    use hyle_net::turmoil::Result;
+    use hyle_net::{http::connector::connector, turmoil::Result};
     use tokio::sync::Mutex;
 
     use crate::fixtures::{
-        ctx_turmoil::E2ETurmoilCtx,
+        ctx_turmoil::{E2ETurmoilCtx, Helpers},
         test_helpers_turmoil::{wait_height, MySeedableRng},
     };
 
@@ -37,21 +37,20 @@ mod turmoil_tests {
     fn turmoil_test() -> Result<()> {
         let rng = MySeedableRng::new(123);
         let mut sim = hyle_net::turmoil::Builder::new()
-            .simulation_duration(Duration::from_secs(50))
-            .min_message_latency(Duration::from_secs(1))
-            .max_message_latency(Duration::from_secs(5))
+            .simulation_duration(Duration::from_secs(100))
+            // .min_message_latency(Duration::from_secs(1))
+            // .max_message_latency(Duration::from_secs(5))
             // .fail_rate(0.9)
             .tick_duration(Duration::from_millis(100))
             .enable_tokio_io()
             .build_with_rng(Box::new(rng));
 
-        let client =
-            hyle_net::api::NodeApiHttpClient::new(format!("http://{}:{}/", "node-1", 4321))?;
+        let (nodes, clients) = Helpers::new_multi(4, 500, connector())?;
 
-        let ctx = E2ETurmoilCtx::new_multi(4, 500)?;
-
-        let mut nodes = ctx.nodes.clone();
+        let mut nodes = nodes.clone();
         nodes.reverse();
+
+        let client = clients.leak().first().unwrap();
 
         let tcp_address;
         let turmoil_node = nodes.pop().unwrap();
@@ -94,7 +93,7 @@ mod turmoil_tests {
         }
 
         sim.client("client", async move {
-            _ = wait_height(&client, 1).await;
+            _ = wait_height(client, 1).await;
 
             // let mut client =
             //     codec_tcp_server::connect("client-turmoil".to_string(), tcp_address.to_string())

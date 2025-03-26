@@ -10,12 +10,12 @@ use rand::{rngs::StdRng, RngCore, SeedableRng};
 use tokio::time::timeout;
 
 #[derive(Clone)]
-pub struct TurmoilProcess<Connector: Clone> {
+pub struct TurmoilProcess {
     pub conf: Conf,
-    pub client: NodeApiHttpClient<Connector>,
+    pub client: NodeApiHttpClient,
 }
 
-impl<Connector: Clone> TurmoilProcess<Connector> {
+impl TurmoilProcess {
     pub async fn start(&self) -> anyhow::Result<()> {
         let crypto = Arc::new(BlstCrypto::new(&self.conf.id).expect("Creating crypto"));
 
@@ -25,15 +25,12 @@ impl<Connector: Clone> TurmoilProcess<Connector> {
     }
 }
 
-pub async fn wait_height<Connector: Clone>(
-    client: &NodeApiHttpClient<Connector>,
-    heights: u64,
-) -> anyhow::Result<()> {
+pub async fn wait_height(client: &NodeApiHttpClient, heights: u64) -> anyhow::Result<()> {
     wait_height_timeout(client, heights, 30).await
 }
 
-pub async fn wait_height_timeout<Connector: Clone>(
-    client: &NodeApiHttpClient<Connector>,
+pub async fn wait_height_timeout(
+    client: &NodeApiHttpClient,
     heights: u64,
     timeout_duration: u64,
 ) -> anyhow::Result<()> {
