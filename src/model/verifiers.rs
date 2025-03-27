@@ -96,8 +96,8 @@ impl ContractAction for ShaBlob {
 pub struct Secp256k1Blob {
     pub identity: Identity,
     pub data: [u8; 32],
-    pub public_key: Vec<u8>,
-    pub signature: Vec<u8>,
+    pub public_key: [u8; 33],
+    pub signature: [u8; 64],
 }
 
 impl Secp256k1Blob {
