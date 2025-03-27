@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use hyle_model::{Identity, ProofData, Signed, ValidatorSignature};
 use sha3::Digest;
+use hmac::{Hmac, Mac};
 
 use hyle_contract_sdk::{
     Blob, BlobIndex, HyleOutput, ProgramId, StateCommitment, TxHash, Verifier,
@@ -9,7 +10,7 @@ use hyle_contract_sdk::{
 use hyle_verifiers::{noir_proof_verifier, risc0_proof_verifier, validate_risc0_program_id};
 
 use crate::{
-    model::verifiers::{BlstSignatureBlob, NativeVerifiers, ShaBlob},
+    model::verifiers::{BlstSignatureBlob, NativeVerifiers, ShaBlob, HmacSha256Blob},
     utils::crypto::BlstCrypto,
 };
 
@@ -171,6 +172,17 @@ pub fn verify_native_impl(
             let res = hasher.finalize().to_vec();
 
             Ok((blob.identity, res == blob.sha))
+        }
+        NativeVerifiers::HmacSha256 => {
+            let blob = borsh::from_slice::<HmacSha256Blob>(&blob.data.0)?;
+
+            type HmacSha256 = Hmac<sha2::Sha256>;
+            let mut mac = HmacSha256::new_from_slice(&blob.key)
+                .map_err(|e| anyhow::anyhow!("Invalid key length: {}", e))?;
+            mac.update(&blob.data);
+            let res = mac.finalize().into_bytes().to_vec();
+
+            Ok((blob.identity, res == blob.hmac))
         }
     }
 }

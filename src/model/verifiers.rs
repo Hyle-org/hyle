@@ -6,6 +6,7 @@ use hyle_contract_sdk::{
 pub enum NativeVerifiers {
     Blst,
     Sha3_256,
+    HmacSha256,
 }
 
 impl From<NativeVerifiers> for ProgramId {
@@ -13,6 +14,7 @@ impl From<NativeVerifiers> for ProgramId {
         match value {
             NativeVerifiers::Blst => ProgramId("blst".as_bytes().to_vec()),
             NativeVerifiers::Sha3_256 => ProgramId("sha3_256".as_bytes().to_vec()),
+            NativeVerifiers::HmacSha256 => ProgramId("hmac_sha256".as_bytes().to_vec()),
         }
     }
 }
@@ -23,6 +25,7 @@ impl TryFrom<&Verifier> for NativeVerifiers {
         match value.0.as_str() {
             "blst" => Ok(Self::Blst),
             "sha3_256" => Ok(Self::Sha3_256),
+            "hmac_sha256" => Ok(Self::HmacSha256),
             _ => Err(format!("Unknown native verifier: {}", value)),
         }
     }
@@ -84,6 +87,36 @@ impl ContractAction for ShaBlob {
         Blob {
             contract_name,
             data: BlobData(borsh::to_vec(self).expect("failed to encode ShaBlob")),
+        }
+    }
+}
+
+/// Format of the BlobData for native HMAC-SHA256 contract
+#[derive(Debug, borsh::BorshSerialize, borsh::BorshDeserialize)]
+pub struct HmacSha256Blob {
+    pub identity: Identity,
+    pub data: Vec<u8>,
+    pub key: Vec<u8>,
+    pub hmac: Vec<u8>,
+}
+
+impl HmacSha256Blob {
+    pub fn as_blob(&self) -> Blob {
+        <Self as ContractAction>::as_blob(self, "hmac_sha256".into(), None, None)
+    }
+}
+
+impl ContractAction for HmacSha256Blob {
+    fn as_blob(
+        &self,
+        contract_name: ContractName,
+        _caller: Option<BlobIndex>,
+        _callees: Option<Vec<BlobIndex>>,
+    ) -> Blob {
+        #[allow(clippy::expect_used)]
+        Blob {
+            contract_name,
+            data: BlobData(borsh::to_vec(self).expect("failed to encode HmacSha256Blob")),
         }
     }
 }
