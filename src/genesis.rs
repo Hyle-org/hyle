@@ -402,7 +402,7 @@ impl Genesis {
         let mut map = BTreeMap::default();
         map.insert("blst".into(), NativeVerifiers::Blst.into());
         map.insert("sha3_256".into(), NativeVerifiers::Sha3_256.into());
-        map.insert("hmac_sha256".into(), NativeVerifiers::HmacSha256.into());
+        map.insert("secp256k1".into(), NativeVerifiers::Secp256k1.into());
         map.insert("hyllar".into(), ProgramId(hyllar_program_id.clone()));
         map.insert("hydentity".into(), ProgramId(hydentity_program_id.clone()));
         map.insert("staking".into(), ProgramId(staking_program_id.clone()));
@@ -433,12 +433,12 @@ impl Genesis {
 
         register_hyle_contract(
             &mut register_tx,
-            "hmac_sha256".into(),
-            "hmac_sha256".into(),
-            NativeVerifiers::HmacSha256.into(),
+            "secp256k1".into(),
+            "secp256k1".into(),
+            NativeVerifiers::Secp256k1.into(),
             StateCommitment::default(),
         )
-        .expect("register hmac_sha256");
+        .expect("register secp256k1");
 
         register_hyle_contract(
             &mut register_tx,
