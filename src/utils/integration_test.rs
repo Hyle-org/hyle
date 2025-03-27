@@ -309,7 +309,7 @@ impl NodeIntegrationCtx {
                     },
                     bus: ctx.common.bus.new_handle(),
                     metrics_layer: None,
-                    registry: Registry::new(),
+                    registry: Some(Registry::new()),
                     router: router.clone(),
                     openapi: Default::default(),
                 },

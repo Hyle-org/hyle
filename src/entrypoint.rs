@@ -231,7 +231,7 @@ async fn common_main(
                     da_address: format!("{}:{}", config.hostname, config.da_server_port),
                 },
                 bus: common_run_ctx.bus.new_handle(),
-                registry,
+                registry: Some(Registry::new()),
                 metrics_layer: Some(metrics_layer),
                 router: router.clone(),
                 openapi,
