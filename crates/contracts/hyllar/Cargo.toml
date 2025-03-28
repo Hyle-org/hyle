@@ -47,3 +47,6 @@ mockall = "0.13.0"
 default = []
 client = ["dep:client-sdk"]
 risc0 = ["dep:risc0-zkvm", "sdk/risc0"]
+
+[package.metadata.docs.rs]
+features = ["client"]
