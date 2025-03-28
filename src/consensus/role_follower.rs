@@ -374,7 +374,8 @@ impl FollowerRole for Consensus {
             return Ok(());
         }
 
-        let next_max_timestamp = previous_timestamp + (2 * self.config.consensus.slot_duration);
+        let next_max_timestamp =
+            previous_timestamp + (2 * self.config.consensus.slot_duration as u128);
 
         if &previous_timestamp > timestamp {
             bail!(

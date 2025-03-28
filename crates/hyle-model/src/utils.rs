@@ -10,15 +10,15 @@ pub fn get_current_timestamp() -> u64 {
         .as_secs()
 }
 
-pub fn get_current_timestamp_ms() -> u64 {
+pub fn get_current_timestamp_ms() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
-        .as_millis() as u64
+        .as_millis()
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, BorshDeserialize, BorshSerialize)]
-pub struct TimestampMs(pub u64);
+pub struct TimestampMs(pub u128);
 
 impl TimestampMs {
     pub fn now() -> TimestampMs {
