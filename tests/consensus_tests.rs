@@ -367,4 +367,34 @@ mod e2e_consensus {
 
         Ok(())
     }
+
+    #[test_log::test(tokio::test)]
+    async fn multiple_nonconsecutive_timeouts() -> Result<()> {
+        let mut ctx = E2ECtx::new_multi(8, 500).await?;
+        ctx.stop_node(7).await.unwrap();
+        ctx.stop_node(3).await.unwrap();
+
+        _ = ctx.wait_height(1).await;
+
+        warn!("Ready to go");
+
+        _ = ctx.wait_height(8).await;
+
+        Ok(())
+    }
+    #[test_log::test(tokio::test)]
+    async fn multiple_consecutive_timeouts() -> Result<()> {
+        let mut ctx = E2ECtx::new_multi(8, 500).await?;
+        // These end up being consecutive with crypto pubkey sorting.
+        ctx.stop_node(7).await.unwrap();
+        ctx.stop_node(1).await.unwrap();
+
+        _ = ctx.wait_height(1).await;
+
+        warn!("Ready to go");
+
+        _ = ctx.wait_height(8).await;
+
+        Ok(())
+    }
 }
