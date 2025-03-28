@@ -95,7 +95,7 @@ impl Default for Ponzhyle {
 
         // Max
         accounts.insert(
-            "Maximilien62549.twitter".into(),
+            "Maximilien86648.twitter".into(),
             Account {
                 nationality: Some("France".to_string()),
                 invites: 10,
