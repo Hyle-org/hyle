@@ -105,8 +105,17 @@ impl TimeoutRole for Consensus {
         received_slot: Slot,
         received_view: View,
     ) -> Result<()> {
-        if received_slot != self.bft_round_state.slot || received_view != self.bft_round_state.view
+        if received_slot < self.bft_round_state.slot
+            || received_slot == self.bft_round_state.slot
+                && received_view < self.bft_round_state.view
         {
+            debug!(
+                "🌘 Ignoring timeout certificate for slot {}, am at {}",
+                received_slot, self.bft_round_state.slot
+            );
+            return Ok(());
+        }
+        if received_slot > self.bft_round_state.slot || received_view > self.bft_round_state.view {
             bail!(
                 "Timeout Certificate (Slot: {}, view: {}) does not match expected (Slot: {}, view: {})",
                 received_slot,
@@ -114,9 +123,6 @@ impl TimeoutRole for Consensus {
                 self.bft_round_state.slot,
                 self.bft_round_state.view,
             );
-        }
-        if &self.next_view_leader()? != self.crypto.validator_pubkey() {
-            return Ok(());
         }
 
         info!(
@@ -134,7 +140,8 @@ impl TimeoutRole for Consensus {
         ))?;
 
         // This TC is for our current slot and view, so we can leave Joining mode
-        if matches!(self.bft_round_state.state_tag, StateTag::Joining) {
+        let is_next_view_leader = &self.next_view_leader()? != self.crypto.validator_pubkey();
+        if is_next_view_leader && matches!(self.bft_round_state.state_tag, StateTag::Joining) {
             self.bft_round_state.state_tag = StateTag::Leader;
         }
 
@@ -153,6 +160,15 @@ impl TimeoutRole for Consensus {
                 "Received timeout message while not being part of the consensus: {}",
                 self.crypto.validator_pubkey()
             );
+            return Ok(());
+        }
+
+        if received_slot < self.bft_round_state.slot {
+            debug!(
+                "🌘 Ignoring timeout for slot {}, am at {}",
+                received_slot, self.bft_round_state.slot
+            );
+            return Ok(());
         }
 
         if received_slot != self.bft_round_state.slot || received_view != self.bft_round_state.view
