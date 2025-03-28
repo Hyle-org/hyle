@@ -313,7 +313,7 @@ impl Consensus {
                         "⏱️  Sleeping {} milliseconds before starting a new slot",
                         interval
                     );
-                    sleep(Duration::from_millis(interval)).await;
+                    sleep(Duration::from_millis(interval.try_into().unwrap())).await;
 
                     _ = log_error!(
                         command_sender.send(ConsensusCommand::StartNewSlot),
@@ -1114,7 +1114,7 @@ pub mod test {
                 .expect("Failed to start slot");
         }
 
-        pub async fn start_round_at(&mut self, current_timestamp: u64) {
+        pub async fn start_round_at(&mut self, current_timestamp: u128) {
             self.consensus
                 .start_round(current_timestamp)
                 .await
