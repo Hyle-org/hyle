@@ -242,7 +242,7 @@ impl NodeState {
                                 Ok(maybe_tx_hash) => maybe_tx_hash,
                                 Err(err) => {
                                     let err = format!(
-                                        "Failed to handle blob #{} in verified proof transaction {}: {err}",
+                                        "Failed to handle blob #{} in verified proof transaction {}: {err:#}",
                                         blob_proof_data.hyle_output.index, &tx_id);
                                     info!("{err}");
                                     block_under_construction

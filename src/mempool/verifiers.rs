@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use hyle_model::{Identity, ProofData, Signed, ValidatorSignature};
+use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
 use sha3::Digest;
 
 use hyle_contract_sdk::{
@@ -9,7 +10,7 @@ use hyle_contract_sdk::{
 use hyle_verifiers::{noir_proof_verifier, risc0_proof_verifier, validate_risc0_program_id};
 
 use crate::{
-    model::verifiers::{BlstSignatureBlob, NativeVerifiers, ShaBlob},
+    model::verifiers::{BlstSignatureBlob, NativeVerifiers, Secp256k1Blob, ShaBlob},
     utils::crypto::BlstCrypto,
 };
 
@@ -171,6 +172,26 @@ pub fn verify_native_impl(
             let res = hasher.finalize().to_vec();
 
             Ok((blob.identity, res == blob.sha))
+        }
+        NativeVerifiers::Secp256k1 => {
+            let blob = borsh::from_slice::<Secp256k1Blob>(&blob.data.0)?;
+
+            // Convert the public key bytes to a secp256k1 PublicKey
+            let public_key = PublicKey::from_slice(&blob.public_key)
+                .map_err(|e| anyhow::anyhow!("Invalid public key: {}", e))?;
+
+            // Convert the signature bytes to a secp256k1 Signature
+            let signature = Signature::from_compact(&blob.signature)
+                .map_err(|e| anyhow::anyhow!("Invalid signature: {}", e))?;
+
+            // Create a message from the data
+            let message = Message::from_digest(blob.data);
+
+            // Verify the signature
+            let secp = Secp256k1::new();
+            let success = secp.verify_ecdsa(&message, &signature, &public_key).is_ok();
+
+            Ok((blob.identity, success))
         }
     }
 }
