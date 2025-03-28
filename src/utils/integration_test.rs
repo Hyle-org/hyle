@@ -35,7 +35,9 @@ use super::modules::{module_bus_client, Module};
 
 // Assume that we can reuse the OS-provided port.
 pub async fn find_available_port() -> u16 {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = hyle_net::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .unwrap();
     let addr = listener.local_addr().unwrap();
     addr.port()
 }
