@@ -39,7 +39,7 @@ pub struct RestApiRunContext {
     pub info: NodeInfo,
     pub bus: SharedMessageBus,
     pub router: Router,
-    pub registry: Registry,
+    pub registry: Option<Registry>,
     pub metrics_layer: Option<HttpMetricsLayer>,
     pub max_body_size: usize,
     pub openapi: utoipa::openapi::OpenApi,
@@ -81,7 +81,7 @@ impl Module for RestApi {
                 .route("/v1/metrics", get(get_metrics))
                 .with_state(RouterState {
                     info: ctx.info,
-                    registry: ctx.registry,
+                    registry: ctx.registry.unwrap(),
                 }),
         );
         let app = match ctx.metrics_layer {
