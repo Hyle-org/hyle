@@ -123,7 +123,7 @@ where
 pub fn as_hyle_output(
     initial_state_commitment: StateCommitment,
     next_state_commitment: StateCommitment,
-    calldata: Calldata,
+    calldata: &Calldata,
     res: &mut crate::RunResult,
 ) -> HyleOutput {
     match res {
@@ -142,12 +142,12 @@ pub fn as_hyle_output(
                 version: 1,
                 initial_state: initial_state_commitment,
                 next_state: next_state_commitment,
-                identity: calldata.identity,
+                identity: calldata.identity.clone(),
                 index: calldata.index,
                 blobs: flatten_blobs(&calldata.blobs),
                 success: true,
-                tx_hash: calldata.tx_hash,
-                tx_ctx: calldata.tx_ctx,
+                tx_hash: calldata.tx_hash.clone(),
+                tx_ctx: calldata.tx_ctx.clone(),
                 onchain_effects: core::mem::take(onchain_effects),
                 program_outputs: core::mem::take(program_output).into_bytes(),
             }

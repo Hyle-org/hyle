@@ -1,6 +1,7 @@
 use hyllar::HyllarAction;
 use sdk::{
-    utils::parse_calldata, Blob, BlobIndex, Calldata, HyleContract, RunResult, StakingAction,
+    utils::{as_hyle_output, parse_calldata},
+    Blob, BlobIndex, Calldata, ProvableContractState, RunResult, StakingAction, ZkProgram,
 };
 use sha2::{Digest, Sha256};
 use state::Staking;
@@ -11,7 +12,7 @@ pub mod client;
 pub mod fees;
 pub mod state;
 
-impl HyleContract for Staking {
+impl ZkProgram for Staking {
     fn execute(&mut self, calldata: &Calldata) -> RunResult {
         let (action, execution_ctx) = parse_calldata::<StakingAction>(calldata)?;
 
@@ -58,6 +59,23 @@ impl HyleContract for Staking {
             }
         }
         sdk::StateCommitment(hasher.finalize().to_vec())
+    }
+}
+
+impl ProvableContractState for Staking {
+    fn build_commitment_metadata(&self, _blob: &Blob) -> Result<Vec<u8>, String> {
+        borsh::to_vec(self).map_err(|e| e.to_string())
+    }
+    fn execute_provable(&mut self, calldata: &Calldata) -> Result<sdk::HyleOutput, String> {
+        let initial_state_commitment = <Self as ZkProgram>::commit(self);
+        let mut res = <Self as ZkProgram>::execute(self, calldata);
+        let next_state_commitment = <Self as ZkProgram>::commit(self);
+        Ok(as_hyle_output(
+            initial_state_commitment,
+            next_state_commitment,
+            calldata,
+            &mut res,
+        ))
     }
 }
 

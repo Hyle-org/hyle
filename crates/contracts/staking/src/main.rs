@@ -12,6 +12,6 @@ fn main() {
     let env = Risc0Env {};
     let zk_program_input = env.read();
 
-    let (_, output) = execute::<Staking>(&zk_program_input);
+    let output = execute::<Staking>(&zk_program_input);
     env.commit(&output);
 }
