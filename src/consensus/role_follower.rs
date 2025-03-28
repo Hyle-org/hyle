@@ -439,17 +439,37 @@ impl Consensus {
 
         // Otherwise check it matches our expectations
         self.verify_quorum_certificate(
-            ConsensusNetMessage::Timeout(prepare_slot, prepare_view - 1),
+            ConsensusNetMessage::Timeout(prepare_slot, prepare_view.saturating_sub(1)),
             &timeout_qc,
         )
         .context("Verifying Timeout Ticket")?;
 
+        // Like for regular CQC, there are a few cases:
+        // - If this is a TC for our current slot, then we can validate any TC on its own merits
+        // (as there can be no staking changes across views)
+        // - If this is a TC for the next slot, we can maybe assume we can commit any prepare we've seen for the current slot.
+
         if prepare_slot == self.bft_round_state.slot {
-            self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc))
-            // if ticket for next slot && correct parent hash, fast forward
-        } else if prepare_slot == self.bft_round_state.slot + 1
+            // If we haven't processed this TC yet, do so.
+            // TODO: check if it's safe to fast-forward more than 1 view here.
+            if prepare_view == self.bft_round_state.view + 1 {
+                self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc))
+            } else if prepare_view == self.bft_round_state.view {
+                Ok(())
+            } else {
+                bail!(
+                    "TC received for view {} while at view {}. Ignoring for now",
+                    prepare_view,
+                    self.bft_round_state.view
+                );
+            }
+        }
+        // if ticket for next slot && correct parent hash, fast forward
+        else if prepare_slot == self.bft_round_state.slot + 1
             && consensus_proposal.parent_hash == self.bft_round_state.current_proposal.hashed()
         {
+            // Try to commit our current prepare & fast-forward.
+
             // Safety assumption: we can't actually verify a TC for the next slot, but since it matches our hash,
             // since we have no staking actions in the prepare we're good.
             if !self
@@ -563,7 +583,7 @@ impl Consensus {
         &mut self.store.bft_round_state.follower
     }
 
-    pub(super) fn has_buffered_children(&self) -> bool {
+    pub(super) fn has_no_buffered_children(&self) -> bool {
         self.store
             .bft_round_state
             .follower
