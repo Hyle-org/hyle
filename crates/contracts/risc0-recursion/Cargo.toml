@@ -1,9 +1,9 @@
 [package]
 name = "hyle-risc0-recursion"
 description = "Hyle Smart Contract"
+license-file = { workspace = true }
 version = { workspace = true }
 edition = { workspace = true }
-# license = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }
 rust-version = "1.81"
@@ -23,7 +23,7 @@ sdk = { workspace = true }
 serde = { version = "1.0.219", features = ["derive"] }
 
 risc0-zkvm = { version = "1.2.4", default-features = false, optional = true, features = [
-    'std',
+  'std',
 ] }
 
 [dev-dependencies]
@@ -40,13 +40,13 @@ hydentity = { workspace = true, features = ["client"] }
 hyle-contracts = { path = ".." }
 tokio = { version = "1.42.0" }
 risc0-zkvm = { version = "1.2.4", default-features = false, features = [
-    'std',
-    'prove',
+  'std',
+  'prove',
 ] }
 tempfile = "3.19.1"
 test-log = { version = "0.2.17", features = [
-    "color",
-    "trace",
+  "color",
+  "trace",
 ], default-features = false }
 
 [features]
