@@ -3,7 +3,7 @@
 
 extern crate alloc;
 
-use hyle_hydentity::Hydentity;
+use hyle_passport::Passport;
 use sdk::guest::{execute, GuestEnv, Risc0Env};
 
 risc0_zkvm::guest::entry!(main);
@@ -12,6 +12,6 @@ fn main() {
     let env = Risc0Env {};
     let contract_input = env.read();
 
-    let (_, output) = execute::<Hydentity>(&contract_input);
+    let (_, output) = execute::<Passport>(&contract_input);
     env.commit(&output);
 }

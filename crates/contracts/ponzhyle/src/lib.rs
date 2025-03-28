@@ -93,6 +93,18 @@ impl Default for Ponzhyle {
         let french2_invite2 = Identity("22".to_string());
         let french2_invite1_invite1 = Identity("211".to_string());
 
+        // Max
+        accounts.insert(
+            "Maximilien62549.twitter".into(),
+            Account {
+                nationality: "France",
+                invites: 10,
+                referral: None,
+                pending_invites: vec![],
+                invitees: vec![],
+            },
+        );
+
         // French 1
         accounts.insert(
             french1.clone(),
@@ -235,6 +247,7 @@ impl Ponzhyle {
 
             referrer_account.pending_invites.retain(|x| x != caller);
             referrer_account.invites -= 1;
+            referrer_account.invitees.push(caller.clone());
         } else {
             return Err(format!("Referral {referrer} not found"));
         }
@@ -242,8 +255,11 @@ impl Ponzhyle {
         self.accounts.insert(
             caller.clone(),
             Account {
+                nationality: None,
+                invites: 3,
                 referral: Some(referrer.clone()),
-                ..Default::default()
+                pending_invites: vec![],
+                invitees: vec![],
             },
         );
 

@@ -7,6 +7,8 @@ use sha2::{Digest, Sha256};
 
 #[cfg(feature = "client")]
 pub mod client;
+#[cfg(feature = "client")]
+pub mod indexer;
 
 impl HyleContract for Twitter {
     fn execute(&mut self, contract_input: &ContractInput) -> RunResult {

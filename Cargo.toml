@@ -12,6 +12,7 @@ members = [
   "crates/contracts/uuid-tld",
 
   "crates/bonsai-runner",
+  "crates/ponzhyle",
   "crates/client-sdk",
   "crates/contract-sdk",
   "crates/hyle-loadtest",

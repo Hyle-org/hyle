@@ -1,5 +1,8 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use sdk::{utils::parse_raw_contract_input, Blob, ContractAction, ContractInput, ContractName};
+use sdk::{
+    utils::parse_raw_contract_input, Blob, BlobData, ContractAction, ContractInput, ContractName,
+    StructuredBlobData,
+};
 use serde::{Deserialize, Serialize};
 
 use sdk::{HyleContract, RunResult};
@@ -7,6 +10,9 @@ use sha2::{Digest, Sha256};
 
 #[cfg(feature = "client")]
 pub mod client;
+
+#[cfg(feature = "client")]
+pub mod indexer;
 
 impl HyleContract for Passport {
     fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
@@ -67,12 +73,16 @@ impl ContractAction for PassportAction {
     fn as_blob(
         &self,
         contract_name: ContractName,
-        _caller: Option<sdk::BlobIndex>,
-        _callees: Option<Vec<sdk::BlobIndex>>,
+        caller: Option<sdk::BlobIndex>,
+        callees: Option<Vec<sdk::BlobIndex>>,
     ) -> Blob {
         Blob {
             contract_name,
-            data: sdk::BlobData(borsh::to_vec(self).expect("failed to encode program inputs")),
+            data: BlobData::from(StructuredBlobData {
+                caller,
+                callees,
+                parameters: self.clone(),
+            }),
         }
     }
 }

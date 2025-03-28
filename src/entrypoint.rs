@@ -25,6 +25,7 @@ use axum::Router;
 use axum_otel_metrics::HttpMetricsLayerBuilder;
 use hydentity::Hydentity;
 use hyllar::Hyllar;
+use passport::Passport;
 use ponzhyle::Ponzhyle;
 use prometheus::Registry;
 use std::{
@@ -36,6 +37,7 @@ use testcontainers_modules::{
     testcontainers::{runners::AsyncRunner, ContainerAsync, ImageExt},
 };
 use tracing::{error, info};
+use twitter::Twitter;
 use utoipa::OpenApi;
 
 pub struct RunPg {
@@ -161,6 +163,18 @@ async fn common_main(
         handler
             .build_module::<ContractStateIndexer<Ponzhyle>>(ContractStateIndexerCtx {
                 contract_name: "ponzhyle".into(),
+                common: common_run_ctx.clone(),
+            })
+            .await?;
+        handler
+            .build_module::<ContractStateIndexer<Passport>>(ContractStateIndexerCtx {
+                contract_name: "passport".into(),
+                common: common_run_ctx.clone(),
+            })
+            .await?;
+        handler
+            .build_module::<ContractStateIndexer<Twitter>>(ContractStateIndexerCtx {
+                contract_name: "twitter".into(),
                 common: common_run_ctx.clone(),
             })
             .await?;
