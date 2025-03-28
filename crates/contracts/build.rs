@@ -10,7 +10,7 @@ fn main() {
 
     println!("cargo:rerun-if-changed=build.rs");
 
-    use risc0_build::{DockerOptions, GuestOptions};
+    use risc0_build::{DockerOptionsBuilder, GuestOptionsBuilder};
     use std::collections::HashMap;
 
     let reproducible = cfg!(not(feature = "nonreproducible"));
@@ -27,19 +27,21 @@ fn main() {
     ]
     .iter()
     .for_each(|name| {
-        options.insert(
-            *name,
-            GuestOptions {
-                features: vec!["risc0".to_owned()],
-                use_docker: match reproducible {
-                    true => Some(DockerOptions {
-                        // Point to the workspace
-                        root_dir: Some("../..".into()),
-                    }),
-                    false => None,
-                },
-            },
-        );
+        let mut guest_opts = GuestOptionsBuilder::default();
+
+        guest_opts.features(vec!["risc0".into()]);
+
+        if reproducible {
+            guest_opts.use_docker(
+                DockerOptionsBuilder::default()
+                    // Point to the workspace
+                    .root_dir("../..".to_string())
+                    .build()
+                    .unwrap(),
+            );
+        }
+
+        options.insert(*name, guest_opts.build().unwrap());
     });
 
     // Build the guests.
@@ -52,6 +54,7 @@ fn main() {
             // Convert u32 slice to hex
             let hex_image_id = data
                 .image_id
+                .as_words()
                 .iter()
                 .map(|x| format!("{:08x}", x.to_be()))
                 .collect::<Vec<_>>()
