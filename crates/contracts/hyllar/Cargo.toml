@@ -25,7 +25,7 @@ sha2 = "=0.10.8" # precompile patched at workspace root
 borsh = { version = "1.5.6", features = ["derive"] }
 serde_with = "3.12.0"
 
-risc0-zkvm = { version = "1.2.4", default-features = false, optional = true, features = [
+risc0-zkvm = { version = "2.0.0", default-features = false, optional = true, features = [
   'std',
 ] }
 client-sdk = { workspace = true, features = [
@@ -37,7 +37,7 @@ client-sdk = { workspace = true, features = [
 # Active client feature for tests
 hyle-hyllar = { path = ".", features = ["client"] }
 
-risc0-zkvm = { version = "1.2.4", default-features = false, features = [
+risc0-zkvm = { version = "2.0.0", default-features = false, features = [
   'std',
   'prove',
 ] }
