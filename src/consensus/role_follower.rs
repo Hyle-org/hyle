@@ -66,36 +66,25 @@ impl FollowerRole for Consensus {
 
         if matches!(self.bft_round_state.state_tag, StateTag::Joining) {
             // Shortcut - if this is the prepare we expected, exit joining mode.
+            // Three cases: the next slot, the next view, or our current slot/view.
             let is_next_prepare = view == 0
                 && consensus_proposal.slot == self.bft_round_state.slot + 1
                 || view == self.bft_round_state.view + 1
-                    && consensus_proposal.slot == self.bft_round_state.slot;
+                    && consensus_proposal.slot == self.bft_round_state.slot
+                || consensus_proposal.slot == self.bft_round_state.slot
+                    && view == self.bft_round_state.view;
             if is_next_prepare {
                 info!(
                     "Received Prepare message for next slot while joining. Exiting joining mode."
                 );
                 self.bft_round_state.state_tag = StateTag::Follower;
             } else {
-                // Ignore obviously outdated messages.
-                // We'll be optimistic for ones in the future and hope that
-                // maybe we'll have caught up by the time the commit rolls around.
-                if consensus_proposal.slot <= self.bft_round_state.joining.staking_updated_to {
-                    info!(
-                            "🌑 Outdated Prepare message (Slot {} / view {} while at {}) received while joining. Ignoring.",
-                            consensus_proposal.slot, view, self.bft_round_state.joining.staking_updated_to
-                        );
-                    return Ok(());
-                }
-                info!(
-                    "🌕 Prepare message (Slot {} / view {}) received while joining. Storing.",
-                    consensus_proposal.slot, view
-                );
-                // Store the message until we receive a matching Commit.
-                // Because we may receive old or rogue proposals, we store all of them.
-                self.bft_round_state
-                    .joining
-                    .buffered_prepares
-                    .push(consensus_proposal);
+                self.follower_state().buffered_prepares.push((
+                    sender.clone(),
+                    consensus_proposal,
+                    ticket,
+                    view,
+                ));
                 return Ok(());
             }
         }
@@ -123,7 +112,6 @@ impl FollowerRole for Consensus {
             );
             return Ok(());
         }
-
         // Process the ticket
         match &ticket {
             Ticket::Genesis => {
@@ -183,6 +171,7 @@ impl FollowerRole for Consensus {
 
         // At this point we are OK with this new consensus proposal, update locally and vote.
         self.bft_round_state.current_proposal = consensus_proposal.clone();
+        self.bft_round_state.last_cut_seen = consensus_proposal.cut.clone();
         let cp_hash = self.bft_round_state.current_proposal.hashed();
 
         self.follower_state().buffered_prepares.push((
@@ -438,17 +427,37 @@ impl Consensus {
 
         // Otherwise check it matches our expectations
         self.verify_quorum_certificate(
-            ConsensusNetMessage::Timeout(prepare_slot, prepare_view - 1),
+            ConsensusNetMessage::Timeout(prepare_slot, prepare_view.saturating_sub(1)),
             &timeout_qc,
         )
         .context("Verifying Timeout Ticket")?;
 
+        // Like for regular CQC, there are a few cases:
+        // - If this is a TC for our current slot, then we can validate any TC on its own merits
+        // (as there can be no staking changes across views)
+        // - If this is a TC for the next slot, we can maybe assume we can commit any prepare we've seen for the current slot.
+
         if prepare_slot == self.bft_round_state.slot {
-            self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc))
-            // if ticket for next slot && correct parent hash, fast forward
-        } else if prepare_slot == self.bft_round_state.slot + 1
+            // If we haven't processed this TC yet, do so.
+            // TODO: check if it's safe to fast-forward more than 1 view here.
+            if prepare_view == self.bft_round_state.view + 1 {
+                self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc))
+            } else if prepare_view == self.bft_round_state.view {
+                Ok(())
+            } else {
+                bail!(
+                    "TC received for view {} while at view {}. Ignoring for now",
+                    prepare_view,
+                    self.bft_round_state.view
+                );
+            }
+        }
+        // if ticket for next slot && correct parent hash, fast forward
+        else if prepare_slot == self.bft_round_state.slot + 1
             && consensus_proposal.parent_hash == self.bft_round_state.current_proposal.hashed()
         {
+            // Try to commit our current prepare & fast-forward.
+
             // Safety assumption: we can't actually verify a TC for the next slot, but since it matches our hash,
             // since we have no staking actions in the prepare we're good.
             if !self
@@ -487,23 +496,15 @@ impl Consensus {
         proposal_hash_hint: ConsensusProposalHash,
     ) -> Result<()> {
         // We are joining consensus, try to sync our state.
-        // First find the prepare message to this commit.
-        let Some(proposal_index) = self
+        let Some((_, potential_proposal, _, _)) = self
             .bft_round_state
-            .joining
+            .follower
             .buffered_prepares
-            .iter()
-            .position(|p| p.hashed() == proposal_hash_hint)
+            .get(&proposal_hash_hint)
         else {
             // Maybe we just missed it, carry on.
             return Ok(());
         };
-        // Use that as our proposal.
-        let potential_proposal = self
-            .bft_round_state
-            .joining
-            .buffered_prepares
-            .swap_remove(proposal_index);
 
         // Check it's actually in the future
         if potential_proposal.slot <= self.bft_round_state.slot {
@@ -524,8 +525,7 @@ impl Consensus {
             return Ok(());
         }
 
-        self.bft_round_state.current_proposal = potential_proposal;
-        self.bft_round_state.joining.buffered_prepares.clear();
+        self.bft_round_state.current_proposal = potential_proposal.clone();
 
         info!(
             "📦 Commit message received for slot {}, trying to synchronize.",
@@ -562,7 +562,7 @@ impl Consensus {
         &mut self.store.bft_round_state.follower
     }
 
-    pub(super) fn has_buffered_children(&self) -> bool {
+    pub(super) fn has_no_buffered_children(&self) -> bool {
         self.store
             .bft_round_state
             .follower
@@ -624,6 +624,21 @@ impl Consensus {
             if qc == &commit_qc {
                 return true;
             }
+        }
+
+        // Edge case: we have already committed a different CQC. We are kinda stuck.
+        if self.bft_round_state.current_proposal.slot != self.bft_round_state.slot {
+            warn!(
+                "Received an unknown commit QC for slot {}. This is unsafe to verify as we have updated staking. Proceeding with current staking anyways.",
+                self.bft_round_state.slot
+            );
+            // To still sorta make this work, verify the CQC with our current staking and hope for the best.
+            return self
+                .verify_quorum_certificate(
+                    ConsensusNetMessage::ConfirmAck(self.bft_round_state.parent_hash.clone()),
+                    &commit_qc,
+                )
+                .is_ok();
         }
 
         let commited_current_proposal = log_error!(
