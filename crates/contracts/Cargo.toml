@@ -1,10 +1,9 @@
-
 [package]
 name = "hyle-contracts"
 description = "Metadata of hyle built-in contracts"
+license-file = { workspace = true }
 version = { workspace = true }
 edition = { workspace = true }
-# license = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }
 rust-version = "1.81"
@@ -20,12 +19,12 @@ risc0-build = { version = "1.2.4", optional = true }
 
 [package.metadata.risc0]
 methods = [
-    "amm",
-    "hyllar",
-    "hydentity",
-    "staking",
-    "risc0-recursion",
-    "uuid-tld",
+  "amm",
+  "hyllar",
+  "hydentity",
+  "staking",
+  "risc0-recursion",
+  "uuid-tld",
 ]
 
 [features]
