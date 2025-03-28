@@ -1,3 +1,7 @@
+> [!IMPORTANT]
+> `main` is the development branch.
+> When building applications or running examples, use the [latest release](https://github.com/Hyle-org/hyle/releases) instead.
+
 # Hylé
 
 [![Telegram Chat][tg-badge]][tg-url]
