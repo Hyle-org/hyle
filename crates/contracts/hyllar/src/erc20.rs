@@ -204,7 +204,7 @@ mod tests {
             fn allowance(&self, owner: &str, spender: &str) -> Result<u128, String>;
         }
         impl HyleContract for ERC20Contract {
-            fn execute(&mut self, contract_input: &sdk::ContractInput) -> crate::RunResult {
+            fn execute(&mut self, zk_program_input: &sdk::Calldata) -> crate::RunResult {
                 unimplemented!()
             }
             fn commit(&self) -> sdk::StateCommitment {

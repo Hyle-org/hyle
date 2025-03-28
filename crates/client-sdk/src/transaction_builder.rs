@@ -8,8 +8,8 @@ use std::{
 
 use anyhow::{bail, Result};
 use sdk::{
-    Blob, BlobIndex, BlobTransaction, ContractAction, ContractInput, ContractName, Hashed,
-    HyleOutput, Identity, ProofTransaction, TxContext,
+    Blob, BlobIndex, BlobTransaction, Calldata, ContractAction, ContractName, Hashed, HyleOutput,
+    Identity, ProofTransaction, TxContext, ZkProgramInput,
 };
 
 use crate::helpers::ClientSdkProver;
@@ -97,7 +97,7 @@ impl ProofTxBuilder {
                 .clone();
             async move {
                 let proof = prover
-                    .prove(runner.contract_input.take().expect("no input for prover"))
+                    .prove(runner.zk_program_input.take().expect("no input for prover"))
                     .await;
                 proof.map(|proof| ProofTransaction {
                     proof,
@@ -122,7 +122,7 @@ where
     fn execute(
         &self,
         contract_name: &ContractName,
-        contract_input: &ContractInput,
+        zk_program_input: &ZkProgramInput,
     ) -> anyhow::Result<(Box<dyn Any>, sdk::HyleOutput)>;
 }
 
@@ -226,17 +226,18 @@ impl<S: StateUpdater> TxExecutor<S> {
         for runner in tx.runners.iter_mut() {
             let state = self.states.get(&runner.contract_name)?;
 
-            runner.build_contract_input(tx.tx_context.clone(), tx.blobs.clone(), state);
+            runner.build_zk_program_input(tx.tx_context.clone(), tx.blobs.clone(), state);
 
             tracing::info!("Checking transition for {}...", runner.contract_name);
-            let (mut state, out) = match self
-                .states
-                .execute(&runner.contract_name, runner.contract_input.get().unwrap())
-            {
+            let (mut state, out) = match self.states.execute(
+                &runner.contract_name,
+                runner.zk_program_input.get().unwrap(),
+            ) {
                 Ok(result) => result,
                 Err(e) => {
                     // Revert all state changes
                     for (contract_name, state) in old_states.iter_mut() {
+                        // FIXME: the state is here updated being a vec<u8> instead of its State type
                         self.states.update(contract_name, &mut *state)?;
                     }
                     bail!("Execution failed for {}: {}", runner.contract_name, e);
@@ -247,7 +248,7 @@ impl<S: StateUpdater> TxExecutor<S> {
                 let program_error = std::str::from_utf8(&out.program_outputs).unwrap();
                 bail!(
                     "Execution failed on runner for blob {:?} on contrat {:?} ! Program output: {}",
-                    runner.contract_input.get().unwrap().index,
+                    runner.zk_program_input.get().unwrap().calldata.index,
                     runner.contract_name,
                     program_error
                 );
@@ -274,7 +275,7 @@ pub struct ContractRunner {
     identity: Identity,
     index: BlobIndex,
     private_input: Option<Vec<u8>>,
-    contract_input: OnceLock<ContractInput>,
+    zk_program_input: OnceLock<ZkProgramInput>,
 }
 
 impl ContractRunner {
@@ -289,11 +290,11 @@ impl ContractRunner {
             identity,
             index,
             private_input,
-            contract_input: OnceLock::new(),
+            zk_program_input: OnceLock::new(),
         })
     }
 
-    fn build_contract_input(
+    fn build_zk_program_input(
         &mut self,
         tx_context: Option<TxContext>,
         blobs: Vec<Blob>,
@@ -301,14 +302,16 @@ impl ContractRunner {
     ) {
         let tx_hash = BlobTransaction::new(self.identity.clone(), blobs.clone()).hashed();
 
-        self.contract_input.get_or_init(|| ContractInput {
-            state,
-            identity: self.identity.clone(),
-            index: self.index,
-            blobs,
-            tx_hash,
-            tx_ctx: tx_context,
-            private_input: self.private_input.clone().unwrap_or_default(),
+        self.zk_program_input.get_or_init(|| ZkProgramInput {
+            commitment_metadata: state,
+            calldata: Calldata {
+                identity: self.identity.clone(),
+                index: self.index,
+                blobs,
+                tx_hash,
+                tx_ctx: tx_context,
+                private_input: self.private_input.clone().unwrap_or_default(),
+            },
         });
     }
 }
@@ -354,10 +357,10 @@ macro_rules! contract_states {
                 }
             }
 
-            fn execute(&self, contract_name: &ContractName, contract_input: &ContractInput) -> anyhow::Result<(Box<dyn std::any::Any>, HyleOutput)> {
+            fn execute(&self, contract_name: &ContractName, zk_program_input: &ZkProgramInput) -> anyhow::Result<(Box<dyn std::any::Any>, HyleOutput)> {
                 match contract_name.0.as_str() {
                     $(stringify!($contract_name) => {
-                        let (state, output) = guest::execute::<$contract_state>(contract_input);
+                        let (state, output) = guest::execute::<$contract_state>(zk_program_input);
                         Ok((Box::new(state) as Box<dyn std::any::Any>, output))
                     })*
                     _ => anyhow::bail!("Unknown contract name: {contract_name}"),
