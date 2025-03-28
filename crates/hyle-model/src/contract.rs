@@ -57,6 +57,8 @@ pub struct ZkProgramInput {
     pub calldata: Calldata,
 }
 
+/// This struct is passed from the application backend to the contract as a input.
+/// It contains the data that the contract will use to run the blob's action on its state.
 #[derive(Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
 pub struct Calldata {
     /// TxHash of the BlobTransaction being proved
