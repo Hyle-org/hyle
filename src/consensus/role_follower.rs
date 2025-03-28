@@ -66,36 +66,25 @@ impl FollowerRole for Consensus {
 
         if matches!(self.bft_round_state.state_tag, StateTag::Joining) {
             // Shortcut - if this is the prepare we expected, exit joining mode.
+            // Three cases: the next slot, the next view, or our current slot/view.
             let is_next_prepare = view == 0
                 && consensus_proposal.slot == self.bft_round_state.slot + 1
                 || view == self.bft_round_state.view + 1
-                    && consensus_proposal.slot == self.bft_round_state.slot;
+                    && consensus_proposal.slot == self.bft_round_state.slot
+                || consensus_proposal.slot == self.bft_round_state.slot
+                    && view == self.bft_round_state.view;
             if is_next_prepare {
                 info!(
                     "Received Prepare message for next slot while joining. Exiting joining mode."
                 );
                 self.bft_round_state.state_tag = StateTag::Follower;
             } else {
-                // Ignore obviously outdated messages.
-                // We'll be optimistic for ones in the future and hope that
-                // maybe we'll have caught up by the time the commit rolls around.
-                if consensus_proposal.slot <= self.bft_round_state.joining.staking_updated_to {
-                    info!(
-                            "🌑 Outdated Prepare message (Slot {} / view {} while at {}) received while joining. Ignoring.",
-                            consensus_proposal.slot, view, self.bft_round_state.joining.staking_updated_to
-                        );
-                    return Ok(());
-                }
-                info!(
-                    "🌕 Prepare message (Slot {} / view {}) received while joining. Storing.",
-                    consensus_proposal.slot, view
-                );
-                // Store the message until we receive a matching Commit.
-                // Because we may receive old or rogue proposals, we store all of them.
-                self.bft_round_state
-                    .joining
-                    .buffered_prepares
-                    .push(consensus_proposal);
+                self.follower_state().buffered_prepares.push((
+                    sender.clone(),
+                    consensus_proposal,
+                    ticket,
+                    view,
+                ));
                 return Ok(());
             }
         }
@@ -123,7 +112,6 @@ impl FollowerRole for Consensus {
             );
             return Ok(());
         }
-
         // Process the ticket
         match &ticket {
             Ticket::Genesis => {
@@ -508,23 +496,15 @@ impl Consensus {
         proposal_hash_hint: ConsensusProposalHash,
     ) -> Result<()> {
         // We are joining consensus, try to sync our state.
-        // First find the prepare message to this commit.
-        let Some(proposal_index) = self
+        let Some((_, potential_proposal, _, _)) = self
             .bft_round_state
-            .joining
+            .follower
             .buffered_prepares
-            .iter()
-            .position(|p| p.hashed() == proposal_hash_hint)
+            .get(&proposal_hash_hint)
         else {
             // Maybe we just missed it, carry on.
             return Ok(());
         };
-        // Use that as our proposal.
-        let potential_proposal = self
-            .bft_round_state
-            .joining
-            .buffered_prepares
-            .swap_remove(proposal_index);
 
         // Check it's actually in the future
         if potential_proposal.slot <= self.bft_round_state.slot {
@@ -545,8 +525,7 @@ impl Consensus {
             return Ok(());
         }
 
-        self.bft_round_state.current_proposal = potential_proposal;
-        self.bft_round_state.joining.buffered_prepares.clear();
+        self.bft_round_state.current_proposal = potential_proposal.clone();
 
         info!(
             "📦 Commit message received for slot {}, trying to synchronize.",
