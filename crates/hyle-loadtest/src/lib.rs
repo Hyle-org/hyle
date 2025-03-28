@@ -11,12 +11,11 @@ use client_sdk::transaction_builder::{
 use client_sdk::{contract_states, transaction_builder};
 use hydentity::client::{register_identity, verify_identity};
 use hydentity::Hydentity;
-use hyle_contract_sdk::HyleContract;
 use hyle_contract_sdk::Identity;
 use hyle_contract_sdk::TxHash;
-use hyle_contract_sdk::{guest, ContractName, HyleOutput, ZkProgramInput};
 use hyle_contract_sdk::{Blob, BlobData, ContractAction, RegisterContractAction};
 use hyle_contract_sdk::{BlobTransaction, Transaction};
+use hyle_contract_sdk::{Calldata, ContractName, HyleOutput, ProvableContractState, ZkProgram};
 use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF};
 use hyllar::client::transfer;
 use hyllar::erc20::ERC20;
@@ -85,16 +84,36 @@ impl transaction_builder::StateUpdater for CanonicalStates {
     }
 
     fn execute(
+        &mut self,
+        contract_name: &ContractName,
+        calldata: &Calldata,
+    ) -> anyhow::Result<HyleOutput> {
+        if contract_name == &self.hydentity_name {
+            self.hydentity
+                .execute_provable(calldata)
+                .map_err(|e| anyhow::anyhow!(e))
+        } else if contract_name == &self.hyllar_name {
+            self.hyllar
+                .execute_provable(calldata)
+                .map_err(|e| anyhow::anyhow!(e))
+        } else {
+            anyhow::bail!("Unknown contract name: {contract_name}");
+        }
+    }
+
+    fn build_commitment_metadata(
         &self,
         contract_name: &ContractName,
-        zk_program_input: &ZkProgramInput,
-    ) -> anyhow::Result<(Box<dyn std::any::Any>, HyleOutput)> {
+        blob: &Blob,
+    ) -> anyhow::Result<Vec<u8>> {
         if contract_name == &self.hydentity_name {
-            let (state, output) = guest::execute::<Hydentity>(zk_program_input);
-            Ok((Box::new(state) as Box<dyn std::any::Any>, output))
+            self.hydentity
+                .build_commitment_metadata(blob)
+                .map_err(|e| anyhow::anyhow!(e))
         } else if contract_name == &self.hyllar_name {
-            let (state, output) = guest::execute::<Hyllar>(zk_program_input);
-            Ok((Box::new(state) as Box<dyn std::any::Any>, output))
+            self.hyllar
+                .build_commitment_metadata(blob)
+                .map_err(|e| anyhow::anyhow!(e))
         } else {
             anyhow::bail!("Unknown contract name: {contract_name}");
         }

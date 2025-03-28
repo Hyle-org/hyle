@@ -17,8 +17,10 @@ use hydentity::{
     client::{register_identity, verify_identity},
     Hydentity,
 };
-use hyle_contract_sdk::{guest, Identity, StateCommitment};
-use hyle_contract_sdk::{ContractName, HyleContract, ProgramId};
+use hyle_contract_sdk::{
+    Blob, Calldata, ContractName, Identity, ProgramId, ProvableContractState, StateCommitment,
+    ZkProgram,
+};
 use hyllar::{client::transfer, Hyllar, FAUCET_ID};
 use serde::{Deserialize, Serialize};
 use staking::{

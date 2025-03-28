@@ -4,9 +4,10 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use rand::Rng;
 use rand_seeder::SipHasher;
 use sdk::{
-    info, utils::parse_raw_calldata, Blob, BlobData, BlobIndex, Calldata, ContractAction,
-    ContractName, HyleContract, OnchainEffect, ProgramId, RegisterContractEffect, RunResult,
-    StateCommitment, Verifier,
+    info,
+    utils::{as_hyle_output, parse_raw_calldata},
+    Blob, BlobData, BlobIndex, Calldata, ContractAction, ContractName, OnchainEffect, ProgramId,
+    ProvableContractState, RegisterContractEffect, RunResult, StateCommitment, Verifier, ZkProgram,
 };
 use uuid::Uuid;
 
@@ -41,7 +42,7 @@ impl ContractAction for UuidTldAction {
     }
 }
 
-impl HyleContract for UuidTld {
+impl ZkProgram for UuidTld {
     fn execute(&mut self, calldata: &Calldata) -> RunResult {
         let (action, exec_ctx) = parse_raw_calldata::<UuidTldAction>(calldata)?;
         // Not an identity provider
@@ -72,6 +73,23 @@ impl HyleContract for UuidTld {
 
     fn commit(&self) -> sdk::StateCommitment {
         sdk::StateCommitment(self.serialize().unwrap())
+    }
+}
+
+impl ProvableContractState for UuidTld {
+    fn build_commitment_metadata(&self, _blob: &Blob) -> Result<Vec<u8>, String> {
+        borsh::to_vec(self).map_err(|e| e.to_string())
+    }
+    fn execute_provable(&mut self, calldata: &Calldata) -> Result<sdk::HyleOutput, String> {
+        let initial_state_commitment = <Self as ZkProgram>::commit(self);
+        let mut res = <Self as ZkProgram>::execute(self, calldata);
+        let next_state_commitment = <Self as ZkProgram>::commit(self);
+        Ok(as_hyle_output(
+            initial_state_commitment,
+            next_state_commitment,
+            calldata,
+            &mut res,
+        ))
     }
 }
 
