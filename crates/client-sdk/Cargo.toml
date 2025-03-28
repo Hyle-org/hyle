@@ -9,9 +9,7 @@ repository = { workspace = true }
 rust-version = { workspace = true }
 
 [dependencies]
-sdk = { workspace = true, default-features = false, features = [
-    "full-model",
-] }
+sdk = { workspace = true, default-features = false, features = ["full-model"] }
 bonsai-runner = { workspace = true, optional = true }
 hyle-net = { workspace = true, features = ["tokio"] }
 
@@ -41,3 +39,6 @@ rest = ["dep:reqwest"]
 indexer = ["dep:utoipa", "dep:axum", "dep:utoipa-axum", "dep:tokio"]
 risc0 = ["dep:risc0-zkvm", "dep:bonsai-runner"]
 sp1 = ["dep:sp1-sdk", "dep:bincode"]
+
+[package.metadata.docs.rs]
+all-features = true
