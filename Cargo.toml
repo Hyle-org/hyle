@@ -152,7 +152,10 @@ keyring = { version = "3", features = [
 whoami = "1.5.2"
 toml = "0.8.20"
 
+# We force zip version here as later version is not compatible with utoipa-swagger-ui
 zip = "=2.3.0"
+[package.metadata.cargo-machete]
+ignored = ["zip"]
 
 [patch.crates-io]
 sha2 = { git = "https://github.com/risc0/RustCrypto-hashes", tag = "sha2-v0.10.8-risczero.0" }
