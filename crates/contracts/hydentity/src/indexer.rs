@@ -1,5 +1,5 @@
 use crate::{identity_provider::IdentityVerification, AccountInfo, Hydentity, HydentityAction};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use client_sdk::contract_indexer::{
     axum::Router,
     utoipa::openapi::OpenApi,
@@ -16,10 +16,36 @@ use client_sdk::contract_indexer::{
     utoipa::{self, ToSchema},
     AppError,
 };
-use sdk::{info, Blob, BlobIndex, BlobTransaction, Identity, TxContext};
+use sdk::{info, utils::parse_raw_calldata, Calldata, FastIndexerState, Identity};
 use serde::Serialize;
 
 use client_sdk::contract_indexer::axum;
+
+impl FastIndexerState for Hydentity {
+    fn execute_fast(&mut self, calldata: &Calldata) -> std::result::Result<String, String> {
+        let (action, exec_ctx) = parse_raw_calldata(calldata)?;
+
+        match action {
+            HydentityAction::RegisterIdentity { account } => {
+                let (name, hash) = Hydentity::parse_id(&account).map_err(|e| e.to_string())?;
+                info!("🚀 Executed {}: {name} registered", exec_ctx.contract_name);
+                self.identities.insert(name, AccountInfo { hash, nonce: 0 });
+                Ok(format!(
+                    "Successfully registered identity for account: {}",
+                    account
+                ))
+            }
+            HydentityAction::VerifyIdentity { account, nonce: _ } => {
+                if let Some(id) = self.identities.get_mut(&account) {
+                    id.nonce += 1;
+                }
+                Ok(format!("Identity verified for account: {}", account))
+            }
+            _ => Ok("".to_string()),
+        }
+    }
+}
+
 impl ContractHandler for Hydentity {
     async fn api(store: ContractHandlerStore<Self>) -> (Router<()>, OpenApi) {
         let (router, api) = OpenApiRouter::default()
@@ -28,38 +54,6 @@ impl ContractHandler for Hydentity {
             .split_for_parts();
 
         (router.with_state(store), api)
-    }
-
-    fn handle(
-        tx: &BlobTransaction,
-        index: BlobIndex,
-        mut state: Self,
-        _tx_context: TxContext,
-    ) -> Result<Self> {
-        let Blob {
-            contract_name,
-            data,
-        } = tx.blobs.get(index.0).context("Failed to get blob")?;
-
-        let action: HydentityAction = borsh::from_slice(&data.0)?;
-
-        match action {
-            HydentityAction::RegisterIdentity { account } => {
-                let (name, hash) = Hydentity::parse_id(&account)?;
-                info!("🚀 Executed {contract_name}: {name} registered");
-                state
-                    .identities
-                    .insert(name, AccountInfo { hash, nonce: 0 });
-            }
-            HydentityAction::VerifyIdentity { account, nonce: _ } => {
-                if let Some(id) = state.identities.get_mut(&account) {
-                    id.nonce += 1;
-                }
-            }
-            _ => {}
-        }
-
-        Ok(state)
     }
 }
 

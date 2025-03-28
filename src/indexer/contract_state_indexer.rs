@@ -46,6 +46,7 @@ where
         + Sync
         + Send
         + std::fmt::Debug
+        + Default
         + ContractHandler
         + BorshSerialize
         + BorshDeserialize
@@ -115,6 +116,7 @@ where
         + Sync
         + Send
         + std::fmt::Debug
+        + Default
         + ContractHandler
         + BorshSerialize
         + BorshDeserialize
@@ -228,21 +230,19 @@ where
 
         debug!(cn = %self.contract_name, "🔨 Settling transaction: {}", tx.hashed());
 
+        let state = store
+            .state
+            .as_mut()
+            .ok_or(anyhow!("No state found for {}", self.contract_name))?;
+
         for (index, Blob { contract_name, .. }) in tx.blobs.iter().enumerate() {
             if self.contract_name != *contract_name {
                 continue;
             }
 
-            let state = store
-                .state
-                .clone()
-                .ok_or(anyhow!("No state found for {contract_name}"))?;
-
-            let new_state = State::handle(&tx, BlobIndex(index), state, tx_context.clone())?;
+            state.handle_transaction(&tx, BlobIndex(index), tx_context.clone())?;
 
             debug!(cn = %self.contract_name, "📈 Updated state for {contract_name}");
-
-            store.state = Some(new_state);
         }
         Ok(())
     }
@@ -250,7 +250,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use hyle_contract_sdk::{BlobData, HyleContract, ProgramId, StateCommitment};
+    use hyle_contract_sdk::{BlobData, FastIndexerState, ProgramId, StateCommitment, ZkProgram};
     use hyle_model::DataProposalHash;
     use utoipa::openapi::OpenApi;
 
@@ -274,25 +274,31 @@ mod tests {
         }
     }
 
-    impl HyleContract for MockState {
-        fn execute(&mut self, _: &hyle_model::Calldata) -> hyle_contract_sdk::RunResult {
+    impl ZkProgram for MockState {
+        fn execute(&mut self, _calldata: &hyle_model::Calldata) -> hyle_contract_sdk::RunResult {
             Err("not implemented".into())
         }
 
         fn commit(&self) -> StateCommitment {
-            StateCommitment(self.0.clone())
+            StateCommitment(vec![])
+        }
+    }
+
+    impl FastIndexerState for MockState {
+        fn execute_fast(&mut self, _: &hyle_model::Calldata) -> Result<String, String> {
+            Err("not implemented".into())
         }
     }
 
     impl ContractHandler for MockState {
-        fn handle(
+        fn handle_transaction(
+            &mut self,
             tx: &BlobTransaction,
             index: BlobIndex,
-            mut state: Self,
             _tx_context: TxContext,
-        ) -> Result<Self> {
-            state.0 = tx.blobs.get(index.0).unwrap().data.0.clone();
-            Ok(state)
+        ) -> Result<()> {
+            self.0 = tx.blobs.get(index.0).unwrap().data.0.clone();
+            Ok(())
         }
 
         async fn api(_store: Arc<RwLock<ContractStateStore<Self>>>) -> (axum::Router<()>, OpenApi) {

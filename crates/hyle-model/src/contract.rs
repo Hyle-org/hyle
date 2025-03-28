@@ -51,7 +51,7 @@ pub trait DataSized {
 /// calldata is the data that the contract will use to run.
 #[derive(Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
 pub struct ZkProgramInput {
-    /// Borsh serialization of the commitment metadata.
+    /// Serialization of the commitment metadata.
     pub commitment_metadata: Vec<u8>,
     /// [Calldata] used to run the contract
     pub calldata: Calldata,

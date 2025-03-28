@@ -1,9 +1,7 @@
 use anyhow::{Context, Result};
-use core::str;
 use reqwest::StatusCode;
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::RwLock;
-use tracing::debug;
 
 use axum::{
     response::{IntoResponse, Response},
@@ -11,8 +9,8 @@ use axum::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::{
-    guest, info, Blob, BlobIndex, BlobTransaction, Calldata, ContractName, Hashed, HyleContract,
-    TxContext, TxId, ZkProgramInput,
+    info, Blob, BlobIndex, BlobTransaction, Calldata, ContractName, FastIndexerState, Hashed,
+    TxContext, TxId,
 };
 use utoipa::openapi::OpenApi;
 
@@ -41,44 +39,38 @@ impl<State> Default for ContractStateStore<State> {
 
 pub trait ContractHandler
 where
-    Self: Sized + Default + HyleContract + BorshSerialize + BorshDeserialize + 'static,
+    Self: FastIndexerState + Sized,
 {
     fn api(
         store: ContractHandlerStore<Self>,
     ) -> impl std::future::Future<Output = (Router<()>, OpenApi)> + std::marker::Send;
 
-    fn handle(
+    fn handle_transaction(
+        &mut self,
         tx: &BlobTransaction,
         index: BlobIndex,
-        state: Self,
         tx_context: TxContext,
-    ) -> Result<Self> {
+    ) -> Result<()> {
         let Blob {
             contract_name,
             data: _,
         } = tx.blobs.get(index.0).context("Failed to get blob")?;
 
-        let serialized_state = borsh::to_vec(&state)?;
-        let zk_program_input = ZkProgramInput {
-            commitment_metadata: serialized_state,
-            calldata: Calldata {
-                identity: tx.identity.clone(),
-                index,
-                blobs: tx.blobs.clone(),
-                tx_hash: tx.hashed(),
-                tx_ctx: Some(tx_context),
-                private_input: vec![],
-            },
+        let calldata = Calldata {
+            identity: tx.identity.clone(),
+            index,
+            blobs: tx.blobs.clone(),
+            tx_hash: tx.hashed(),
+            tx_ctx: Some(tx_context),
+            private_input: vec![],
         };
 
-        let (state, hyle_output) = guest::execute::<Self>(&zk_program_input);
-        let res = str::from_utf8(&hyle_output.program_outputs).unwrap_or("no output");
-        info!("🚀 Executed {contract_name}: {}", res);
-        debug!(
-            handler = %contract_name,
-            "hyle_output: {:?}", hyle_output
-        );
-        Ok(state)
+        let program_outputs = self
+            .execute_fast(&calldata)
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        info!("🚀 Executed {contract_name}: {}", program_outputs);
+        Ok(())
     }
 }
 

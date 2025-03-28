@@ -15,8 +15,8 @@ mod e2e_consensus {
     use hydentity::client::{register_identity, verify_identity};
     use hydentity::Hydentity;
     use hyle::genesis::States;
-    use hyle_contract_sdk::HyleContract;
     use hyle_contract_sdk::Identity;
+    use hyle_contract_sdk::ZkProgram;
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF, STAKING_ELF};
     use hyle_model::{ContractName, StateCommitment};
     use hyllar::client::transfer;
