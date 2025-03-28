@@ -153,6 +153,15 @@ impl TimeoutRole for Consensus {
                 "Received timeout message while not being part of the consensus: {}",
                 self.crypto.validator_pubkey()
             );
+            return Ok(());
+        }
+
+        if received_slot < self.bft_round_state.slot {
+            debug!(
+                "🌘 Ignoring timeout for slot {}, am at {}",
+                received_slot, self.bft_round_state.slot
+            );
+            return Ok(());
         }
 
         if received_slot != self.bft_round_state.slot || received_view != self.bft_round_state.view

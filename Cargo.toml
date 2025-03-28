@@ -32,7 +32,7 @@ edition = "2021"
 homepage = "https://hyle.eu/"
 repository = "https://github.com/Hyle-org/hyle/"
 rust-version = "1.84"
-# licence = ""
+license-file = "LICENSE"
 
 [workspace.dependencies]
 bonsai-runner = { version = "0.13.0-rc.2", default-features = false, path = "crates/bonsai-runner", package = "hyle-bonsai-runner" }
@@ -53,9 +53,9 @@ uuid-tld = { version = "0.13.0-rc.2", default-features = false, path = "crates/c
 [package]
 name = "hyle"
 description = "Hyle node"
+license-file = { workspace = true }
 version = { workspace = true }
 edition = { workspace = true }
-# license = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }
 rust-version = { workspace = true }
