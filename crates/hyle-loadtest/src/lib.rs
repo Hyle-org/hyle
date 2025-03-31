@@ -470,7 +470,7 @@ pub async fn long_running_test(node_url: String, _indexer_url: String) -> Result
             // Create a new user
             if now % 5 == 0 || users.len() < 2 {
                 let ident = Identity(format!("{}.{}", now, random_hydentity_contract.0));
-                users.push(now.try_into().unwrap());
+                users.push(now);
 
                 tracing::info!("Creating identity with 100 tokens: {}", ident);
 
