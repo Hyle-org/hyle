@@ -5,7 +5,6 @@ use hyle::{
     utils::{conf::Conf, crypto::BlstCrypto},
 };
 use hyle_contract_sdk::info;
-use hyle_net::api::NodeApiHttpClient;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 use tokio::time::timeout;
 

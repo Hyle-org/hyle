@@ -1,79 +1,143 @@
-pub mod connector {
-    use hyper::Uri;
-    use pin_project_lite::pin_project;
-    use std::{future::Future, io::Error, pin::Pin};
-    use tokio::io::AsyncWrite;
-    use tower::Service;
-    use turmoil::net::TcpStream;
+use anyhow::Context;
+use http_body_util::BodyExt;
+use hyper::{client::conn::http1, Method, Request, Uri};
+use hyper_util::rt::TokioIo;
+use serde::{de::DeserializeOwned, Serialize};
 
-    pub type Fut = Pin<Box<dyn Future<Output = Result<TurmoilConnection, Error>> + Send>>;
+#[derive(Clone)]
+pub struct HttpClient {
+    pub url: Uri,
+    pub api_key: Option<String>,
+}
+impl HttpClient {
+    pub async fn request<T, R>(
+        &self,
+        endpoint: &str,
+        method: Method,
+        content_type: String,
+        body: Option<&T>,
+        context_msg: &str,
+    ) -> anyhow::Result<R>
+    where
+        T: Serialize,
+        R: DeserializeOwned,
+    {
+        // Construire l'URI complète
+        let full_url = format!("{}{}", &self.url, endpoint);
+        let uri: Uri = full_url.parse().context("URI invalide")?;
 
-    pub fn connector(
-    ) -> impl Service<Uri, Response = TurmoilConnection, Error = Error, Future = Fut> + Clone {
-        tower::service_fn(|uri: Uri| {
-            Box::pin(async move {
-                let conn = TcpStream::connect(uri.authority().unwrap().as_str()).await?;
-                Ok::<_, Error>(TurmoilConnection { fut: conn })
-            }) as Fut
-        })
-    }
+        // Établir une connexion TCP
+        let authority = uri.authority().context("URI sans autorité")?.clone();
+        let host = authority.host().to_string();
+        let port = authority.port_u16().unwrap_or(80);
+        let addr = format!("{}:{}", host, port);
+        let stream = crate::net::TcpStream::connect(addr)
+            .await
+            .context("Échec de la connexion TCP")?;
+        let io = TokioIo::new(stream);
 
-    pin_project! {
-        pub struct TurmoilConnection{
-            #[pin]
-            fut: turmoil::net::TcpStream
-        }
-    }
+        // Initialiser le client HTTP
+        let (mut sender, connection) = http1::handshake(io)
+            .await
+            .context("Échec de la poignée de main HTTP/1")?;
 
-    impl hyper::rt::Read for TurmoilConnection {
-        fn poll_read(
-            self: Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-            mut buf: hyper::rt::ReadBufCursor<'_>,
-        ) -> std::task::Poll<Result<(), Error>> {
-            let n = unsafe {
-                let mut tbuf = tokio::io::ReadBuf::uninit(buf.as_mut());
-                let result = tokio::io::AsyncRead::poll_read(self.project().fut, cx, &mut tbuf);
-                match result {
-                    std::task::Poll::Ready(Ok(())) => tbuf.filled().len(),
-                    other => return other,
-                }
-            };
-
-            unsafe {
-                buf.advance(n);
+        // Lancer la tâche pour gérer la connexion
+        tokio::spawn(async move {
+            if let Err(e) = connection.await {
+                eprintln!("Erreur de connexion: {:?}", e);
             }
-            std::task::Poll::Ready(Ok(()))
+        });
+
+        // Construire la requête HTTP
+        let mut req_builder = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header(hyper::header::CONTENT_TYPE, content_type);
+
+        // Ajouter la clé API si présente
+        if let Some(ref key) = self.api_key {
+            req_builder = req_builder.header("X-API-KEY", key);
         }
+
+        let request = if let Some(b) = body {
+            let json_body = serde_json::to_string(b)
+                .context("Échec de la sérialisation du corps de la requête")?;
+
+            req_builder
+                .body(json_body)
+                .context("Échec de la construction de la requête")?
+        } else {
+            req_builder.body("".to_string())?
+        };
+
+        // Envoyer la requête et obtenir la réponse
+        let response = sender
+            .send_request(request)
+            .await
+            .context(format!("{}: échec de la requête", context_msg))?;
+
+        // Vérifier le statut HTTP
+        if !response.status().is_success() {
+            anyhow::bail!(
+                "{}: échec avec le statut {}",
+                context_msg,
+                response.status()
+            );
+        }
+
+        // Lire et désérialiser le corps de la réponse
+        let mut body = response.into_body();
+
+        let mut response: Vec<u8> = vec![];
+
+        // Stream the body, writing each chunk to stdout as we get it
+        // (instead of buffering and printing at the end).
+        while let Some(next) = body.frame().await {
+            let frame = next?;
+            if let Some(chunk) = frame.data_ref() {
+                response.extend(chunk);
+            }
+        }
+
+        let result: R = serde_json::from_slice(&response).context(format!(
+            "{}: échec de la désérialisation de la réponse",
+            context_msg
+        ))?;
+
+        Ok(result)
     }
 
-    impl hyper::rt::Write for TurmoilConnection {
-        fn poll_write(
-            mut self: Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-            buf: &[u8],
-        ) -> std::task::Poll<Result<usize, Error>> {
-            Pin::new(&mut self.fut).poll_write(cx, buf)
-        }
-
-        fn poll_flush(
-            mut self: Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-        ) -> std::task::Poll<Result<(), Error>> {
-            Pin::new(&mut self.fut).poll_flush(cx)
-        }
-
-        fn poll_shutdown(
-            mut self: Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-        ) -> std::task::Poll<Result<(), Error>> {
-            Pin::new(&mut self.fut).poll_shutdown(cx)
-        }
+    pub async fn get<R>(&self, endpoint: &str, context_msg: &str) -> anyhow::Result<R>
+    where
+        R: DeserializeOwned,
+    {
+        self.request::<String, R>(
+            endpoint,
+            Method::GET,
+            "application/json".to_string(),
+            None,
+            context_msg,
+        )
+        .await
     }
 
-    impl hyper_util::client::legacy::connect::Connection for TurmoilConnection {
-        fn connected(&self) -> hyper_util::client::legacy::connect::Connected {
-            hyper_util::client::legacy::connect::Connected::new()
-        }
+    pub async fn post_json<T, R>(
+        &self,
+        endpoint: &str,
+        body: &T,
+        context_msg: &str,
+    ) -> anyhow::Result<R>
+    where
+        R: DeserializeOwned,
+        T: Serialize,
+    {
+        self.request::<T, R>(
+            endpoint,
+            Method::POST,
+            "application/json".to_string(),
+            Some(body),
+            context_msg,
+        )
+        .await
     }
 }

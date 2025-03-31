@@ -5,17 +5,15 @@ mod fixtures;
 mod turmoil_tests {
     use std::{sync::Arc, time::Duration};
 
-    use client_sdk::tcp_client::{codec_tcp_server, TcpServerMessage};
     use hyle::log_error;
     use hyle_model::{
         BlobTransaction, ContractAction, ContractName, ProgramId, RegisterContractAction,
-        StateCommitment, Transaction,
+        StateCommitment,
     };
-    use hyle_net::{http::connector::connector, turmoil::Result};
     use tokio::sync::Mutex;
 
     use crate::fixtures::{
-        ctx_turmoil::{E2ETurmoilCtx, Helpers},
+        ctx_turmoil::E2ETurmoilCtx,
         test_helpers_turmoil::{wait_height, MySeedableRng},
     };
 
@@ -45,9 +43,9 @@ mod turmoil_tests {
             .enable_tokio_io()
             .build_with_rng(Box::new(rng));
 
-        let (nodes, clients) = Helpers::new_multi(4, 500, connector())?;
+        let ctx = E2ETurmoilCtx::new_multi(4, 500)?;
 
-        let mut nodes = nodes.clone();
+        let mut nodes = ctx.nodes.clone();
         nodes.reverse();
 
         let client = clients.leak().first().unwrap();
