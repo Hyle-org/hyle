@@ -433,7 +433,7 @@ pub async fn long_running_test(node_url: String, _indexer_url: String) -> Result
 
         tokio::time::sleep(Duration::from_secs(5)).await;
 
-        let mut users: Vec<u64> = vec![];
+        let mut users: Vec<u128> = vec![];
 
         let mut tx_ctx = TxExecutorBuilder::new(CanonicalStates {
             hydentity: Hydentity::default(),

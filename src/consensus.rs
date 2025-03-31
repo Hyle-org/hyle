@@ -313,7 +313,7 @@ impl Consensus {
                         "⏱️  Sleeping {} milliseconds before starting a new slot",
                         interval
                     );
-                    sleep(Duration::from_millis(interval.try_into().unwrap())).await;
+                    sleep(Duration::from_millis(interval)).await;
 
                     _ = log_error!(
                         command_sender.send(ConsensusCommand::StartNewSlot),
