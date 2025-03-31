@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, path::Path, sync::Arc};
+use std::{collections::BTreeMap, path::Path};
 
 use anyhow::{bail, Result};
 use fjall::{
@@ -31,12 +31,7 @@ impl LanesStorage {
         lanes_tip: BTreeMap<LaneId, (DataProposalHash, LaneBytesSize)>,
     ) -> Result<Self> {
         let db = Config::new(path)
-            .blob_cache(Arc::new(fjall::BlobCache::with_capacity_bytes(
-                256 * 1024 * 1024,
-            )))
-            .block_cache(Arc::new(fjall::BlockCache::with_capacity_bytes(
-                256 * 1024 * 1024,
-            )))
+            .cache_size(256 * 1024 * 1024)
             .max_journaling_size(512 * 1024 * 1024)
             .max_write_buffer_size(512 * 1024 * 1024)
             .open()?;
