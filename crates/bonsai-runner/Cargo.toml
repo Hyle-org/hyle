@@ -19,7 +19,7 @@ hex = "0.4.3"
 borsh = "1.5.6"
 
 bonsai-sdk = { version = "1.2.4", features = ["non_blocking"] }
-hyle-net = { workspace = true }
+hyle-net = { workspace = true, features = ["tokio"] }
 risc0-zkvm = { version = "2.0.0" }
 bytemuck = "1.22.0"
 # Has to be compatible with whatever bonsai-sdk returns, which is not really documented...
