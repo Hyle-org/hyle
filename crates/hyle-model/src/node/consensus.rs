@@ -249,7 +249,28 @@ impl From<NewValidatorCandidate> for ConsensusStakingAction {
 )]
 pub enum TCKind {
     NilProposal,
-    PrepareQC(QuorumCertificate),
+    PrepareQC((QuorumCertificate, ConsensusProposal)),
+}
+
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    BorshSerialize,
+    BorshDeserialize,
+    PartialEq,
+    Eq,
+    IntoStaticStr,
+    Hash,
+    Ord,
+    PartialOrd,
+)]
+pub enum TimeoutKind {
+    // Sign a different message to signify 'nil proposal' for aggregation
+    NilProposal(SignedByValidator<(Slot, View, ConsensusProposalHash, ())>),
+    // Resending the prepare QC & matching proposal (for convenience for the leader to repropose)
+    PrepareQC((QuorumCertificate, ConsensusProposal)),
 }
 
 #[derive(
@@ -272,11 +293,16 @@ pub enum ConsensusNetMessage {
     Confirm(QuorumCertificate, ConsensusProposalHash),
     ConfirmAck(ConsensusProposalHash),
     Commit(QuorumCertificate, ConsensusProposalHash),
-    // TODO: don't double-sign
+    // We do signature aggregation, so we would need everyone to send the same PQC.
+    // To work around that, send two signatures for now.
+    // To successfully send a nil certificate, we need a proof of 2f+1 nil timeouts, so we can't really avoid the double-signature.
+    // TODO:but we could avoid signing the top-level message
     Timeout(
         // Here we add the parent hash purely to avoid replay attacks
+        // This first message will be used if the TC to generate a proof of timeout
         SignedByValidator<(Slot, View, ConsensusProposalHash)>,
-        Option<(QuorumCertificate, ConsensusProposal)>,
+        // The second data is sued to pick a specific TC type
+        TimeoutKind,
     ),
     TimeoutCertificate(QuorumCertificate, TCKind, Slot, View),
     ValidatorCandidacy(ValidatorCandidacy),
@@ -375,17 +401,25 @@ impl Display for ConsensusNetMessage {
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
                 write!(f, "{} (Candidacy {})", enum_variant, candidacy)
             }
-            ConsensusNetMessage::Timeout(signed_slot_view, cp) => {
-                write!(
+            ConsensusNetMessage::Timeout(signed_slot_view, tk) => {
+                _ = writeln!(
                     f,
-                    "{} - Slot: {} View: {} - with CP? {}",
-                    enum_variant,
-                    signed_slot_view.msg.0,
-                    signed_slot_view.msg.1,
-                    cp.as_ref()
-                        .map(|cp| cp.1.hashed().to_string())
-                        .unwrap_or("None".to_string())
-                )
+                    "{} - Slot: {} View: {}",
+                    enum_variant, signed_slot_view.msg.0, signed_slot_view.msg.1
+                );
+                match tk {
+                    TimeoutKind::NilProposal(_) => {
+                        _ = writeln!(f, "NilProposal Timeout");
+                    }
+                    TimeoutKind::PrepareQC((cert, cp)) => {
+                        _ = writeln!(f, "PrepareQC certificate {}", cert.signature);
+                        _ = write!(f, "CP: {}", cp);
+                        for v in cert.validators.iter() {
+                            _ = write!(f, "{},", v);
+                        }
+                    }
+                }
+                write!(f, "")
             }
             ConsensusNetMessage::TimeoutCertificate(cert, kindcert, slot, view) => {
                 _ = writeln!(f, "{} - Slot: {} View: {}", enum_variant, slot, view);
@@ -397,8 +431,13 @@ impl Display for ConsensusNetMessage {
                     TCKind::NilProposal => {
                         _ = writeln!(f, "NilProposal certificate");
                     }
-                    TCKind::PrepareQC(kindcert) => {
-                        _ = writeln!(f, "PrepareQC certificate {}", kindcert.signature);
+                    TCKind::PrepareQC((kindcert, cp)) => {
+                        _ = writeln!(
+                            f,
+                            "PrepareQC certificate {} on CP hash {}",
+                            kindcert.signature,
+                            cp.hashed()
+                        );
                         for v in kindcert.validators.iter() {
                             _ = write!(f, "{},", v);
                         }
