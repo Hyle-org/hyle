@@ -27,24 +27,24 @@ mod metadata {
 
 #[cfg(any(clippy, not(feature = "nonreproducible")))]
 mod metadata {
-    pub const AMM_ELF: &[u8] = include_bytes!("amm/amm.img");
-    pub const AMM_ID: [u8; 32] = sdk::str_to_u8(include_str!("amm/amm.txt"));
+    pub const AMM_ELF: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/amm/amm.img"));
+    pub const AMM_ID: [u8; 32] = sdk::str_to_u8(include_str!(concat!(env!("OUT_DIR"), "/amm/amm.txt")));
 
-    pub const HYDENTITY_ELF: &[u8] = include_bytes!("hydentity/hydentity.img");
-    pub const HYDENTITY_ID: [u8; 32] = sdk::str_to_u8(include_str!("hydentity/hydentity.txt"));
+    pub const HYDENTITY_ELF: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/hydentity/hydentity.img"));
+    pub const HYDENTITY_ID: [u8; 32] = sdk::str_to_u8(include_str!(concat!(env!("OUT_DIR"), "/hydentity/hydentity.txt")));
 
-    pub const HYLLAR_ELF: &[u8] = include_bytes!("hyllar/hyllar.img");
-    pub const HYLLAR_ID: [u8; 32] = sdk::str_to_u8(include_str!("hyllar/hyllar.txt"));
+    pub const HYLLAR_ELF: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/hyllar/hyllar.img"));
+    pub const HYLLAR_ID: [u8; 32] = sdk::str_to_u8(include_str!(concat!(env!("OUT_DIR"), "/hyllar/hyllar.txt")));
 
-    pub const STAKING_ELF: &[u8] = include_bytes!("staking/staking.img");
-    pub const STAKING_ID: [u8; 32] = sdk::str_to_u8(include_str!("staking/staking.txt"));
+    pub const STAKING_ELF: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/staking/staking.img"));
+    pub const STAKING_ID: [u8; 32] = sdk::str_to_u8(include_str!(concat!(env!("OUT_DIR"), "/staking/staking.txt")));
 
-    pub const RISC0_RECURSION_ELF: &[u8] = include_bytes!("risc0-recursion/risc0-recursion.img");
+    pub const RISC0_RECURSION_ELF: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/risc0-recursion/risc0-recursion.img"));
     pub const RISC0_RECURSION_ID: [u8; 32] =
-        sdk::str_to_u8(include_str!("risc0-recursion/risc0-recursion.txt"));
+        sdk::str_to_u8(include_str!(concat!(env!("OUT_DIR"), "/risc0-recursion/risc0-recursion.txt")));
 
-    pub const UUID_TLD_ELF: &[u8] = include_bytes!("uuid-tld/uuid-tld.img");
-    pub const UUID_TLD_ID: [u8; 32] = sdk::str_to_u8(include_str!("uuid-tld/uuid-tld.txt"));
+    pub const UUID_TLD_ELF: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/uuid-tld/uuid-tld.img"));
+    pub const UUID_TLD_ID: [u8; 32] = sdk::str_to_u8(include_str!(concat!(env!("OUT_DIR"), "/uuid-tld/uuid-tld.txt")    ));
 }
 
 pub use metadata::*;
