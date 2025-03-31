@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
-use reqwest::StatusCode;
 use std::{collections::BTreeMap, str, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::debug;
 
 use axum::{
+    http::StatusCode,
     response::{IntoResponse, Response},
     Router,
 };
