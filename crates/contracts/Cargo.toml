@@ -8,6 +8,8 @@ homepage = { workspace = true }
 repository = { workspace = true }
 rust-version = "1.81"
 include = [
+  "build.rs",
+  "metadata.rs",
   "amm/amm.img",
   "amm/amm.txt",
   "hydentity/hydentity.img",
