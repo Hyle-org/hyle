@@ -96,10 +96,9 @@ impl TimeoutRoleState {
             if slot <= *s || (slot == *s && view <= *v) {
                 return false;
             }
-            self.highest_seen_prepare_qc = Some((slot, view, qc));
-            return true;
         }
-        false
+        self.highest_seen_prepare_qc = Some((slot, view, qc));
+        true
     }
 }
 
@@ -493,6 +492,12 @@ impl Consensus {
             self.bft_round_state.view,
             self.bft_round_state.parent_hash.clone(),
         ))?;
+        tracing::error!(
+            "Sending timeout message for slot {} and view {}.\nHighest seen {:?}",
+            self.bft_round_state.slot,
+            self.bft_round_state.view,
+            self.bft_round_state.timeout.highest_seen_prepare_qc
+        );
         Ok(
             match &self.bft_round_state.timeout.highest_seen_prepare_qc {
                 Some((s, v, qc))

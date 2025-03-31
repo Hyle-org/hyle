@@ -259,6 +259,14 @@ impl FollowerRole for Consensus {
             &prepare_quorum_certificate,
         )?;
 
+        let slot = self.bft_round_state.slot;
+        let view = self.bft_round_state.view;
+        self.bft_round_state.timeout.update_highest_seen_prepare_qc(
+            slot,
+            view,
+            prepare_quorum_certificate.clone(),
+        );
+
         // Responds ConfirmAck to leader
         if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
             debug!(
@@ -424,6 +432,17 @@ impl Consensus {
             "Trying to process timeout Certificate against consensus proposal slot: {}, view: {}",
             prepare_slot, prepare_view,
         );
+
+        // Check the ticket matches the CP
+        if let TCKind::PrepareQC((_, cp)) = tc_kind_data {
+            if cp != consensus_proposal {
+                bail!(
+                    "Timeout Certificate does not match consensus proposal. Expected {}, got {}",
+                    cp.hashed(),
+                    consensus_proposal.hashed()
+                );
+            }
+        }
 
         // If ticket for next slot && correct parent hash, fast forward
         if prepare_slot == self.bft_round_state.slot + 1

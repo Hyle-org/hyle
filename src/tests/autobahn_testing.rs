@@ -223,7 +223,7 @@ use crate::node_state::module::NodeStateEvent;
 use crate::p2p::network::OutboundMessage;
 use crate::p2p::P2PCommand;
 use crate::utils::crypto::{self, BlstCrypto};
-use tracing::info;
+use tracing::{info, warn};
 
 bus_client!(
     pub struct AutobahnBusClient {
@@ -1768,7 +1768,7 @@ async fn autobahn_commit_byzantine_across_views_attempts() {
     broadcast! {
         description: "Follower - Timeout",
         from: node2.consensus_ctx, to: [node0.consensus_ctx, node1.consensus_ctx, node3.consensus_ctx],
-        message_matches: ConsensusNetMessage::Timeout(..)
+        message_matches: ConsensusNetMessage::Timeout(_, TimeoutKind::PrepareQC(..))
     };
     // node 3 won't even timeout, it will process the TC directly.
 
@@ -1796,31 +1796,13 @@ async fn autobahn_commit_byzantine_across_views_attempts() {
 
     node1.start_round_with_cut_from_mempool().await;
 
-    // Check that the proposal is different
+    // Check that the node is reproposing the same.
     broadcast! {
         description: "Prepare",
         from: node1.consensus_ctx, to: [node0.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx],
-        message_matches: ConsensusNetMessage::Prepare(cp, ..) => {
-            assert_ne!(cp, &initial_cp);
+        message_matches: ConsensusNetMessage::Prepare(cp, Ticket::TimeoutQC(.., TCKind::PrepareQC((_, tcp))), _) => {
+            assert_eq!(cp, &initial_cp);
+            assert_eq!(tcp, &initial_cp);
         }
-    };
-
-    // THIS IS BAD TODO
-    send! {
-        description: "PrepareVote",
-        from: [node0.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx], to: node1.consensus_ctx,
-        message_matches: ConsensusNetMessage::PrepareVote(_)
-    };
-
-    broadcast! {
-        description: "Confirm",
-        from: node1.consensus_ctx, to: [node0.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx],
-        message_matches: ConsensusNetMessage::Confirm(..)
-    };
-
-    send! {
-        description: "ConfirmAck",
-        from: [node0.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx], to: node1.consensus_ctx,
-        message_matches: ConsensusNetMessage::ConfirmAck(_)
     };
 }
