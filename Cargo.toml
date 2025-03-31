@@ -148,7 +148,7 @@ keyring = { version = "3", features = [
   "apple-native",
   "windows-native",
   "sync-secret-service",
-] }
+], optional = true }
 whoami = "1.5.2"
 toml = "0.8.20"
 
@@ -190,6 +190,7 @@ signal-child = "1.0.6"
 default = []
 
 sp1 = ["hyle-verifiers/sp1"]
+keyring = ["dep:keyring"]
 
 dhat = ["dep:dhat"]
 # Activate this feature to recompile contracts locally (mostly useful for iterating on tests)
