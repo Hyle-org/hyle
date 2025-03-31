@@ -251,7 +251,7 @@ where
 #[cfg(test)]
 mod tests {
     use hyle_contract_sdk::{
-        BlobData, ProgramId, ProvableContractState, StateCommitment, ZkProgram,
+        BlobData, LightState, ProgramId, ProvableContractState, StateCommitment, ZkProgram,
     };
     use hyle_model::{DataProposalHash, HyleOutput};
     use utoipa::openapi::OpenApi;
@@ -292,6 +292,15 @@ mod tests {
         }
 
         fn build_commitment_metadata(&self, _: &Blob) -> std::result::Result<Vec<u8>, String> {
+            Err("not implemented".into())
+        }
+    }
+
+    impl LightState for MockState {
+        fn execute_light(
+            &mut self,
+            _: &hyle_model::Calldata,
+        ) -> std::result::Result<String, String> {
             Err("not implemented".into())
         }
     }

@@ -10,12 +10,18 @@ use client_sdk::contract_indexer::{
     utoipa_axum::{router::OpenApiRouter, routes},
     AppError, ContractHandler, ContractHandlerStore,
 };
-use sdk::Identity;
+use sdk::{Identity, LightState, ZkProgram};
 use serde::Serialize;
 
 use crate::*;
 use client_sdk::contract_indexer::axum;
 use client_sdk::contract_indexer::utoipa;
+
+impl LightState for Hyllar {
+    fn execute_light(&mut self, calldata: &Calldata) -> std::result::Result<String, String> {
+        <Self as ZkProgram>::execute(self, calldata).map(|(program_outputs, _, _)| program_outputs)
+    }
+}
 
 impl ContractHandler for Hyllar {
     async fn api(store: ContractHandlerStore<Hyllar>) -> (Router<()>, OpenApi) {

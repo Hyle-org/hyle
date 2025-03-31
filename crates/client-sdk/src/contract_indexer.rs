@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
-use std::{collections::BTreeMap, str, sync::Arc};
+use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::RwLock;
-use tracing::debug;
 
 use axum::{
     http::StatusCode,
@@ -10,8 +9,8 @@ use axum::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::{
-    info, Blob, BlobIndex, BlobTransaction, Calldata, ContractName, Hashed, ProvableContractState,
-    TxContext, TxId,
+    info, Blob, BlobIndex, BlobTransaction, Calldata, ContractName, Hashed, LightState, TxContext,
+    TxId,
 };
 use utoipa::openapi::OpenApi;
 
@@ -40,7 +39,7 @@ impl<State> Default for ContractStateStore<State> {
 
 pub trait ContractHandler
 where
-    Self: Sized + Default + ProvableContractState + 'static,
+    Self: LightState + Sized,
 {
     fn api(
         store: ContractHandlerStore<Self>,
@@ -66,16 +65,11 @@ where
             private_input: vec![],
         };
 
-        let hyle_output = self
-            .execute_provable(&calldata)
+        let program_outputs = self
+            .execute_light(&calldata)
             .map_err(|e| anyhow::anyhow!(e))?;
-        let program_outputs = str::from_utf8(&hyle_output.program_outputs).unwrap_or("no output");
 
         info!("🚀 Executed {contract_name}: {}", program_outputs);
-        debug!(
-            handler = %contract_name,
-            "hyle_output: {:?}", hyle_output
-        );
         Ok(())
     }
 }

@@ -136,6 +136,16 @@ pub trait ProvableContractState {
     fn build_commitment_metadata(&self, blob: &Blob) -> Result<Vec<u8>, String>;
 }
 
+pub trait LightState {
+    /// Entry point of the contract
+    /// Execution is based on the contract state that is as simple as possible.
+    /// The objective is to make an execution different from the ZkProgram and the ProvableContractState ones. It is intended to be as light as possible.
+    /// Example: HashMap<Key, Leaf> for a contract's state based on a MerkleTrie.
+    ///
+    /// Default behaviour is to execute the contract just as a ZkProgram
+    fn execute_light(&mut self, calldata: &Calldata) -> Result<String, String>;
+}
+
 pub const fn to_u8_array(val: &[u32; 8]) -> [u8; 32] {
     [
         (val[0] & 0xFF) as u8,
