@@ -2,14 +2,14 @@ use crate::{
     alloc::string::{String, ToString},
     caller::ExecutionContext,
     guest::fail,
-    HyleContract, Identity, StructuredBlobData,
+    Identity, StructuredBlobData,
 };
 use alloc::{format, vec};
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::result::Result;
 
 use hyle_model::{
-    flatten_blobs, Blob, BlobIndex, ContractInput, DropEndOfReader, HyleOutput, StateCommitment,
+    flatten_blobs, Blob, BlobIndex, Calldata, DropEndOfReader, HyleOutput, StateCommitment,
     StructuredBlob,
 };
 
@@ -18,15 +18,13 @@ use hyle_model::{
 /// It returns a tuple with the parsed `Action` and an [ExecutionContext] that can be used
 /// by the contract, and will be needed by the sdk to build the [HyleOutput].
 ///
-/// Alternative: [parse_contract_input]
-pub fn parse_raw_contract_input<Action>(
-    input: &ContractInput,
-) -> Result<(Action, ExecutionContext), String>
+/// Alternative: [parse_calldata]
+pub fn parse_raw_calldata<Action>(calldata: &Calldata) -> Result<(Action, ExecutionContext), String>
 where
     Action: BorshDeserialize,
 {
-    let blobs = &input.blobs;
-    let index = &input.index;
+    let blobs = &calldata.blobs;
+    let index = &calldata.index;
 
     let blob = match blobs.get(index.0) {
         Some(v) => v,
@@ -39,7 +37,7 @@ where
         return Err(format!("Could not deserialize Blob at index {index}"));
     };
 
-    let exec_ctx = ExecutionContext::new(input.identity.clone(), blob.contract_name.clone());
+    let exec_ctx = ExecutionContext::new(calldata.identity.clone(), blob.contract_name.clone());
     Ok((parameters, exec_ctx))
 }
 
@@ -51,24 +49,22 @@ where
 /// The [ExecutionContext] will holds the caller/callees information.
 /// See [StructuredBlobData] page for more information on caller/callees.
 ///
-/// Alternative: [parse_raw_contract_input]
-pub fn parse_contract_input<Action>(
-    input: &ContractInput,
-) -> Result<(Action, ExecutionContext), String>
+/// Alternative: [parse_raw_calldata]
+pub fn parse_calldata<Action>(calldata: &Calldata) -> Result<(Action, ExecutionContext), String>
 where
     Action: BorshSerialize + BorshDeserialize,
 {
-    let parsed_blob = parse_structured_blob::<Action>(&input.blobs, &input.index);
+    let parsed_blob = parse_structured_blob::<Action>(&calldata.blobs, &calldata.index);
 
     let parsed_blob = parsed_blob.ok_or("Failed to parse input blob".to_string())?;
 
-    let caller = check_caller_callees::<Action>(input, &parsed_blob)?;
+    let caller = check_caller_callees::<Action>(calldata, &parsed_blob)?;
 
     let mut callees_blobs = vec::Vec::new();
-    for blob in input.blobs.clone().into_iter() {
+    for blob in calldata.blobs.clone().into_iter() {
         if let Ok(structured_blob) = blob.data.clone().try_into() {
             let structured_blob: StructuredBlobData<DropEndOfReader> = structured_blob; // for type inference
-            if structured_blob.caller == Some(input.index) {
+            if structured_blob.caller == Some(calldata.index) {
                 callees_blobs.push(blob);
             }
         };
@@ -124,17 +120,17 @@ where
     Some(parsed_blob)
 }
 
-pub fn as_hyle_output<State: HyleContract + BorshDeserialize>(
+pub fn as_hyle_output(
     initial_state_commitment: StateCommitment,
-    nex_state_commitment: StateCommitment,
-    contract_input: ContractInput,
+    next_state_commitment: StateCommitment,
+    calldata: Calldata,
     res: &mut crate::RunResult,
 ) -> HyleOutput {
     match res {
         Ok((ref mut program_output, execution_context, ref mut onchain_effects)) => {
             if !execution_context.callees_blobs.is_empty() {
                 return fail(
-                    contract_input,
+                    calldata,
                     initial_state_commitment,
                     &format!(
                         "Execution context has not been fully consumed {:?}",
@@ -145,23 +141,23 @@ pub fn as_hyle_output<State: HyleContract + BorshDeserialize>(
             HyleOutput {
                 version: 1,
                 initial_state: initial_state_commitment,
-                next_state: nex_state_commitment,
-                identity: contract_input.identity,
-                index: contract_input.index,
-                blobs: flatten_blobs(&contract_input.blobs),
+                next_state: next_state_commitment,
+                identity: calldata.identity,
+                index: calldata.index,
+                blobs: flatten_blobs(&calldata.blobs),
                 success: true,
-                tx_hash: contract_input.tx_hash,
-                tx_ctx: contract_input.tx_ctx,
+                tx_hash: calldata.tx_hash,
+                tx_ctx: calldata.tx_ctx,
                 onchain_effects: core::mem::take(onchain_effects),
                 program_outputs: core::mem::take(program_output).into_bytes(),
             }
         }
-        Err(message) => fail(contract_input, initial_state_commitment, message),
+        Err(message) => fail(calldata, initial_state_commitment, message),
     }
 }
 
 pub fn check_caller_callees<Action>(
-    input: &ContractInput,
+    calldata: &Calldata,
     parameters: &StructuredBlob<Action>,
 ) -> Result<Identity, String>
 where
@@ -170,17 +166,17 @@ where
     // Check that callees has this blob as caller
     if let Some(callees) = parameters.data.callees.as_ref() {
         for callee_index in callees {
-            let callee_blob = input.blobs[callee_index.0].clone();
+            let callee_blob = calldata.blobs[callee_index.0].clone();
             let callee_structured_blob: StructuredBlobData<DropEndOfReader> =
                 callee_blob.data.try_into().expect("Failed to decode blob");
-            if callee_structured_blob.caller != Some(input.index) {
+            if callee_structured_blob.caller != Some(calldata.index) {
                 return Err("One Callee does not have this blob as caller".to_string());
             }
         }
     }
     // Extract the correct caller
     if let Some(caller_index) = parameters.data.caller.as_ref() {
-        let caller_blob = input.blobs[caller_index.0].clone();
+        let caller_blob = calldata.blobs[caller_index.0].clone();
         let caller_structured_blob: StructuredBlobData<DropEndOfReader> =
             caller_blob.data.try_into().expect("Failed to decode blob");
         // Check that caller has this blob as callee
@@ -188,7 +184,7 @@ where
             && !caller_structured_blob
                 .callees
                 .unwrap()
-                .contains(&input.index)
+                .contains(&calldata.index)
         {
             return Err("Incorrect Caller for this blob".to_string());
         }
@@ -196,5 +192,5 @@ where
     }
 
     // No callers detected, use the identity
-    Ok(input.identity.clone())
+    Ok(calldata.identity.clone())
 }

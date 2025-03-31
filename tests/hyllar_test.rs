@@ -16,7 +16,7 @@ mod e2e_hyllar {
         client::{register_identity, verify_identity},
         Hydentity,
     };
-    use hyle_contract_sdk::{guest, ContractInput, ContractName, HyleOutput};
+    use hyle_contract_sdk::{guest, ContractName, HyleOutput, ZkProgramInput};
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF};
     use hyllar::{client::transfer, erc20::ERC20, Hyllar, FAUCET_ID};
 
