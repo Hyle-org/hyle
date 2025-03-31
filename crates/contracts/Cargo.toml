@@ -7,6 +7,20 @@ edition = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }
 rust-version = "1.81"
+include = [
+  "amm/amm.img",
+  "amm/amm.txt",
+  "hydentity/hydentity.img",
+  "hydentity/hydentity.txt",
+  "hyllar/hyllar.img",
+  "hyllar/hyllar.txt",
+  "risc0-recursion/risc0-recursion.img",
+  "risc0-recursion/risc0-recursion.txt",
+  "staking/staking.img",
+  "staking/staking.txt",
+  "uuid-tld/uuid-tld.img",
+  "uuid-tld/uuid-tld.txt",
+]
 
 [lib]
 path = "metadata.rs"
@@ -16,6 +30,7 @@ sdk = { workspace = true }
 
 [build-dependencies]
 risc0-build = { version = "2.0.1", optional = true }
+
 
 [package.metadata.risc0]
 methods = [
