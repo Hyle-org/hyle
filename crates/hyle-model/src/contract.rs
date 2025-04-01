@@ -45,11 +45,22 @@ pub trait DataSized {
     fn estimate_size(&self) -> usize;
 }
 
-/// This struct is passed from the application backend to the contract as a zkvm input.
+/// This struct is passed from the application backend to the program as a zkvm input.
+/// It contains the commitment metadata and the calldata.
+/// commitment_metadata is the minimum data required to reconstruct the commitment of the state.
+/// calldata is the data that the contract will use to run.
 #[derive(Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
-pub struct ContractInput {
-    /// Borsh serialization of the contract state
-    pub state: Vec<u8>,
+pub struct ZkProgramInput {
+    /// Serialization of the commitment metadata.
+    pub commitment_metadata: Vec<u8>,
+    /// [Calldata] used to run the contract
+    pub calldata: Calldata,
+}
+
+/// This struct is passed from the application backend to the contract as a input.
+/// It contains the data that the contract will use to run the blob's action on its state.
+#[derive(Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
+pub struct Calldata {
     /// TxHash of the BlobTransaction being proved
     pub tx_hash: TxHash,
     /// User's identity used for the BlobTransaction

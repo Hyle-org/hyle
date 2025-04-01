@@ -4,9 +4,10 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use rand::Rng;
 use rand_seeder::SipHasher;
 use sdk::{
-    info, utils::parse_raw_contract_input, Blob, BlobData, BlobIndex, ContractAction,
-    ContractInput, ContractName, HyleContract, OnchainEffect, ProgramId, RegisterContractEffect,
-    RunResult, StateCommitment, Verifier,
+    info,
+    utils::{as_hyle_output, parse_raw_calldata},
+    Blob, BlobData, BlobIndex, Calldata, ContractAction, ContractName, OnchainEffect, ProgramId,
+    ProvableContractState, RegisterContractEffect, RunResult, StateCommitment, Verifier, ZkProgram,
 };
 use uuid::Uuid;
 
@@ -41,18 +42,18 @@ impl ContractAction for UuidTldAction {
     }
 }
 
-impl HyleContract for UuidTld {
-    fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
-        let (action, exec_ctx) = parse_raw_contract_input::<UuidTldAction>(contract_input)?;
+impl ZkProgram for UuidTld {
+    fn execute(&mut self, calldata: &Calldata) -> RunResult {
+        let (action, exec_ctx) = parse_raw_calldata::<UuidTldAction>(calldata)?;
         // Not an identity provider
-        if contract_input.identity.0.ends_with(&format!(
+        if calldata.identity.0.ends_with(&format!(
             ".{}",
-            contract_input.blobs[contract_input.index.0].contract_name.0
+            calldata.blobs[calldata.index.0].contract_name.0
         )) {
             return Err("Invalid identity".to_string());
         }
 
-        let id = self.register_contract(contract_input)?;
+        let id = self.register_contract(calldata)?;
 
         Ok((
             format!("registered {}", id.clone()),
@@ -60,7 +61,7 @@ impl HyleContract for UuidTld {
             vec![OnchainEffect::RegisterContract(RegisterContractEffect {
                 contract_name: format!(
                     "{}.{}",
-                    id, contract_input.blobs[contract_input.index.0].contract_name.0
+                    id, calldata.blobs[calldata.index.0].contract_name.0
                 )
                 .into(),
                 verifier: action.verifier,
@@ -72,6 +73,23 @@ impl HyleContract for UuidTld {
 
     fn commit(&self) -> sdk::StateCommitment {
         sdk::StateCommitment(self.serialize().unwrap())
+    }
+}
+
+impl ProvableContractState for UuidTld {
+    fn build_commitment_metadata(&self, _blob: &Blob) -> Result<Vec<u8>, String> {
+        borsh::to_vec(self).map_err(|e| e.to_string())
+    }
+    fn execute_provable(&mut self, calldata: &Calldata) -> Result<sdk::HyleOutput, String> {
+        let initial_state_commitment = <Self as ZkProgram>::commit(self);
+        let mut res = <Self as ZkProgram>::execute(self, calldata);
+        let next_state_commitment = <Self as ZkProgram>::commit(self);
+        Ok(as_hyle_output(
+            initial_state_commitment,
+            next_state_commitment,
+            calldata,
+            &mut res,
+        ))
     }
 }
 
@@ -93,15 +111,15 @@ impl UuidTld {
         self.serialize().expect("Failed to encode UuidTldState")
     }
 
-    pub fn register_contract(&mut self, contract_input: &ContractInput) -> Result<Uuid, String> {
-        let Some(ref tx_ctx) = contract_input.tx_ctx else {
+    pub fn register_contract(&mut self, calldata: &Calldata) -> Result<Uuid, String> {
+        let Some(ref tx_ctx) = calldata.tx_ctx else {
             return Err("Missing tx context".to_string());
         };
 
         // Create UUID
         let mut hasher = SipHasher::new();
         hasher.write(&self.commit().0);
-        hasher.write(contract_input.tx_hash.0.as_bytes());
+        hasher.write(calldata.tx_hash.0.as_bytes());
         hasher.write(tx_ctx.block_hash.0.as_bytes());
         hasher.write_u128(tx_ctx.timestamp);
         let mut hasher_rng = hasher.into_rng();
@@ -123,9 +141,8 @@ mod test {
     use crate::*;
     use sdk::*;
 
-    fn make_contract_input(action: UuidTldAction, state: Vec<u8>) -> ContractInput {
-        ContractInput {
-            state,
+    fn make_calldata(action: UuidTldAction) -> Calldata {
+        Calldata {
             identity: "toto.test".into(),
             tx_hash: TxHash::default(),
             tx_ctx: Some(TxContext {
@@ -154,9 +171,9 @@ mod test {
         };
         let mut state = UuidTld::default();
 
-        let contract_input = make_contract_input(action.clone(), borsh::to_vec(&state).unwrap());
+        let calldata = make_calldata(action.clone());
 
-        let (_, _, onchain_effects) = state.execute(&contract_input).unwrap();
+        let (_, _, onchain_effects) = state.execute(&calldata).unwrap();
 
         let OnchainEffect::RegisterContract(effect) = onchain_effects.first().unwrap() else {
             panic!("Expected RegisterContract effect");
@@ -166,9 +183,9 @@ mod test {
             "7de07efe-e91d-45f7-a5d2-0b813c1d3e10.uuid"
         );
 
-        let contract_input = make_contract_input(action.clone(), borsh::to_vec(&state).unwrap());
+        let calldata = make_calldata(action.clone());
 
-        let (_, _, onchain_effects) = state.execute(&contract_input).unwrap();
+        let (_, _, onchain_effects) = state.execute(&calldata).unwrap();
 
         let OnchainEffect::RegisterContract(effect) = onchain_effects.first().unwrap() else {
             panic!("Expected RegisterContract effect");
