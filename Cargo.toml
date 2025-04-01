@@ -116,7 +116,7 @@ indexmap = { version = "2.7.1", features = ["serde"] }
 # opentelemetry and axum-otel-metrics must be updated together (so that there is only one opentelemetry version)
 opentelemetry = { version = "0.28" }
 opentelemetry-prometheus = { version = "0.28.0" }
-opentelemetry_sdk = "0.28.0"
+opentelemetry_sdk = "0.29.0"
 paste = { version = "1.0.15" }
 prometheus = { version = "0.13.4" }
 quote = { version = "1.0.39" }
