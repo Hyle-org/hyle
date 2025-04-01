@@ -1,10 +1,7 @@
 use std::collections::VecDeque;
 
 use anyhow::{Context, Error};
-use hyle_model::{
-    BlobIndex, BlockHeight, ConsensusProposalHash, HyleOutput, LaneId, StateCommitment, TxHash,
-    HYLE_TESTNET_CHAIN_ID,
-};
+use hyle_model::{BlobIndex, HyleOutput, StateCommitment, TxHash};
 
 pub fn parse_noir_output(vector: &mut Vec<String>) -> Result<HyleOutput, Error> {
     let version = u32::from_str_radix(vector.remove(0).strip_prefix("0x").context("parsing")?, 16)?;
@@ -23,14 +20,7 @@ pub fn parse_noir_output(vector: &mut Vec<String>) -> Result<HyleOutput, Error> 
         next_state: StateCommitment(next_state),
         identity: identity.into(),
         tx_hash: TxHash(tx_hash),
-        tx_ctx: Some(hyle_model::TxContext {
-            // TODO
-            lane_id: LaneId::default(),
-            block_hash: ConsensusProposalHash::default(),
-            block_height: BlockHeight(0),
-            timestamp: 1,
-            chain_id: HYLE_TESTNET_CHAIN_ID,
-        }),
+        tx_ctx: None,
         index: BlobIndex(index as usize),
         blobs,
         success,
@@ -67,9 +57,7 @@ fn parse_array(vector: &mut Vec<String>) -> Result<Vec<u8>, Error> {
 fn parse_blobs(vector: &mut Vec<String>) -> Result<Vec<u8>, Error> {
     let _blob_len =
         usize::from_str_radix(vector.remove(0).strip_prefix("0x").context("parsing")?, 16)?;
-    // Arbitrary value that says that blobs field is size for only 10 elements
-    let blob_data: Vec<String> = vector.drain(0..10.min(vector.len())).collect();
-    let mut blob_data = VecDeque::from(blob_data);
+    let mut blob_data = VecDeque::from(vector.clone());
 
     let blob_number = usize::from_str_radix(
         blob_data
