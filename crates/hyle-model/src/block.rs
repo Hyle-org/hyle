@@ -95,10 +95,11 @@ impl SignedBlock {
             .flat_map(|(lane_id, dps)| std::iter::zip(std::iter::repeat(lane_id.clone()), dps))
             .map(|(lane_id, dp)| {
                 (
-                    lane_id,
+                    lane_id.clone(),
                     dp.parent_data_proposal_hash
                         .clone()
-                        .unwrap_or(DataProposalHash("".to_string())),
+                        // This is weird but has to match the workaround in own_lane.rs
+                        .unwrap_or(DataProposalHash(lane_id.0.to_string())),
                     &dp.txs,
                 )
             })

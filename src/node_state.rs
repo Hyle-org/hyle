@@ -484,7 +484,12 @@ impl NodeState {
                 .entry(bth.clone())
                 .or_default();
 
-            match self.try_to_settle_blob_tx(&bth, events) {
+            let dp_parent_hash = block_under_construction
+                .dp_parent_hashes
+                .entry(bth.clone())
+                .or_default();
+
+            match self.try_to_settle_blob_tx(&bth, events, dp_parent_hash) {
                 Ok(SettledTxOutput {
                     tx: settled_tx,
                     result,
@@ -511,6 +516,7 @@ impl NodeState {
         &mut self,
         unsettled_tx_hash: &TxHash,
         events: &mut Vec<TransactionStateEvent>,
+        dp_parent_hash: &mut DataProposalHash,
     ) -> Result<SettledTxOutput, Error> {
         trace!("Trying to settle blob tx: {:?}", unsettled_tx_hash);
 
@@ -521,6 +527,9 @@ impl NodeState {
                     "Unsettled transaction not found in the state: {:?}",
                     unsettled_tx_hash
                 ))?;
+
+        // Insert dp hash of the tx, whether its a success or not
+        *dp_parent_hash = unsettled_tx.parent_dp_hash.clone();
 
         // Sanity check: if some of the blob contracts are not registered, we can't proceed
         if !unsettled_tx.blobs.iter().all(|blob_metadata| {
@@ -693,11 +702,6 @@ impl NodeState {
         tx_result: Result<SettlementResult, ()>,
     ) -> Option<BTreeSet<TxHash>> {
         // Transaction was settled, update our state.
-
-        // Insert dp hash of the tx, whether its a success or not
-        block_under_construction
-            .dp_parent_hashes
-            .insert(settled_tx.hash, settled_tx.parent_dp_hash);
 
         // If it's a failed settlement, mark it so and move on.
         if tx_result.is_err() {
