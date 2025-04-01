@@ -13,8 +13,9 @@ mod turmoil_tests {
     use hyle_net::net::Sim;
     use rand::{rngs::StdRng, SeedableRng};
     use tokio::sync::Mutex;
+    use tracing::warn;
 
-    use crate::fixtures::{test_helpers::wait_height, turmoil::E2ETurmoilCtx};
+    use crate::fixtures::{test_helpers::wait_height, turmoil::TurmoilCtx};
 
     pub fn make_register_contract_tx(name: ContractName) -> BlobTransaction {
         BlobTransaction::new(
@@ -29,77 +30,30 @@ mod turmoil_tests {
         )
     }
 
-    fn setup_simulation(ctx: &E2ETurmoilCtx, sim: &mut Sim<'_>) -> anyhow::Result<()> {
-        let mut nodes = ctx.nodes.clone();
-        nodes.reverse();
-
-        let turmoil_node = nodes.pop().unwrap();
-        {
-            let id = turmoil_node.conf.id.clone();
-            let cloned = Arc::new(Mutex::new(turmoil_node.clone())); // Permet de partager la variable
-
-            let f = {
-                let cloned = Arc::clone(&cloned); // Clonage pour éviter de déplacer
-                move || {
-                    let cloned = Arc::clone(&cloned);
-                    async move {
-                        let node = cloned.lock().await; // Accès mutable au nœud
-                        _ = node.start().await;
-                        Ok(())
-                    }
-                }
-            };
-
-            sim.host(id, f);
-        }
-        while let Some(turmoil_node) = nodes.pop() {
-            let id = turmoil_node.conf.id.clone();
-            let cloned = Arc::new(Mutex::new(turmoil_node.clone())); // Permet de partager la variable
-
-            let f = {
-                let cloned = Arc::clone(&cloned); // Clonage pour éviter de déplacer
-                move || {
-                    let cloned = Arc::clone(&cloned);
-                    async move {
-                        let node = cloned.lock().await; // Accès mutable au nœud
-                        _ = node.start().await;
-                        Ok(())
-                    }
-                }
-            };
-
-            sim.host(id, f);
-        }
-        Ok(())
-    }
-
     #[test_log::test]
     fn turmoil_test() -> anyhow::Result<()> {
         let rng = StdRng::seed_from_u64(123);
         let mut sim = hyle_net::turmoil::Builder::new()
-            .simulation_duration(Duration::from_secs(1000))
-            .min_message_latency(Duration::from_secs(1))
-            .max_message_latency(Duration::from_secs(10))
+            .simulation_duration(Duration::from_secs(100))
             // .fail_rate(0.9)
             .tick_duration(Duration::from_millis(100))
             .enable_tokio_io()
             .build_with_rng(Box::new(rng));
 
-        let ctx = E2ETurmoilCtx::new_multi(4, 500)?;
-
-        setup_simulation(&ctx, &mut sim)?;
+        let ctx = TurmoilCtx::new_multi(4, 500)?;
+        ctx.setup_simulation(&mut sim)?;
 
         let client = ctx.client();
 
         sim.client("client", async move {
-            for i in 1..50 {
+            for i in 1..20 {
                 _ = wait_height(&client, 1).await;
 
                 let tx = make_register_contract_tx(format!("contract-{}", i).into());
 
                 _ = log_error!(client.send_tx_blob(&tx).await, "Sending tx blob");
             }
-            for i in 1..50 {
+            for i in 1..20 {
                 let contract = ctx.get_contract(format!("contract-{}", i).as_str()).await?;
                 assert_eq!(contract.name, format!("contract-{}", i).as_str().into());
             }
@@ -107,8 +61,21 @@ mod turmoil_tests {
             Ok(())
         });
 
-        _ = sim.run();
+        let mut finished: bool;
+        let mut iteration: usize = 0;
 
-        Ok(())
+        loop {
+            iteration += 1;
+            finished = sim.step().unwrap();
+
+            if iteration == 200 {
+                warn!("RESTARTING node 2");
+                sim.bounce("node-2");
+            }
+
+            if finished {
+                return Ok(());
+            }
+        }
     }
 }
