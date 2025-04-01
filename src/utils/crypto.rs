@@ -152,6 +152,8 @@ impl BlstCrypto {
 
     #[cfg(test)]
     pub fn new_random() -> Result<Self> {
+        use rand::Rng;
+
         let mut rng = rand::thread_rng();
         let id: String = (0..32)
             .map(|_| rng.gen_range(33..127) as u8 as char) // Caractères imprimables ASCII
