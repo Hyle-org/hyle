@@ -190,7 +190,7 @@ impl NodeState {
                             lane_id,
                             block_hash: block_under_construction.hash.clone(),
                             block_height: block_under_construction.block_height,
-                            timestamp: signed_block.consensus_proposal.timestamp.into(),
+                            timestamp: signed_block.consensus_proposal.timestamp,
                             chain_id: HYLE_TESTNET_CHAIN_ID,
                         },
                     ) {
@@ -1136,7 +1136,7 @@ pub mod test {
             lane_id: LaneId::default(),
             block_hash: ConsensusProposalHash("0xfedbeef".to_owned()),
             block_height: BlockHeight(133),
-            timestamp: get_current_timestamp_ms().into(),
+            timestamp: get_current_timestamp_ms(),
             chain_id: HYLE_TESTNET_CHAIN_ID,
         }
     }
