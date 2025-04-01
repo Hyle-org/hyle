@@ -66,6 +66,9 @@ impl RestApiRunContext {
             openapi,
         }
     }
+    pub fn with_registry(self, registry: Registry) -> Self {
+        Self { registry, ..self }
+    }
 }
 
 pub struct RouterState {
