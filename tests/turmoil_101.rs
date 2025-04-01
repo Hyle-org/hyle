@@ -77,9 +77,9 @@ mod turmoil_tests {
     fn turmoil_test() -> anyhow::Result<()> {
         let rng = StdRng::seed_from_u64(123);
         let mut sim = hyle_net::turmoil::Builder::new()
-            .simulation_duration(Duration::from_secs(100))
-            // .min_message_latency(Duration::from_secs(1))
-            // .max_message_latency(Duration::from_secs(5))
+            .simulation_duration(Duration::from_secs(1000))
+            .min_message_latency(Duration::from_secs(1))
+            .max_message_latency(Duration::from_secs(10))
             // .fail_rate(0.9)
             .tick_duration(Duration::from_millis(100))
             .enable_tokio_io()
@@ -92,11 +92,6 @@ mod turmoil_tests {
         let client = ctx.client();
 
         sim.client("client", async move {
-            // let mut client =
-            //     codec_tcp_server::connect("client-turmoil".to_string(), tcp_address.to_string())
-            //         .await
-            //         .unwrap();
-
             for i in 1..50 {
                 _ = wait_height(&client, 1).await;
 
