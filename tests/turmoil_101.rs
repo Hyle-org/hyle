@@ -1,21 +1,20 @@
 mod fixtures;
 
 #[cfg(feature = "turmoil")]
+#[allow(clippy::expect_used)]
 #[cfg(test)]
 mod turmoil_tests {
-    use std::{sync::Arc, time::Duration};
+    use std::time::Duration;
 
     use hyle::log_error;
     use hyle_model::{
         BlobTransaction, ContractAction, ContractName, ProgramId, RegisterContractAction,
         StateCommitment,
     };
-    use hyle_net::net::Sim;
     use rand::{rngs::StdRng, SeedableRng};
-    use tokio::sync::Mutex;
     use tracing::warn;
 
-    use crate::fixtures::{test_helpers::wait_height, turmoil::TurmoilCtx};
+    use crate::fixtures::{test_helpers::wait_height, turmoil::ctx::TurmoilCtx};
 
     pub fn make_register_contract_tx(name: ContractName) -> BlobTransaction {
         BlobTransaction::new(
