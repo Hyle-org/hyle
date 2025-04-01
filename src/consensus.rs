@@ -26,7 +26,7 @@ use metrics::ConsensusMetrics;
 use role_follower::{FollowerRole, FollowerState};
 use role_leader::{LeaderRole, LeaderState};
 use role_sync::RoleSync;
-use role_timeout::{TimeoutRoleState, TimeoutState};
+use role_timeout::TimeoutRoleState;
 use serde::{Deserialize, Serialize};
 use staking::state::{Staking, MIN_STAKE};
 use std::ops::Deref;

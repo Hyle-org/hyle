@@ -44,21 +44,6 @@ impl TimeoutState {
             timestamp: timestamp + TimeoutState::TIMEOUT_SECS,
         };
     }
-    pub fn cancel(&mut self) {
-        match self {
-            TimeoutState::CertificateEmitted => {
-                trace!("⏲️ Cancelling timeout after it was emitted");
-            }
-            TimeoutState::Scheduled { timestamp } => {
-                trace!("⏲️ Cancelling timeout set to trigger to {}", timestamp);
-            }
-            TimeoutState::Inactive => {
-                trace!("⏲️ Cancelling inactive timeout");
-            }
-        }
-        *self = TimeoutState::Inactive;
-    }
-
     pub fn certificate_emitted(&mut self) {
         match self {
             TimeoutState::CertificateEmitted => {
@@ -93,7 +78,7 @@ impl TimeoutRoleState {
         qc: QuorumCertificate,
     ) -> bool {
         if let Some((s, v, _)) = &self.highest_seen_prepare_qc {
-            if slot <= *s || (slot == *s && view <= *v) {
+            if slot < *s || (slot == *s && view <= *v) {
                 return false;
             }
         }
@@ -129,7 +114,7 @@ impl Consensus {
                     received_timeout_certificate,
                 )
                 .context(format!(
-                    "Verifying timeout certificate for (slot: {}, view: {})",
+                    "Verifying Nil timeout certificate for (slot: {}, view: {})",
                     self.bft_round_state.slot, self.bft_round_state.view
                 ))?;
             }
@@ -144,7 +129,7 @@ impl Consensus {
                     received_timeout_certificate,
                 )
                 .context(format!(
-                    "Verifying timeout certificate for (slot: {}, view: {})",
+                    "Verifying timeout certificate with prepare QC for (slot: {}, view: {})",
                     self.bft_round_state.slot, self.bft_round_state.view
                 ))?;
                 // Then check the prepare quorum certificate
@@ -232,7 +217,10 @@ impl Consensus {
 
                 self.broadcast_net_message(timeout_message)?;
 
-                self.bft_round_state.timeout.state.cancel();
+                self.bft_round_state
+                    .timeout
+                    .state
+                    .schedule_next(get_current_timestamp());
 
                 Ok(())
             }
@@ -290,15 +278,13 @@ impl Consensus {
 
         // If there is a prepareQC along with this message, verify it (we can, it's the same slot),
         // and then potentially update our highest seen PrepareQC.
-        if let Some((qc, cp)) = match &received_msg {
-            Signed {
-                msg: ConsensusNetMessage::Timeout(_, TimeoutKind::PrepareQC((qc, cp))),
-                ..
-            } => Some((qc, cp)),
-            _ => None,
-        } {
+        if let Signed {
+            msg: ConsensusNetMessage::Timeout(_, TimeoutKind::PrepareQC((qc, cp))),
+            ..
+        } = &received_msg
+        {
             if cp.slot == *received_slot {
-                self.verify_quorum_certificate(ConsensusNetMessage::PrepareVote(cp.hashed()), &qc)
+                self.verify_quorum_certificate(ConsensusNetMessage::PrepareVote(cp.hashed()), qc)
                     .context("Verifying PrepareQC")?;
                 if self
                     .store

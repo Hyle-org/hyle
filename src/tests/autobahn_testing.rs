@@ -223,7 +223,7 @@ use crate::node_state::module::NodeStateEvent;
 use crate::p2p::network::OutboundMessage;
 use crate::p2p::P2PCommand;
 use crate::utils::crypto::{self, BlstCrypto};
-use tracing::{info, warn};
+use tracing::info;
 
 bus_client!(
     pub struct AutobahnBusClient {
