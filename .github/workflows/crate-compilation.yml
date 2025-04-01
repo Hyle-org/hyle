@@ -36,9 +36,6 @@ jobs:
       - name: Compile crate '${{ matrix.crate }}' with default features
         run: cargo build -p ${{ matrix.crate }}
 
-      - name: Package crate '${{ matrix.crate }}'
-        run: cargo package -p ${{ matrix.crate }}
-
       - name: Build doc for crate '${{ matrix.crate }}'
         run: cargo doc -p ${{ matrix.crate }}
 
