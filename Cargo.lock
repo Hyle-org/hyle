@@ -590,11 +590,11 @@ dependencies = [
 
 [[package]]
 name = "axum"
-version = "0.8.1"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d6fd624c75e18b3b4c6b9caf42b1afe24437daaee904069137d8bab077be8b8"
+checksum = "de45108900e1f9b9242f7f2e254aa3e2c029c921c258fe9e6b4217eeebd54288"
 dependencies = [
- "axum-core 0.5.0",
+ "axum-core 0.5.2",
  "axum-macros",
  "base64 0.22.1",
  "bytes",
@@ -649,12 +649,12 @@ dependencies = [
 
 [[package]]
 name = "axum-core"
-version = "0.5.0"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df1362f362fd16024ae199c1970ce98f9661bf5ef94b9808fee734bc3698b733"
+checksum = "68464cd0412f486726fb3373129ef5d2993f90c34bc2bc1c1e9943b2f4fc7ca6"
 dependencies = [
  "bytes",
- "futures-util",
+ "futures-core",
  "http",
  "http-body",
  "http-body-util",
@@ -684,7 +684,7 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e5c40e35dba9c7ce25a6ca0baf5e66bed2612fc92f7b7acfee7611121d9219a"
 dependencies = [
- "axum 0.8.1",
+ "axum 0.8.3",
  "futures-util",
  "http",
  "http-body",
@@ -704,7 +704,7 @@ dependencies = [
  "anyhow",
  "assert-json-diff",
  "auto-future",
- "axum 0.8.1",
+ "axum 0.8.3",
  "bytes",
  "bytesize",
  "cookie",
@@ -2768,7 +2768,7 @@ dependencies = [
  "assert-json-diff",
  "assert_cmd",
  "assertables",
- "axum 0.8.1",
+ "axum 0.8.3",
  "axum-otel-metrics",
  "axum-test",
  "blst",
@@ -2847,7 +2847,7 @@ name = "hyle-bonsai-runner"
 version = "0.13.0-rc.3"
 dependencies = [
  "anyhow",
- "axum 0.8.1",
+ "axum 0.8.3",
  "bincode",
  "bonsai-sdk",
  "borsh",
@@ -2867,7 +2867,7 @@ name = "hyle-client-sdk"
 version = "0.13.0-rc.3"
 dependencies = [
  "anyhow",
- "axum 0.8.1",
+ "axum 0.8.3",
  "bincode",
  "borsh",
  "hyle-bonsai-runner",
@@ -7856,7 +7856,7 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c25bae5bccc842449ec0c5ddc5cbb6a3a1eaeac4503895dc105a1138f8234a0"
 dependencies = [
- "axum 0.8.1",
+ "axum 0.8.3",
  "paste",
  "tower-layer",
  "tower-service",
@@ -7881,7 +7881,7 @@ version = "9.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "161166ec520c50144922a625d8bc4925cc801b2dda958ab69878527c0e5c5d61"
 dependencies = [
- "axum 0.8.1",
+ "axum 0.8.3",
  "base64 0.22.1",
  "mime_guess",
  "regex",
