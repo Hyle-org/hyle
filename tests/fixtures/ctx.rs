@@ -7,7 +7,6 @@ use anyhow::{Context, Result};
 use api::APIContract;
 use assertables::assert_ok;
 use client_sdk::transaction_builder::ProvableBlobTx;
-use reqwest::{Client, Url};
 use testcontainers_modules::{
     postgres::Postgres,
     testcontainers::{runners::AsyncRunner, ContainerAsync, ImageExt},
@@ -82,15 +81,11 @@ impl E2ECtx {
                 .start();
 
             // Request something on node1 to be sure it's alive and working
-            let client = NodeApiHttpClient {
-                url: Url::parse(&format!(
-                    "http://localhost:{}/",
-                    &node.conf.rest_server_port
-                ))
-                .unwrap(),
-                reqwest_client: Client::new(),
-                api_key: None,
-            };
+            let client = NodeApiHttpClient::new(format!(
+                "http://localhost:{}/",
+                &node.conf.rest_server_port
+            ))
+            .expect("Creating http client for node");
             nodes.push(node);
             clients.push(client);
         }
@@ -112,15 +107,9 @@ impl E2ECtx {
             .start();
 
         // Request something on node1 to be sure it's alive and working
-        let client = NodeApiHttpClient {
-            url: Url::parse(&format!(
-                "http://localhost:{}/",
-                &node.conf.rest_server_port
-            ))
-            .unwrap(),
-            reqwest_client: Client::new(),
-            api_key: None,
-        };
+        let client =
+            NodeApiHttpClient::new(format!("http://localhost:{}/", &node.conf.rest_server_port))
+                .expect("Creating http client for node");
 
         while client.get_node_info().await.is_err() {
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -158,15 +147,9 @@ impl E2ECtx {
             .start();
 
         // Request something on node1 to be sure it's alive and working
-        let client = NodeApiHttpClient {
-            url: Url::parse(&format!(
-                "http://localhost:{}/",
-                &node.conf.rest_server_port
-            ))
-            .unwrap(),
-            reqwest_client: Client::new(),
-            api_key: None,
-        };
+        let client =
+            NodeApiHttpClient::new(format!("http://localhost:{}/", &node.conf.rest_server_port))
+                .expect("Creating http client for node");
 
         // Start indexer
         let mut indexer_conf = conf_maker.build("indexer");
@@ -247,15 +230,9 @@ impl E2ECtx {
             //.log("hyle=info,tower_http=error")
             .start();
         // Request something on node1 to be sure it's alive and working
-        let client = NodeApiHttpClient {
-            url: Url::parse(&format!(
-                "http://localhost:{}/",
-                &node.conf.rest_server_port
-            ))
-            .unwrap(),
-            reqwest_client: Client::new(),
-            api_key: None,
-        };
+        let client =
+            NodeApiHttpClient::new(format!("http://localhost:{}/", &node.conf.rest_server_port))
+                .expect("Creating http client for node");
 
         wait_height(&client, 1).await?;
         self.nodes.push(node);
