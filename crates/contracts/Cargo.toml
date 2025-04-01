@@ -13,6 +13,13 @@ path = "metadata.rs"
 
 [dependencies]
 sdk = { workspace = true }
+amm = { workspace = true, features = ["client"] }
+hydentity = { workspace = true, features = ["client"] }
+hyllar = { workspace = true, features = ["client"] }
+risc0-recursion = { workspace = true, features = ["client"] }
+staking = { workspace = true, features = ["client"] }
+uuid-tld = { workspace = true, features = ["client"] }
+
 
 [build-dependencies]
 risc0-build = { version = "2.0.1", optional = true }
