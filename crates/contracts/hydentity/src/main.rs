@@ -10,8 +10,8 @@ risc0_zkvm::guest::entry!(main);
 
 fn main() {
     let env = Risc0Env {};
-    let contract_input = env.read();
+    let zk_program_input = env.read();
 
-    let (_, output) = execute::<Hydentity>(&contract_input);
+    let output = execute::<Hydentity>(&zk_program_input);
     env.commit(&output);
 }
