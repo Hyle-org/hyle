@@ -190,6 +190,8 @@ signal-child = "1.0.6"
 default = []
 
 sp1 = ["hyle-verifiers/sp1"]
+
+# Disable dependency keyring by default, as it requires libdbus
 keyring = ["dep:keyring"]
 
 dhat = ["dep:dhat"]
