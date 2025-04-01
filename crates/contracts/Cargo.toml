@@ -29,4 +29,13 @@ methods = [
 
 [features]
 build = ["dep:risc0-build"]
-nonreproducible = ["build"]
+nonreproducible = ["build", "all"]
+
+# Following features are used to choose which contracts should be rebuild with docker
+all = ["amm", "hyllar", "hydentity", "staking", "risc0-recursion", "uuid-tld"]
+amm = []
+hyllar = []
+hydentity = []
+staking = []
+risc0-recursion = []
+uuid-tld = []
