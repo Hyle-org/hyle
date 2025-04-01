@@ -340,8 +340,14 @@ mod tests {
             .get_node_info()
             .await
             .expect_err("Expected request to fail after shutdown");
+        let err = format!("{:#}", err);
         assert!(
-            err.to_string().contains("etting node info request fai"),
+            err.to_string().contains("getting node info"),
+            "Expected connection error, got: {}",
+            err
+        );
+        assert!(
+            err.to_string().contains("Connection refused"),
             "Expected connection error, got: {}",
             err
         );

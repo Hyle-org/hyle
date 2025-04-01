@@ -33,10 +33,10 @@ impl TimeoutState {
                 trace!("⏲️ Scheduling timeout");
             }
             TimeoutState::CertificateEmitted => {
-                info!("⏲️ Rescheduling timeout after a certificate was emitted");
+                trace!("⏲️ Rescheduling timeout after a certificate was emitted");
             }
             TimeoutState::Scheduled { .. } => {
-                info!("⏲️ Rescheduling timeout");
+                trace!("⏲️ Rescheduling timeout");
             }
         }
         *self = TimeoutState::Scheduled {

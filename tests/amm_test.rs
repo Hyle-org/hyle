@@ -24,7 +24,7 @@ mod e2e_amm {
         client::{register_identity, verify_identity},
         Hydentity,
     };
-    use hyle_contract_sdk::{guest, ContractInput, ContractName, HyleOutput};
+    use hyle_contract_sdk::{Blob, Calldata, ContractName, HyleOutput, ProvableContractState};
     use hyle_contracts::{AMM_ELF, HYDENTITY_ELF, HYLLAR_ELF};
     use hyllar::{
         client::{approve, transfer},

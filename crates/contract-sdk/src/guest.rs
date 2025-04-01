@@ -11,7 +11,7 @@ The `fail` function is used to generate a failure output for a contract action.
 
 This is a code snippet of a Risc0 guest entrypoint (e.g. file `methods/guest/src/main.rs` in a risc0 template project).
 
-`Hydentity` struct has to implements [HyleContract] and [BorshDeserialize] traits.
+`Hydentity` struct has to implements [ZkProgram] and [BorshDeserialize] traits.
 
 ```rust,no_run,compile_fail
 #![no_main]
@@ -23,8 +23,8 @@ risc0_zkvm::guest::entry!(main);
 
 fn main() {
    let env = Risc0Env {};
-   let contract_input = env.read();
-   let (_, output) = execute::<Hydentity>(&contract_input);
+   let zk_program_input = env.read();
+   let output = execute::<Hydentity>(&zk_program_input);
    env.commit(&output);
 }
 ```
@@ -34,7 +34,7 @@ fn main() {
 This is a code snippet of a SP1 guest entrypoint (e.g. file `program/src/main.rs` in a sp1 template project).
 
 
-`IdentityContractState` struct has to implements [HyleContract] and [BorshDeserialize] traits.
+`IdentityContractState` struct has to implements [ZkProgram] and [BorshDeserialize] traits.
 
 ```rust,no_run,compile_fail
 #![no_main]
@@ -49,7 +49,7 @@ sp1_zkvm::entrypoint!(main);
 fn main() {
     let env = SP1Env {};
     let input = env.read();
-    let (_, output) = execute::<IdentityContractState>(&input);
+    let output = execute::<IdentityContractState>(&input);
     env.commit(&output);
 }
 ```
@@ -59,10 +59,10 @@ fn main() {
 use alloc::string::ToString;
 use alloc::vec;
 use borsh::BorshDeserialize;
-use hyle_model::StateCommitment;
+use hyle_model::{Calldata, StateCommitment};
 
-use crate::{flatten_blobs, utils::as_hyle_output, ContractInput, HyleOutput};
-use crate::{HyleContract, RunResult};
+use crate::{flatten_blobs, utils::as_hyle_output, HyleOutput, ZkProgramInput};
+use crate::{RunResult, ZkProgram};
 
 pub trait GuestEnv {
     fn log(&self, message: &str);
@@ -112,7 +112,7 @@ impl GuestEnv for SP1Env {
 }
 
 pub fn fail(
-    input: ContractInput,
+    calldata: &Calldata,
     initial_state_commitment: StateCommitment,
     message: &str,
 ) -> HyleOutput {
@@ -120,52 +120,51 @@ pub fn fail(
         version: 1,
         initial_state: initial_state_commitment.clone(),
         next_state: initial_state_commitment,
-        identity: input.identity,
-        index: input.index,
-        blobs: flatten_blobs(&input.blobs),
+        identity: calldata.identity.clone(),
+        index: calldata.index,
+        blobs: flatten_blobs(&calldata.blobs),
         success: false,
-        tx_hash: input.tx_hash,
-        tx_ctx: input.tx_ctx,
+        tx_hash: calldata.tx_hash.clone(),
+        tx_ctx: calldata.tx_ctx.clone(),
         onchain_effects: vec![],
         program_outputs: message.to_string().into_bytes(),
     }
 }
 
-/// Executes an action on a given contract using the provided state and contract input.
+/// Executes an action on a given contract using the provided commitment metadata and the contract calldata.
+/// This is the execution function that will be proved by the zkvm.
 ///
 /// # Arguments
 ///
-/// * `contract_input` - A reference to the contract input that contains the current state, blobs, identity, etc.
+/// * `zk_program_input` - A reference to the contract input that contains the current state, blobs, identity, etc.
 ///
 /// # Type Parameters
 ///
-/// * `State` - The type of the state that must implement the `HyleContract` and `BorshDeserialize` traits.
+/// * `State` - The type of the state that must implement the `ZkProgram` and `BorshDeserialize` traits.
 ///
 /// # Returns
 ///
-/// A pair containing the new state and the contract output as `HyleOutput`.
+/// The contract output as `HyleOutput`.
 ///
 /// # Panics
 ///
 /// Panics if the contract initialization fails.
-pub fn execute<State>(contract_input: &ContractInput) -> (State, HyleOutput)
+pub fn execute<Z>(zk_program_input: &ZkProgramInput) -> HyleOutput
 where
-    State: HyleContract + BorshDeserialize + 'static,
+    Z: ZkProgram + BorshDeserialize + 'static,
 {
-    let mut state: State =
-        borsh::from_slice(&contract_input.state).expect("Failed to decode state");
-    let initial_state_commitment = state.commit();
+    let mut contract: Z = borsh::from_slice(&zk_program_input.commitment_metadata)
+        .expect("Failed to decode commitment metadata");
+    let initial_state_commitment = contract.commit();
 
-    let mut res: RunResult = state.execute(contract_input);
+    let mut res: RunResult = contract.execute(&zk_program_input.calldata);
 
-    let next_state_commitment = state.commit();
+    let next_state_commitment = contract.commit();
 
-    let output = as_hyle_output::<State>(
+    as_hyle_output(
         initial_state_commitment,
         next_state_commitment,
-        contract_input.clone(),
+        &zk_program_input.calldata,
         &mut res,
-    );
-
-    (state, output)
+    )
 }
