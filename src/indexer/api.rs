@@ -151,7 +151,7 @@ pub async fn get_transactions(
             SELECT t.*
             FROM transactions t
             LEFT JOIN blocks b ON t.block_hash = b.hash
-            WHERE b.height <= $1 and b.height > $2 AND t.transaction_type == 'blob_transaction'
+            WHERE b.height <= $1 and b.height > $2 AND t.transaction_type = 'blob_transaction'
             ORDER BY b.height DESC, t.index ASC
             LIMIT $3
             "#,
@@ -164,7 +164,7 @@ pub async fn get_transactions(
             SELECT t.*
             FROM transactions t
             LEFT JOIN blocks b ON t.block_hash = b.hash
-            WHERE t.transaction_type == 'blob_transaction'
+            WHERE t.transaction_type = 'blob_transaction'
             ORDER BY b.height DESC, t.index ASC
             LIMIT $1
             "#,
@@ -202,7 +202,7 @@ pub async fn get_transactions_by_contract(
             FROM transactions t
             JOIN blobs b ON t.tx_hash = b.tx_hash
             LEFT JOIN blocks bl ON t.block_hash = bl.hash
-            WHERE b.contract_name = $1 AND bl.height <= $2 AND bl.height > $3 AND t.transaction_type == 'blob_transaction'
+            WHERE b.contract_name = $1 AND bl.height <= $2 AND bl.height > $3 AND t.transaction_type = 'blob_transaction'
             ORDER BY bl.height DESC, t.index ASC
             LIMIT $4
             "#,
@@ -216,7 +216,7 @@ pub async fn get_transactions_by_contract(
             SELECT t.*
             FROM transactions t
             JOIN blobs b ON t.tx_hash = b.tx_hash AND t.parent_dp_hash = b.parent_dp_hash
-            WHERE b.contract_name = $1 AND t.transaction_type == 'blob_transaction'
+            WHERE b.contract_name = $1 AND t.transaction_type = 'blob_transaction'
             ORDER BY t.block_hash DESC, t.index ASC
             LIMIT $2
             "#,
@@ -255,7 +255,7 @@ pub async fn get_transactions_by_height(
         SELECT t.*
         FROM transactions t
         JOIN blocks b ON t.block_hash = b.hash
-        WHERE b.height = $1 AND t.transaction_type == 'blob_transaction'
+        WHERE b.height = $1 AND t.transaction_type = 'blob_transaction'
         ORDER BY t.index ASC
         "#,
     )
@@ -287,7 +287,7 @@ pub async fn get_transaction_with_hash(
         r#"
         SELECT tx_hash, version, transaction_type, transaction_status, parent_dp_hash, block_hash, index
         FROM transactions
-        WHERE tx_hash = $1 AND transaction_type == 'blob_transaction'
+        WHERE tx_hash = $1 AND transaction_type = 'blob_transaction'
         ORDER BY index ASC
         "#,
     )
@@ -325,7 +325,7 @@ pub async fn get_transaction_events(
         SELECT t.block_hash, b.height, t.tx_hash, t.events
         FROM transaction_state_events t
         LEFT JOIN blocks b ON t.block_hash = b.hash
-        WHERE tx_hash = $1 AND t.transaction_type == 'blob_transaction'
+        WHERE tx_hash = $1 AND t.transaction_type = 'blob_transaction'
         ORDER BY (b.height, index) DESC;
         "#,
         )
