@@ -40,6 +40,8 @@ mod turmoil_tests {
             .enable_tokio_io()
             .build_with_rng(Box::new(rng));
 
+        sim.set_message_latency_curve(0.8);
+
         let ctx = TurmoilCtx::new_multi(4, 500)?;
         ctx.setup_simulation(&mut sim)?;
 
@@ -71,6 +73,11 @@ mod turmoil_tests {
             if iteration == 200 {
                 warn!("RESTARTING node 2");
                 sim.bounce("node-2");
+            }
+
+            if iteration == 300 {
+                warn!("RESTARTING node 3");
+                sim.bounce("node-3");
             }
 
             if finished {

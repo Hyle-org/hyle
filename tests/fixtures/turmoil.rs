@@ -1,3 +1,5 @@
+#![cfg(feature = "turmoil")]
+
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -8,13 +10,12 @@ use hyle::{
 };
 use hyle_model::Contract;
 use hyle_net::net::Sim;
-use testcontainers_modules::testcontainers::runners::AsyncRunner;
 use tokio::sync::Mutex;
 use tracing::info;
 
-use super::test_helpers::ConfMaker;
 use anyhow::Result;
 
+use crate::fixtures::test_helpers::ConfMaker;
 #[derive(Clone)]
 pub struct TurmoilNodeProcess {
     pub conf: Conf,
