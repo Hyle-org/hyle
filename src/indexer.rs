@@ -217,6 +217,11 @@ impl Indexer {
                 "/blob_transactions/contract/{contract_name}/ws",
                 get(Self::get_blob_transactions_by_contract_ws_handler),
             )
+            // proof transaction
+            .routes(routes!(api::get_proofs))
+            .routes(routes!(api::get_proofs_by_height))
+            .routes(routes!(api::get_proofs_by_contract))
+            .routes(routes!(api::get_proof_with_hash))
             // blob
             .routes(routes!(api::get_blobs_by_tx_hash))
             .routes(routes!(api::get_blob))
