@@ -1,7 +1,7 @@
-mod fixtures;
+#![allow(clippy::all)]
 
+mod fixtures;
 #[cfg(feature = "turmoil")]
-#[allow(clippy::expect_used)]
 #[cfg(test)]
 mod turmoil_tests {
     use std::time::Duration;

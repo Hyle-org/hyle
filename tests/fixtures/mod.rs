@@ -1,3 +1,4 @@
+#![allow(clippy::all)]
 pub mod contracts;
 pub mod ctx;
 pub mod proofs;

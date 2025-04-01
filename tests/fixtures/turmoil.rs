@@ -1,3 +1,5 @@
+#![allow(clippy::all)]
+
 #[cfg(feature = "turmoil")]
 pub mod ctx {
     use std::sync::Arc;
