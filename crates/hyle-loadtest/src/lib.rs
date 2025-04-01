@@ -412,10 +412,10 @@ pub async fn send_transaction<S: StateUpdater>(
 
 pub async fn long_running_test(node_url: String, _indexer_url: String) -> Result<()> {
     loop {
+        tracing::warn!("{}", node_url.clone());
         let mut client = NodeApiHttpClient::new(node_url.clone())?;
         client.api_key = Some("KEY_LOADTEST".to_string());
         // let indexer = IndexerApiHttpClient::new(indexer_url)?;
-
         // Generate a random number of iterations for a generated hydentity + hyllar
         let rand_iterations = get_current_timestamp_ms() % 1000;
 
