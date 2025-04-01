@@ -31,7 +31,7 @@ mod turmoil_tests {
     }
 
     #[test_log::test]
-    fn turmoil_test() -> anyhow::Result<()> {
+    fn turmoil_test_leader_killed() -> anyhow::Result<()> {
         let rng = StdRng::seed_from_u64(123);
         let mut sim = hyle_net::turmoil::Builder::new()
             .simulation_duration(Duration::from_secs(100))
