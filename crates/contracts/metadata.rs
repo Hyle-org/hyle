@@ -4,7 +4,7 @@ mod methods {
     include!(concat!(env!("OUT_DIR"), "/methods.rs"));
 }
 
-#[cfg(all(not(clippy), feature = "nonreproducible"))]
+#[cfg(all(not(clippy), feature = "nonreproducible", feature = "all"))]
 mod metadata {
     pub const AMM_ELF: &[u8] = crate::methods::AMM_ELF;
     pub const AMM_ID: [u8; 32] = sdk::to_u8_array(&crate::methods::AMM_ID);
