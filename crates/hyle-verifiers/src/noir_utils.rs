@@ -10,7 +10,7 @@ pub fn parse_noir_output(vector: &mut Vec<String>) -> Result<HyleOutput, Error> 
     let identity = parse_string(vector)?;
     let tx_hash = parse_string(vector)?;
     let index = u32::from_str_radix(vector.remove(0).strip_prefix("0x").context("parsing")?, 16)?;
-    let blobs = parse_blobs(vector)?;
+    let _blobs = parse_blobs(vector)?;
     let success =
         u32::from_str_radix(vector.remove(0).strip_prefix("0x").context("parsing")?, 16)? == 1;
 
@@ -22,7 +22,7 @@ pub fn parse_noir_output(vector: &mut Vec<String>) -> Result<HyleOutput, Error> 
         tx_hash: TxHash(tx_hash),
         tx_ctx: None,
         index: BlobIndex(index as usize),
-        blobs,
+        blobs: vec![], // TODO
         success,
         onchain_effects: vec![],
         program_outputs: vec![],

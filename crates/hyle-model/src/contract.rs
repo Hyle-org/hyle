@@ -305,6 +305,33 @@ pub struct Blob {
     pub data: BlobData,
 }
 
+#[derive(
+    Default,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Hash,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
+pub struct BlobHash(pub String);
+#[cfg(feature = "full")]
+impl Hashed<BlobHash> for Blob {
+    fn hashed(&self) -> BlobHash {
+        use sha3::{Digest, Sha3_256};
+
+        let mut hasher = Sha3_256::new();
+        hasher.update(self.contract_name.0.clone());
+        hasher.update(self.data.0.clone());
+        let hash_bytes = hasher.finalize();
+        BlobHash(hex::encode(hash_bytes))
+    }
+}
+
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct StructuredBlob<Action> {
     pub contract_name: ContractName,
@@ -341,16 +368,21 @@ pub trait ContractAction: Send {
     ) -> Blob;
 }
 
-pub fn flatten_blobs(blobs: &[Blob]) -> Vec<u8> {
+pub fn flatten_blobs(blobs: &[Blob]) -> Vec<(BlobIndex, Vec<u8>)> {
     blobs
         .iter()
-        .flat_map(|b| {
-            b.contract_name
-                .0
-                .as_bytes()
-                .iter()
-                .chain(b.data.0.iter())
-                .copied()
+        .enumerate()
+        .map(|(i, b)| {
+            (
+                BlobIndex(i),
+                b.contract_name
+                    .0
+                    .as_bytes()
+                    .iter()
+                    .chain(b.data.0.iter())
+                    .copied()
+                    .collect::<Vec<u8>>(),
+            )
         })
         .collect()
 }
@@ -434,7 +466,7 @@ pub struct HyleOutput {
     pub next_state: StateCommitment,
     pub identity: Identity,
     pub index: BlobIndex,
-    pub blobs: Vec<u8>,
+    pub blobs: Vec<(BlobIndex, Vec<u8>)>,
     pub tx_hash: TxHash, // Technically redundant with identity + blobs hash
     pub success: bool,
 
