@@ -9,7 +9,7 @@ use std::{
 use anyhow::{bail, Result};
 use sdk::{
     Blob, BlobIndex, BlobTransaction, Calldata, ContractAction, ContractName, Hashed, HyleOutput,
-    Identity, ProofTransaction, TxContext, ZkProgramInput,
+    Identity, ProofTransaction, TxContext,
 };
 
 use crate::helpers::ClientSdkProver;
@@ -97,7 +97,13 @@ impl ProofTxBuilder {
                 .clone();
             async move {
                 let proof = prover
-                    .prove(runner.zk_program_input.take().expect("no input for prover"))
+                    .prove(
+                        runner
+                            .commitment_metadata
+                            .take()
+                            .expect("no commitment metadata for prover"),
+                        runner.calldata.take().expect("no calldata for prover"),
+                    )
                     .await;
                 proof.map(|proof| ProofTransaction {
                     proof,
@@ -245,10 +251,10 @@ impl<S: StateUpdater> TxExecutor<S> {
             );
 
             tracing::info!("Checking transition for {}...", runner.contract_name);
-            let out = match self.states.execute(
-                &runner.contract_name,
-                &runner.zk_program_input.get().unwrap().calldata,
-            ) {
+            let out = match self
+                .states
+                .execute(&runner.contract_name, runner.calldata.get().unwrap())
+            {
                 Ok(result) => result,
                 Err(e) => {
                     // Revert all state changes
@@ -266,7 +272,7 @@ impl<S: StateUpdater> TxExecutor<S> {
                 let program_error = std::str::from_utf8(&out.program_outputs).unwrap();
                 bail!(
                     "Execution failed on runner for blob {:?} on contrat {:?} ! Program output: {}",
-                    runner.zk_program_input.get().unwrap().calldata.index,
+                    runner.calldata.get().unwrap().index,
                     runner.contract_name,
                     program_error
                 );
@@ -291,7 +297,8 @@ pub struct ContractRunner {
     identity: Identity,
     index: BlobIndex,
     private_input: Option<Vec<u8>>,
-    zk_program_input: OnceLock<ZkProgramInput>,
+    commitment_metadata: OnceLock<Vec<u8>>,
+    calldata: OnceLock<Calldata>,
 }
 
 impl ContractRunner {
@@ -306,7 +313,8 @@ impl ContractRunner {
             identity,
             index,
             private_input,
-            zk_program_input: OnceLock::new(),
+            commitment_metadata: OnceLock::new(),
+            calldata: OnceLock::new(),
         })
     }
 
@@ -318,16 +326,14 @@ impl ContractRunner {
     ) {
         let tx_hash = BlobTransaction::new(self.identity.clone(), blobs.clone()).hashed();
 
-        self.zk_program_input.get_or_init(|| ZkProgramInput {
-            commitment_metadata,
-            calldata: Calldata {
-                identity: self.identity.clone(),
-                blobs,
-                index: self.index,
-                tx_hash,
-                tx_ctx: tx_context,
-                private_input: self.private_input.clone().unwrap_or_default(),
-            },
+        self.commitment_metadata.get_or_init(|| commitment_metadata);
+        self.calldata.get_or_init(|| Calldata {
+            identity: self.identity.clone(),
+            blobs,
+            index: self.index,
+            tx_hash,
+            tx_ctx: tx_context,
+            private_input: self.private_input.clone().unwrap_or_default(),
         });
     }
 }
@@ -387,7 +393,7 @@ macro_rules! contract_states {
                 match contract_name.0.as_str() {
                     $(stringify!($contract_name) => {
                         self.$contract_name
-                            .execute_provable(calldata)
+                            .handle(calldata)
                             .map_err(|e| anyhow::anyhow!(e))
                     })*
                     _ => anyhow::bail!("Unknown contract name: {contract_name}"),

@@ -10,7 +10,7 @@ use anyhow::Result;
 
 mod e2e_amm {
     use amm::{
-        client::{new_pair, swap},
+        client::tx_executor_handler::{new_pair, swap},
         Amm,
     };
 
@@ -21,13 +21,13 @@ mod e2e_amm {
     };
     use fixtures::proofs::generate_recursive_proof;
     use hydentity::{
-        client::{register_identity, verify_identity},
+        client::tx_executor_handler::{register_identity, verify_identity},
         Hydentity,
     };
-    use hyle_contract_sdk::{Blob, Calldata, ContractName, HyleOutput, ProvableContractState};
+    use hyle_contract_sdk::{Blob, Calldata, ContractName, HyleOutput, TxExecutorHandler};
     use hyle_contracts::{AMM_ELF, HYDENTITY_ELF, HYLLAR_ELF};
     use hyllar::{
-        client::{approve, transfer},
+        client::tx_executor_handler::{approve, transfer},
         erc20::ERC20,
         Hyllar, FAUCET_ID,
     };

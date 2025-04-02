@@ -10,8 +10,8 @@ use axum::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::{
-    info, Blob, BlobIndex, BlobTransaction, Calldata, ContractName, Hashed, ProvableContractState,
-    TxContext, TxId,
+    info, Blob, BlobIndex, BlobTransaction, Calldata, ContractName, Hashed, TxContext,
+    TxExecutorHandler, TxId,
 };
 use utoipa::openapi::OpenApi;
 
@@ -40,7 +40,7 @@ impl<State> Default for ContractStateStore<State> {
 
 pub trait ContractHandler
 where
-    Self: Sized + Default + ProvableContractState + 'static,
+    Self: Sized + Default + TxExecutorHandler + 'static,
 {
     fn api(
         store: ContractHandlerStore<Self>,
@@ -66,9 +66,7 @@ where
             private_input: vec![],
         };
 
-        let hyle_output = self
-            .execute_provable(&calldata)
-            .map_err(|e| anyhow::anyhow!(e))?;
+        let hyle_output = self.handle(&calldata).map_err(|e| anyhow::anyhow!(e))?;
         let program_outputs = str::from_utf8(&hyle_output.program_outputs).unwrap_or("no output");
 
         info!("🚀 Executed {contract_name}: {}", program_outputs);

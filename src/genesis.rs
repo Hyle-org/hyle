@@ -14,17 +14,17 @@ use client_sdk::{
     transaction_builder::{ProofTxBuilder, ProvableBlobTx, TxExecutor, TxExecutorBuilder},
 };
 use hydentity::{
-    client::{register_identity, verify_identity},
+    client::tx_executor_handler::{register_identity, verify_identity},
     Hydentity,
 };
 use hyle_contract_sdk::{
-    Blob, Calldata, ContractName, Identity, ProgramId, ProvableContractState, StateCommitment,
-    ZkProgram,
+    Blob, Calldata, ContractName, Identity, ProgramId, StateCommitment, TxExecutorHandler,
+    ZkContract,
 };
-use hyllar::{client::transfer, Hyllar, FAUCET_ID};
+use hyllar::{client::tx_executor_handler::transfer, Hyllar, FAUCET_ID};
 use serde::{Deserialize, Serialize};
 use staking::{
-    client::{delegate, deposit_for_fees, stake},
+    client::tx_executor_handler::{delegate, deposit_for_fees, stake},
     state::Staking,
 };
 use tracing::{debug, error, info};

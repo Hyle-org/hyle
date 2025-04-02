@@ -3,13 +3,31 @@ use client_sdk::{
     helpers::risc0::Risc0Prover,
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
 };
-use sdk::ContractName;
+use sdk::{utils::as_hyle_output, Blob, Calldata, ContractName, TxExecutorHandler, ZkContract};
 
 pub mod metadata {
-    pub const HYDENTITY_ELF: &[u8] = include_bytes!("../hydentity.img");
-    pub const PROGRAM_ID: [u8; 32] = sdk::str_to_u8(include_str!("../hydentity.txt"));
+    pub const HYDENTITY_ELF: &[u8] = include_bytes!("../../hydentity.img");
+    pub const PROGRAM_ID: [u8; 32] = sdk::str_to_u8(include_str!("../../hydentity.txt"));
 }
 use metadata::*;
+
+impl TxExecutorHandler for Hydentity {
+    fn build_commitment_metadata(&self, _blob: &Blob) -> Result<Vec<u8>, String> {
+        borsh::to_vec(self).map_err(|e| e.to_string())
+    }
+
+    fn handle(&mut self, calldata: &Calldata) -> Result<sdk::HyleOutput, String> {
+        let initial_state_commitment = <Self as ZkContract>::commit(self);
+        let mut res = <Self as ZkContract>::execute(self, calldata);
+        let next_state_commitment = <Self as ZkContract>::commit(self);
+        Ok(as_hyle_output(
+            initial_state_commitment,
+            next_state_commitment,
+            calldata,
+            &mut res,
+        ))
+    }
+}
 
 impl Hydentity {
     pub fn setup_builder<S: StateUpdater>(
