@@ -162,7 +162,7 @@ pub struct ConsensusProposal {
     pub parent_hash: ConsensusProposalHash,
     pub cut: Cut,
     pub staking_actions: Vec<ConsensusStakingAction>,
-    pub timestamp: u64,
+    pub timestamp: u128,
 }
 
 /// This is the hash of the proposal, signed by validators

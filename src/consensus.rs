@@ -1111,7 +1111,7 @@ pub mod test {
                 .expect("Failed to start slot");
         }
 
-        pub async fn start_round_at(&mut self, current_timestamp: u64) {
+        pub async fn start_round_at(&mut self, current_timestamp: u128) {
             self.consensus
                 .start_round(current_timestamp)
                 .await

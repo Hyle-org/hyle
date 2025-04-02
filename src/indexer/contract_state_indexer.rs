@@ -187,7 +187,7 @@ where
                     lane_id,
                     block_hash: block.hash.clone(),
                     block_height: block.block_height,
-                    timestamp: block.block_timestamp as u128,
+                    timestamp: block.block_timestamp,
                     chain_id: HYLE_TESTNET_CHAIN_ID, // TODO: make it configurable
                 },
             )

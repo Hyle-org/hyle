@@ -45,6 +45,32 @@ pub struct RestApiRunContext {
     pub openapi: utoipa::openapi::OpenApi,
 }
 
+impl RestApiRunContext {
+    pub fn new(
+        port: u16,
+        info: NodeInfo,
+        bus: SharedMessageBus,
+        router: Router,
+        metrics_layer: Option<HttpMetricsLayer>,
+        max_body_size: usize,
+        openapi: utoipa::openapi::OpenApi,
+    ) -> RestApiRunContext {
+        Self {
+            port,
+            info,
+            bus,
+            router,
+            registry: Registry::new(),
+            metrics_layer,
+            max_body_size,
+            openapi,
+        }
+    }
+    pub fn with_registry(self, registry: Registry) -> Self {
+        Self { registry, ..self }
+    }
+}
+
 pub struct RouterState {
     info: NodeInfo,
     registry: Registry,

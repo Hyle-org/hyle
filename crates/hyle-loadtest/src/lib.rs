@@ -367,11 +367,11 @@ pub async fn send_proof_txs(url: String, proof_txs: Vec<Transaction>) -> Result<
     Ok(())
 }
 
-pub fn get_current_timestamp_ms() -> u64 {
+pub fn get_current_timestamp_ms() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
-        .as_millis() as u64
+        .as_millis()
 }
 
 pub async fn send_transaction<S: StateUpdater>(
@@ -452,7 +452,7 @@ pub async fn long_running_test(node_url: String, _indexer_url: String) -> Result
 
         tokio::time::sleep(Duration::from_secs(5)).await;
 
-        let mut users: Vec<u64> = vec![];
+        let mut users: Vec<u128> = vec![];
 
         let mut tx_ctx = TxExecutorBuilder::new(CanonicalStates {
             hydentity: Hydentity::default(),
