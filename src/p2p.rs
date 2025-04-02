@@ -131,7 +131,9 @@ impl P2P {
         // Wait all other threads to start correctly
         sleep(Duration::from_secs(1)).await;
 
-        let listener = hyle_net::net::bind_tcp_listener(self.config.p2p.server_port).await?;
+        let listener = hyle_net::net::bind_tcp_listener(self.config.p2p.server_port)
+            .await
+            .context("Starting P2P server")?;
         info!(
             "📡  Starting P2P module, listening on {}",
             listener.local_addr()?

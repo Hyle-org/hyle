@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    net::Ipv4Addr,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -128,7 +127,8 @@ where
     Res: BorshSerialize + Clone + Send + 'static + std::fmt::Debug,
 {
     pub async fn start(port: u16, pool_name: &'static str) -> Result<Self> {
-        let tcp_listener = TcpListener::bind(&(Ipv4Addr::UNSPECIFIED, port)).await?;
+        let tcp_listener = crate::net::bind_tcp_listener(port).await?;
+
         let (pool_sender, pool_receiver) = tokio::sync::mpsc::channel(100);
         let (ping_sender, ping_receiver) = tokio::sync::mpsc::channel(100);
         debug!(
@@ -137,7 +137,7 @@ where
         );
         Ok(TcpServer::<Codec, Req, Res> {
             peers: HashMap::new(),
-            tcp_listener,
+            tcp_listener: tcp_listener.0,
             pool_sender,
             pool_receiver,
             ping_sender,
