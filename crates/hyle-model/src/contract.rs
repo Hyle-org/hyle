@@ -125,6 +125,8 @@ pub struct TxHash(pub String);
     BorshDeserialize,
     BorshSerialize,
     Copy,
+    PartialOrd,
+    Ord,
 )]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct BlobIndex(pub usize);
@@ -318,6 +320,7 @@ pub struct Blob {
 )]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct BlobHash(pub String);
+
 #[cfg(feature = "full")]
 impl Hashed<BlobHash> for Blob {
     fn hashed(&self) -> BlobHash {

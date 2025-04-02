@@ -35,7 +35,7 @@ pub struct UnsettledBlobTransaction {
     pub parent_dp_hash: DataProposalHash,
     pub hash: TxHash,
     pub tx_context: TxContext,
-    pub blobs_hash: BlobsHash,
+    pub blobs_hash: BlobsHashes,
     pub blobs: Vec<UnsettledBlobMetadata>,
 }
 

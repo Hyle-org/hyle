@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::RwLock;
 
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -240,7 +241,7 @@ pub struct BlobTransaction {
     hash_cache: RwLock<Option<TxHash>>,
     #[borsh(skip)]
     #[serde(skip_serializing, skip_deserializing)]
-    blobshash_cache: RwLock<Option<BlobsHash>>,
+    blobshash_cache: RwLock<Option<BlobsHashes>>,
 }
 
 impl BlobTransaction {
@@ -312,11 +313,11 @@ impl Hashed<TxHash> for BlobTransaction {
 }
 
 impl BlobTransaction {
-    pub fn blobs_hash(&self) -> BlobsHash {
+    pub fn blobs_hash(&self) -> BlobsHashes {
         if let Some(hash) = self.blobshash_cache.read().unwrap().clone() {
             return hash;
         }
-        let hash = BlobsHash::from_vec(&self.blobs);
+        let hash = BlobsHashes::from_vec(&self.blobs);
         self.blobshash_cache.write().unwrap().replace(hash.clone());
         hash
     }
@@ -363,34 +364,42 @@ impl BlobTransaction {
     BorshSerialize,
     BorshDeserialize,
 )]
-pub struct BlobsHash(pub Vec<(BlobIndex, BlobHash)>);
+pub struct BlobsHashes {
+    pub hashes: BTreeMap<BlobIndex, BlobHash>,
+}
 
-impl BlobsHash {
-    pub fn new(s: &str) -> BlobsHash {
-        BlobsHash(vec![(BlobIndex(0), BlobHash(s.into()))])
+impl BlobsHashes {
+    pub fn new(s: &str) -> BlobsHashes {
+        BlobsHashes {
+            hashes: vec![(BlobIndex(0), BlobHash(s.into()))]
+                .into_iter()
+                .collect(),
+        }
     }
 
-    pub fn from_vec(vec: &[Blob]) -> BlobsHash {
+    pub fn from_vec(vec: &[Blob]) -> BlobsHashes {
         Self::from_concatenated(&flatten_blobs(vec))
     }
 
-    pub fn from_concatenated(vec: &[(BlobIndex, Vec<u8>)]) -> BlobsHash {
-        BlobsHash(
-            vec.iter()
+    pub fn from_concatenated(vec: &[(BlobIndex, Vec<u8>)]) -> BlobsHashes {
+        BlobsHashes {
+            hashes: vec
+                .iter()
                 .map(|(index, blob)| {
                     let mut hasher = Sha3_256::new();
                     hasher.update(blob);
                     let hash_bytes = hasher.finalize();
-                    (*index, BlobHash(hex::encode(hash_bytes)))
+                    let hash = BlobHash(hex::encode(hash_bytes));
+                    (*index, hash)
                 })
                 .collect(),
-        )
+        }
     }
 
-    pub fn includes_all(&self, other: &BlobsHash) -> bool {
-        for (index, hash) in other.0.iter() {
+    pub fn includes_all(&self, other: &BlobsHashes) -> bool {
+        for (index, hash) in other.hashes.iter() {
             if !self
-                .0
+                .hashes
                 .iter()
                 .any(|(other_index, other_hash)| index == other_index && hash == other_hash)
             {
@@ -401,9 +410,9 @@ impl BlobsHash {
     }
 }
 
-impl std::fmt::Display for BlobsHash {
+impl std::fmt::Display for BlobsHashes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (BlobIndex(index), BlobHash(hash)) in self.0.iter() {
+        for (BlobIndex(index), BlobHash(hash)) in self.hashes.iter() {
             write!(f, "[{}]: {}", index, hash)?;
         }
         Ok(())
