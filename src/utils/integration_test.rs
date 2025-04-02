@@ -10,7 +10,6 @@ use axum::Router;
 use client_sdk::rest_client::NodeApiHttpClient;
 use hyle_model::api::NodeInfo;
 use hyle_model::TxHash;
-use prometheus::Registry;
 use tracing::info;
 
 use crate::bus::metrics::BusMetrics;
@@ -299,20 +298,19 @@ impl NodeIntegrationCtx {
             Self::build_module::<RestApi>(
                 &mut handler,
                 &ctx,
-                RestApiRunContext {
-                    port: config.rest_server_port,
-                    max_body_size: ctx.common.config.rest_server_max_body_size,
-                    info: NodeInfo {
+                RestApiRunContext::new(
+                    config.rest_server_port,
+                    NodeInfo {
                         id: config.id.clone(),
                         pubkey: Some(pubkey),
                         da_address: format!("{}:{}", config.hostname, config.da_server_port),
                     },
-                    bus: ctx.common.bus.new_handle(),
-                    metrics_layer: None,
-                    registry: Registry::new(),
-                    router: router.clone(),
-                    openapi: Default::default(),
-                },
+                    ctx.common.bus.new_handle(),
+                    router.clone(),
+                    None,
+                    ctx.common.config.rest_server_max_body_size,
+                    Default::default(),
+                ),
                 &mut mocks,
             )
             .await?;

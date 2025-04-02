@@ -170,9 +170,10 @@ impl super::Mempool {
         );
 
         debug!(
-            "Creating new DataProposal in local lane ({}) with {} transactions",
+            "Creating new DataProposal in local lane ({}) with {} transactions (parent: {:?})",
             validator_key,
-            data_proposal.txs.len()
+            data_proposal.txs.len(),
+            data_proposal.parent_data_proposal_hash
         );
 
         // TODO: handle this differently
@@ -256,8 +257,10 @@ impl super::Mempool {
             .snapshot_pending_tx(self.waiting_dissemination_txs.len());
 
         let status_event = MempoolStatusEvent::WaitingDissemination {
-            // TODO: handle this differently somehow - we need some unique identifier or we risk collisions in the DB.
-            parent_data_proposal_hash: DataProposalHash(self.crypto.validator_pubkey().to_string()),
+            // TODO: handle this differently somehow. For now, this works as we always drain waiting tx right up.
+            parent_data_proposal_hash: self
+                .get_last_data_prop_hash_in_own_lane()
+                .unwrap_or(DataProposalHash(self.crypto.validator_pubkey().to_string())),
             tx,
         };
 

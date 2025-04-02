@@ -370,10 +370,13 @@ async fn test_contract_upgrade() -> Result<()> {
     // Send contract update transaction
     let b2 = BlobTransaction::new(
         "toto.c1.hyle",
-        vec![Blob {
+        vec![RegisterContractAction {
+            verifier: "test".into(),
+            program_id: ProgramId(vec![7, 7, 7]),
+            state_commitment: StateCommitment(vec![3, 3, 3]),
             contract_name: "c1.hyle".into(),
-            data: BlobData(vec![1]),
-        }],
+        }
+        .as_blob("c1.hyle".into(), None, None)],
     );
     client.send_tx_blob(&b2).await.unwrap();
 

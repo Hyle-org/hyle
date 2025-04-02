@@ -222,20 +222,22 @@ async fn common_main(
             .clone();
 
         handler
-            .build_module::<RestApi>(RestApiRunContext {
-                port: config.rest_server_port,
-                max_body_size: config.rest_server_max_body_size,
-                info: NodeInfo {
-                    id: config.id.clone(),
-                    pubkey: crypto.as_ref().map(|c| c.validator_pubkey()).cloned(),
-                    da_address: format!("{}:{}", config.hostname, config.da_server_port),
-                },
-                bus: common_run_ctx.bus.new_handle(),
-                registry,
-                metrics_layer: Some(metrics_layer),
-                router: router.clone(),
-                openapi,
-            })
+            .build_module::<RestApi>(
+                RestApiRunContext::new(
+                    config.rest_server_port,
+                    NodeInfo {
+                        id: config.id.clone(),
+                        pubkey: crypto.as_ref().map(|c| c.validator_pubkey()).cloned(),
+                        da_address: format!("{}:{}", config.hostname, config.da_server_port),
+                    },
+                    common_run_ctx.bus.new_handle(),
+                    router.clone(),
+                    Some(metrics_layer),
+                    config.rest_server_max_body_size,
+                    openapi,
+                )
+                .with_registry(registry),
+            )
             .await?;
     }
 

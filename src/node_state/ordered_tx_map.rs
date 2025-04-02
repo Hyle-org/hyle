@@ -1,4 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use hyle_model::DeleteContractAction;
+use hyle_model::RegisterContractAction;
+use hyle_model::StructuredBlobData;
 use hyle_model::TxHash;
 use tracing::warn;
 
@@ -65,6 +68,25 @@ impl OrderedTxMap {
         self.map.len()
     }
 
+    fn get_contracts_blocked_by_tx(&self, tx: &UnsettledBlobTransaction) -> HashSet<ContractName> {
+        // Collect into a hashset for unicity
+        let mut contract_names = HashSet::new();
+        for blob in &tx.blobs {
+            contract_names.insert(blob.blob.contract_name.clone());
+            // This is a bit horrible, we should try to be leaner.
+            if let Ok(data) =
+                StructuredBlobData::<RegisterContractAction>::try_from(blob.blob.data.clone())
+            {
+                contract_names.insert(data.parameters.contract_name.clone());
+            } else if let Ok(data) =
+                StructuredBlobData::<DeleteContractAction>::try_from(blob.blob.data.clone())
+            {
+                contract_names.insert(data.parameters.contract_name.clone());
+            }
+        }
+        contract_names
+    }
+
     /// Returns true if the tx is the next unsettled tx for all the contracts it contains
     /// NB: not if the TX was already added to the map, which feels like it generally shouldn't happen?
     pub fn add(&mut self, tx: UnsettledBlobTransaction) -> bool {
@@ -73,10 +95,11 @@ impl OrderedTxMap {
             return false;
         }
         let mut is_next = true;
-        let contract_names: HashSet<&ContractName> =
-            HashSet::from_iter(tx.blobs.iter().map(|b| &b.blob.contract_name));
+
+        // Collect into a hashset for unicity
+        let contract_names = self.get_contracts_blocked_by_tx(&tx);
         for contract in contract_names {
-            is_next = match self.tx_order.get_mut(contract) {
+            is_next = match self.tx_order.get_mut(&contract) {
                 Some(vec) => {
                     vec.push_back(tx.hash.clone());
                     vec.len() == 1
@@ -98,8 +121,9 @@ impl OrderedTxMap {
 
     pub fn remove(&mut self, hash: &TxHash) -> Option<UnsettledBlobTransaction> {
         if let Some(tx) = self.map.get(hash) {
-            for blob_metadata in &tx.blobs {
-                if let Some(c) = self.tx_order.get_mut(&blob_metadata.blob.contract_name) {
+            let contract_names = self.get_contracts_blocked_by_tx(tx);
+            for contract_name in contract_names {
+                if let Some(c) = self.tx_order.get_mut(&contract_name) {
                     if let Some(t) = c.front() {
                         if t.eq(hash) {
                             c.pop_front();
@@ -122,7 +146,9 @@ mod tests {
     #![allow(clippy::indexing_slicing)]
     use crate::model::{BlobsHash, UnsettledBlobMetadata};
     use hyle_contract_sdk::{Blob, BlobData, Identity};
-    use hyle_model::{DataProposalHash, TxContext, TxHash};
+    use hyle_model::{
+        ContractAction, DataProposalHash, ProgramId, StateCommitment, TxContext, TxHash,
+    };
 
     use super::*;
 
@@ -260,5 +286,35 @@ mod tests {
         assert_eq!(map.map.len(), 1);
         assert_eq!(map.tx_order.len(), 2);
         assert_eq!(map.tx_order[&c1].len(), 0);
+    }
+
+    #[test]
+    fn test_remove_extra_contract() {
+        let mut map = OrderedTxMap::default();
+        let contract1 = ContractName::new("c1");
+        let contract2 = ContractName::new("c2");
+
+        let mut tx = new_tx("tx1", "c1");
+        tx.blobs.push(UnsettledBlobMetadata {
+            blob: RegisterContractAction {
+                verifier: "test".into(),
+                contract_name: contract2.clone(),
+                program_id: ProgramId(vec![1, 2, 3]),
+                state_commitment: StateCommitment(vec![0, 1, 2, 3]),
+            }
+            .as_blob(contract1.clone(), None, None),
+            possible_proofs: vec![],
+        });
+        map.add(tx.clone());
+
+        // Verify initial state
+        assert_eq!(map.tx_order.get(&contract1).unwrap().len(), 1);
+        assert_eq!(map.tx_order.get(&contract2).unwrap().len(), 1);
+
+        map.remove(&tx.hash);
+
+        assert_eq!(map.map.len(), 0);
+        assert_eq!(map.tx_order.get(&contract1).unwrap().len(), 0);
+        assert_eq!(map.tx_order.get(&contract2).unwrap().len(), 0);
     }
 }
