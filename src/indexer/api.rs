@@ -245,7 +245,6 @@ pub async fn get_transactions_by_contract(
         (status = OK, body = [APITransaction])
     )
 )]
-// TODO: pagination ?
 pub async fn get_transactions_by_height(
     Path(height): Path<i64>,
     State(state): State<IndexerApiState>,
@@ -675,59 +674,6 @@ pub async fn get_proofs_by_height(
         "#,
     )
     .bind(height)
-    .fetch_all(&state.db)
-    .await
-    .map(|db| db.into_iter().map(Into::<APITransaction>::into).collect())
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    Ok(Json(transactions))
-}
-
-#[utoipa::path(
-    get,
-    tag = "Indexer",
-    params(
-        ("contract_name" = String, Path, description = "Contract name")
-    ),
-    path = "/proofs/contract/{contract_name}",
-    responses(
-        (status = OK, body = [APITransaction])
-    )
-)]
-pub async fn get_proofs_by_contract(
-    Path(contract_name): Path<String>,
-    Query(pagination): Query<BlockPagination>,
-    State(state): State<IndexerApiState>,
-) -> Result<Json<Vec<APITransaction>>, StatusCode> {
-    let transactions = match pagination.start_block {
-        Some(start_block) => sqlx::query_as::<_, TransactionDb>(
-            r#"
-            SELECT t.*
-            FROM transactions t
-            JOIN proofs p ON t.tx_hash = p.tx_hash AND t.parent_dp_hash = p.parent_dp_hash
-            LEFT JOIN blocks bl ON t.block_hash = bl.hash
-            WHERE p.contract_name = $1 AND bl.height <= $2 AND bl.height > $3 AND t.transaction_type = 'proof_transaction'
-            ORDER BY bl.height DESC, t.index ASC
-            LIMIT $4
-            "#,
-        )
-        .bind(contract_name)
-        .bind(start_block)
-        .bind(start_block - pagination.nb_results.unwrap_or(10)) // Fine if this goes negative
-        .bind(pagination.nb_results.unwrap_or(10)),
-        None => sqlx::query_as::<_, TransactionDb>(
-            r#"
-            SELECT t.*
-            FROM transactions t
-            JOIN proofs p ON t.tx_hash = p.tx_hash AND t.parent_dp_hash = p.parent_dp_hash
-            WHERE p.contract_name = $1 AND t.transaction_type = 'proof_transaction'
-            ORDER BY t.block_hash DESC, t.index ASC
-            LIMIT $2
-            "#,
-        )
-        .bind(contract_name)
-        .bind(pagination.nb_results.unwrap_or(10)),
-    }
     .fetch_all(&state.db)
     .await
     .map(|db| db.into_iter().map(Into::<APITransaction>::into).collect())
