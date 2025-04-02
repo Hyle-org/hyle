@@ -28,7 +28,6 @@
 //!
 #![allow(dead_code, unused_variables)]
 
-use rand::Rng;
 use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Error, Result};
@@ -63,7 +62,14 @@ impl BlstCrypto {
         let sk = Self::load_from_env().or_else(|err| {
             if let Ok(use_keyring) = std::env::var("HYLE_USE_KEYRING") {
                 if use_keyring == "true" {
-                    return Self::load_from_keyring(validator_name);
+                    #[cfg(feature = "keyring")]
+                    {
+                        return Self::load_from_keyring(validator_name);
+                    }
+                    #[cfg(not(feature = "keyring"))]
+                    {
+                        return Err(anyhow!("HYLE_USE_KEYRING is set to true but the keyring feature is not enabled. Please enable it with --features keyring"));
+                    }
                 }
             }
             println!("---------------------- 🚨 SECURITY 🚨  ------------------------------ ");
@@ -96,7 +102,10 @@ impl BlstCrypto {
 
     /// Load the secret key from the keyring. If the key does not exist, a new random one is generated.
     #[cfg(not(test))]
+    #[cfg(feature = "keyring")]
     fn load_from_keyring(validator_name: &str) -> Result<SecretKey> {
+        use rand::Rng;
+
         println!("Loading secret key from keyring...");
         let user = whoami::username();
         let entry = keyring::Entry::new_with_target("hyle", validator_name, &user)?;
@@ -143,6 +152,8 @@ impl BlstCrypto {
 
     #[cfg(test)]
     pub fn new_random() -> Result<Self> {
+        use rand::Rng;
+
         let mut rng = rand::thread_rng();
         let id: String = (0..32)
             .map(|_| rng.gen_range(33..127) as u8 as char) // Caractères imprimables ASCII
