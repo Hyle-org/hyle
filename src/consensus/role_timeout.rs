@@ -299,7 +299,7 @@ impl Consensus {
             } else {
                 // We actually cannot process this, or we might end up thinking we have 2f+1 timeouts but not working.
                 bail!(
-                    "Received timeout message with prepareQC for slot {}, but we are at {}",
+                    "Received incorrect timeout message. PrepareQC is for slot {}, but Timeout is about slot {}",
                     cp.slot,
                     received_slot
                 );
