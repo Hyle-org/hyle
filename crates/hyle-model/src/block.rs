@@ -15,7 +15,7 @@ pub struct Block {
     pub parent_hash: ConsensusProposalHash,
     pub hash: ConsensusProposalHash,
     pub block_height: BlockHeight,
-    pub block_timestamp: u64,
+    pub block_timestamp: u128,
     pub txs: Vec<(TxId, Transaction)>,
     pub dp_parent_hashes: BTreeMap<TxHash, DataProposalHash>,
     pub lane_ids: BTreeMap<TxHash, LaneId>,
