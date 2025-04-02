@@ -296,15 +296,15 @@ pub enum ConsensusNetMessage {
     Confirm(QuorumCertificate, ConsensusProposalHash),
     ConfirmAck(ConsensusProposalHash),
     Commit(QuorumCertificate, ConsensusProposalHash),
-    // We do signature aggregation, so we would need everyone to send the same PQC.
-    // To work around that, send two signatures for now.
-    // To successfully send a nil certificate, we need a proof of 2f+1 nil timeouts, so we can't really avoid the double-signature.
-    // TODO:but we could avoid signing the top-level message
+    /// We do signature aggregation, so we would need everyone to send the same PQC.
+    /// To work around that, send two signatures for now.
+    /// To successfully send a nil certificate, we need a proof of 2f+1 nil timeouts, so we can't really avoid the double-signature.
+    /// TODO:but we could avoid signing the top-level message
     Timeout(
-        // Here we add the parent hash purely to avoid replay attacks
-        // This first message will be used if the TC to generate a proof of timeout
+        /// Here we add the parent hash purely to avoid replay attacks
+        /// This first message will be used if the TC to generate a proof of timeout
         SignedByValidator<(Slot, View, ConsensusProposalHash)>,
-        // The second data is sued to pick a specific TC type
+        /// The second data is sued to pick a specific TC type
         TimeoutKind,
     ),
     TimeoutCertificate(QuorumCertificate, TCKind, Slot, View),
