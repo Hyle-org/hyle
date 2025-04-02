@@ -1,7 +1,5 @@
 //! Public API for interacting with the node.
 
-use std::net::Ipv4Addr;
-
 use anyhow::{Context, Result};
 pub use axum::Router;
 use axum::{
@@ -173,7 +171,7 @@ impl RestApi {
             self.port
         );
 
-        let listener = hyle_net::net::TcpListener::bind(&(Ipv4Addr::UNSPECIFIED, self.port))
+        let listener = hyle_net::net::bind_tcp_listener(self.port)
             .await
             .context("Starting rest server")?;
 

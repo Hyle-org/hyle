@@ -107,7 +107,6 @@ where
     }
 }
 
-#[derive(Debug)]
 pub struct TcpServer<Codec, Req: Clone, Res: Clone + std::fmt::Debug>
 where
     Codec: Decoder<Item = Req> + Encoder<Res> + Default,
@@ -314,7 +313,7 @@ where
 {
     pub async fn connect<
         Id: std::fmt::Display,
-        A: tokio::net::ToSocketAddrs + std::fmt::Display,
+        A: crate::net::ToSocketAddrs + std::fmt::Display,
     >(
         id: Id,
         target: A,
@@ -462,7 +461,7 @@ macro_rules! tcp_client_server {
             pub async fn start_server(port: u16) -> Result<Server> {
                 $crate::tcp::TcpServer::<ServerCodec, $req, $res>::start(port, stringify!($name)).await
             }
-            pub async fn connect<Id: std::fmt::Display, A: tokio::net::ToSocketAddrs + std::fmt::Display>(id: Id, addr: A) -> Result<Client> {
+            pub async fn connect<Id: std::fmt::Display, A: $crate::net::ToSocketAddrs + std::fmt::Display>(id: Id, addr: A) -> Result<Client> {
                 $crate::tcp::TcpClient::<ClientCodec, $req, $res>::connect(id, addr).await
             }
         }

@@ -826,10 +826,7 @@ mod test {
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateCommitment, TxHash};
     use hyle_model::api::{APIBlock, APIContract, APITransaction};
     use serde_json::json;
-    use std::{
-        future::IntoFuture,
-        net::{Ipv4Addr, SocketAddr},
-    };
+    use std::future::IntoFuture;
 
     use crate::{
         bus::SharedMessageBus,
@@ -1534,10 +1531,7 @@ mod test {
         assert!(!transactions_response.text().is_empty());
 
         // Websocket
-        let listener =
-            hyle_net::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)))
-                .await
-                .unwrap();
+        let listener = hyle_net::net::bind_tcp_listener(0).await.unwrap();
         let addr = listener.local_addr().unwrap();
 
         tokio::spawn(axum::serve(listener, indexer.api(None)).into_future());
