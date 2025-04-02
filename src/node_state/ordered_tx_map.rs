@@ -120,7 +120,7 @@ impl OrderedTxMap {
 #[cfg(test)]
 mod tests {
     #![allow(clippy::indexing_slicing)]
-    use crate::model::{BlobsHash, UnsettledBlobMetadata};
+    use crate::model::{BlobsHashes, UnsettledBlobMetadata};
     use hyle_contract_sdk::{Blob, BlobData, Identity};
     use hyle_model::{DataProposalHash, TxContext, TxHash};
 
@@ -131,7 +131,7 @@ mod tests {
             identity: Identity::new("toto"),
             hash: TxHash::new(hash),
             parent_dp_hash: DataProposalHash::default(),
-            blobs_hash: BlobsHash::new("blobs_hash"),
+            blobs_hash: BlobsHashes::new("blobs_hash"),
             blobs: vec![UnsettledBlobMetadata {
                 blob: Blob {
                     contract_name: ContractName(contract.to_string()),
