@@ -108,10 +108,10 @@ pub async fn get_block(
 #[utoipa::path(
     get,
     tag = "Indexer",
+    path = "/block/hash/{hash}",
     params(
         ("hash" = String, Path, description = "Block hash"),
     ),
-    path = "/block/hash/{hash}",
     responses(
         (status = OK, body = APIBlock)
     )
@@ -151,7 +151,7 @@ pub async fn get_transactions(
             SELECT t.*
             FROM transactions t
             LEFT JOIN blocks b ON t.block_hash = b.hash
-            WHERE b.height <= $1 and b.height > $2
+            WHERE b.height <= $1 and b.height > $2 AND t.transaction_type = 'blob_transaction'
             ORDER BY b.height DESC, t.index ASC
             LIMIT $3
             "#,
@@ -164,6 +164,7 @@ pub async fn get_transactions(
             SELECT t.*
             FROM transactions t
             LEFT JOIN blocks b ON t.block_hash = b.hash
+            WHERE t.transaction_type = 'blob_transaction'
             ORDER BY b.height DESC, t.index ASC
             LIMIT $1
             "#,
@@ -201,7 +202,7 @@ pub async fn get_transactions_by_contract(
             FROM transactions t
             JOIN blobs b ON t.tx_hash = b.tx_hash
             LEFT JOIN blocks bl ON t.block_hash = bl.hash
-            WHERE b.contract_name = $1 AND bl.height <= $2 AND bl.height > $3
+            WHERE b.contract_name = $1 AND bl.height <= $2 AND bl.height > $3 AND t.transaction_type = 'blob_transaction'
             ORDER BY bl.height DESC, t.index ASC
             LIMIT $4
             "#,
@@ -215,7 +216,7 @@ pub async fn get_transactions_by_contract(
             SELECT t.*
             FROM transactions t
             JOIN blobs b ON t.tx_hash = b.tx_hash AND t.parent_dp_hash = b.parent_dp_hash
-            WHERE b.contract_name = $1
+            WHERE b.contract_name = $1 AND t.transaction_type = 'blob_transaction'
             ORDER BY t.block_hash DESC, t.index ASC
             LIMIT $2
             "#,
@@ -244,7 +245,6 @@ pub async fn get_transactions_by_contract(
         (status = OK, body = [APITransaction])
     )
 )]
-// TODO: pagination ?
 pub async fn get_transactions_by_height(
     Path(height): Path<i64>,
     State(state): State<IndexerApiState>,
@@ -254,7 +254,7 @@ pub async fn get_transactions_by_height(
         SELECT t.*
         FROM transactions t
         JOIN blocks b ON t.block_hash = b.hash
-        WHERE b.height = $1
+        WHERE b.height = $1 AND t.transaction_type = 'blob_transaction'
         ORDER BY t.index ASC
         "#,
     )
@@ -286,7 +286,7 @@ pub async fn get_transaction_with_hash(
         r#"
         SELECT tx_hash, version, transaction_type, transaction_status, parent_dp_hash, block_hash, index
         FROM transactions
-        WHERE tx_hash = $1
+        WHERE tx_hash = $1 AND transaction_type = 'blob_transaction'
         ORDER BY index ASC
         "#,
     )
@@ -324,7 +324,7 @@ pub async fn get_transaction_events(
         SELECT t.block_hash, b.height, t.tx_hash, t.events
         FROM transaction_state_events t
         LEFT JOIN blocks b ON t.block_hash = b.hash
-        WHERE tx_hash = $1
+        WHERE tx_hash = $1 AND t.transaction_type = 'blob_transaction'
         ORDER BY (b.height, index) DESC;
         "#,
         )
@@ -599,6 +599,121 @@ pub async fn get_contract_state_by_height(
 
     match contract {
         Some(contract) => Ok(Json(contract)),
+        None => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+#[utoipa::path(
+    get,
+    tag = "Indexer",
+    path = "/proofs",
+    responses(
+        (status = OK, body = [APITransaction])
+    )
+)]
+pub async fn get_proofs(
+    Query(pagination): Query<BlockPagination>,
+    State(state): State<IndexerApiState>,
+) -> Result<Json<Vec<APITransaction>>, StatusCode> {
+    let transactions = match pagination.start_block {
+        Some(start_block) => sqlx::query_as::<_, TransactionDb>(
+            r#"
+            SELECT t.*
+            FROM transactions t
+            LEFT JOIN blocks b ON t.block_hash = b.hash
+            WHERE b.height <= $1 and b.height > $2 AND t.transaction_type = 'proof_transaction'
+            ORDER BY b.height DESC, t.index ASC
+            LIMIT $3
+            "#,
+        )
+        .bind(start_block)
+        .bind(start_block - pagination.nb_results.unwrap_or(10)) // Fine if this goes negative
+        .bind(pagination.nb_results.unwrap_or(10)),
+        None => sqlx::query_as::<_, TransactionDb>(
+            r#"
+            SELECT t.*
+            FROM transactions t
+            LEFT JOIN blocks b ON t.block_hash = b.hash
+            WHERE t.transaction_type = 'proof_transaction'
+            ORDER BY b.height DESC, t.index ASC
+            LIMIT $1
+            "#,
+        )
+        .bind(pagination.nb_results.unwrap_or(10)),
+    }
+    .fetch_all(&state.db)
+    .await
+    .map(|db| db.into_iter().map(Into::<APITransaction>::into).collect())
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(transactions))
+}
+
+#[utoipa::path(
+    get,
+    tag = "Indexer",
+    params(
+        ("height" = String, Path, description = "Block height")
+    ),
+    path = "/proofs/block/{height}",
+    responses(
+        (status = OK, body = [APITransaction])
+    )
+)]
+pub async fn get_proofs_by_height(
+    Path(height): Path<i64>,
+    State(state): State<IndexerApiState>,
+) -> Result<Json<Vec<APITransaction>>, StatusCode> {
+    let transactions = sqlx::query_as::<_, TransactionDb>(
+        r#"
+        SELECT t.*
+        FROM transactions t
+        JOIN blocks b ON t.block_hash = b.hash
+        WHERE b.height = $1 AND t.transaction_type = 'proof_transaction'
+        ORDER BY t.index ASC
+        "#,
+    )
+    .bind(height)
+    .fetch_all(&state.db)
+    .await
+    .map(|db| db.into_iter().map(Into::<APITransaction>::into).collect())
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(transactions))
+}
+
+#[utoipa::path(
+    get,
+    tag = "Indexer",
+    params(
+        ("tx_hash" = String, Path, description = "Tx hash")
+    ),
+    path = "/proof/hash/{tx_hash}",
+    responses(
+        (status = OK, body = APITransaction)
+    )
+)]
+pub async fn get_proof_with_hash(
+    Path(tx_hash): Path<String>,
+    State(state): State<IndexerApiState>,
+) -> Result<Json<APITransaction>, StatusCode> {
+    let transaction = log_error!(sqlx::query_as::<_, TransactionDb>(
+        r#"
+        SELECT tx_hash, version, transaction_type, transaction_status, parent_dp_hash, block_hash, index
+        FROM transactions
+        WHERE tx_hash = $1 AND transaction_type = 'proof_transaction'
+        ORDER BY index ASC
+        "#,
+    )
+    .bind(tx_hash)
+    .fetch_optional(&state.db)
+    .await
+    .map(|db| db.map(Into::<APITransaction>::into)),
+    "Select transaction")
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    match transaction {
+        Some(tx) => Ok(Json(tx)),
         None => Err(StatusCode::NOT_FOUND),
     }
 }
