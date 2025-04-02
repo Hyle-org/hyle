@@ -96,6 +96,7 @@ pub struct MempoolStore {
 
     // block_construction.rs
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
+    #[borsh(skip)]
     buc_build_start_height: Option<u64>,
 
     // Common
