@@ -2899,7 +2899,13 @@ dependencies = [
 name = "hyle-contracts"
 version = "0.13.0-rc.3"
 dependencies = [
+ "hyle-amm",
  "hyle-contract-sdk",
+ "hyle-hydentity",
+ "hyle-hyllar",
+ "hyle-risc0-recursion",
+ "hyle-staking",
+ "hyle-uuid-tld",
  "risc0-build",
 ]
 
