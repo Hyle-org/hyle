@@ -1,4 +1,7 @@
-#[allow(clippy::all)]
+#![allow(dead_code)]
+#![cfg(feature = "turmoil")]
+#![cfg(test)]
+
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -43,13 +46,14 @@ impl TurmoilCtx {
         let mut confs = Vec::new();
         let mut genesis_stakers = std::collections::HashMap::new();
 
-        for i in 0..count {
+        for _ in 0..count {
             let mut node_conf = conf_maker.build("node");
-            // if i == 0 {
-            //     node_conf.run_indexer = true;
-            // }
             node_conf.p2p.peers = peers.clone();
             node_conf.hostname = node_conf.id.clone();
+            node_conf.data_directory.pop();
+            node_conf
+                .data_directory
+                .push(format!("data_{}", node_conf.id));
             genesis_stakers.insert(node_conf.id.clone(), 100);
             peers.push(format!("{}:{}", node_conf.id, node_conf.p2p.server_port));
             confs.push(node_conf);
