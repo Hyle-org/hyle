@@ -72,7 +72,6 @@ impl TurmoilCtx {
                 client: client.clone(),
             };
 
-            // Request something on node1 to be sure it's alive and working
             nodes.push(node);
         }
         nodes
@@ -88,35 +87,6 @@ impl TurmoilCtx {
         info!("🚀 E2E test environment is ready!");
         Ok(TurmoilCtx {
             nodes,
-            slot_duration,
-        })
-    }
-
-    pub async fn new_single(slot_duration: u64) -> Result<TurmoilCtx> {
-        std::env::set_var("RISC0_DEV_MODE", "1");
-
-        let mut conf_maker = ConfMaker::default();
-        conf_maker.default.consensus.slot_duration = slot_duration;
-        conf_maker.default.consensus.solo = true;
-        conf_maker.default.genesis.stakers =
-            vec![("single-node".to_string(), 100)].into_iter().collect();
-
-        let node_conf = conf_maker.build("single-node");
-        let client = NodeApiHttpClient::new(format!(
-            "http://{}:{}",
-            node_conf.id, &node_conf.rest_server_port
-        ))
-        .expect("Creating client");
-        let node = TurmoilNodeProcess {
-            conf: node_conf.clone(),
-            client: client.clone(),
-        };
-
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-
-        info!("🚀 E2E test environment is ready!");
-        Ok(TurmoilCtx {
-            nodes: vec![node],
             slot_duration,
         })
     }
