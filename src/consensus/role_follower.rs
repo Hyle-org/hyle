@@ -16,8 +16,8 @@ use crate::{
 use anyhow::{bail, Context, Result};
 use hyle_model::{
     ConsensusNetMessage, ConsensusProposal, ConsensusProposalHash, ConsensusStakingAction, Cut,
-    LaneBytesSize, LaneId, NewValidatorCandidate, QuorumCertificate, Ticket, ValidatorCandidacy,
-    View,
+    LaneBytesSize, LaneId, NewValidatorCandidate, QuorumCertificate, TCKind, Ticket,
+    ValidatorCandidacy, View,
 };
 
 #[derive(BorshSerialize, BorshDeserialize, Default)]
@@ -124,9 +124,14 @@ impl FollowerRole for Consensus {
                     bail!("Invalid commit ticket");
                 }
             }
-            Ticket::TimeoutQC(timeout_qc) => {
+            Ticket::TimeoutQC(timeout_qc, tc_kind_data) => {
                 if log_error!(
-                    self.try_process_timeout_qc(timeout_qc.clone(), &consensus_proposal, view),
+                    self.try_process_timeout_qc(
+                        timeout_qc.clone(),
+                        tc_kind_data,
+                        &consensus_proposal,
+                        view
+                    ),
                     "Processing Timeout ticket"
                 )
                 .is_err()
@@ -253,6 +258,14 @@ impl FollowerRole for Consensus {
             ConsensusNetMessage::PrepareVote(proposal_hash_hint.clone()),
             &prepare_quorum_certificate,
         )?;
+
+        let slot = self.bft_round_state.slot;
+        let view = self.bft_round_state.view;
+        self.bft_round_state.timeout.update_highest_seen_prepare_qc(
+            slot,
+            view,
+            prepare_quorum_certificate.clone(),
+        );
 
         // Responds ConfirmAck to leader
         if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
@@ -410,6 +423,7 @@ impl Consensus {
     fn try_process_timeout_qc(
         &mut self,
         timeout_qc: QuorumCertificate,
+        tc_kind_data: &TCKind,
         consensus_proposal: &ConsensusProposal,
         prepare_view: View,
     ) -> Result<()> {
@@ -419,42 +433,19 @@ impl Consensus {
             prepare_slot, prepare_view,
         );
 
-        // Same as the regular commit case - maybe this is the TC we already processed.
-        if let Some(qc) = &self.bft_round_state.follower.buffered_quorum_certificate {
-            if qc == &timeout_qc {
-                return Ok(());
-            }
-        }
-
-        // Otherwise check it matches our expectations
-        self.verify_quorum_certificate(
-            ConsensusNetMessage::Timeout(prepare_slot, prepare_view.saturating_sub(1)),
-            &timeout_qc,
-        )
-        .context("Verifying Timeout Ticket")?;
-
-        // Like for regular CQC, there are a few cases:
-        // - If this is a TC for our current slot, then we can validate any TC on its own merits
-        // (as there can be no staking changes across views)
-        // - If this is a TC for the next slot, we can maybe assume we can commit any prepare we've seen for the current slot.
-
-        if prepare_slot == self.bft_round_state.slot {
-            // If we haven't processed this TC yet, do so.
-            // TODO: check if it's safe to fast-forward more than 1 view here.
-            if prepare_view == self.bft_round_state.view + 1 {
-                self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc))
-            } else if prepare_view == self.bft_round_state.view {
-                Ok(())
-            } else {
+        // Check the ticket matches the CP
+        if let TCKind::PrepareQC((_, cp)) = tc_kind_data {
+            if cp != consensus_proposal {
                 bail!(
-                    "TC received for view {} while at view {}. Ignoring for now",
-                    prepare_view,
-                    self.bft_round_state.view
+                    "Timeout Certificate does not match consensus proposal. Expected {}, got {}",
+                    cp.hashed(),
+                    consensus_proposal.hashed()
                 );
             }
         }
-        // if ticket for next slot && correct parent hash, fast forward
-        else if prepare_slot == self.bft_round_state.slot + 1
+
+        // If ticket for next slot && correct parent hash, fast forward
+        if prepare_slot == self.bft_round_state.slot + 1
             && consensus_proposal.parent_hash == self.bft_round_state.current_proposal.hashed()
         {
             // Try to commit our current prepare & fast-forward.
@@ -478,17 +469,30 @@ impl Consensus {
                 "🔀 Fast forwarded to slot {} view 0",
                 &self.bft_round_state.slot
             );
-
-            // Then proceed to the latest view
-            self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc))
-        } else {
+        }
+        if prepare_slot != self.bft_round_state.slot {
             bail!(
-                "Timeout Certificate slot {} view {} is not the current slot {} nor next one",
+                "Timeout Certificate slot {} view {} is not the current slot {}",
                 prepare_slot,
                 prepare_view,
-                self.bft_round_state.current_proposal.slot
-            )
+                self.bft_round_state.slot
+            );
         }
+        self.verify_tc(
+            &timeout_qc,
+            tc_kind_data,
+            self.bft_round_state.slot,
+            prepare_view - 1,
+        )?;
+        if prepare_view == self.bft_round_state.view + 1 {
+            // Process it
+            debug!(
+                "Timeout Certificate for next view {} received, processing it",
+                prepare_view
+            );
+            self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc, tc_kind_data.clone()))?;
+        }
+        Ok(())
     }
 
     fn on_commit_while_joining(

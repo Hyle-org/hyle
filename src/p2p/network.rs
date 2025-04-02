@@ -86,6 +86,10 @@ impl Display for NetMessage {
     PartialEq,
     IntoStaticStr,
 )]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "TODO: consider if we should refactor this"
+)]
 pub enum NetMessage {
     HandshakeMessage(HandshakeNetMessage),
     MempoolMessage(SignedByValidator<MempoolNetMessage>),

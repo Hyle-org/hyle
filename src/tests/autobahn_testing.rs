@@ -1694,3 +1694,115 @@ async fn autobahn_commit_different_views_for_fplusone() {
     // At this point we are essentially stuck.
     // TODO: fix this by sending commit messages to the nodes that are timing out so they can unlock themselves.
 }
+
+#[test_log::test(tokio::test)]
+async fn autobahn_commit_byzantine_across_views_attempts() {
+    let (mut node0, mut node1, mut node2, mut node3) = build_nodes!(4).await;
+
+    ConsensusTestCtx::setup_for_round(
+        &mut [
+            &mut node0.consensus_ctx,
+            &mut node1.consensus_ctx,
+            &mut node2.consensus_ctx,
+            &mut node3.consensus_ctx,
+        ],
+        0,
+        5,
+        0,
+    );
+
+    // Goal of the test: at slot 5 view 0, we have nodes voting on a prepare. A commit could in theory be created if someone side-channels the confirmacks
+    // so we must ensure that we cannot commit another value. Attempt to do so and notice failures.
+    // Node 1 fails to receive the initial proposal and proposes a different one.
+    node0.start_round_with_cut_from_mempool().await;
+
+    let initial_cp;
+
+    broadcast! {
+        description: "Prepare",
+        from: node0.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Prepare(cp, ..) => {
+            initial_cp = cp.clone();
+        }
+    };
+
+    send! {
+        description: "PrepareVote",
+        from: [node2.consensus_ctx, node3.consensus_ctx], to: node0.consensus_ctx,
+        message_matches: ConsensusNetMessage::PrepareVote(_)
+    };
+
+    broadcast! {
+        description: "Confirm",
+        from: node0.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Confirm(..)
+    };
+
+    // Check that they sent their vote
+    node2
+        .consensus_ctx
+        .assert_send(&node0.consensus_ctx.validator_pubkey(), "confirmack");
+    node3
+        .consensus_ctx
+        .assert_send(&node0.consensus_ctx.validator_pubkey(), "confirmack");
+
+    // Nodes 0, 1, 2, 3 ultimately timeout.
+    ConsensusTestCtx::timeout(&mut [
+        &mut node0.consensus_ctx,
+        &mut node1.consensus_ctx,
+        &mut node2.consensus_ctx,
+        &mut node3.consensus_ctx,
+    ])
+    .await;
+
+    broadcast! {
+        description: "Follower - Timeout",
+        from: node0.consensus_ctx, to: [node1.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Timeout(..)
+    };
+    broadcast! {
+        description: "Follower - Timeout",
+        from: node1.consensus_ctx, to: [node0.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Timeout(..)
+    };
+    broadcast! {
+        description: "Follower - Timeout",
+        from: node2.consensus_ctx, to: [node0.consensus_ctx, node1.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Timeout(_, TimeoutKind::PrepareQC(..))
+    };
+    // node 3 won't even timeout, it will process the TC directly.
+
+    // Node 1 is next leader, and does not emits a timeout certificate since it will broadcast the next Prepare with it
+    node0
+        .consensus_ctx
+        .assert_broadcast("Timeout Certificate 0");
+    node1
+        .consensus_ctx
+        .assert_no_broadcast("Timeout Certificate 1");
+    node2
+        .consensus_ctx
+        .assert_broadcast("Timeout Certificate 2");
+    node3
+        .consensus_ctx
+        .assert_broadcast("Timeout Certificate 3");
+
+    // Change the proposal.
+    let dp = node1.mempool_ctx.create_data_proposal(None, &[]);
+    node1
+        .mempool_ctx
+        .process_new_data_proposal(dp.clone())
+        .unwrap();
+    node1.mempool_ctx.timer_tick().unwrap();
+
+    node1.start_round_with_cut_from_mempool().await;
+
+    // Check that the node is reproposing the same.
+    broadcast! {
+        description: "Prepare",
+        from: node1.consensus_ctx, to: [node0.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Prepare(cp, Ticket::TimeoutQC(.., TCKind::PrepareQC((_, tcp))), _) => {
+            assert_eq!(cp, &initial_cp);
+            assert_eq!(tcp, &initial_cp);
+        }
+    };
+}

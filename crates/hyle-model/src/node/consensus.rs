@@ -107,7 +107,7 @@ pub enum Ticket {
     // Special value for the initial Cut, needed because we don't have a quorum certificate for the genesis block.
     Genesis,
     CommitQC(QuorumCertificate),
-    TimeoutQC(QuorumCertificate),
+    TimeoutQC(QuorumCertificate, TCKind),
     ForcedCommitQc(QuorumCertificate),
 }
 
@@ -247,14 +247,67 @@ impl From<NewValidatorCandidate> for ConsensusStakingAction {
     Ord,
     PartialOrd,
 )]
+pub enum TCKind {
+    NilProposal,
+    PrepareQC((QuorumCertificate, ConsensusProposal)),
+}
+
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    BorshSerialize,
+    BorshDeserialize,
+    PartialEq,
+    Eq,
+    IntoStaticStr,
+    Hash,
+    Ord,
+    PartialOrd,
+)]
+/// There are two possible setups on timeout: either we should timeout with no proposal,
+/// or there is a chance one had committed on some validator and we must propose the same.
+/// To handle these two cases, we need specific data on top of the regular timeout message.
+pub enum TimeoutKind {
+    /// Sign a different message to signify 'nil proposal' for aggregation
+    NilProposal(SignedByValidator<(Slot, View, ConsensusProposalHash, ())>),
+    /// Resending the prepare QC & matching proposal (for convenience for the leader to repropose)
+    PrepareQC((QuorumCertificate, ConsensusProposal)),
+}
+
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    BorshSerialize,
+    BorshDeserialize,
+    PartialEq,
+    Eq,
+    IntoStaticStr,
+    Hash,
+    Ord,
+    PartialOrd,
+)]
 pub enum ConsensusNetMessage {
     Prepare(ConsensusProposal, Ticket, View),
     PrepareVote(ConsensusProposalHash),
     Confirm(QuorumCertificate, ConsensusProposalHash),
     ConfirmAck(ConsensusProposalHash),
     Commit(QuorumCertificate, ConsensusProposalHash),
-    Timeout(Slot, View),
-    TimeoutCertificate(QuorumCertificate, Slot, View),
+    /// We do signature aggregation, so we would need everyone to send the same PQC.
+    /// To work around that, send two signatures for now.
+    /// To successfully send a nil certificate, we need a proof of 2f+1 nil timeouts, so we can't really avoid the double-signature.
+    /// TODO:but we could avoid signing the top-level message
+    Timeout(
+        /// Here we add the parent hash purely to avoid replay attacks
+        /// This first message will be used if the TC to generate a proof of timeout
+        SignedByValidator<(Slot, View, ConsensusProposalHash)>,
+        /// The second data is sued to pick a specific TC type
+        TimeoutKind,
+    ),
+    TimeoutCertificate(QuorumCertificate, TCKind, Slot, View),
     ValidatorCandidacy(ValidatorCandidacy),
     SyncRequest(ConsensusProposalHash),
     SyncReply((ValidatorPublicKey, ConsensusProposal, Ticket, View)),
@@ -351,14 +404,47 @@ impl Display for ConsensusNetMessage {
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
                 write!(f, "{} (Candidacy {})", enum_variant, candidacy)
             }
-            ConsensusNetMessage::Timeout(slot, view) => {
-                write!(f, "{} - Slot: {} View: {}", enum_variant, slot, view)
+            ConsensusNetMessage::Timeout(signed_slot_view, tk) => {
+                _ = writeln!(
+                    f,
+                    "{} - Slot: {} View: {}",
+                    enum_variant, signed_slot_view.msg.0, signed_slot_view.msg.1
+                );
+                match tk {
+                    TimeoutKind::NilProposal(_) => {
+                        _ = writeln!(f, "NilProposal Timeout");
+                    }
+                    TimeoutKind::PrepareQC((cert, cp)) => {
+                        _ = writeln!(f, "PrepareQC certificate {}", cert.signature);
+                        _ = write!(f, "CP: {}", cp);
+                        for v in cert.validators.iter() {
+                            _ = write!(f, "{},", v);
+                        }
+                    }
+                }
+                write!(f, "")
             }
-            ConsensusNetMessage::TimeoutCertificate(cert, slot, view) => {
+            ConsensusNetMessage::TimeoutCertificate(cert, kindcert, slot, view) => {
                 _ = writeln!(f, "{} - Slot: {} View: {}", enum_variant, slot, view);
-                _ = write!(f, "Certificate {} with validators ", cert.signature);
+                _ = writeln!(f, "Validators {}", cert.signature);
                 for v in cert.validators.iter() {
                     _ = write!(f, "{},", v);
+                }
+                match kindcert {
+                    TCKind::NilProposal => {
+                        _ = writeln!(f, "NilProposal certificate");
+                    }
+                    TCKind::PrepareQC((kindcert, cp)) => {
+                        _ = writeln!(
+                            f,
+                            "PrepareQC certificate {} on CP hash {}",
+                            kindcert.signature,
+                            cp.hashed()
+                        );
+                        for v in kindcert.validators.iter() {
+                            _ = write!(f, "{},", v);
+                        }
+                    }
                 }
                 write!(f, "")
             }
