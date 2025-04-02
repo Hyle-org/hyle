@@ -266,10 +266,13 @@ pub enum TCKind {
     Ord,
     PartialOrd,
 )]
+/// There are two possible setups on timeout: either we should timeout with no proposal,
+/// or there is a chance one had committed on some validator and we must propose the same.
+/// To handle these two cases, we need specific data on top of the regular timeout message.
 pub enum TimeoutKind {
-    // Sign a different message to signify 'nil proposal' for aggregation
+    /// Sign a different message to signify 'nil proposal' for aggregation
     NilProposal(SignedByValidator<(Slot, View, ConsensusProposalHash, ())>),
-    // Resending the prepare QC & matching proposal (for convenience for the leader to repropose)
+    /// Resending the prepare QC & matching proposal (for convenience for the leader to repropose)
     PrepareQC((QuorumCertificate, ConsensusProposal)),
 }
 
