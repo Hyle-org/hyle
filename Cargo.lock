@@ -2806,6 +2806,7 @@ dependencies = [
  "secp256k1",
  "serde",
  "serde_json",
+ "serde_with",
  "sha3",
  "signal-child",
  "sqlx",

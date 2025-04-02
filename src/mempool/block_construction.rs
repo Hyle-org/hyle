@@ -190,6 +190,8 @@ impl super::Mempool {
 
 #[cfg(test)]
 pub mod test {
+    use utils::TimestampMs;
+
     use crate::consensus::ConsensusEvent;
     use crate::mempool::storage::LaneEntry;
     use crate::mempool::MempoolNetMessage;
@@ -321,7 +323,7 @@ pub mod test {
                         slot: 1,
                         cut: cut1.clone(),
                         staking_actions: vec![],
-                        timestamp: 777,
+                        timestamp: TimestampMs(777),
                         parent_hash: ConsensusProposalHash("test".to_string()),
                     },
                     certificate: AggregateSignature::default(),
@@ -364,7 +366,7 @@ pub mod test {
                         slot: 2,
                         cut: cut2.clone(),
                         staking_actions: vec![],
-                        timestamp: 888,
+                        timestamp: TimestampMs(888),
                         parent_hash: ConsensusProposalHash("test".to_string()),
                     },
                     certificate: AggregateSignature::default(),

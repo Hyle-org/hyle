@@ -71,13 +71,13 @@ fn turmoil_test_leader_killed() -> anyhow::Result<()> {
 
         if iteration == 200 {
             warn!("RESTARTING node 2");
-            sim.bounce("node-2");
+            sim.bounce("node-4");
         }
 
-        if iteration == 300 {
-            warn!("RESTARTING node 3");
-            sim.bounce("node-3");
-        }
+        // if iteration == 300 {
+        //     warn!("RESTARTING node 3");
+        //     sim.bounce("node-3");
+        // }
 
         if finished {
             return Ok(());

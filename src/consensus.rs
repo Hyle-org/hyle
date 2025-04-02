@@ -20,8 +20,7 @@ use crate::{
 };
 use anyhow::{anyhow, bail, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_model::utils::get_current_timestamp;
-use hyle_model::utils::get_current_timestamp_ms;
+use hyle_net::clock::TimestampMsClock;
 use metrics::ConsensusMetrics;
 use role_follower::{FollowerRole, FollowerState};
 use role_leader::{LeaderRole, LeaderState};
@@ -268,7 +267,7 @@ impl Consensus {
             self.bft_round_state
                 .timeout
                 .state
-                .schedule_next(get_current_timestamp());
+                .schedule_next(TimestampMsClock::now());
         }
 
         Ok(())
@@ -312,9 +311,9 @@ impl Consensus {
                 .spawn(async move {
                     debug!(
                         "⏱️  Sleeping {} milliseconds before starting a new slot",
-                        interval
+                        interval.as_millis()
                     );
-                    sleep(Duration::from_millis(interval)).await;
+                    sleep(interval).await;
 
                     _ = log_error!(
                         command_sender.send(ConsensusCommand::StartNewSlot),
@@ -619,7 +618,7 @@ impl Consensus {
         match msg {
             ConsensusCommand::TimeoutTick => self.on_timeout_tick(),
             ConsensusCommand::StartNewSlot => {
-                self.start_round(get_current_timestamp_ms()).await?;
+                self.start_round(TimestampMsClock::now()).await?;
                 Ok(())
             }
         }
@@ -718,7 +717,8 @@ impl Consensus {
                         // TODO: this logic can be improved.
                         self.bft_round_state.state_tag = StateTag::Joining;
                         // Set up an initial timeout to ensure we don't get stuck if we miss commits
-                        self.bft_round_state.timeout.state.schedule_next(get_current_timestamp());
+                        self.bft_round_state.timeout.state.schedule_next(TimestampMsClock::now());
+
                         break;
                     },
                 }
@@ -816,6 +816,7 @@ pub mod test {
     use assertables::assert_contains;
     use tokio::sync::broadcast::Receiver;
     use tracing::error;
+    use utils::TimestampMs;
 
     pub struct ConsensusTestCtx {
         pub out_receiver: Receiver<OutboundMessage>,
@@ -855,7 +856,7 @@ pub mod test {
         ) -> Consensus {
             let store = ConsensusStore::default();
             let mut conf = Conf::default();
-            conf.consensus.slot_duration = 1000;
+            conf.consensus.slot_duration = Duration::from_millis(1000);
             let bus = ConsensusBusClient::new_from_bus(shared_bus.new_handle()).await;
 
             Consensus {
@@ -934,7 +935,7 @@ pub mod test {
                     .bft_round_state
                     .timeout
                     .state
-                    .schedule_next(get_current_timestamp() - 10);
+                    .schedule_next(TimestampMsClock::now() - Duration::from_secs(10));
                 n.consensus
                     .handle_command(ConsensusCommand::TimeoutTick)
                     .await
@@ -1085,12 +1086,12 @@ pub mod test {
 
         pub async fn start_round(&mut self) {
             self.consensus
-                .start_round(get_current_timestamp_ms())
+                .start_round(TimestampMsClock::now())
                 .await
                 .expect("Failed to start slot");
         }
 
-        pub async fn start_round_at(&mut self, current_timestamp: u128) {
+        pub async fn start_round_at(&mut self, current_timestamp: TimestampMs) {
             self.consensus
                 .start_round(current_timestamp)
                 .await
@@ -1299,7 +1300,7 @@ pub mod test {
             .sign_net_message(ConsensusNetMessage::Prepare(
                 ConsensusProposal {
                     slot: 2,
-                    timestamp: 123,
+                    timestamp: TimestampMs(123),
                     cut: vec![(
                         LaneId(node2.pubkey()),
                         DataProposalHash("test".to_string()),
@@ -1339,7 +1340,7 @@ pub mod test {
             .sign_net_message(ConsensusNetMessage::Prepare(
                 ConsensusProposal {
                     slot: 1,
-                    timestamp: 123,
+                    timestamp: TimestampMs(123),
                     cut: vec![(
                         LaneId(node2.pubkey()),
                         DataProposalHash("test".to_string()),
@@ -1388,7 +1389,7 @@ pub mod test {
             .sign_net_message(ConsensusNetMessage::Prepare(
                 ConsensusProposal {
                     slot: 1,
-                    timestamp: 123,
+                    timestamp: TimestampMs(123),
                     cut: vec![(
                         LaneId(node2.pubkey()),
                         DataProposalHash("test".to_string()),
@@ -1433,23 +1434,23 @@ pub mod test {
             ConsensusTestCtx,
         ) = build_nodes!(4).await;
 
-        node1.start_round_at(1000).await;
+        node1.start_round_at(TimestampMs(1000)).await;
 
         let (cp, ..) = simple_commit_round! {
             leader: node1,
             followers: [node2, node3, node4]
         };
 
-        assert_eq!(cp.timestamp, 1000);
+        assert_eq!(cp.timestamp, TimestampMs(1000));
 
-        node2.start_round_at(900).await;
+        node2.start_round_at(TimestampMs(900)).await;
 
         broadcast! {
             description: "Leader Node2 second round",
             from: node2, to: [],
             message_matches: ConsensusNetMessage::Prepare(next_cp, next_ticket, cp_view) => {
 
-                assert_eq!(next_cp.timestamp, 900);
+                assert_eq!(next_cp.timestamp, TimestampMs(900));
 
                 let prepare_msg = node2
                     .consensus
@@ -1482,49 +1483,49 @@ pub mod test {
             ConsensusTestCtx,
         ) = build_nodes!(4).await;
 
-        node1.start_round_at(1000).await;
+        node1.start_round_at(TimestampMs(1000)).await;
 
         let (cp, ..) = simple_commit_round! {
             leader: node1,
             followers: [node2, node3, node4]
         };
 
-        assert_eq!(cp.timestamp, 1000);
+        assert_eq!(cp.timestamp, TimestampMs(1000));
 
-        node2.start_round_at(3000).await;
+        node2.start_round_at(TimestampMs(3000)).await;
 
         assert_eq!(
             node1.consensus.bft_round_state.current_proposal.timestamp,
-            1000
+            TimestampMs(1000)
         );
         assert_eq!(
             node3.consensus.bft_round_state.current_proposal.timestamp,
-            1000
+            TimestampMs(1000)
         );
         assert_eq!(
             node4.consensus.bft_round_state.current_proposal.timestamp,
-            1000
+            TimestampMs(1000)
         );
 
         broadcast! {
             description: "Leader Node2 second round",
             from: node2, to: [node1, node3, node4],
             message_matches: ConsensusNetMessage::Prepare(next_cp, ..) => {
-                assert_eq!(next_cp.timestamp, 3000);
+                assert_eq!(next_cp.timestamp, TimestampMs(3000));
             }
         };
 
         assert_eq!(
             node1.consensus.bft_round_state.current_proposal.timestamp,
-            3000
+            TimestampMs(3000)
         );
         assert_eq!(
             node3.consensus.bft_round_state.current_proposal.timestamp,
-            3000
+            TimestampMs(3000)
         );
         assert_eq!(
             node4.consensus.bft_round_state.current_proposal.timestamp,
-            3000
+            TimestampMs(3000)
         );
     }
 

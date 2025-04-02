@@ -4,6 +4,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use strum_macros::IntoStaticStr;
+use utils::TimestampMs;
 use utoipa::ToSchema;
 
 use crate::{staking::*, *};
@@ -162,7 +163,7 @@ pub struct ConsensusProposal {
     pub parent_hash: ConsensusProposalHash,
     pub cut: Cut,
     pub staking_actions: Vec<ConsensusStakingAction>,
-    pub timestamp: u128,
+    pub timestamp: TimestampMs,
 }
 
 /// This is the hash of the proposal, signed by validators
@@ -185,7 +186,7 @@ impl Hashed<ConsensusProposalHash> for ConsensusProposal {
                 hasher.update(cumul_size.0.to_le_bytes())
             }
         });
-        hasher.update(self.timestamp.to_le_bytes());
+        hasher.update(self.timestamp.0.to_le_bytes());
         hasher.update(self.parent_hash.0.as_bytes());
         ConsensusProposalHash(hex::encode(hasher.finalize()))
     }
@@ -472,7 +473,7 @@ mod tests {
             slot: 1,
             cut: Cut::default(),
             staking_actions: vec![],
-            timestamp: 1,
+            timestamp: TimestampMs(1),
             parent_hash: ConsensusProposalHash("".to_string()),
         };
         let hash = proposal.hashed();
@@ -500,7 +501,7 @@ mod tests {
                 },
             }
             .into()],
-            timestamp: 1,
+            timestamp: TimestampMs(1),
             parent_hash: ConsensusProposalHash("parent".to_string()),
         };
         let mut b = ConsensusProposal {
@@ -527,13 +528,13 @@ mod tests {
                 },
             }
             .into()],
-            timestamp: 1,
+            timestamp: TimestampMs(1),
             parent_hash: ConsensusProposalHash("parent".to_string()),
         };
         assert_eq!(a.hashed(), b.hashed());
-        a.timestamp = 2;
+        a.timestamp = TimestampMs(2);
         assert_ne!(a.hashed(), b.hashed());
-        b.timestamp = 2;
+        b.timestamp = TimestampMs(2);
         assert_eq!(a.hashed(), b.hashed());
 
         a.slot = 2;

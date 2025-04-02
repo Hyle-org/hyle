@@ -142,7 +142,7 @@ impl NodeState {
             parent_hash: signed_block.parent_hash().clone(),
             hash: signed_block.hashed(),
             block_height: signed_block.height(),
-            block_timestamp: signed_block.consensus_proposal.timestamp,
+            block_timestamp: signed_block.consensus_proposal.timestamp.clone(),
             txs: vec![], // To avoid a double borrow, we'll add the transactions later
             failed_txs: vec![],
             blob_proof_outputs: vec![],
@@ -190,7 +190,7 @@ impl NodeState {
                             lane_id,
                             block_hash: block_under_construction.hash.clone(),
                             block_height: block_under_construction.block_height,
-                            timestamp: signed_block.consensus_proposal.timestamp,
+                            timestamp: signed_block.consensus_proposal.timestamp.clone(),
                             chain_id: HYLE_TESTNET_CHAIN_ID,
                         },
                     ) {
@@ -1086,7 +1086,8 @@ pub mod test {
     use super::*;
     use assertables::assert_err;
     use hyle_contract_sdk::flatten_blobs;
-    use utils::get_current_timestamp_ms;
+    use hyle_net::clock::TimestampMsClock;
+    use utils::TimestampMs;
 
     async fn new_node_state() -> NodeState {
         NodeState {
@@ -1201,7 +1202,7 @@ pub mod test {
             lane_id: LaneId::default(),
             block_hash: ConsensusProposalHash("0xfedbeef".to_owned()),
             block_height: BlockHeight(133),
-            timestamp: get_current_timestamp_ms(),
+            timestamp: TimestampMsClock::now(),
             chain_id: HYLE_TESTNET_CHAIN_ID,
         }
     }
@@ -1228,7 +1229,7 @@ pub mod test {
         let verified_proof = new_proof_tx(&c1, &hyle_output, &blob_tx_id);
         // Modify something so it would fail.
         let mut ctx = ctx.clone();
-        ctx.timestamp = 1234;
+        ctx.timestamp = TimestampMs(1234);
         hyle_output.tx_ctx = Some(ctx);
         let verified_proof_bad = new_proof_tx(&c1, &hyle_output, &blob_tx_id);
 

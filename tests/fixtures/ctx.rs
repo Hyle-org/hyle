@@ -39,7 +39,7 @@ pub struct E2ECtx {
     clients: Vec<NodeApiHttpClient>,
     client_index: usize,
     indexer_client: Option<IndexerApiHttpClient>,
-    slot_duration: u64,
+    slot_duration: Duration,
 }
 
 impl E2ECtx {
@@ -92,11 +92,11 @@ impl E2ECtx {
         (nodes, clients)
     }
 
-    pub async fn new_single(slot_duration: u64) -> Result<E2ECtx> {
+    pub async fn new_single(slot_duration_ms: u64) -> Result<E2ECtx> {
         std::env::set_var("RISC0_DEV_MODE", "1");
 
         let mut conf_maker = ConfMaker::default();
-        conf_maker.default.consensus.slot_duration = slot_duration;
+        conf_maker.default.consensus.slot_duration = Duration::from_millis(slot_duration_ms);
         conf_maker.default.consensus.solo = true;
         conf_maker.default.genesis.stakers =
             vec![("single-node".to_string(), 100)].into_iter().collect();
@@ -122,17 +122,17 @@ impl E2ECtx {
             clients: vec![client],
             client_index: 0,
             indexer_client: None,
-            slot_duration,
+            slot_duration: Duration::from_millis(slot_duration_ms),
         })
     }
 
-    pub async fn new_single_with_indexer(slot_duration: u64) -> Result<E2ECtx> {
+    pub async fn new_single_with_indexer(slot_duration_ms: u64) -> Result<E2ECtx> {
         std::env::set_var("RISC0_DEV_MODE", "1");
 
         let pg = Self::init().await;
 
         let mut conf_maker = ConfMaker::default();
-        conf_maker.default.consensus.slot_duration = slot_duration;
+        conf_maker.default.consensus.slot_duration = Duration::from_millis(slot_duration_ms);
         conf_maker.default.consensus.solo = true;
         conf_maker.default.genesis.stakers =
             vec![("single-node".to_string(), 100)].into_iter().collect();
@@ -173,14 +173,14 @@ impl E2ECtx {
             clients: vec![client],
             client_index: 0,
             indexer_client: Some(indexer_client),
-            slot_duration,
+            slot_duration: Duration::from_millis(slot_duration_ms),
         })
     }
-    pub async fn new_multi(count: usize, slot_duration: u64) -> Result<E2ECtx> {
+    pub async fn new_multi(count: usize, slot_duration_ms: u64) -> Result<E2ECtx> {
         std::env::set_var("RISC0_DEV_MODE", "1");
 
         let mut conf_maker = ConfMaker::default();
-        conf_maker.default.consensus.slot_duration = slot_duration;
+        conf_maker.default.consensus.slot_duration = Duration::from_millis(slot_duration_ms);
 
         let (nodes, clients) = Self::build_nodes(count, &mut conf_maker);
         wait_height_timeout(clients.first().unwrap(), 1, 120).await?;
@@ -205,7 +205,7 @@ impl E2ECtx {
             clients,
             client_index: 0,
             indexer_client: None,
-            slot_duration,
+            slot_duration: Duration::from_millis(slot_duration_ms),
         })
     }
 
@@ -240,13 +240,13 @@ impl E2ECtx {
         Ok(self.clients.last().unwrap())
     }
 
-    pub async fn new_multi_with_indexer(count: usize, slot_duration: u64) -> Result<E2ECtx> {
+    pub async fn new_multi_with_indexer(count: usize, slot_duration_ms: u64) -> Result<E2ECtx> {
         std::env::set_var("RISC0_DEV_MODE", "1");
 
         let pg = Self::init().await;
 
         let mut conf_maker = ConfMaker::default();
-        conf_maker.default.consensus.slot_duration = slot_duration;
+        conf_maker.default.consensus.slot_duration = Duration::from_millis(slot_duration_ms);
         conf_maker.default.database_url = format!(
             "postgres://postgres:postgres@localhost:{}/postgres",
             pg.get_host_port_ipv4(5432).await.unwrap()
@@ -291,7 +291,7 @@ impl E2ECtx {
             clients,
             client_index: 0,
             indexer_client: Some(indexer_client),
-            slot_duration,
+            slot_duration: Duration::from_millis(slot_duration_ms),
         })
     }
 

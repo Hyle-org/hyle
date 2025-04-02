@@ -366,7 +366,7 @@ impl Indexer {
             .map_err(|_| anyhow::anyhow!("Block height is too large to fit into an i64"))?;
 
         let block_timestamp = match DateTime::from_timestamp(
-            i64::try_from(block.block_timestamp)
+            i64::try_from(block.block_timestamp.0)
                 .map_err(|_| anyhow::anyhow!("Timestamp too large for i64"))?,
             0,
         ) {
@@ -827,6 +827,7 @@ mod test {
     use hyle_model::api::{APIBlock, APIContract, APITransaction};
     use serde_json::json;
     use std::future::IntoFuture;
+    use utils::TimestampMs;
 
     use crate::{
         bus::SharedMessageBus,
@@ -1204,7 +1205,7 @@ mod test {
         assert_tx_not_found(&server, proof_tx_1_wd.hashed()).await;
 
         let mut signed_block = SignedBlock::default();
-        signed_block.consensus_proposal.timestamp = 1234;
+        signed_block.consensus_proposal.timestamp = TimestampMs(1234);
         signed_block.consensus_proposal.slot = 2;
         signed_block.data_proposals.push((
             LaneId(ValidatorPublicKey("ttt".into())),

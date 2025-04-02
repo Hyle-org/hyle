@@ -11,7 +11,7 @@ use crate::{
 };
 use anyhow::{anyhow, bail, Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_model::{ConsensusProposal, ConsensusStakingAction};
+use hyle_model::{utils::TimestampMs, ConsensusProposal, ConsensusStakingAction};
 use staking::state::MIN_STAKE;
 use tracing::{debug, error, trace};
 
@@ -35,7 +35,7 @@ pub struct LeaderState {
 
 pub(crate) trait LeaderRole {
     fn is_round_leader(&self) -> bool;
-    async fn start_round(&mut self, current_timestamp: u128) -> Result<()>;
+    async fn start_round(&mut self, current_timestamp: TimestampMs) -> Result<()>;
     fn on_prepare_vote(
         &mut self,
         msg: SignedByValidator<ConsensusNetMessage>,
@@ -49,7 +49,7 @@ pub(crate) trait LeaderRole {
 }
 
 impl LeaderRole for Consensus {
-    async fn start_round(&mut self, current_timestamp: u128) -> Result<()> {
+    async fn start_round(&mut self, current_timestamp: TimestampMs) -> Result<()> {
         if !matches!(self.bft_round_state.leader.step, Step::StartNewSlot) {
             bail!(
                 "Cannot start a new slot while in step {:?}",
@@ -106,7 +106,7 @@ impl LeaderRole for Consensus {
             );
 
             let cut = match tokio::time::timeout(
-                std::time::Duration::from_millis(self.config.consensus.slot_duration),
+                self.config.consensus.slot_duration,
                 self.bus
                     .request(QueryNewCut(self.bft_round_state.staking.clone())),
             )

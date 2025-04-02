@@ -5,6 +5,7 @@ use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::derive::Display;
 use serde::{Deserialize, Serialize};
+use utils::TimestampMs;
 
 use crate::{staking::*, *};
 
@@ -15,7 +16,7 @@ pub struct Block {
     pub parent_hash: ConsensusProposalHash,
     pub hash: ConsensusProposalHash,
     pub block_height: BlockHeight,
-    pub block_timestamp: u128,
+    pub block_timestamp: TimestampMs,
     pub txs: Vec<(TxId, Transaction)>,
     pub dp_parent_hashes: BTreeMap<TxHash, DataProposalHash>,
     pub lane_ids: BTreeMap<TxHash, LaneId>,
