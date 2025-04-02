@@ -13,6 +13,13 @@ path = "metadata.rs"
 
 [dependencies]
 sdk = { workspace = true }
+amm = { workspace = true, features = ["client"] }
+hydentity = { workspace = true, features = ["client"] }
+hyllar = { workspace = true, features = ["client"] }
+risc0-recursion = { workspace = true, features = ["client"] }
+staking = { workspace = true, features = ["client"] }
+uuid-tld = { workspace = true, features = ["client"] }
+
 
 [build-dependencies]
 risc0-build = { version = "2.0.1", optional = true }
@@ -29,4 +36,13 @@ methods = [
 
 [features]
 build = ["dep:risc0-build"]
-nonreproducible = ["build"]
+nonreproducible = ["build", "all"]
+
+# Following features are used to choose which contracts should be rebuild with docker
+all = ["amm", "hyllar", "hydentity", "staking", "risc0-recursion", "uuid-tld"]
+amm = []
+hyllar = []
+hydentity = []
+staking = []
+risc0-recursion = []
+uuid-tld = []

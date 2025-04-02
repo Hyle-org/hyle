@@ -2,9 +2,7 @@ use std::collections::BTreeMap;
 
 use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
-use sdk::{
-    info, Block, BlockHeight, Identity, LaneBytesSize, LaneId, StakingAction, ValidatorPublicKey,
-};
+use sdk::{info, BlockHeight, Identity, LaneBytesSize, LaneId, ValidatorPublicKey};
 use serde::{Deserialize, Serialize};
 
 use crate::fees::Fees;
@@ -158,7 +156,9 @@ impl Staking {
     }
 
     /// Update the state of staking with staking actions in a block
-    pub fn process_block(&mut self, block: &Block) -> Result<(), String> {
+    #[cfg(feature = "client")]
+    pub fn process_block(&mut self, block: &sdk::Block) -> Result<(), String> {
+        use sdk::StakingAction;
         for action in &block.staking_actions {
             match action.clone() {
                 (identity, StakingAction::Stake { amount }) => {

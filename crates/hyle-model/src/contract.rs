@@ -618,7 +618,7 @@ impl Add<BlockHeight> for BlockHeight {
 #[derive(
     Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize,
 )]
-/// Used as a blob action to register a contract in the 'hyle' TLD.
+/// Used as a blob action to register a contract.
 pub struct RegisterContractAction {
     pub verifier: Verifier,
     pub program_id: ProgramId,
@@ -662,7 +662,7 @@ impl ContractAction for RegisterContractAction {
 #[derive(
     Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize,
 )]
-/// Used as a blob action to delete a contract in the 'hyle' TLD.
+/// Used as a blob action to delete a contract.
 pub struct DeleteContractAction {
     pub contract_name: ContractName,
 }
