@@ -1,6 +1,5 @@
-#![allow(clippy::all)]
-
 mod fixtures;
+#[allow(clippy::all)]
 #[cfg(feature = "turmoil")]
 #[cfg(test)]
 mod turmoil_tests {
@@ -14,7 +13,7 @@ mod turmoil_tests {
     use rand::{rngs::StdRng, SeedableRng};
     use tracing::warn;
 
-    use crate::fixtures::{test_helpers::wait_height, turmoil::ctx::TurmoilCtx};
+    use crate::fixtures::{test_helpers::wait_height, turmoil::TurmoilCtx};
 
     pub fn make_register_contract_tx(name: ContractName) -> BlobTransaction {
         BlobTransaction::new(
