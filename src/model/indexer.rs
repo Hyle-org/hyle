@@ -107,6 +107,7 @@ pub struct BlobDb {
     pub identity: String,  // Identity of the blob
     pub contract_name: String, // Contract name associated with the blob
     pub data: Vec<u8>,     // Actual blob data
+    pub proof_outputs: Vec<serde_json::Value>, // outputs of proofs
     pub verified: bool,    // Verification status
 }
 
@@ -118,6 +119,7 @@ impl From<BlobDb> for APIBlob {
             identity: value.identity,
             contract_name: value.contract_name,
             data: value.data,
+            proof_outputs: value.proof_outputs,
             verified: value.verified,
         }
     }

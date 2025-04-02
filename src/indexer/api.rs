@@ -324,7 +324,7 @@ pub async fn get_transaction_events(
         SELECT t.block_hash, b.height, t.tx_hash, t.events
         FROM transaction_state_events t
         LEFT JOIN blocks b ON t.block_hash = b.hash
-        WHERE tx_hash = $1 AND t.transaction_type = 'blob_transaction'
+        WHERE tx_hash = $1
         ORDER BY (b.height, index) DESC;
         "#,
         )
@@ -475,12 +475,22 @@ pub async fn get_blobs_by_tx_hash(
     State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<APIBlob>>, StatusCode> {
     // TODO: Order transaction ?
-    let blobs = sqlx::query_as::<_, BlobDb>("SELECT * FROM blobs WHERE tx_hash = $1")
-        .bind(tx_hash)
-        .fetch_all(&state.db)
-        .await
-        .map(|db| db.into_iter().map(Into::<APIBlob>::into).collect())
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let blobs = sqlx::query_as::<_, BlobDb>(
+        r#"
+        SELECT blobs.*, array_remove(ARRAY_AGG(blob_proof_outputs.hyle_output), NULL) AS proof_outputs
+        FROM blobs
+        LEFT JOIN blob_proof_outputs ON blobs.parent_dp_hash = blob_proof_outputs.blob_parent_dp_hash 
+            AND blobs.tx_hash = blob_proof_outputs.blob_tx_hash 
+            AND blobs.blob_index = blob_proof_outputs.blob_index
+        WHERE blobs.tx_hash = $1
+        GROUP BY blobs.parent_dp_hash, blobs.tx_hash, blobs.blob_index, blobs.identity
+        "#,
+    )
+    .bind(tx_hash)
+    .fetch_all(&state.db)
+    .await
+    .map(|db| db.into_iter().map(Into::<APIBlob>::into).collect())
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // This could return 404 if the transaction doesn't exist,
     // but not done for now as it would take an extra query
@@ -503,14 +513,23 @@ pub async fn get_blob(
     Path((tx_hash, blob_index)): Path<(String, i32)>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<APIBlob>, StatusCode> {
-    let blob =
-        sqlx::query_as::<_, BlobDb>("SELECT * FROM blobs WHERE tx_hash = $1 AND blob_index = $2")
-            .bind(tx_hash)
-            .bind(blob_index)
-            .fetch_optional(&state.db)
-            .await
-            .map(|db| db.map(Into::<APIBlob>::into))
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let blob = sqlx::query_as::<_, BlobDb>(
+        r#"
+        SELECT blobs.*, array_remove(ARRAY_AGG(blob_proof_outputs.hyle_output), NULL) AS proof_outputs
+        FROM blobs
+        LEFT JOIN blob_proof_outputs ON blobs.parent_dp_hash = blob_proof_outputs.blob_parent_dp_hash 
+            AND blobs.tx_hash = blob_proof_outputs.blob_tx_hash 
+            AND blobs.blob_index = blob_proof_outputs.blob_index
+        WHERE blobs.tx_hash = $1 AND blobs.blob_index = $2
+        GROUP BY blobs.parent_dp_hash, blobs.tx_hash, blobs.blob_index, blobs.identity
+        "#,
+    )
+    .bind(tx_hash)
+    .bind(blob_index)
+    .fetch_optional(&state.db)
+    .await
+    .map(|db| db.map(Into::<APIBlob>::into))
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match blob {
         Some(blob) => Ok(Json(blob)),
