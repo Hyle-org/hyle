@@ -80,7 +80,7 @@ hyle-contract-sdk = { workspace = true, default-features = false, features = [
 ] }
 staking = { workspace = true, default-features = false, features = ["client"] }
 client-sdk = { workspace = true, features = ["rest", "indexer"] }
-hyle-net = { workspace = true, features = ["tokio"] }
+hyle-net = { workspace = true }
 hyle-model = { workspace = true, default-features = false, features = [
   "full",
   "sqlx",
@@ -186,6 +186,8 @@ signal-child = "1.0.6"
 
 [features]
 default = []
+
+turmoil = ["hyle-net/turmoil", "client-sdk/turmoil"]
 
 sp1 = ["hyle-verifiers/sp1"]
 

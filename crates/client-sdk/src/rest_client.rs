@@ -11,6 +11,7 @@ use sdk::{
     ProofTransaction, TxHash, UnsettledBlobTransaction,
 };
 
+#[derive(Clone)]
 pub struct IndexerApiHttpClient {
     pub client: HttpClient,
 }
