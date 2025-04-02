@@ -64,9 +64,12 @@ impl Module for NodeStateModule {
         }
         let metrics = NodeStateMetrics::global(ctx.config.id.clone(), "node_state");
 
-        let store = Self::load_from_disk_or_default::<NodeStateStore>(
+        let store = Self::load_from_disk::<NodeStateStore>(
             ctx.config.data_directory.join("node_state.bin").as_path(),
-        );
+        )
+        .unwrap_or(NodeStateStore::new(BlockHeight(
+            ctx.config.node_state.timeout_window,
+        )));
 
         for name in store.contracts.keys() {
             info!("📝 Loaded contract state for {}", name);
