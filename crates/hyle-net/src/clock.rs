@@ -5,7 +5,14 @@ pub struct TimestampMsClock;
 impl TimestampMsClock {
     #[cfg(not(feature = "turmoil"))]
     pub fn now() -> TimestampMs {
-        TimestampMs(tokio::time::Instant::now().elapsed().as_millis())
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        TimestampMs(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backward")
+                .as_millis(),
+        )
     }
 
     #[cfg(feature = "turmoil")]
