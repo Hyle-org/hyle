@@ -18,6 +18,8 @@ use super::network::PeerEvent;
 use super::network::{Hello, NetMessage};
 use super::stream::send_net_message;
 use crate::bus::bus_client;
+use crate::bus::command_response::CmdRespClient;
+use crate::bus::command_response::Query;
 use crate::bus::BusClientSender;
 use crate::bus::SharedMessageBus;
 use crate::log_warn;
@@ -26,6 +28,7 @@ use crate::model::ConsensusNetMessage;
 use crate::model::SignedByValidator;
 use crate::model::ValidatorPublicKey;
 use crate::module_handle_messages;
+use crate::p2p::network::Verack;
 use crate::p2p::stream::read_stream;
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::BlstCrypto;
@@ -37,10 +40,14 @@ struct PeerBusClient {
     sender(SignedByValidator<MempoolNetMessage>),
     sender(SignedByValidator<ConsensusNetMessage>),
     sender(PeerEvent),
+    sender(Query<QueryNewPeer, bool>),
     receiver(OutboundMessage),
     receiver(ShutdownModule),
 }
 }
+
+#[derive(Debug, Clone)]
+pub struct QueryNewPeer(pub ValidatorPublicKey);
 
 pub struct Peer {
     id: u64,
@@ -128,20 +135,37 @@ impl Peer {
                 self.peer_pubkey = Some(v.signature.validator);
                 self.peer_name = Some(v.msg.name);
                 self.peer_da_address = Some(v.msg.da_address);
-                send_net_message(&mut self.stream, HandshakeNetMessage::Verack.into()).await
+
+                send_net_message(
+                    &mut self.stream,
+                    HandshakeNetMessage::Verack(self.crypto.sign(Verack { version: 1 })?).into(),
+                )
+                .await
             }
-            HandshakeNetMessage::Verack => {
+            HandshakeNetMessage::Verack(v) => {
                 trace!("Got peer verack message");
-                if let Some(pubkey) = &self.peer_pubkey {
-                    self.bus.send(PeerEvent::NewPeer {
-                        name: self.peer_name.clone().unwrap_or("unknown".to_string()),
-                        pubkey: pubkey.clone(),
-                        da_address: self
-                            .peer_da_address
-                            .clone()
-                            .unwrap_or("unknown".to_string()),
-                    })?;
-                }
+                let pubkey = v.signature.validator;
+
+                match self.bus.request(QueryNewPeer(pubkey.clone())).await {
+                    Ok(res) => {
+                        if res {
+                            self.bus.send(PeerEvent::NewPeer {
+                                name: self.peer_name.clone().unwrap_or("unknown".to_string()),
+                                pubkey: pubkey.clone(),
+                                da_address: self
+                                    .peer_da_address
+                                    .clone()
+                                    .unwrap_or("unknown".to_string()),
+                            })?;
+                        } else {
+                            // FIXME: We panic in order to be sure that the peer task is droped.
+                            panic!("Peer already exists. Not recreating connection");
+                        }
+                    }
+                    Err(err) => {
+                        warn!("Error while requesting new peer: {:?}", err);
+                    }
+                };
                 self.ping_pong();
                 Ok(())
             }

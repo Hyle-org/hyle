@@ -1,7 +1,7 @@
 //! Networking layer
 
 use crate::{
-    bus::{BusMessage, SharedMessageBus},
+    bus::{command_response::Query, BusMessage, SharedMessageBus},
     log_error,
     model::SharedRunContext,
     module_handle_messages,
@@ -12,6 +12,8 @@ use crate::{
     },
 };
 use anyhow::{Context, Result};
+use hyle_model::ValidatorPublicKey;
+use peer::QueryNewPeer;
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use tokio::time::sleep;
 use tracing::{error, info, trace, warn};
@@ -30,6 +32,7 @@ impl BusMessage for P2PCommand {}
 module_bus_client! {
 struct P2PBusClient {
     receiver(P2PCommand),
+    receiver(Query<QueryNewPeer, bool>),
 }
 }
 
@@ -39,7 +42,7 @@ pub struct P2P {
     bus_client: P2PBusClient,
     crypto: SharedBlstCrypto,
     peer_id: u64,
-    connected_peers: HashSet<String>,
+    connected_peers: HashSet<ValidatorPublicKey>,
 }
 
 impl Module for P2P {
@@ -64,18 +67,11 @@ impl Module for P2P {
 
 impl P2P {
     fn spawn_peer(&mut self, peer_address: String) {
-        if self.connected_peers.contains(&peer_address)
-            || peer_address == format!("{}:{}", self.config.hostname, self.config.p2p.server_port)
-        {
-            return;
-        }
-
         let config = self.config.clone();
         let bus = self.bus.new_handle();
         let crypto = self.crypto.clone();
         let id = self.peer_id;
         self.peer_id += 1;
-        self.connected_peers.insert(peer_address.clone());
 
         let _ = log_error!(
             tokio::task::Builder::new()
@@ -127,6 +123,11 @@ impl P2P {
         }
     }
 
+    fn handle_querynewpeer(&mut self, query: &mut QueryNewPeer) -> Result<bool> {
+        // Return true if the peer was not already in the set
+        Ok(self.connected_peers.insert(query.0.clone()))
+    }
+
     pub async fn p2p_server(&mut self) -> Result<()> {
         // Wait all other threads to start correctly
         sleep(Duration::from_secs(1)).await;
@@ -149,6 +150,10 @@ impl P2P {
             on_bus self.bus_client,
             listen<P2PCommand> cmd => {
                  self.handle_command(cmd)
+            }
+
+            command_response<QueryNewPeer, bool> query => {
+                self.handle_querynewpeer(query)
             }
 
             res = listener.accept() => {
