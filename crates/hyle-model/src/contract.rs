@@ -488,6 +488,7 @@ pub struct HyleOutput {
     pub index: BlobIndex,
     /// The blobs that were used by the contract. It has to be a subset of the transactions blobs
     /// It can be the complete list of blobs if the contract used all of them.
+    /// the Vec<u8> is the contract name as bytes concatenated with the blob data.
     pub blobs: Vec<(BlobIndex, Vec<u8>)>,
     /// Number of blobs in the transaction. tx_blob_count >= blobs.len()
     pub tx_blob_count: usize,
