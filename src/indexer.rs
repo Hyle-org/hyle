@@ -21,7 +21,6 @@ use axum::{
     routing::get,
     Router,
 };
-use chrono::DateTime;
 use futures::{SinkExt, StreamExt};
 use hyle_contract_sdk::TxHash;
 use hyle_model::api::{
