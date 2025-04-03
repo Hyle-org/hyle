@@ -1806,3 +1806,134 @@ async fn autobahn_commit_byzantine_across_views_attempts() {
         }
     };
 }
+
+#[test_log::test(tokio::test)]
+async fn autobahn_commit_prepare_qc_across_multiple_views() {
+    let (mut node0, mut node1, mut node2, mut node3) = build_nodes!(4).await;
+
+    ConsensusTestCtx::setup_for_round(
+        &mut [
+            &mut node0.consensus_ctx,
+            &mut node1.consensus_ctx,
+            &mut node2.consensus_ctx,
+            &mut node3.consensus_ctx,
+        ],
+        0,
+        5,
+        0,
+    );
+
+    // Slot 5 starts, all nodes receive the prepare
+    node0.start_round_with_cut_from_mempool().await;
+
+    let initial_cp;
+    broadcast! {
+        description: "Prepare",
+        from: node0.consensus_ctx, to: [node1.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Prepare(cp, ..) => {
+            initial_cp = cp.clone();
+        }
+    };
+
+    send! {
+        description: "PrepareVote",
+        from: [node1.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx], to: node0.consensus_ctx,
+        message_matches: ConsensusNetMessage::PrepareVote(_)
+    };
+
+    // Node0 gets the confirm message out but then crashes before sending commit
+    broadcast! {
+        description: "Confirm",
+        from: node0.consensus_ctx, to: [node1.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Confirm(..)
+    };
+
+    send! {
+        description: "ConfirmAck",
+        from: [node1.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx], to: node0.consensus_ctx,
+        message_matches: ConsensusNetMessage::ConfirmAck(_)
+    };
+
+    // First timeout - nodes 1,2,3 timeout and move to view 1
+    ConsensusTestCtx::timeout(&mut [
+        &mut node1.consensus_ctx,
+        &mut node2.consensus_ctx,
+        &mut node3.consensus_ctx,
+    ])
+    .await;
+
+    broadcast! {
+        description: "Follower - First Timeout",
+        from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Timeout(..)
+    };
+    broadcast! {
+        description: "Follower - First Timeout",
+        from: node2.consensus_ctx, to: [node1.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Timeout(..)
+    };
+    broadcast! {
+        description: "Follower - First Timeout",
+        from: node3.consensus_ctx, to: [node1.consensus_ctx, node2.consensus_ctx],
+        message_matches: ConsensusNetMessage::Timeout(..)
+    };
+
+    // Node 1 is next leader (slot 5 + view 1 = 6 % 4 = 2), doesn't emit timeout certificate
+    node1
+        .consensus_ctx
+        .assert_no_broadcast("Timeout Certificate 1");
+    node2
+        .consensus_ctx
+        .assert_broadcast("Timeout Certificate 2");
+    node3
+        .consensus_ctx
+        .assert_broadcast("Timeout Certificate 3");
+
+    // Second timeout - move to view 2
+    ConsensusTestCtx::timeout(&mut [
+        &mut node1.consensus_ctx,
+        &mut node2.consensus_ctx,
+        &mut node3.consensus_ctx,
+    ])
+    .await;
+
+    broadcast! {
+        description: "Follower - Second Timeout",
+        from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Timeout(..)
+    };
+    broadcast! {
+        description: "Follower - Second Timeout",
+        from: node2.consensus_ctx, to: [node1.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Timeout(..)
+    };
+    broadcast! {
+        description: "Follower - Second Timeout",
+        from: node3.consensus_ctx, to: [node1.consensus_ctx, node2.consensus_ctx],
+        message_matches: ConsensusNetMessage::Timeout(..)
+    };
+
+    // Node 2 is next leader (slot 5 + view 2 = 7 % 4 = 3), doesn't emit timeout certificate
+    node1
+        .consensus_ctx
+        .assert_broadcast("Timeout Certificate 1");
+    node2
+        .consensus_ctx
+        .assert_no_broadcast("Timeout Certificate 2");
+    node3
+        .consensus_ctx
+        .assert_broadcast("Timeout Certificate 3");
+
+    // Start next round with node2 as leader
+    node2.start_round_with_cut_from_mempool().await;
+
+    // Check that node2 is reproposing the same CP from view 0
+    broadcast! {
+        description: "Prepare",
+        from: node2.consensus_ctx, to: [node1.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Prepare(cp, Ticket::TimeoutQC(.., TCKind::PrepareQC((_, tcp))), _) => {
+            assert_eq!(cp, &initial_cp, "Leader must propose the same CP from view 0 even after multiple view changes");
+            assert_eq!(tcp, &initial_cp, "TimeoutQC must reference the same CP from view 0");
+        }
+    };
+}

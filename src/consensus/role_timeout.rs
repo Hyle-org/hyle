@@ -66,22 +66,21 @@ impl TimeoutState {
 pub(super) struct TimeoutRoleState {
     pub(super) requests: HashSet<SignedByValidator<ConsensusNetMessage>>,
     pub(super) state: TimeoutState,
-    pub(super) highest_seen_prepare_qc: Option<(Slot, View, QuorumCertificate)>,
+    pub(super) highest_seen_prepare_qc: Option<(Slot, QuorumCertificate)>,
 }
 
 impl TimeoutRoleState {
     pub(super) fn update_highest_seen_prepare_qc(
         &mut self,
         slot: Slot,
-        view: View,
         qc: QuorumCertificate,
     ) -> bool {
-        if let Some((s, v, _)) = &self.highest_seen_prepare_qc {
-            if slot < *s || (slot == *s && view <= *v) {
+        if let Some((s, _)) = &self.highest_seen_prepare_qc {
+            if slot < *s {
                 return false;
             }
         }
-        self.highest_seen_prepare_qc = Some((slot, view, qc));
+        self.highest_seen_prepare_qc = Some((slot, qc));
         true
     }
 }
@@ -131,6 +130,13 @@ impl Consensus {
                     "Verifying timeout certificate with prepare QC for (slot: {}, view: {})",
                     self.bft_round_state.slot, self.bft_round_state.view
                 ))?;
+                if cp.slot != received_slot {
+                    bail!(
+                        "Received timeout certificate with prepare QC for slot {}, but timeout is for slot {}",
+                        cp.slot,
+                        received_slot
+                    );
+                }
                 // Then check the prepare quorum certificate
                 self.verify_quorum_certificate(ConsensusNetMessage::PrepareVote(cp.hashed()), qc)
                     .context("Verifying PrepareQC")?;
@@ -139,7 +145,7 @@ impl Consensus {
                     .store
                     .bft_round_state
                     .timeout
-                    .update_highest_seen_prepare_qc(received_slot, received_view, qc.clone())
+                    .update_highest_seen_prepare_qc(received_slot, qc.clone())
                 {
                     // Update our consensus proposal
                     self.bft_round_state.current_proposal = cp.clone();
@@ -289,7 +295,7 @@ impl Consensus {
                     .store
                     .bft_round_state
                     .timeout
-                    .update_highest_seen_prepare_qc(*received_slot, *received_view, qc.clone())
+                    .update_highest_seen_prepare_qc(*received_slot, qc.clone())
                 {
                     // Update our consensus proposal
                     self.bft_round_state.current_proposal = cp.clone();
@@ -377,7 +383,7 @@ impl Consensus {
 
             let ticket: Result<_, anyhow::Error> =
                 match &self.bft_round_state.timeout.highest_seen_prepare_qc {
-                    Some((s, v, qc)) if s == received_slot && v == received_view => {
+                    Some((s, qc)) if s == received_slot => {
                         // We have a prepare QC for this round, so let's send that.
                         // Aggregate a timeout message and send the prepareQC
                         let signed_messages: Vec<_> = self
@@ -455,17 +461,17 @@ impl Consensus {
                 if matches!(self.bft_round_state.state_tag, StateTag::Joining) {
                     self.bft_round_state.state_tag = StateTag::Leader;
                 }
-                self.carry_on_with_ticket(Ticket::TimeoutQC(ticket.0, ticket.1))?;
             } else {
                 // Broadcast the Timeout Certificate to all validators
                 self.broadcast_net_message(ConsensusNetMessage::TimeoutCertificate(
-                    ticket.0,
-                    ticket.1,
+                    ticket.0.clone(),
+                    ticket.1.clone(),
                     *received_slot,
                     *received_view,
                 ))?;
                 self.bft_round_state.timeout.state.certificate_emitted();
             }
+            self.carry_on_with_ticket(Ticket::TimeoutQC(ticket.0, ticket.1))?;
         }
 
         Ok(())
@@ -477,7 +483,7 @@ impl Consensus {
             self.bft_round_state.view,
             self.bft_round_state.parent_hash.clone(),
         ))?;
-        tracing::error!(
+        tracing::debug!(
             "Sending timeout message for slot {} and view {}.\nHighest seen {:?}",
             self.bft_round_state.slot,
             self.bft_round_state.view,
@@ -485,10 +491,8 @@ impl Consensus {
         );
         Ok(
             match &self.bft_round_state.timeout.highest_seen_prepare_qc {
-                Some((s, v, qc))
-                    if s == &self.bft_round_state.slot && v == &self.bft_round_state.view =>
-                {
-                    // TODO: we should check that the CP we're sending matches the prepare.
+                Some((s, qc)) if s == &self.bft_round_state.slot => {
+                    // If we have a PrepareQC for this slot (any view), use it
                     ConsensusNetMessage::Timeout(
                         signed_timeout_metadata,
                         TimeoutKind::PrepareQC((
