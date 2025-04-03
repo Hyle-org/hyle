@@ -19,7 +19,7 @@ use tokio::{io::AsyncBufReadExt, time::timeout};
 use tracing::info;
 
 pub struct ConfMaker {
-    i: u16,
+    pub i: u16,
     pub default: Conf,
 }
 

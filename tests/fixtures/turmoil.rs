@@ -35,6 +35,27 @@ impl TurmoilNodeProcess {
     }
 }
 
+impl ConfMaker {
+    pub fn build_turmoil(&mut self, prefix: &str) -> Conf {
+        self.i += 1;
+
+        let mut node_conf = Conf {
+            id: if prefix == "single-node" {
+                prefix.into()
+            } else {
+                format!("{}-{}", prefix, self.i)
+            },
+            ..self.default.clone()
+        };
+        node_conf.hostname = node_conf.id.clone();
+        node_conf.data_directory.pop();
+        node_conf
+            .data_directory
+            .push(format!("data_{}", node_conf.id));
+        return node_conf;
+    }
+}
+
 pub struct TurmoilCtx {
     pub nodes: Vec<TurmoilNodeProcess>,
     slot_duration: Duration,
@@ -48,13 +69,8 @@ impl TurmoilCtx {
         let mut genesis_stakers = std::collections::HashMap::new();
 
         for _ in 0..count {
-            let mut node_conf = conf_maker.build("node");
+            let mut node_conf = conf_maker.build_turmoil("node");
             node_conf.p2p.peers = peers.clone();
-            node_conf.hostname = node_conf.id.clone();
-            node_conf.data_directory.pop();
-            node_conf
-                .data_directory
-                .push(format!("data_{}", node_conf.id));
             genesis_stakers.insert(node_conf.id.clone(), 100);
             peers.push(format!("{}:{}", node_conf.id, node_conf.p2p.server_port));
             confs.push(node_conf);
@@ -90,18 +106,6 @@ impl TurmoilCtx {
             nodes,
             slot_duration: Duration::from_millis(slot_duration_ms),
         })
-    }
-
-    pub fn make_conf(&self, prefix: &str) -> Conf {
-        let mut conf_maker = ConfMaker::default();
-        let mut node_conf = conf_maker.build(prefix);
-        node_conf.consensus.slot_duration = self.slot_duration;
-        node_conf.p2p.peers = self
-            .nodes
-            .iter()
-            .map(|node| format!("{}:{}", node.conf.id, node.conf.p2p.server_port.clone()))
-            .collect();
-        node_conf
     }
 
     pub fn setup_simulation(&self, sim: &mut Sim<'_>) -> anyhow::Result<()> {
