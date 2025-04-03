@@ -52,7 +52,7 @@ impl ConfMaker {
         node_conf
             .data_directory
             .push(format!("data_{}", node_conf.id));
-        return node_conf;
+        node_conf
     }
 }
 
