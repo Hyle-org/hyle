@@ -35,7 +35,7 @@ pub struct UnsettledBlobTransaction {
     pub parent_dp_hash: DataProposalHash,
     pub hash: TxHash,
     pub tx_context: TxContext,
-    pub blobs_hash: BlobsHash,
+    pub blobs_hash: BlobsHashes,
     pub blobs: Vec<UnsettledBlobMetadata>,
 }
 
@@ -115,7 +115,10 @@ impl Hashed<HyleOutputHash> for HyleOutput {
         hasher.update(self.next_state.0.clone());
         hasher.update(self.identity.0.as_bytes());
         hasher.update(self.index.0.to_le_bytes());
-        hasher.update(&self.blobs);
+        for blob in &self.blobs {
+            hasher.update(blob.0 .0.to_le_bytes());
+            hasher.update(blob.1.as_slice());
+        }
         hasher.update([self.success as u8]);
         hasher.update(self.onchain_effects.len().to_le_bytes());
         self.onchain_effects.iter().for_each(|c| match c {

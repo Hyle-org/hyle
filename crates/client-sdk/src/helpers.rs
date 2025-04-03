@@ -171,6 +171,7 @@ pub mod test {
             identity: contract_input.identity.clone(),
             index: contract_input.index,
             blobs: flatten_blobs(&contract_input.blobs),
+            tx_blob_count: contract_input.tx_blob_count,
             success: true,
             tx_hash: contract_input.tx_hash.clone(),
             tx_ctx: None,

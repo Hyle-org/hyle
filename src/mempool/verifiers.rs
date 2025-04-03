@@ -113,7 +113,7 @@ pub fn verify_native(
 ) -> HyleOutput {
     #[allow(clippy::expect_used, reason = "Logic error in the code")]
     let blob = blobs.get(index.0).expect("Invalid blob index");
-    let blobs = hyle_contract_sdk::flatten_blobs(blobs);
+    let blobs = hyle_contract_sdk::flatten_blobs_vec(blobs);
 
     let (identity, success) = match verify_native_impl(blob, verifier) {
         Ok((identity, success)) => (identity, success),
@@ -135,6 +135,7 @@ pub fn verify_native(
         next_state: StateCommitment::default(),
         identity,
         index,
+        tx_blob_count: blobs.len(),
         blobs,
         success,
         tx_hash,

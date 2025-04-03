@@ -3,9 +3,7 @@ use std::sync::Arc;
 
 use anyhow::{bail, Result};
 use assertables::assert_ok;
-use hyle_contract_sdk::{
-    flatten_blobs, Blob, BlobData, HyleOutput, Identity, ProgramId, StateCommitment,
-};
+use hyle_contract_sdk::{Blob, BlobData, HyleOutput, Identity, ProgramId, StateCommitment};
 use tracing::info;
 
 use crate::bus::command_response::Query;
@@ -107,7 +105,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
             &vec![HyleOutput {
                 success: true,
                 identity: blob_tx.identity.clone(),
-                blobs: flatten_blobs(&blob_tx.blobs),
+                blobs: flatten_blobs_vec(&blob_tx.blobs),
                 tx_hash: blob_tx_hash.clone(),
                 ..HyleOutput::default()
             }],
