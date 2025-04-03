@@ -260,12 +260,9 @@ impl FollowerRole for Consensus {
         )?;
 
         let slot = self.bft_round_state.slot;
-        let view = self.bft_round_state.view;
-        self.bft_round_state.timeout.update_highest_seen_prepare_qc(
-            slot,
-            view,
-            prepare_quorum_certificate.clone(),
-        );
+        self.bft_round_state
+            .timeout
+            .update_highest_seen_prepare_qc(slot, prepare_quorum_certificate.clone());
 
         // Responds ConfirmAck to leader
         if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
