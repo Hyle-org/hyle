@@ -31,6 +31,8 @@ use caller::ExecutionContext;
 // re-export hyle-model
 pub use hyle_model::*;
 
+pub use hyle_model::utils as hyle_model_utils;
+
 #[cfg(feature = "tracing")]
 pub use tracing;
 

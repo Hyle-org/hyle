@@ -6,7 +6,7 @@ use std::{
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
-use crate::LaneId;
+use crate::{utils::TimestampMs, LaneId};
 
 pub mod verifiers {
     pub const RISC0_1: &str = "risc0-1";
@@ -474,7 +474,7 @@ pub struct TxContext {
     pub lane_id: LaneId,
     pub block_hash: BlockHash,
     pub block_height: BlockHeight,
-    pub timestamp: u128,
+    pub timestamp: TimestampMs,
     pub chain_id: u128,
 }
 

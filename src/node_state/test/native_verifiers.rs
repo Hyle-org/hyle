@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::Result;
 use assertables::assert_ok;
 use hyle_model::{Blob, BlobTransaction, ContractName, Hashed, Identity};
@@ -68,7 +70,7 @@ async fn test_sha3_256_native_verifier() {
 
 async fn scenario(identity: Identity, blob: Blob) -> Result<()> {
     let mut node_modules = NodeIntegrationCtxBuilder::new().await;
-    node_modules.conf.consensus.slot_duration = 200;
+    node_modules.conf.consensus.slot_duration = Duration::from_millis(200);
     let mut node_modules = node_modules.skip::<RestApi>().build().await?;
 
     let mut node_client = Client::new_from_bus(node_modules.bus.new_handle()).await;

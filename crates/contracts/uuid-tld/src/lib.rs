@@ -119,7 +119,7 @@ impl UuidTld {
         hasher.write(&self.commit().0);
         hasher.write(calldata.tx_hash.0.as_bytes());
         hasher.write(tx_ctx.block_hash.0.as_bytes());
-        hasher.write_u128(tx_ctx.timestamp);
+        hasher.write_u128(tx_ctx.timestamp.0);
         let mut hasher_rng = hasher.into_rng();
         let id = uuid::Builder::from_random_bytes(hasher_rng.random())
             .into_uuid()
@@ -156,6 +156,7 @@ impl UuidTld {
 #[cfg(test)]
 mod test {
     use crate::*;
+    use hyle_model_utils::TimestampMs;
     use sdk::*;
 
     fn make_calldata<T: ContractAction>(action: T, identity: &str) -> Calldata {
@@ -164,7 +165,7 @@ mod test {
             tx_hash: TxHash::default(),
             tx_ctx: Some(TxContext {
                 block_hash: ConsensusProposalHash("0xcafefade".to_owned()),
-                timestamp: 3745916,
+                timestamp: TimestampMs(3745916),
                 ..TxContext::default()
             }),
             private_input: vec![],

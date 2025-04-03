@@ -32,6 +32,7 @@ use std::{
     ops::{Deref, DerefMut},
     path::PathBuf,
     sync::Arc,
+    time::Duration,
 };
 use storage::{LaneEntry, Storage};
 use tokio::task::JoinSet;
@@ -235,8 +236,11 @@ impl Module for Mempool {
 impl Mempool {
     /// start starts the mempool server.
     pub async fn start(&mut self) -> Result<()> {
-        let tick_time = std::cmp::min(self.conf.consensus.slot_duration / 2, 500);
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(tick_time));
+        let tick_interval = std::cmp::min(
+            self.conf.consensus.slot_duration / 2,
+            Duration::from_millis(500),
+        );
+        let mut interval = tokio::time::interval(tick_interval);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
         // TODO: Recompute optimistic node_state for contract registrations.
@@ -691,6 +695,7 @@ pub mod test {
     use assertables::assert_ok;
     use hyle_contract_sdk::StateCommitment;
     use tokio::sync::broadcast::Receiver;
+    use utils::TimestampMs;
 
     pub struct MempoolTestCtx {
         pub name: String,
@@ -1078,7 +1083,7 @@ pub mod test {
                             slot,
                             cut: cut.clone(),
                             staking_actions: vec![],
-                            timestamp: 777,
+                            timestamp: TimestampMs(777),
                             parent_hash: ConsensusProposalHash("test".to_string()),
                         },
                         certificate: AggregateSignature::default(),

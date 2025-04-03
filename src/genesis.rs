@@ -28,6 +28,7 @@ use staking::{
     state::Staking,
 };
 use tracing::{debug, error, info};
+use utils::TimestampMs;
 use verifiers::NativeVerifiers;
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
@@ -505,7 +506,7 @@ impl Genesis {
             consensus_proposal: ConsensusProposal {
                 slot: 0,
                 // TODO: genesis block should have a consistent, up-to-date timestamp
-                timestamp: 1735689600000, // 1st of Jan 25 for now
+                timestamp: TimestampMs(1735689600000), // 1st of Jan 25 for now
                 // TODO: We aren't actually storing the data proposal above, so we cannot store it here,
                 // or we might mistakenly request data from that cut, but mempool hasn't seen it.
                 // This should be fixed by storing the data proposal in mempool or handling this whole thing differently.

@@ -3,6 +3,7 @@
 #![cfg(test)]
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use client_sdk::rest_client::NodeApiHttpClient;
@@ -36,7 +37,7 @@ impl TurmoilNodeProcess {
 
 pub struct TurmoilCtx {
     pub nodes: Vec<TurmoilNodeProcess>,
-    slot_duration: u64,
+    slot_duration: Duration,
 }
 
 impl TurmoilCtx {
@@ -76,18 +77,18 @@ impl TurmoilCtx {
         }
         nodes
     }
-    pub fn new_multi(count: usize, slot_duration: u64) -> Result<TurmoilCtx> {
+    pub fn new_multi(count: usize, slot_duration_ms: u64) -> Result<TurmoilCtx> {
         std::env::set_var("RISC0_DEV_MODE", "1");
 
         let mut conf_maker = ConfMaker::default();
-        conf_maker.default.consensus.slot_duration = slot_duration;
+        conf_maker.default.consensus.slot_duration = Duration::from_millis(slot_duration_ms);
 
         let nodes = Self::build_nodes(count, &mut conf_maker);
 
         info!("🚀 E2E test environment is ready!");
         Ok(TurmoilCtx {
             nodes,
-            slot_duration,
+            slot_duration: Duration::from_millis(slot_duration_ms),
         })
     }
 

@@ -15,9 +15,9 @@ use crate::{
 };
 use anyhow::{bail, Context, Result};
 use hyle_model::{
-    ConsensusNetMessage, ConsensusProposal, ConsensusProposalHash, ConsensusStakingAction, Cut,
-    LaneBytesSize, LaneId, NewValidatorCandidate, QuorumCertificate, TCKind, Ticket,
-    ValidatorCandidacy, View,
+    utils::TimestampMs, ConsensusNetMessage, ConsensusProposal, ConsensusProposalHash,
+    ConsensusStakingAction, Cut, LaneBytesSize, LaneId, NewValidatorCandidate, QuorumCertificate,
+    TCKind, Ticket, ValidatorCandidacy, View,
 };
 
 #[derive(BorshSerialize, BorshDeserialize, Default)]
@@ -377,9 +377,9 @@ impl FollowerRole for Consensus {
         &self,
         ConsensusProposal { timestamp, .. }: &ConsensusProposal,
     ) -> Result<()> {
-        let previous_timestamp = self.bft_round_state.current_proposal.timestamp;
+        let previous_timestamp = self.bft_round_state.current_proposal.timestamp.clone();
 
-        if previous_timestamp == 0 {
+        if previous_timestamp == TimestampMs::ZERO {
             warn!(
                 "Previous timestamp is zero, accepting {} as next",
                 timestamp
@@ -388,14 +388,14 @@ impl FollowerRole for Consensus {
         }
 
         let next_max_timestamp =
-            previous_timestamp + (2 * self.config.consensus.slot_duration as u128);
+            previous_timestamp.clone() + (2 * self.config.consensus.slot_duration);
 
         if &previous_timestamp > timestamp {
             bail!(
                 "Timestamp {} too old (should be > {}, {} ms too old)",
                 timestamp,
                 previous_timestamp,
-                previous_timestamp - timestamp
+                (previous_timestamp.clone() - timestamp.clone()).as_millis()
             );
         }
 
@@ -404,7 +404,7 @@ impl FollowerRole for Consensus {
                 "Timestamp {} too late (should be < {}, exceeded by {} ms)",
                 timestamp,
                 next_max_timestamp,
-                timestamp - next_max_timestamp
+                (timestamp.clone() - next_max_timestamp.clone()).as_millis()
             );
         }
 
@@ -412,7 +412,7 @@ impl FollowerRole for Consensus {
             "Consensus Proposal Timestamp verification ok {} -> {} ({} ms between the two rounds)",
             previous_timestamp,
             timestamp,
-            timestamp - previous_timestamp
+            (timestamp.clone() - previous_timestamp.clone()).as_millis()
         );
 
         Ok(())

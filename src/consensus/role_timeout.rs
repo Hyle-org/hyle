@@ -1,16 +1,15 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Duration};
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use hyle_model::{utils::TimestampMs, ConsensusNetMessage, QuorumCertificate, SignedByValidator};
 use hyle_model::{Hashed, Signed, TCKind, TimeoutKind};
+use hyle_net::clock::TimestampMsClock;
 use tracing::{debug, info, trace, warn};
 
 use super::Consensus;
 use crate::{
     consensus::StateTag,
-    model::{
-        utils::get_current_timestamp, ConsensusNetMessage, QuorumCertificate, SignedByValidator,
-        Slot, Ticket, ValidatorPublicKey, View,
-    },
+    model::{Slot, Ticket, ValidatorPublicKey, View},
 };
 use anyhow::{bail, Context, Result};
 
@@ -21,14 +20,14 @@ pub(super) enum TimeoutState {
     Inactive,
     // A new slot was created, and its (timeout) is scheduled
     Scheduled {
-        timestamp: u64,
+        timestamp: TimestampMs,
     },
     CertificateEmitted,
 }
 
 impl TimeoutState {
-    pub const TIMEOUT_SECS: u64 = 5;
-    pub fn schedule_next(&mut self, timestamp: u64) {
+    pub const TIMEOUT_SECS: Duration = Duration::from_secs(5);
+    pub fn schedule_next(&mut self, timestamp: TimestampMs) {
         match self {
             TimeoutState::Inactive => {
                 trace!("⏲️ Scheduling timeout");
@@ -200,7 +199,7 @@ impl Consensus {
 
     pub(super) fn on_timeout_tick(&mut self) -> Result<()> {
         match &self.bft_round_state.timeout.state {
-            TimeoutState::Scheduled { timestamp } if get_current_timestamp() >= *timestamp => {
+            TimeoutState::Scheduled { timestamp } if TimestampMsClock::now() >= *timestamp => {
                 // Trigger state transition to mutiny
                 info!(
                     "⏰ Trigger timeout for slot {} and view {}",
@@ -220,7 +219,7 @@ impl Consensus {
                 self.bft_round_state
                     .timeout
                     .state
-                    .schedule_next(get_current_timestamp());
+                    .schedule_next(TimestampMsClock::now());
 
                 Ok(())
             }
@@ -364,7 +363,7 @@ impl Consensus {
             self.bft_round_state
                 .timeout
                 .state
-                .schedule_next(get_current_timestamp());
+                .schedule_next(TimestampMsClock::now());
         }
 
         // Create TC if applicable
@@ -448,7 +447,7 @@ impl Consensus {
             self.bft_round_state
                 .timeout
                 .state
-                .schedule_next(get_current_timestamp());
+                .schedule_next(TimestampMsClock::now());
 
             let round_leader = self.next_view_leader()?;
             if &round_leader == self.crypto.validator_pubkey() {

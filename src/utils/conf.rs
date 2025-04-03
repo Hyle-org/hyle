@@ -1,11 +1,15 @@
 use anyhow::{Context, Result};
 use config::{Config, Environment, File};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fmt::Debug, path::PathBuf, sync::Arc};
+use serde_with::serde_as;
+use serde_with::DurationMilliSeconds;
+use std::{collections::HashMap, fmt::Debug, path::PathBuf, sync::Arc, time::Duration};
 
+#[serde_as]
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Consensus {
-    pub slot_duration: u64,
+    #[serde_as(as = "DurationMilliSeconds")]
+    pub slot_duration: Duration,
     /// Whether the network runs as a single node or with a multi-node consensus.
     pub solo: bool,
 }
