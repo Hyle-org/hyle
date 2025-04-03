@@ -33,7 +33,7 @@ pub fn make_register_contract_tx(name: ContractName) -> BlobTransaction {
 fn turmoil_test_leader_killed() -> anyhow::Result<()> {
     let rng = StdRng::seed_from_u64(123);
     let mut sim = hyle_net::turmoil::Builder::new()
-        .simulation_duration(Duration::from_secs(100))
+        .simulation_duration(Duration::from_secs(10))
         // .fail_rate(0.9)
         .tick_duration(Duration::from_millis(100))
         .enable_tokio_io()

@@ -1,7 +1,10 @@
 #![allow(unused)]
 #![allow(clippy::indexing_slicing)]
 
-use std::time::Duration;
+use std::{
+    net::{Ipv4Addr, TcpListener},
+    time::Duration,
+};
 
 use anyhow::{Context, Result};
 use api::APIContract;
@@ -22,6 +25,7 @@ use hyle_contract_sdk::{
     flatten_blobs, BlobIndex, ContractName, HyleOutput, Identity, ProgramId, StateCommitment,
     TxHash, Verifier,
 };
+use hyle_net::net::bind_tcp_listener;
 
 use crate::fixtures::test_helpers::wait_height_timeout;
 
@@ -53,7 +57,7 @@ impl E2ECtx {
             .unwrap()
     }
 
-    fn build_nodes(
+    async fn build_nodes(
         count: usize,
         conf_maker: &mut ConfMaker,
     ) -> (Vec<test_helpers::TestProcess>, Vec<NodeApiHttpClient>) {
@@ -64,7 +68,7 @@ impl E2ECtx {
         let mut genesis_stakers = std::collections::HashMap::new();
 
         for i in 0..count {
-            let mut node_conf = conf_maker.build("node");
+            let mut node_conf = conf_maker.build("node").await;
             node_conf.p2p.peers = peers.clone();
             genesis_stakers.insert(node_conf.id.clone(), 100);
             peers.push(format!(
@@ -101,7 +105,7 @@ impl E2ECtx {
         conf_maker.default.genesis.stakers =
             vec![("single-node".to_string(), 100)].into_iter().collect();
 
-        let node_conf = conf_maker.build("single-node");
+        let node_conf = conf_maker.build("single-node").await;
         let node = test_helpers::TestProcess::new("hyle", node_conf)
             //.log("hyle=info,tower_http=error")
             .start();
@@ -141,7 +145,7 @@ impl E2ECtx {
             pg.get_host_port_ipv4(5432).await.unwrap()
         );
 
-        let node_conf = conf_maker.build("single-node");
+        let node_conf = conf_maker.build("single-node").await;
         let node = test_helpers::TestProcess::new("hyle", node_conf.clone())
             //.log("hyle=info,tower_http=error")
             .start();
@@ -152,7 +156,7 @@ impl E2ECtx {
                 .expect("Creating http client for node");
 
         // Start indexer
-        let mut indexer_conf = conf_maker.build("indexer");
+        let mut indexer_conf = conf_maker.build("indexer").await;
         indexer_conf.da_address = format!("localhost:{}", node_conf.da_server_port);
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
@@ -182,7 +186,7 @@ impl E2ECtx {
         let mut conf_maker = ConfMaker::default();
         conf_maker.default.consensus.slot_duration = Duration::from_millis(slot_duration_ms);
 
-        let (nodes, clients) = Self::build_nodes(count, &mut conf_maker);
+        let (nodes, clients) = Self::build_nodes(count, &mut conf_maker).await;
         wait_height_timeout(clients.first().unwrap(), 1, 120).await?;
 
         loop {
@@ -209,9 +213,9 @@ impl E2ECtx {
         })
     }
 
-    pub fn make_conf(&self, prefix: &str) -> Conf {
+    pub async fn make_conf(&self, prefix: &str) -> Conf {
         let mut conf_maker = ConfMaker::default();
-        let mut node_conf = conf_maker.build(prefix);
+        let mut node_conf = conf_maker.build(prefix).await;
         node_conf.consensus.slot_duration = self.slot_duration;
         node_conf.p2p.peers = self
             .nodes
@@ -222,7 +226,8 @@ impl E2ECtx {
     }
 
     pub async fn add_node(&mut self) -> Result<&NodeApiHttpClient> {
-        self.add_node_with_conf(self.make_conf("new_node")).await
+        self.add_node_with_conf(self.make_conf("new_node").await)
+            .await
     }
 
     pub async fn add_node_with_conf(&mut self, node_conf: Conf) -> Result<&NodeApiHttpClient> {
@@ -252,10 +257,10 @@ impl E2ECtx {
             pg.get_host_port_ipv4(5432).await.unwrap()
         );
 
-        let (mut nodes, mut clients) = Self::build_nodes(count, &mut conf_maker);
+        let (mut nodes, mut clients) = Self::build_nodes(count, &mut conf_maker).await;
 
         // Start indexer
-        let mut indexer_conf = conf_maker.build("indexer");
+        let mut indexer_conf = conf_maker.build("indexer").await;
         indexer_conf.run_indexer = true;
         indexer_conf.da_address =
             format!("localhost:{}", nodes.last().unwrap().conf.da_server_port);
