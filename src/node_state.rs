@@ -10,7 +10,7 @@ use crate::{
 };
 use anyhow::{bail, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_contract_sdk::{utils::parse_structured_blob, BlobIndex, HyleOutput, TxHash};
+use hyle_contract_sdk::{BlobIndex, HyleOutput, TxHash};
 use hyle_tld::handle_blob_for_hyle_tld;
 use metrics::NodeStateMetrics;
 use ordered_tx_map::OrderedTxMap;
@@ -758,7 +758,7 @@ impl NodeState {
             let blob = blob_metadata.blob;
             // Keep track of all stakers
             if blob.contract_name.0 == "staking" {
-                if let Some(structured_blob) = parse_structured_blob(&[blob], &BlobIndex(0)) {
+                if let Ok(structured_blob) = StructuredBlob::try_from(blob) {
                     let staking_action: StakingAction = structured_blob.data.parameters;
 
                     block_under_construction
@@ -1085,7 +1085,6 @@ pub mod test {
 
     use super::*;
     use assertables::assert_err;
-    use hyle_contract_sdk::flatten_blobs;
     use hyle_net::clock::TimestampMsClock;
     use utils::TimestampMs;
 
@@ -1154,7 +1153,8 @@ pub mod test {
             version: 1,
             identity: blob_tx.identity.clone(),
             index: blob_index,
-            blobs: flatten_blobs(&blob_tx.blobs),
+            blobs: flatten_blobs_vec(&blob_tx.blobs),
+            tx_blob_count: blob_tx.blobs.len(),
             initial_state: StateCommitment(vec![0, 1, 2, 3]),
             next_state: StateCommitment(vec![4, 5, 6]),
             success: true,
@@ -1175,7 +1175,8 @@ pub mod test {
             version: 1,
             identity: blob_tx.identity.clone(),
             index: blob_index,
-            blobs: flatten_blobs(&blob_tx.blobs),
+            blobs: flatten_blobs_vec(&blob_tx.blobs),
+            tx_blob_count: blob_tx.blobs.len(),
             initial_state: StateCommitment(initial_state.to_vec()),
             next_state: StateCommitment(next_state.to_vec()),
             success: true,

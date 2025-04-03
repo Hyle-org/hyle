@@ -1,9 +1,18 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 3a1650320b2d54dc45c8f29b1937dfd6d1f9c44e2940cdac0196c6e1ada11979
 =======
+=======
+>>>>>>> 8be8ead3 (Add blob tx count & fix zkvm contracts)
 <<<<<<< HEAD
 0b127936b1cfb4d1d71fd17ee280ba4476a590904bdc1a7c9f51bf7e2f3b1432
 =======
 c96992c5a9d5ed74722de971b6851e7baab316757eff1cfb596c8a8e91a12e00
 >>>>>>> 72c0d60e (✨ HyleOutput can return only composed blobs)
+<<<<<<< HEAD
 >>>>>>> cea0d3c5 (✨ HyleOutput can return only composed blobs)
+=======
+=======
+d36772ff0a8be3d320c88d0bd7f0a6f9aa1240ebb6dac87e50366ef4cf40cb26
+>>>>>>> 17471356 (Add blob tx count & fix zkvm contracts)
+>>>>>>> 8be8ead3 (Add blob tx count & fix zkvm contracts)

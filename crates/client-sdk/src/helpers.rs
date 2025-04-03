@@ -183,6 +183,7 @@ pub mod test {
             identity: calldata.identity.clone(),
             index: calldata.index,
             blobs: flatten_blobs(&calldata.blobs),
+            tx_blob_count: calldata.tx_blob_count,
             success: true,
             tx_hash: calldata.tx_hash.clone(),
             tx_ctx: None,

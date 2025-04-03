@@ -4,7 +4,7 @@ use crate::{
     guest::fail,
     Identity, StructuredBlobData,
 };
-use alloc::{format, vec};
+use alloc::{collections::BTreeMap, format, vec};
 use borsh::{BorshDeserialize, BorshSerialize};
 use core::result::Result;
 
@@ -26,7 +26,7 @@ where
     let blobs = &calldata.blobs;
     let index = &calldata.index;
 
-    let blob = match blobs.get(index.0) {
+    let blob = match blobs.get(index) {
         Some(v) => v,
         None => {
             return Err(format!("Could not find Blob at index {index}"));
@@ -61,7 +61,7 @@ where
     let caller = check_caller_callees::<Action>(calldata, &parsed_blob)?;
 
     let mut callees_blobs = vec::Vec::new();
-    for blob in calldata.blobs.clone().into_iter() {
+    for (_, blob) in calldata.blobs.clone().into_iter() {
         if let Ok(structured_blob) = blob.data.clone().try_into() {
             let structured_blob: StructuredBlobData<DropEndOfReader> = structured_blob; // for type inference
             if structured_blob.caller == Some(calldata.index) {
@@ -98,13 +98,13 @@ where
 }
 
 pub fn parse_structured_blob<Action>(
-    blobs: &[Blob],
+    blobs: &BTreeMap<BlobIndex, Blob>,
     index: &BlobIndex,
 ) -> Option<StructuredBlob<Action>>
 where
     Action: BorshDeserialize,
 {
-    let blob = match blobs.get(index.0) {
+    let blob = match blobs.get(index) {
         Some(v) => v,
         None => {
             return None;
@@ -145,6 +145,7 @@ pub fn as_hyle_output(
                 identity: calldata.identity.clone(),
                 index: calldata.index,
                 blobs: flatten_blobs(&calldata.blobs),
+                tx_blob_count: calldata.tx_blob_count,
                 success: true,
                 tx_hash: calldata.tx_hash.clone(),
                 tx_ctx: calldata.tx_ctx.clone(),
@@ -166,7 +167,7 @@ where
     // Check that callees has this blob as caller
     if let Some(callees) = parameters.data.callees.as_ref() {
         for callee_index in callees {
-            let callee_blob = calldata.blobs[callee_index.0].clone();
+            let callee_blob = calldata.blobs[callee_index].clone();
             let callee_structured_blob: StructuredBlobData<DropEndOfReader> =
                 callee_blob.data.try_into().expect("Failed to decode blob");
             if callee_structured_blob.caller != Some(calldata.index) {
@@ -176,7 +177,7 @@ where
     }
     // Extract the correct caller
     if let Some(caller_index) = parameters.data.caller.as_ref() {
-        let caller_blob = calldata.blobs[caller_index.0].clone();
+        let caller_blob = calldata.blobs[caller_index].clone();
         let caller_structured_blob: StructuredBlobData<DropEndOfReader> =
             caller_blob.data.try_into().expect("Failed to decode blob");
         // Check that caller has this blob as callee

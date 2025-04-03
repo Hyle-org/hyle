@@ -8,8 +8,8 @@ use std::{
 
 use anyhow::{bail, Result};
 use sdk::{
-    Blob, BlobIndex, BlobTransaction, Calldata, ContractAction, ContractName, Hashed, HyleOutput,
-    Identity, ProofTransaction, TxContext,
+    Blob, BlobIndex, BlobTransaction, BlobVec, Calldata, ContractAction, ContractName, Hashed,
+    HyleOutput, Identity, ProofTransaction, TxContext,
 };
 
 use crate::helpers::ClientSdkProver;
@@ -329,8 +329,9 @@ impl ContractRunner {
         self.commitment_metadata.get_or_init(|| commitment_metadata);
         self.calldata.get_or_init(|| Calldata {
             identity: self.identity.clone(),
-            blobs,
             index: self.index,
+            tx_blob_count: blobs.len(),
+            blobs: BlobVec(blobs).into(),
             tx_hash,
             tx_ctx: tx_context,
             private_input: self.private_input.clone().unwrap_or_default(),
