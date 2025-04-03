@@ -1,14 +1,11 @@
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use identity_provider::IdentityVerification;
-use sdk::{
-    utils::{as_hyle_output, parse_raw_calldata},
-    Blob, Calldata, ContractAction, ContractName, ProvableContractState,
-};
+use sdk::{utils::parse_raw_calldata, Blob, Calldata, ContractAction, ContractName};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use sdk::{RunResult, ZkProgram};
+use sdk::{RunResult, ZkContract};
 use sha2::{Digest, Sha256};
 
 #[cfg(feature = "client")]
@@ -18,7 +15,7 @@ pub mod indexer;
 
 pub mod identity_provider;
 
-impl ZkProgram for Hydentity {
+impl ZkContract for Hydentity {
     fn execute(&mut self, calldata: &Calldata) -> RunResult {
         let (action, exec_ctx) = parse_raw_calldata(calldata)?;
         let private_input =
@@ -99,24 +96,6 @@ impl Hydentity {
 
     pub fn as_bytes(&self) -> anyhow::Result<Vec<u8>> {
         borsh::to_vec(self).map_err(|_| anyhow::anyhow!("Failed to serialize"))
-    }
-}
-
-impl ProvableContractState for Hydentity {
-    fn build_commitment_metadata(&self, _blob: &Blob) -> Result<Vec<u8>, String> {
-        borsh::to_vec(self).map_err(|e| e.to_string())
-    }
-
-    fn execute_provable(&mut self, calldata: &Calldata) -> Result<sdk::HyleOutput, String> {
-        let initial_state_commitment = <Self as ZkProgram>::commit(self);
-        let mut res = <Self as ZkProgram>::execute(self, calldata);
-        let next_state_commitment = <Self as ZkProgram>::commit(self);
-        Ok(as_hyle_output(
-            initial_state_commitment,
-            next_state_commitment,
-            calldata,
-            &mut res,
-        ))
     }
 }
 

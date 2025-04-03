@@ -3,11 +3,8 @@ use std::hash::{Hash, Hasher};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyllar::HyllarAction;
-use sdk::utils::{as_hyle_output, parse_calldata};
-use sdk::{
-    Blob, BlobIndex, Calldata, ContractAction, ProvableContractState, RunResult, StateCommitment,
-    ZkProgram,
-};
+use sdk::utils::parse_calldata;
+use sdk::{Blob, BlobIndex, Calldata, ContractAction, RunResult, StateCommitment, ZkContract};
 use sdk::{BlobData, ContractName, StructuredBlobData};
 use serde::{Deserialize, Serialize};
 
@@ -55,7 +52,7 @@ pub struct Amm {
     pairs: BTreeMap<UnorderedTokenPair, TokenPairAmount>,
 }
 
-impl ZkProgram for Amm {
+impl ZkContract for Amm {
     fn execute(&mut self, calldata: &Calldata) -> RunResult {
         let (action, mut execution_ctx) = parse_calldata::<AmmAction>(calldata)?;
         let output = match action {
@@ -112,23 +109,6 @@ impl ZkProgram for Amm {
 
     fn commit(&self) -> sdk::StateCommitment {
         sdk::StateCommitment(self.as_bytes())
-    }
-}
-
-impl ProvableContractState for Amm {
-    fn build_commitment_metadata(&self, _blob: &Blob) -> Result<Vec<u8>, String> {
-        borsh::to_vec(self).map_err(|e| e.to_string())
-    }
-    fn execute_provable(&mut self, calldata: &Calldata) -> Result<sdk::HyleOutput, String> {
-        let initial_state_commitment = <Self as ZkProgram>::commit(self);
-        let mut res = <Self as ZkProgram>::execute(self, calldata);
-        let next_state_commitment = <Self as ZkProgram>::commit(self);
-        Ok(as_hyle_output(
-            initial_state_commitment,
-            next_state_commitment,
-            calldata,
-            &mut res,
-        ))
     }
 }
 

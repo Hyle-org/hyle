@@ -10,15 +10,15 @@ mod e2e_hyllar {
     use client_sdk::{
         contract_states,
         helpers::risc0::Risc0Prover,
-        transaction_builder::{ProvableBlobTx, TxExecutorBuilder},
+        transaction_builder::{ProvableBlobTx, TxExecutorBuilder, TxExecutorHandler},
     };
     use hydentity::{
-        client::{register_identity, verify_identity},
+        client::tx_executor_handler::{register_identity, verify_identity},
         Hydentity,
     };
-    use hyle_contract_sdk::{Blob, Calldata, ContractName, HyleOutput, ProvableContractState};
+    use hyle_contract_sdk::{Blob, Calldata, ContractName, HyleOutput};
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF};
-    use hyllar::{client::transfer, erc20::ERC20, Hyllar, FAUCET_ID};
+    use hyllar::{client::tx_executor_handler::transfer, erc20::ERC20, Hyllar, FAUCET_ID};
 
     use super::*;
 

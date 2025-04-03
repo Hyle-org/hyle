@@ -2,12 +2,9 @@ use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use erc20::ERC20;
-use sdk::utils::{as_hyle_output, parse_calldata};
-use sdk::{
-    Blob, BlobData, BlobIndex, Calldata, ContractAction, ContractName, ProvableContractState,
-    StructuredBlobData,
-};
-use sdk::{RunResult, ZkProgram};
+use sdk::utils::parse_calldata;
+use sdk::{Blob, BlobData, BlobIndex, Calldata, ContractAction, ContractName, StructuredBlobData};
+use sdk::{RunResult, ZkContract};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha2::{Digest, Sha256};
@@ -24,7 +21,7 @@ pub mod erc20;
 pub const TOTAL_SUPPLY: u128 = 100_000_000_000;
 pub const FAUCET_ID: &str = "faucet.hydentity";
 
-impl ZkProgram for Hyllar {
+impl ZkContract for Hyllar {
     fn execute(&mut self, calldata: &Calldata) -> RunResult {
         let (action, execution_ctx) = parse_calldata::<HyllarAction>(calldata)?;
         let output = self.execute_token_action(action, &execution_ctx);
@@ -48,24 +45,6 @@ impl ZkProgram for Hyllar {
             hasher.update(allowance.to_le_bytes());
         }
         sdk::StateCommitment(hasher.finalize().to_vec())
-    }
-}
-
-impl ProvableContractState for Hyllar {
-    fn build_commitment_metadata(&self, _blob: &Blob) -> Result<Vec<u8>, String> {
-        borsh::to_vec(self).map_err(|e| e.to_string())
-    }
-
-    fn execute_provable(&mut self, calldata: &Calldata) -> Result<sdk::HyleOutput, String> {
-        let initial_state_commitment = <Self as ZkProgram>::commit(self);
-        let mut res = <Self as ZkProgram>::execute(self, calldata);
-        let next_state_commitment = <Self as ZkProgram>::commit(self);
-        Ok(as_hyle_output(
-            initial_state_commitment,
-            next_state_commitment,
-            calldata,
-            &mut res,
-        ))
     }
 }
 

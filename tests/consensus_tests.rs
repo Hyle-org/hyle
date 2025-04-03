@@ -12,17 +12,17 @@ mod e2e_consensus {
     use client_sdk::helpers::risc0::Risc0Prover;
     use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutor, TxExecutorBuilder};
     use fixtures::test_helpers::send_transaction;
-    use hydentity::client::{register_identity, verify_identity};
+    use hydentity::client::tx_executor_handler::{register_identity, verify_identity};
     use hydentity::Hydentity;
     use hyle::genesis::States;
     use hyle_contract_sdk::Identity;
-    use hyle_contract_sdk::ZkProgram;
+    use hyle_contract_sdk::ZkContract;
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF, STAKING_ELF};
     use hyle_model::{ContractName, StateCommitment};
-    use hyllar::client::transfer;
+    use hyllar::client::tx_executor_handler::transfer;
     use hyllar::erc20::ERC20;
     use hyllar::{Hyllar, FAUCET_ID};
-    use staking::client::{delegate, stake};
+    use staking::client::tx_executor_handler::{delegate, stake};
     use staking::state::Staking;
     use tracing::{info, warn};
 

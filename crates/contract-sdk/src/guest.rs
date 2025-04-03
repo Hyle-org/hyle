@@ -61,8 +61,8 @@ use alloc::vec;
 use borsh::BorshDeserialize;
 use hyle_model::{Calldata, StateCommitment};
 
-use crate::{flatten_blobs, utils::as_hyle_output, HyleOutput, ZkProgramInput};
-use crate::{RunResult, ZkProgram};
+use crate::{flatten_blobs, utils::as_hyle_output, HyleOutput};
+use crate::{RunResult, ZkContract};
 
 pub trait GuestEnv {
     fn log(&self, message: &str);
@@ -136,7 +136,8 @@ pub fn fail(
 ///
 /// # Arguments
 ///
-/// * `zk_program_input` - A reference to the contract input that contains the current state, blobs, identity, etc.
+/// * `commitment_metadata` - This is the minimum data required to reconstruct the commitment of the state.
+/// * `calldata` - This is the data that the contract will use to execute.
 ///
 /// # Type Parameters
 ///
@@ -149,22 +150,22 @@ pub fn fail(
 /// # Panics
 ///
 /// Panics if the contract initialization fails.
-pub fn execute<Z>(zk_program_input: &ZkProgramInput) -> HyleOutput
+pub fn execute<Z>(commitment_metadata: &[u8], calldata: &Calldata) -> HyleOutput
 where
-    Z: ZkProgram + BorshDeserialize + 'static,
+    Z: ZkContract + BorshDeserialize + 'static,
 {
-    let mut contract: Z = borsh::from_slice(&zk_program_input.commitment_metadata)
-        .expect("Failed to decode commitment metadata");
+    let mut contract: Z =
+        borsh::from_slice(commitment_metadata).expect("Failed to decode commitment metadata");
     let initial_state_commitment = contract.commit();
 
-    let mut res: RunResult = contract.execute(&zk_program_input.calldata);
+    let mut res: RunResult = contract.execute(calldata);
 
     let next_state_commitment = contract.commit();
 
     as_hyle_output(
         initial_state_commitment,
         next_state_commitment,
-        &zk_program_input.calldata,
+        calldata,
         &mut res,
     )
 }

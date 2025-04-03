@@ -7,7 +7,7 @@ use sdk::{
     info,
     utils::{parse_calldata, parse_raw_calldata},
     Blob, BlobData, BlobIndex, Calldata, ContractAction, ContractName, OnchainEffect,
-    RegisterContractAction, RegisterContractEffect, RunResult, ZkProgram,
+    RegisterContractAction, RegisterContractEffect, RunResult, ZkContract,
 };
 use uuid::Uuid;
 
@@ -40,7 +40,7 @@ impl ContractAction for UuidTldAction {
     }
 }
 
-impl ZkProgram for UuidTld {
+impl ZkContract for UuidTld {
     fn execute(&mut self, calldata: &Calldata) -> RunResult {
         // Not an identity provider
         if calldata.identity.0.ends_with(&format!(

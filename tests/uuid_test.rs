@@ -2,18 +2,18 @@
 use client_sdk::{
     contract_states,
     helpers::risc0::Risc0Prover,
-    transaction_builder::{ProvableBlobTx, TxExecutorBuilder},
+    transaction_builder::{ProvableBlobTx, TxExecutorBuilder, TxExecutorHandler},
 };
 use fixtures::ctx::{E2EContract, E2ECtx};
 
 use hydentity::{
-    client::{register_identity, verify_identity},
+    client::tx_executor_handler::{register_identity, verify_identity},
     Hydentity,
 };
 use hyle::mempool::verifiers::verify_proof;
 use hyle_contract_sdk::{
-    Blob, BlobTransaction, Calldata, ContractName, Hashed, HyleOutput, ProgramId,
-    ProvableContractState, StateCommitment, Verifier, ZkProgram,
+    Blob, BlobTransaction, Calldata, ContractName, Hashed, HyleOutput, ProgramId, StateCommitment,
+    Verifier, ZkContract,
 };
 use hyle_contracts::{HYDENTITY_ELF, UUID_TLD_ELF, UUID_TLD_ID};
 use hyle_model::{OnchainEffect, RegisterContractAction};
