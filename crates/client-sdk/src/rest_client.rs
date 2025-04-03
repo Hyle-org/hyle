@@ -162,7 +162,6 @@ impl NodeApiHttpClient {
             },
         })
     }
-
     pub fn with_retry(mut self, n: usize, duration: Duration) -> Self {
         self.retry = Some((n, duration));
         self
