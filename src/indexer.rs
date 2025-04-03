@@ -365,14 +365,8 @@ impl Indexer {
         let block_height = i64::try_from(block.block_height.0)
             .map_err(|_| anyhow::anyhow!("Block height is too large to fit into an i64"))?;
 
-        let block_timestamp = match DateTime::from_timestamp(
-            i64::try_from(block.block_timestamp.0)
-                .map_err(|_| anyhow::anyhow!("Timestamp too large for i64"))?,
-            0,
-        ) {
-            Some(date) => date,
-            None => bail!("Block's timestamp is incorrect"),
-        };
+        let block_timestamp =
+            into_utc_date_time(&block.block_timestamp).context("Block's timestamp is incorrect")?;
 
         sqlx::query(
             "INSERT INTO blocks (hash, parent_hash, height, timestamp) VALUES ($1, $2, $3, $4)",
