@@ -27,23 +27,24 @@ mod metadata {
 
 #[cfg(any(clippy, not(feature = "nonreproducible")))]
 mod metadata {
-    pub const AMM_ELF: &[u8] = amm::client::metadata::AMM_ELF;
-    pub const AMM_ID: [u8; 32] = amm::client::metadata::PROGRAM_ID;
+    pub const AMM_ELF: &[u8] = amm::client::tx_executor_handler::metadata::AMM_ELF;
+    pub const AMM_ID: [u8; 32] = amm::client::tx_executor_handler::metadata::PROGRAM_ID;
 
-    pub const HYDENTITY_ELF: &[u8] = hydentity::client::metadata::HYDENTITY_ELF;
-    pub const HYDENTITY_ID: [u8; 32] = hydentity::client::metadata::PROGRAM_ID;
+    pub const HYDENTITY_ELF: &[u8] =
+        hydentity::client::tx_executor_handler::metadata::HYDENTITY_ELF;
+    pub const HYDENTITY_ID: [u8; 32] = hydentity::client::tx_executor_handler::metadata::PROGRAM_ID;
 
-    pub const HYLLAR_ELF: &[u8] = hyllar::client::metadata::HYLLAR_ELF;
-    pub const HYLLAR_ID: [u8; 32] = hyllar::client::metadata::PROGRAM_ID;
+    pub const HYLLAR_ELF: &[u8] = hyllar::client::tx_executor_handler::metadata::HYLLAR_ELF;
+    pub const HYLLAR_ID: [u8; 32] = hyllar::client::tx_executor_handler::metadata::PROGRAM_ID;
 
-    pub const STAKING_ELF: &[u8] = staking::client::metadata::STAKING_ELF;
-    pub const STAKING_ID: [u8; 32] = staking::client::metadata::PROGRAM_ID;
+    pub const STAKING_ELF: &[u8] = staking::client::tx_executor_handler::metadata::STAKING_ELF;
+    pub const STAKING_ID: [u8; 32] = staking::client::tx_executor_handler::metadata::PROGRAM_ID;
 
     pub const RISC0_RECURSION_ELF: &[u8] = risc0_recursion::client::metadata::RISC0_RECURSION_ELF;
     pub const RISC0_RECURSION_ID: [u8; 32] = risc0_recursion::client::metadata::PROGRAM_ID;
 
-    pub const UUID_TLD_ELF: &[u8] = uuid_tld::client::metadata::UUID_TLD_ELF;
-    pub const UUID_TLD_ID: [u8; 32] = uuid_tld::client::metadata::PROGRAM_ID;
+    pub const UUID_TLD_ELF: &[u8] = uuid_tld::client::tx_executor_handler::metadata::UUID_TLD_ELF;
+    pub const UUID_TLD_ID: [u8; 32] = uuid_tld::client::tx_executor_handler::metadata::PROGRAM_ID;
 }
 
 pub use metadata::*;

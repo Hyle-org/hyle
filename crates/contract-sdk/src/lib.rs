@@ -6,7 +6,7 @@
 //! ## How to build a contract on Hyle ?
 //!
 //! To build a contract, you will need to create a contract lib, with a struct that implements
-//! the [ZkProgram] trait.
+//! the [ZkContract] trait.
 //!
 //! Then you will need a zkvm binary that will execute this code. Take a look at the
 //! [Guest module for contract zkvm](crate::guest).
@@ -45,7 +45,7 @@ macro_rules! info {
     }
 }
 
-// Si la feature "tracing" n’est pas activée, on redirige vers la fonction env::log
+// Si la feature "tracing" n'est pas activée, on redirige vers la fonction env::log
 #[cfg(all(not(feature = "tracing"), feature = "risc0"))]
 #[macro_export]
 macro_rules! info {
@@ -80,7 +80,7 @@ expected type. For this, it can call either [utils::parse_raw_calldata] or
 ## Example of execute implementation:
 
 ```rust
-use hyle_contract_sdk::{StateCommitment, RunResult, ZkProgram};
+use hyle_contract_sdk::{StateCommitment, RunResult, ZkContract};
 use hyle_contract_sdk::utils::parse_raw_calldata;
 use hyle_model::Calldata;
 
@@ -92,7 +92,7 @@ enum MyContractAction{
     DoSomething
 }
 
-impl ZkProgram for MyContract {
+impl ZkContract for MyContract {
     fn execute(&mut self, calldata: &Calldata) -> RunResult {
         let (action, exec_ctx) = parse_raw_calldata(calldata)?;
 
@@ -114,28 +114,13 @@ impl MyContract {
 
 ```
 */
-pub trait ZkProgram {
+pub trait ZkContract {
     /// Entry point of the contract
     /// Execution is based solely on the contract's commitment metadata.
     /// Exemple: the merkle root for a contract's state based on a MerkleTrie. The execute function will only update the roothash of the trie.
     fn execute(&mut self, calldata: &Calldata) -> RunResult;
 
     fn commit(&self) -> StateCommitment;
-}
-
-pub trait ProvableContractState {
-    /// Entry point of the contract
-    /// Execution is based on the contract state that is provable.
-    /// The objective is to make an execution different from the ZkProgram one.
-    /// Example: the entire trie for a contract's state based on a MerkleTrie. The execute function will update the entire trie.
-    ///
-    /// Default behaviour is to execute the contract just as a ZkProgram
-    fn execute_provable(&mut self, calldata: &Calldata) -> Result<HyleOutput, String>;
-
-    /// This is the function that creates the commitment metadata.
-    /// It provides the minimum information necessary to construct the commitment_medata field of the ProgramInput
-    /// that will be used to execute the program in the zkvm.
-    fn build_commitment_metadata(&self, blob: &Blob) -> Result<Vec<u8>, String>;
 }
 
 pub const fn to_u8_array(val: &[u32; 8]) -> [u8; 32] {

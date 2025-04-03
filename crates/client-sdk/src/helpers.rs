@@ -2,8 +2,8 @@ use std::pin::Pin;
 
 use anyhow::Result;
 use sdk::{
-    flatten_blobs, ContractName, HyleOutput, ProgramId, ProofData, RegisterContractAction,
-    StateCommitment, Verifier, ZkProgramInput,
+    flatten_blobs, Calldata, ContractName, HyleOutput, ProgramId, ProofData,
+    RegisterContractAction, StateCommitment, Verifier,
 };
 
 use crate::transaction_builder::ProvableBlobTx;
@@ -33,13 +33,13 @@ pub fn register_hyle_contract(
 pub trait ClientSdkProver {
     fn prove(
         &self,
-        zk_program_input: ZkProgramInput,
+        commitment_metadata: Vec<u8>,
+        calldata: Calldata,
     ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>>;
 }
 
 #[cfg(feature = "risc0")]
 pub mod risc0 {
-    use sdk::ZkProgramInput;
 
     use super::*;
 
@@ -50,18 +50,23 @@ pub mod risc0 {
         pub fn new(binary: &'a [u8]) -> Self {
             Self { binary }
         }
-        pub async fn prove(&self, zk_program_input: ZkProgramInput) -> Result<ProofData> {
+        pub async fn prove(
+            &self,
+            commitment_metadata: Vec<u8>,
+            calldata: Calldata,
+        ) -> Result<ProofData> {
             let explicit = std::env::var("RISC0_PROVER").unwrap_or_default();
             let receipt = match explicit.to_lowercase().as_str() {
                 "bonsai" => {
-                    let zk_program_input = bonsai_runner::as_input_data(&zk_program_input)?;
-                    bonsai_runner::run_bonsai(self.binary, zk_program_input.clone()).await?
+                    let input_data =
+                        bonsai_runner::as_input_data(&(commitment_metadata, calldata))?;
+                    bonsai_runner::run_bonsai(self.binary, input_data.clone()).await?
                 }
                 _ => {
-                    let zk_program_input = borsh::to_vec(&zk_program_input)?;
+                    let input_data = borsh::to_vec(&(commitment_metadata, calldata))?;
                     let env = risc0_zkvm::ExecutorEnv::builder()
-                        .write(&zk_program_input.len())?
-                        .write_slice(&zk_program_input)
+                        .write(&input_data.len())?
+                        .write_slice(&input_data)
                         .build()
                         .unwrap();
 
@@ -79,9 +84,10 @@ pub mod risc0 {
     impl ClientSdkProver for Risc0Prover<'_> {
         fn prove(
             &self,
-            zk_program_input: ZkProgramInput,
+            commitment_metadata: Vec<u8>,
+            calldata: Calldata,
         ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
-            Box::pin(self.prove(zk_program_input))
+            Box::pin(self.prove(commitment_metadata, calldata))
         }
     }
 }
@@ -110,10 +116,14 @@ pub mod sp1 {
             Ok(sdk::ProgramId(serde_json::to_vec(&self.vk)?))
         }
 
-        pub async fn prove(&self, zk_program_input: ZkProgramInput) -> Result<ProofData> {
+        pub async fn prove(
+            &self,
+            commitment_metadata: Vec<u8>,
+            calldata: Calldata,
+        ) -> Result<ProofData> {
             // Setup the inputs.
             let mut stdin = SP1Stdin::new();
-            let encoded = borsh::to_vec(&zk_program_input)?;
+            let encoded = borsh::to_vec(&(commitment_metadata, calldata))?;
             stdin.write_vec(encoded);
 
             // Generate the proof
@@ -137,9 +147,10 @@ pub mod sp1 {
     impl ClientSdkProver for SP1Prover {
         fn prove(
             &self,
-            zk_program_input: ZkProgramInput,
+            commitment_metadata: Vec<u8>,
+            calldata: Calldata,
         ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
-            Box::pin(self.prove(zk_program_input))
+            Box::pin(self.prove(commitment_metadata, calldata))
         }
     }
 }
@@ -152,27 +163,28 @@ pub mod test {
     impl ClientSdkProver for TestProver {
         fn prove(
             &self,
-            zk_program_input: ZkProgramInput,
+            commitment_metadata: Vec<u8>,
+            calldata: Calldata,
         ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
             Box::pin(async move {
-                let hyle_output = test::execute(&zk_program_input)?;
+                let hyle_output = test::execute(commitment_metadata, calldata)?;
                 Ok(ProofData(borsh::to_vec(&vec![hyle_output])?))
             })
         }
     }
 
-    pub fn execute(zk_program_input: &ZkProgramInput) -> Result<HyleOutput> {
+    pub fn execute(commitment_metadata: Vec<u8>, calldata: Calldata) -> Result<HyleOutput> {
         // FIXME: this is a hack to make the test pass.
-        let initial_state = StateCommitment(zk_program_input.commitment_metadata.clone());
+        let initial_state = StateCommitment(commitment_metadata);
         let hyle_output = HyleOutput {
             version: 1,
             initial_state: initial_state.clone(),
             next_state: initial_state,
-            identity: zk_program_input.calldata.identity.clone(),
-            index: zk_program_input.calldata.index,
-            blobs: flatten_blobs(&zk_program_input.calldata.blobs),
+            identity: calldata.identity.clone(),
+            index: calldata.index,
+            blobs: flatten_blobs(&calldata.blobs),
             success: true,
-            tx_hash: zk_program_input.calldata.tx_hash.clone(),
+            tx_hash: calldata.tx_hash.clone(),
             tx_ctx: None,
             onchain_effects: vec![],
             program_outputs: vec![],

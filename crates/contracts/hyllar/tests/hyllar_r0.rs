@@ -1,19 +1,22 @@
 use core::str;
 
 use hyle_hyllar::{Hyllar, HyllarAction, FAUCET_ID};
-use sdk::{BlobIndex, Calldata, ContractAction, ContractName, HyleOutput, TxHash, ZkProgramInput};
+use sdk::{BlobIndex, Calldata, ContractAction, ContractName, HyleOutput, TxHash};
 
-fn execute(inputs: ZkProgramInput) -> HyleOutput {
-    let zk_program_input = borsh::to_vec(&inputs).unwrap();
+fn execute(inputs: (Vec<u8>, Calldata)) -> HyleOutput {
+    let inputs = borsh::to_vec(&inputs).unwrap();
     let env = risc0_zkvm::ExecutorEnv::builder()
-        .write(&zk_program_input.len())
+        .write(&inputs.len())
         .unwrap()
-        .write_slice(&zk_program_input)
+        .write_slice(&inputs)
         .build()
         .unwrap();
     let prover = risc0_zkvm::default_executor();
     let execute_info = prover
-        .execute(env, hyle_hyllar::client::metadata::HYLLAR_ELF)
+        .execute(
+            env,
+            hyle_hyllar::client::tx_executor_handler::metadata::HYLLAR_ELF,
+        )
         .unwrap();
 
     execute_info.journal.decode::<sdk::HyleOutput>().unwrap()
@@ -22,9 +25,9 @@ fn execute(inputs: ZkProgramInput) -> HyleOutput {
 #[test]
 fn execute_transfer_from() {
     let state = Hyllar::default();
-    let output = execute(ZkProgramInput {
-        commitment_metadata: borsh::to_vec(&state).unwrap(),
-        calldata: Calldata {
+    let output = execute((
+        borsh::to_vec(&state).unwrap(),
+        Calldata {
             identity: "caller".into(),
             tx_hash: TxHash::default(),
             tx_ctx: None,
@@ -37,7 +40,7 @@ fn execute_transfer_from() {
             .as_blob(ContractName::new("hyllar"), None, None)],
             index: BlobIndex(0),
         },
-    });
+    ));
 
     assert!(!output.success);
     assert_eq!(

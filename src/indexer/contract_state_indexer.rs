@@ -250,9 +250,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use hyle_contract_sdk::{
-        BlobData, ProgramId, ProvableContractState, StateCommitment, ZkProgram,
-    };
+    use client_sdk::transaction_builder::TxExecutorHandler;
+    use hyle_contract_sdk::{BlobData, ProgramId, StateCommitment, ZkContract};
     use hyle_model::{DataProposalHash, HyleOutput};
     use utoipa::openapi::OpenApi;
 
@@ -276,7 +275,7 @@ mod tests {
         }
     }
 
-    impl ZkProgram for MockState {
+    impl ZkContract for MockState {
         fn execute(&mut self, _calldata: &hyle_model::Calldata) -> hyle_contract_sdk::RunResult {
             Err("not implemented".into())
         }
@@ -286,8 +285,8 @@ mod tests {
         }
     }
 
-    impl ProvableContractState for MockState {
-        fn execute_provable(&mut self, _: &hyle_model::Calldata) -> Result<HyleOutput, String> {
+    impl TxExecutorHandler for MockState {
+        fn handle(&mut self, _: &hyle_model::Calldata) -> Result<HyleOutput, String> {
             Err("not implemented".into())
         }
 

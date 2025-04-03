@@ -6,18 +6,18 @@ use client_sdk::helpers::test::TestProver;
 use client_sdk::rest_client::NodeApiHttpClient;
 use client_sdk::tcp_client::{codec_tcp_server, TcpServerMessage};
 use client_sdk::transaction_builder::{
-    ProvableBlobTx, StateUpdater, TxExecutor, TxExecutorBuilder,
+    ProvableBlobTx, StateUpdater, TxExecutor, TxExecutorBuilder, TxExecutorHandler,
 };
 use client_sdk::{contract_states, transaction_builder};
-use hydentity::client::{register_identity, verify_identity};
+use hydentity::client::tx_executor_handler::{register_identity, verify_identity};
 use hydentity::Hydentity;
 use hyle_contract_sdk::Identity;
 use hyle_contract_sdk::TxHash;
 use hyle_contract_sdk::{Blob, BlobData, ContractAction, RegisterContractAction};
 use hyle_contract_sdk::{BlobTransaction, Transaction};
-use hyle_contract_sdk::{Calldata, ContractName, HyleOutput, ProvableContractState, ZkProgram};
+use hyle_contract_sdk::{Calldata, ContractName, HyleOutput, ZkContract};
 use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF};
-use hyllar::client::transfer;
+use hyllar::client::tx_executor_handler::transfer;
 use hyllar::erc20::ERC20;
 use hyllar::{Hyllar, FAUCET_ID};
 use rand::Rng;
@@ -90,12 +90,10 @@ impl transaction_builder::StateUpdater for CanonicalStates {
     ) -> anyhow::Result<HyleOutput> {
         if contract_name == &self.hydentity_name {
             self.hydentity
-                .execute_provable(calldata)
+                .handle(calldata)
                 .map_err(|e| anyhow::anyhow!(e))
         } else if contract_name == &self.hyllar_name {
-            self.hyllar
-                .execute_provable(calldata)
-                .map_err(|e| anyhow::anyhow!(e))
+            self.hyllar.handle(calldata).map_err(|e| anyhow::anyhow!(e))
         } else {
             anyhow::bail!("Unknown contract name: {contract_name}");
         }
