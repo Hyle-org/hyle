@@ -11,8 +11,9 @@ use hyle::{
     entrypoint::main_process,
     utils::{conf::Conf, crypto::BlstCrypto},
 };
-use hyle_model::Contract;
 use hyle_net::net::Sim;
+use rand::{rngs::StdRng, RngCore, SeedableRng};
+use sha3::digest::consts::U67108864;
 use tokio::sync::Mutex;
 use tracing::info;
 
@@ -36,7 +37,7 @@ impl TurmoilNodeProcess {
 }
 
 impl ConfMaker {
-    pub fn build_turmoil(&mut self, prefix: &str) -> Conf {
+    pub fn build_turmoil(&mut self, prefix: &str, seed: u64) -> Conf {
         self.i += 1;
 
         let mut node_conf = Conf {
@@ -51,25 +52,28 @@ impl ConfMaker {
         node_conf.data_directory.pop();
         node_conf
             .data_directory
-            .push(format!("data_{}", node_conf.id));
+            .push(format!("data_{}_{}", seed, node_conf.id));
         node_conf
     }
 }
 
+#[derive(Clone)]
 pub struct TurmoilCtx {
     pub nodes: Vec<TurmoilNodeProcess>,
     slot_duration: Duration,
+    pub rng: StdRng,
 }
 
 impl TurmoilCtx {
-    fn build_nodes(count: usize, conf_maker: &mut ConfMaker) -> Vec<TurmoilNodeProcess> {
+    fn build_nodes(count: usize, conf_maker: &mut ConfMaker, seed: u64) -> Vec<TurmoilNodeProcess> {
         let mut nodes = Vec::new();
         let mut peers = Vec::new();
         let mut confs = Vec::new();
         let mut genesis_stakers = std::collections::HashMap::new();
 
         for _ in 0..count {
-            let mut node_conf = conf_maker.build_turmoil("node");
+            let mut node_conf = conf_maker.build_turmoil("node", seed);
+            _ = std::fs::remove_dir_all(&node_conf.data_directory);
             node_conf.p2p.peers = peers.clone();
             genesis_stakers.insert(node_conf.id.clone(), 100);
             peers.push(format!("{}:{}", node_conf.id, node_conf.p2p.server_port));
@@ -93,18 +97,19 @@ impl TurmoilCtx {
         }
         nodes
     }
-    pub fn new_multi(count: usize, slot_duration_ms: u64) -> Result<TurmoilCtx> {
+    pub fn new_multi(count: usize, slot_duration_ms: u64, seed: u64) -> Result<TurmoilCtx> {
         std::env::set_var("RISC0_DEV_MODE", "1");
 
         let mut conf_maker = ConfMaker::default();
         conf_maker.default.consensus.slot_duration = Duration::from_millis(slot_duration_ms);
 
-        let nodes = Self::build_nodes(count, &mut conf_maker);
+        let nodes = Self::build_nodes(count, &mut conf_maker, seed);
 
         info!("🚀 E2E test environment is ready!");
         Ok(TurmoilCtx {
             nodes,
             slot_duration: Duration::from_millis(slot_duration_ms),
+            rng: StdRng::seed_from_u64(seed),
         })
     }
 
@@ -155,7 +160,11 @@ impl TurmoilCtx {
         self.nodes.first().unwrap().client.clone()
     }
 
-    pub async fn get_contract(&self, name: &str) -> Result<Contract> {
-        self.client().get_contract(&name.into()).await
+    pub fn conf(&self, n: u64) -> Conf {
+        self.nodes.get((n - 1) as usize).unwrap().clone().conf
+    }
+
+    pub fn random(&mut self, from: u64, to: u64) -> u64 {
+        from + (self.rng.next_u64() % (to - from))
     }
 }

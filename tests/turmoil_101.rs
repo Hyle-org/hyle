@@ -11,8 +11,8 @@ use hyle_model::{
     BlobTransaction, ContractAction, ContractName, ProgramId, RegisterContractAction,
     StateCommitment,
 };
-use rand::{rngs::StdRng, SeedableRng};
-use tracing::warn;
+use hyle_net::net::Sim;
+use rand::{rngs::StdRng, RngCore, SeedableRng};
 
 use crate::fixtures::{test_helpers::wait_height, turmoil::TurmoilCtx};
 
@@ -29,58 +29,119 @@ pub fn make_register_contract_tx(name: ContractName) -> BlobTransaction {
     )
 }
 
-#[test_log::test]
-fn turmoil_test_leader_killed() -> anyhow::Result<()> {
-    let rng = StdRng::seed_from_u64(123);
-    let mut sim = hyle_net::turmoil::Builder::new()
-        .simulation_duration(Duration::from_secs(10))
-        // .fail_rate(0.9)
-        .tick_duration(Duration::from_millis(100))
-        .enable_tokio_io()
-        .build_with_rng(Box::new(rng));
+macro_rules! turmoil_simple {
+    ($seed:literal, $simulation:ident, $test:ident) => {
+        paste::paste! {
+        #[test_log::test]
+            fn [< turmoil_ $simulation _ $seed _ $test  >]() -> anyhow::Result<()> {
+                tracing::info!("Starting test {} with seed {}", stringify!([< turmoil_ $simulation _ $seed _ $test>]), $seed);
+                let rng = StdRng::seed_from_u64($seed);
+                let mut sim = hyle_net::turmoil::Builder::new()
+                    .simulation_duration(Duration::from_secs(100))
+                    // .fail_rate(0.9)
+                    .tick_duration(Duration::from_millis(50))
+                    .enable_tokio_io()
+                    .build_with_rng(Box::new(rng));
 
-    sim.set_message_latency_curve(0.8);
+                sim.set_message_latency_curve(0.8);
 
-    let ctx = TurmoilCtx::new_multi(4, 500)?;
-    ctx.setup_simulation(&mut sim)?;
+                let mut ctx = TurmoilCtx::new_multi(4, 500, $seed)?;
+                ctx.setup_simulation(&mut sim)?;
 
-    let client = ctx.client();
+                let mut other = ctx.clone();
 
-    sim.client("client", async move {
-        for i in 1..20 {
-            _ = wait_height(&client, 1).await;
+                sim.client("client", async move {
+                    _ = $test(&mut other).await?;
+                    Ok(())
+                });
 
-            let tx = make_register_contract_tx(format!("contract-{}", i).into());
+                $simulation(&mut ctx, &mut sim)?;
 
-            _ = log_error!(client.send_tx_blob(&tx).await, "Sending tx blob");
+                // Cleaning
+                for node in ctx.nodes.iter() {
+                    _ = std::fs::remove_dir_all(node.conf.data_directory.clone());
+                }
+
+                Ok(())
+            }
         }
-        for i in 1..20 {
-            let contract = ctx.get_contract(format!("contract-{}", i).as_str()).await?;
-            assert_eq!(contract.name, format!("contract-{}", i).as_str().into());
-        }
+    };
 
-        Ok(())
-    });
+    ($seed_from:literal..=$seed_to:literal, $simulation:ident, $test:ident) => {
+        seq_macro::seq!(SEED in $seed_from..=$seed_to {
+            turmoil_simple!(SEED, $simulation, $test);
+        });
+    };
+}
 
+turmoil_simple!(400..=420, simulation_basic, submit_10_contracts);
+turmoil_simple!(500..=520, simulation_hold, submit_10_contracts);
+
+pub fn simulation_hold(ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyhow::Result<()> {
     let mut finished: bool;
-    let mut iteration: usize = 0;
+
+    let from = ctx.random(1, 4);
+    let to = loop {
+        let candidate = ctx.random(1, 4);
+        if candidate != from {
+            break candidate;
+        }
+    };
+
+    let when = ctx.random(5, 15);
+    let duration = ctx.random(2, 10);
+
+    tracing::error!(
+        "Holding messages from {} to {} at {} for {} seconds",
+        from,
+        to,
+        when,
+        duration
+    );
 
     loop {
-        iteration += 1;
         finished = sim.step().unwrap();
 
-        if iteration == 200 {
-            warn!("RESTARTING node 2");
-            sim.bounce("node-4");
+        let current_time = sim.elapsed();
+
+        if current_time > Duration::from_secs(when)
+            && current_time <= Duration::from_secs(when + duration)
+        {
+            sim.hold(ctx.conf(from).id, ctx.conf(to).id);
         }
 
-        // if iteration == 300 {
-        //     warn!("RESTARTING node 3");
-        //     sim.bounce("node-3");
-        // }
+        if current_time > Duration::from_secs(when + duration) {
+            sim.release(ctx.conf(from).id, ctx.conf(to).id);
+        }
 
         if finished {
             return Ok(());
         }
     }
+}
+
+pub fn simulation_basic(_ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyhow::Result<()> {
+    _ = sim.run();
+    Ok(())
+}
+
+pub async fn submit_10_contracts(ctx: &mut TurmoilCtx) -> anyhow::Result<()> {
+    let client = ctx.client();
+
+    _ = wait_height(&client, 1).await;
+
+    for i in 1..10 {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let tx = make_register_contract_tx(format!("contract-{}", i).into());
+
+        _ = log_error!(client.send_tx_blob(&tx).await, "Sending tx blob");
+    }
+    for i in 1..10 {
+        let contract = client
+            .get_contract(&format!("contract-{}", i).into())
+            .await?;
+        assert_eq!(contract.name.0, format!("contract-{}", i).as_str());
+    }
+
+    Ok(())
 }
