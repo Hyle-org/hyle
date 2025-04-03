@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::{bail, Result};
 use sdk::{
-    Blob, BlobIndex, BlobTransaction, ContractAction, ContractInput, ContractName, Hashed,
+    Blob, BlobIndex, BlobTransaction, BlobVec, ContractAction, ContractInput, ContractName, Hashed,
     HyleOutput, Identity, ProofTransaction, TxContext,
 };
 
@@ -305,7 +305,8 @@ impl ContractRunner {
             state,
             identity: self.identity.clone(),
             index: self.index,
-            blobs,
+            tx_blob_count: blobs.len(),
+            blobs: BlobVec(blobs).into(),
             tx_hash,
             tx_ctx: tx_context,
             private_input: self.private_input.clone().unwrap_or_default(),

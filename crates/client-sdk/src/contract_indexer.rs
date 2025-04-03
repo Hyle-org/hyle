@@ -11,7 +11,7 @@ use axum::{
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::{
-    guest, info, Blob, BlobIndex, BlobTransaction, ContractInput, ContractName, Hashed,
+    guest, info, Blob, BlobIndex, BlobTransaction, BlobVec, ContractInput, ContractName, Hashed,
     HyleContract, TxContext, TxId,
 };
 use utoipa::openapi::OpenApi;
@@ -63,7 +63,8 @@ where
             state: serialized_state,
             identity: tx.identity.clone(),
             index,
-            blobs: tx.blobs.clone(),
+            blobs: BlobVec(tx.blobs.clone()).into(),
+            tx_blob_count: tx.blobs.len(),
             tx_hash: tx.hashed(),
             tx_ctx: Some(tx_context),
             private_input: vec![],

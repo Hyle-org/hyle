@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use hyllar::HyllarAction;
 use sdk::{
     utils::parse_contract_input, Blob, BlobIndex, ContractInput, HyleContract, RunResult,
@@ -62,7 +64,11 @@ impl HyleContract for Staking {
     }
 }
 
-fn check_transfer_blob(blobs: &[Blob], index: BlobIndex, amount: u128) -> Result<(), String> {
+fn check_transfer_blob(
+    blobs: &BTreeMap<BlobIndex, Blob>,
+    index: BlobIndex,
+    amount: u128,
+) -> Result<(), String> {
     let transfer_action = sdk::utils::parse_structured_blob::<HyllarAction>(blobs, &index)
         .ok_or("No transfer blob found".to_string())?;
     match transfer_action.data.parameters {

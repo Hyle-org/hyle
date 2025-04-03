@@ -11,6 +11,8 @@ pub fn parse_noir_output(vector: &mut Vec<String>) -> Result<HyleOutput, Error> 
     let tx_hash = parse_string(vector)?;
     let index = u32::from_str_radix(vector.remove(0).strip_prefix("0x").context("parsing")?, 16)?;
     let blobs = parse_blobs(vector)?;
+    let tx_blob_count =
+        usize::from_str_radix(vector.remove(0).strip_prefix("0x").context("parsing")?, 16)?;
     let success =
         u32::from_str_radix(vector.remove(0).strip_prefix("0x").context("parsing")?, 16)? == 1;
 
@@ -23,6 +25,7 @@ pub fn parse_noir_output(vector: &mut Vec<String>) -> Result<HyleOutput, Error> 
         tx_ctx: None,
         index: BlobIndex(index as usize),
         blobs,
+        tx_blob_count,
         success,
         onchain_effects: vec![],
         program_outputs: vec![],
@@ -55,8 +58,6 @@ fn parse_array(vector: &mut Vec<String>) -> Result<Vec<u8>, Error> {
 }
 
 fn parse_blobs(vector: &mut Vec<String>) -> Result<Vec<(BlobIndex, Vec<u8>)>, Error> {
-    let _blob_len =
-        usize::from_str_radix(vector.remove(0).strip_prefix("0x").context("parsing")?, 16)?;
     let mut blob_data = VecDeque::from(vector.clone());
 
     let blob_number = usize::from_str_radix(

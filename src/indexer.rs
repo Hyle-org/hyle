@@ -929,6 +929,7 @@ mod test {
                         tx_hash: blob_tx_hash,
                         tx_ctx: None,
                         index: blob_index,
+                        tx_blob_count: blobs.len(),
                         blobs,
                         success: true,
                         onchain_effects: vec![],

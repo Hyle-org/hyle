@@ -222,6 +222,7 @@ mod tests {
                         ),
                         index: BlobIndex(0),
                         blobs: vec![(BlobIndex(0), vec![1, 1, 1, 1, 1])],
+                        tx_blob_count: 1,
                         success: true,
                         tx_hash: TxHash::default(), // TODO
                         tx_ctx: None,

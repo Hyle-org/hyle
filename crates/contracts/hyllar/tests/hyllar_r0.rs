@@ -1,7 +1,7 @@
 use core::str;
 
 use hyle_hyllar::{Hyllar, HyllarAction, FAUCET_ID};
-use sdk::{BlobIndex, ContractAction, ContractInput, ContractName, HyleOutput, TxHash};
+use sdk::{BlobIndex, BlobVec, ContractAction, ContractInput, ContractName, HyleOutput, TxHash};
 
 fn execute(inputs: ContractInput) -> HyleOutput {
     let contract_input = borsh::to_vec(&inputs).unwrap();
@@ -28,12 +28,14 @@ fn execute_transfer_from() {
         tx_hash: TxHash::default(),
         tx_ctx: None,
         private_input: vec![],
-        blobs: vec![HyllarAction::TransferFrom {
+        blobs: BlobVec(vec![HyllarAction::TransferFrom {
             owner: FAUCET_ID.into(),
             recipient: "amm".into(),
             amount: 100,
         }
-        .as_blob(ContractName::new("hyllar"), None, None)],
+        .as_blob(ContractName::new("hyllar"), None, None)])
+        .into(),
+        tx_blob_count: 1,
         index: BlobIndex(0),
     });
 

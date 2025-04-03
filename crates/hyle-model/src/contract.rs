@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fmt::Display,
     ops::{Add, Sub},
 };
@@ -54,8 +55,10 @@ pub struct ContractInput {
     pub tx_hash: TxHash,
     /// User's identity used for the BlobTransaction
     pub identity: Identity,
-    /// All [Blob]s of the BlobTransaction
-    pub blobs: Vec<Blob>,
+    /// Subset of [Blob]s of the BlobTransaction
+    pub blobs: BTreeMap<BlobIndex, Blob>,
+    /// Number of ALL blobs in the transaction. tx_blob_count >= blobs.len()
+    pub tx_blob_count: usize,
     /// Index of the blob corresponding to the contract.
     /// The [Blob] referenced by this index has to be parsed by the contract
     pub index: BlobIndex,
@@ -371,13 +374,20 @@ pub trait ContractAction: Send {
     ) -> Blob;
 }
 
-pub fn flatten_blobs(blobs: &[Blob]) -> Vec<(BlobIndex, Vec<u8>)> {
+pub fn flatten_blobs_vec(blobs: &[Blob]) -> Vec<(BlobIndex, Vec<u8>)> {
+    let blob_indicex: Vec<BlobIndex> = (0..blobs.len()).map(BlobIndex).collect();
+    flatten_blobs(blob_indicex.iter().zip(blobs.iter()))
+}
+
+pub fn flatten_blobs<'a, I>(blobs: I) -> Vec<(BlobIndex, Vec<u8>)>
+where
+    I: IntoIterator<Item = (&'a BlobIndex, &'a Blob)> + 'a,
+{
     blobs
-        .iter()
-        .enumerate()
+        .into_iter()
         .map(|(i, b)| {
             (
-                BlobIndex(i),
+                i.to_owned(),
                 b.contract_name
                     .0
                     .as_bytes()
@@ -464,20 +474,38 @@ pub enum OnchainEffect {
 )]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct HyleOutput {
+    /// The version of the HyleOutput. This is unchecked for now.
     pub version: u32,
+    /// The initial state of the contract. This is the state before the transaction is executed.
     pub initial_state: StateCommitment,
+    /// The state of the contract after the transaction is executed.
     pub next_state: StateCommitment,
+    /// The identity used to execute the transaction. This is the same as the one used in the
+    /// BlobTransaction.
     pub identity: Identity,
+
+    /// The index of the blob being executed.
     pub index: BlobIndex,
+    /// The blobs that were used by the contract. It has to be a subset of the transactions blobs
+    /// It can be the complete list of blobs if the contract used all of them.
     pub blobs: Vec<(BlobIndex, Vec<u8>)>,
+    /// Number of blobs in the transaction. tx_blob_count >= blobs.len()
+    pub tx_blob_count: usize,
+
+    /// TxHash of the BlobTransaction.
     pub tx_hash: TxHash, // Technically redundant with identity + blobs hash
+
+    /// Weither the execution was successful or not. If false, the BlobTransaction will be
+    /// settled as failed.
     pub success: bool,
 
-    // Optional - if empty, these won't be checked, but also can't be used inside the program.
+    /// Optional - if empty, these won't be checked, but also can't be used inside the program.
     pub tx_ctx: Option<TxContext>,
 
     pub onchain_effects: Vec<OnchainEffect>,
 
+    /// Arbitrary data that could be used by indexers or other tools. Some contracts write a utf-8
+    /// string here, but it can be anything.
     pub program_outputs: Vec<u8>,
 }
 
@@ -744,5 +772,20 @@ impl Hashed<TxHash> for RegisterContractEffect {
         hasher.update(self.contract_name.0.clone());
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
+    }
+}
+
+/// Intermediate struct used to convert a Vec<Blob> to a BTreeMap<BlobIndex, Blob>.
+/// Due to rust orphan rule, we can't implement From on a Vec
+pub struct BlobVec(pub Vec<Blob>);
+
+impl From<BlobVec> for BTreeMap<BlobIndex, Blob> {
+    fn from(blob_vec: BlobVec) -> Self {
+        blob_vec
+            .0
+            .into_iter()
+            .enumerate()
+            .map(|(i, blob)| (BlobIndex(i), blob))
+            .collect()
     }
 }

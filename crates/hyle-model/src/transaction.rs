@@ -376,7 +376,7 @@ impl BlobsHashes {
     }
 
     pub fn from_vec(vec: &[Blob]) -> BlobsHashes {
-        Self::from_concatenated(&flatten_blobs(vec))
+        Self::from_concatenated(&flatten_blobs_vec(vec))
     }
 
     pub fn from_concatenated(vec: &[(BlobIndex, Vec<u8>)]) -> BlobsHashes {

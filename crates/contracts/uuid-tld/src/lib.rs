@@ -47,7 +47,7 @@ impl HyleContract for UuidTld {
         // Not an identity provider
         if contract_input.identity.0.ends_with(&format!(
             ".{}",
-            contract_input.blobs[contract_input.index.0].contract_name.0
+            contract_input.blobs[&contract_input.index].contract_name.0
         )) {
             return Err("Invalid identity".to_string());
         }
@@ -60,7 +60,7 @@ impl HyleContract for UuidTld {
             vec![OnchainEffect::RegisterContract(RegisterContractEffect {
                 contract_name: format!(
                     "{}.{}",
-                    id, contract_input.blobs[contract_input.index.0].contract_name.0
+                    id, contract_input.blobs[&contract_input.index].contract_name.0
                 )
                 .into(),
                 verifier: action.verifier,
@@ -134,13 +134,15 @@ mod test {
                 ..TxContext::default()
             }),
             private_input: vec![],
-            blobs: vec![
+            blobs: BlobVec(vec![
                 Blob {
                     contract_name: "test".into(),
                     data: BlobData(vec![]),
                 },
                 action.as_blob("uuid".into()),
-            ],
+            ])
+            .into(),
+            tx_blob_count: 1,
             index: BlobIndex(1),
         }
     }
