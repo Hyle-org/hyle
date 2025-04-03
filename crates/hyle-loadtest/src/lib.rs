@@ -6,7 +6,7 @@ use client_sdk::helpers::test::TestProver;
 use client_sdk::rest_client::NodeApiHttpClient;
 use client_sdk::tcp_client::{codec_tcp_server, TcpServerMessage};
 use client_sdk::transaction_builder::{
-    ProvableBlobTx, StateUpdater, TxExecutor, TxExecutorBuilder,
+    ProvableBlobTx, StateUpdater, TxExecutor, TxExecutorBuilder, TxExecutorHandler,
 };
 use client_sdk::{contract_states, transaction_builder};
 use hydentity::client::tx_executor_handler::{register_identity, verify_identity};
@@ -15,7 +15,7 @@ use hyle_contract_sdk::Identity;
 use hyle_contract_sdk::TxHash;
 use hyle_contract_sdk::{Blob, BlobData, ContractAction, RegisterContractAction};
 use hyle_contract_sdk::{BlobTransaction, Transaction};
-use hyle_contract_sdk::{Calldata, ContractName, HyleOutput, TxExecutorHandler, ZkContract};
+use hyle_contract_sdk::{Calldata, ContractName, HyleOutput, ZkContract};
 use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF};
 use hyllar::client::tx_executor_handler::transfer;
 use hyllar::erc20::ERC20;

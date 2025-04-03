@@ -123,21 +123,6 @@ pub trait ZkContract {
     fn commit(&self) -> StateCommitment;
 }
 
-pub trait TxExecutorHandler {
-    /// Entry point for contract execution for the SDK's TxExecutor tool
-    /// This handler provides a way to execute contract logic with access to the full provable state,
-    /// as opposed to the ZkContract trait which only works with commitment metadata.
-    ///
-    /// Example: For a contract using a MerkleTrie, this handler can access and update the entire trie,
-    /// while the ZkContract would only work with the root hash.
-    fn handle(&mut self, calldata: &Calldata) -> Result<HyleOutput, String>;
-
-    /// This is the function that creates the commitment metadata.
-    /// It provides the minimum information necessary to construct the commitment_medata field of the input
-    /// that will be used to execute the program in the zkvm.
-    fn build_commitment_metadata(&self, blob: &Blob) -> Result<Vec<u8>, String>;
-}
-
 pub const fn to_u8_array(val: &[u32; 8]) -> [u8; 32] {
     [
         (val[0] & 0xFF) as u8,

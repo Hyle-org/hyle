@@ -17,14 +17,14 @@ mod e2e_amm {
     use client_sdk::{
         contract_states,
         helpers::risc0::Risc0Prover,
-        transaction_builder::{ProvableBlobTx, TxExecutorBuilder},
+        transaction_builder::{ProvableBlobTx, TxExecutorBuilder, TxExecutorHandler},
     };
     use fixtures::proofs::generate_recursive_proof;
     use hydentity::{
         client::tx_executor_handler::{register_identity, verify_identity},
         Hydentity,
     };
-    use hyle_contract_sdk::{Blob, Calldata, ContractName, HyleOutput, TxExecutorHandler};
+    use hyle_contract_sdk::{Blob, Calldata, ContractName, HyleOutput};
     use hyle_contracts::{AMM_ELF, HYDENTITY_ELF, HYLLAR_ELF};
     use hyllar::{
         client::tx_executor_handler::{approve, transfer},

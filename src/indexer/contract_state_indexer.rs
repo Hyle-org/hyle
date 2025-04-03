@@ -250,7 +250,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use hyle_contract_sdk::{BlobData, ProgramId, StateCommitment, TxExecutorHandler, ZkContract};
+    use client_sdk::transaction_builder::TxExecutorHandler;
+    use hyle_contract_sdk::{BlobData, ProgramId, StateCommitment, ZkContract};
     use hyle_model::{DataProposalHash, HyleOutput};
     use utoipa::openapi::OpenApi;
 

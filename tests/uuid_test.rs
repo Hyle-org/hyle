@@ -2,7 +2,7 @@
 use client_sdk::{
     contract_states,
     helpers::risc0::Risc0Prover,
-    transaction_builder::{ProvableBlobTx, TxExecutorBuilder},
+    transaction_builder::{ProvableBlobTx, TxExecutorBuilder, TxExecutorHandler},
 };
 use fixtures::ctx::{E2EContract, E2ECtx};
 
@@ -13,7 +13,7 @@ use hydentity::{
 use hyle::mempool::verifiers::verify_proof;
 use hyle_contract_sdk::{
     Blob, BlobTransaction, Calldata, ContractName, Hashed, HyleOutput, ProgramId, StateCommitment,
-    TxExecutorHandler, Verifier, ZkContract,
+    Verifier, ZkContract,
 };
 use hyle_contracts::{HYDENTITY_ELF, UUID_TLD_ELF, UUID_TLD_ID};
 use hyle_model::{OnchainEffect, RegisterContractAction};

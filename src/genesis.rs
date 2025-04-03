@@ -11,15 +11,16 @@ use anyhow::{Error, Result};
 use client_sdk::{
     contract_states,
     helpers::register_hyle_contract,
-    transaction_builder::{ProofTxBuilder, ProvableBlobTx, TxExecutor, TxExecutorBuilder},
+    transaction_builder::{
+        ProofTxBuilder, ProvableBlobTx, TxExecutor, TxExecutorBuilder, TxExecutorHandler,
+    },
 };
 use hydentity::{
     client::tx_executor_handler::{register_identity, verify_identity},
     Hydentity,
 };
 use hyle_contract_sdk::{
-    Blob, Calldata, ContractName, Identity, ProgramId, StateCommitment, TxExecutorHandler,
-    ZkContract,
+    Blob, Calldata, ContractName, Identity, ProgramId, StateCommitment, ZkContract,
 };
 use hyllar::{client::tx_executor_handler::transfer, Hyllar, FAUCET_ID};
 use serde::{Deserialize, Serialize};

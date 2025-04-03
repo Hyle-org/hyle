@@ -1,9 +1,9 @@
 use crate::UuidTld;
 use client_sdk::{
     helpers::risc0::Risc0Prover,
-    transaction_builder::{StateUpdater, TxExecutorBuilder},
+    transaction_builder::{StateUpdater, TxExecutorBuilder, TxExecutorHandler},
 };
-use sdk::{utils::as_hyle_output, Blob, Calldata, ContractName, TxExecutorHandler, ZkContract};
+use sdk::{utils::as_hyle_output, Blob, Calldata, ContractName, ZkContract};
 
 pub mod metadata {
     pub const UUID_TLD_ELF: &[u8] = include_bytes!("../../uuid-tld.img");

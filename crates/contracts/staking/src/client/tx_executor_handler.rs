@@ -1,11 +1,11 @@
 use client_sdk::{
     helpers::risc0::Risc0Prover,
-    transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
+    transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder, TxExecutorHandler},
 };
 use sdk::{
     api::{APIFees, APIFeesBalance, APIStaking},
     utils::as_hyle_output,
-    Blob, Calldata, ContractName, StakingAction, TxExecutorHandler, ValidatorPublicKey, ZkContract,
+    Blob, Calldata, ContractName, StakingAction, ValidatorPublicKey, ZkContract,
 };
 
 use crate::{

@@ -1,8 +1,8 @@
 use client_sdk::{
     helpers::risc0::Risc0Prover,
-    transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder},
+    transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder, TxExecutorHandler},
 };
-use sdk::{utils::as_hyle_output, Blob, Calldata, ContractName, TxExecutorHandler, ZkContract};
+use sdk::{utils::as_hyle_output, Blob, Calldata, ContractName, ZkContract};
 
 use crate::{Hyllar, HyllarAction};
 
