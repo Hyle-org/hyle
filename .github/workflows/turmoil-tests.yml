@@ -1,0 +1,26 @@
+name: Run Turmoil Tests
+
+on:
+  push:
+    branches: [feat/turmoil_add_macro_simulation_test]
+  pull_request:
+    branches: [feat/turmoil_add_macro_simulation_test]
+  workflow_dispatch: {}  # permet de le lancer manuellement
+
+jobs:
+  test-turmoil:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Run turmoil tests
+        run: cargo test turmoil_ --features turmoil
+
