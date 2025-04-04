@@ -898,6 +898,7 @@ mod test {
     }
 
     fn new_proof_tx(
+        identity: Identity,
         contract_name: ContractName,
         blob_index: BlobIndex,
         blob_tx_hash: TxHash,
@@ -920,7 +921,7 @@ mod test {
                         version: 1,
                         initial_state,
                         next_state,
-                        identity: Identity::new("test.c1"),
+                        identity,
                         tx_hash: blob_tx_hash,
                         tx_ctx: None,
                         index: blob_index,
@@ -992,6 +993,7 @@ mod test {
         let blob_transaction_hash = blob_transaction.hashed();
 
         let proof_tx_1 = new_proof_tx(
+            Identity::new("test.c1"),
             first_contract_name.clone(),
             BlobIndex(0),
             blob_transaction_hash.clone(),
@@ -1001,6 +1003,7 @@ mod test {
         );
 
         let proof_tx_2 = new_proof_tx(
+            Identity::new("test.c1"),
             second_contract_name.clone(),
             BlobIndex(1),
             blob_transaction_hash.clone(),
@@ -1017,6 +1020,7 @@ mod test {
         let other_blob_transaction_hash = other_blob_transaction.hashed();
         // Send two proofs for the same blob
         let proof_tx_3 = new_proof_tx(
+            Identity::new("test.c1"),
             first_contract_name.clone(),
             BlobIndex(1),
             other_blob_transaction_hash.clone(),
@@ -1025,6 +1029,7 @@ mod test {
             vec![99, 50, 1, 2, 3, 99, 49, 1, 2, 3],
         );
         let proof_tx_4 = new_proof_tx(
+            Identity::new("test.c1"),
             first_contract_name.clone(),
             BlobIndex(1),
             other_blob_transaction_hash.clone(),
@@ -1086,6 +1091,7 @@ mod test {
         let blob_transaction_hash_wd = blob_transaction_wd.hashed();
 
         let proof_tx_1_wd = new_proof_tx(
+            Identity::new("test.wd1"),
             first_contract_name_wd.clone(),
             BlobIndex(0),
             blob_transaction_hash_wd.clone(),
@@ -1198,7 +1204,7 @@ mod test {
         assert_tx_not_found(&server, proof_tx_1_wd.hashed()).await;
 
         let mut signed_block = SignedBlock::default();
-        signed_block.consensus_proposal.timestamp = TimestampMs(1234);
+        signed_block.consensus_proposal.timestamp = TimestampMs(12345);
         signed_block.consensus_proposal.slot = 2;
         signed_block.data_proposals.push((
             LaneId(ValidatorPublicKey("ttt".into())),
@@ -1236,6 +1242,12 @@ mod test {
             .handle_mempool_status_event(data_proposal_created_event.clone())
             .await
             .expect("MempoolStatusEvent");
+
+        // Check blocks have correct data
+        let blocks = server.get("/blocks").await.json::<Vec<APIBlock>>();
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks.last().unwrap().timestamp, 0);
+        assert_eq!(blocks.first().unwrap().timestamp, 12345);
 
         let transactions_response = server.get("/contract/c1").await;
         transactions_response.assert_status_ok();

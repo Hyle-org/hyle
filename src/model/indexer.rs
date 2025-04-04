@@ -35,7 +35,7 @@ impl From<BlockDb> for APIBlock {
             hash: value.hash,
             parent_hash: value.parent_hash,
             height: value.height,
-            timestamp: value.timestamp.and_utc().timestamp(),
+            timestamp: value.timestamp.and_utc().timestamp_millis(),
         }
     }
 }
