@@ -223,16 +223,10 @@ impl<'de> Deserialize<'de> for ProofData {
                     .map_err(serde::de::Error::custom)?;
                 Ok(ProofData(decoded))
             }
-            serde_json::Value::Array(byte_array) => {
+            serde_json::Value::Array(_) => {
                 // Try to deserialize as Vec<u8>
-                let vec_u8: Vec<u8> = byte_array
-                    .into_iter()
-                    .map(|v| {
-                        v.as_u64()
-                            .and_then(|n| u8::try_from(n).ok())
-                            .ok_or_else(|| serde::de::Error::custom("Invalid byte in Vec<u8>"))
-                    })
-                    .collect::<Result<_, _>>()?;
+                let vec_u8: Vec<u8> = serde_json::from_value(value)
+                    .map_err(|_| serde::de::Error::custom("Invalid byte in Vec<u8>"))?;
                 Ok(ProofData(vec_u8))
             }
             _ => Err(serde::de::Error::custom(
