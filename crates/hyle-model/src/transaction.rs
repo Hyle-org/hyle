@@ -203,18 +203,44 @@ impl Hashed<TxHash> for VerifiedProofTransaction {
 }
 
 #[derive(
-    Debug,
-    Default,
-    Serialize,
-    Deserialize,
-    ToSchema,
-    PartialEq,
-    Eq,
-    Clone,
-    BorshSerialize,
-    BorshDeserialize,
+    Debug, Default, Serialize, ToSchema, PartialEq, Eq, Clone, BorshSerialize, BorshDeserialize,
 )]
 pub struct ProofData(#[serde(with = "base64_field")] pub Vec<u8>);
+
+impl<'de> Deserialize<'de> for ProofData {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use base64::prelude::*;
+        let value = serde_json::Value::deserialize(deserializer)?;
+
+        match value {
+            serde_json::Value::String(base64_str) => {
+                // Try to decode as Base64
+                let decoded = BASE64_STANDARD
+                    .decode(&base64_str)
+                    .map_err(serde::de::Error::custom)?;
+                Ok(ProofData(decoded))
+            }
+            serde_json::Value::Array(byte_array) => {
+                // Try to deserialize as Vec<u8>
+                let vec_u8: Vec<u8> = byte_array
+                    .into_iter()
+                    .map(|v| {
+                        v.as_u64()
+                            .and_then(|n| u8::try_from(n).ok())
+                            .ok_or_else(|| serde::de::Error::custom("Invalid byte in Vec<u8>"))
+                    })
+                    .collect::<Result<_, _>>()?;
+                Ok(ProofData(vec_u8))
+            }
+            _ => Err(serde::de::Error::custom(
+                "Expected a Base64 string or a Vec<u8>",
+            )),
+        }
+    }
+}
 
 #[derive(
     Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize,
