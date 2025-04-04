@@ -13,7 +13,6 @@ use hyle::{
 };
 use hyle_net::net::Sim;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
-use sha3::digest::consts::U67108864;
 use tokio::sync::Mutex;
 use tracing::info;
 

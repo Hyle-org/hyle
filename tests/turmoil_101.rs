@@ -12,7 +12,7 @@ use hyle_model::{
     StateCommitment,
 };
 use hyle_net::net::Sim;
-use rand::{rngs::StdRng, RngCore, SeedableRng};
+use rand::{rngs::StdRng, SeedableRng};
 
 use crate::fixtures::{test_helpers::wait_height, turmoil::TurmoilCtx};
 
