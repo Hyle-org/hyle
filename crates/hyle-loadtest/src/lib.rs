@@ -408,7 +408,7 @@ pub async fn send_transaction<S: StateUpdater>(
     tx_hash
 }
 
-pub async fn long_running_test(node_url: String, _indexer_url: String) -> Result<()> {
+pub async fn long_running_test(node_url: String) -> Result<()> {
     loop {
         tracing::warn!("{}", node_url.clone());
         let mut client = NodeApiHttpClient::new(node_url.clone())?;
