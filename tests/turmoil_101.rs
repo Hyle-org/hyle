@@ -67,23 +67,82 @@ macro_rules! turmoil_simple {
     };
 }
 
-// turmoil_simple!(400..=420, simulation_basic, submit_10_contracts);
-// turmoil_simple!(500..=520, simulation_hold, submit_10_contracts);
-turmoil_simple!(500..=600, simulation_one_more_node, submit_10_contracts);
+turmoil_simple!(401..=420, simulation_basic, submit_10_contracts);
+turmoil_simple!(501..=520, simulation_slow_node, submit_10_contracts);
+turmoil_simple!(501..=520, simulation_two_slow_nodes, submit_10_contracts);
+turmoil_simple!(501..=520, simulation_slow_network, submit_10_contracts);
+turmoil_simple!(501..=520, simulation_hold, submit_10_contracts);
+turmoil_simple!(601..=620, simulation_one_more_node, submit_10_contracts);
+
+pub fn simulation_slow_network(ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyhow::Result<()> {
+    for node in ctx.nodes.clone().iter() {
+        for other_node in ctx
+            .nodes
+            .clone()
+            .iter()
+            .filter(|n| n.conf.id != node.conf.id)
+        {
+            let slowness = Duration::from_secs(ctx.random_between(5, 10));
+            sim.set_link_latency(node.conf.id.clone(), other_node.conf.id.clone(), slowness);
+        }
+    }
+
+    sim.set_message_latency_curve(0.8);
+
+    _ = sim.run();
+
+    Ok(())
+}
+
+pub fn simulation_slow_node(ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyhow::Result<()> {
+    let slowness = Duration::from_secs(ctx.random_between(1, 5));
+    let slow_node = ctx.random_id();
+
+    for other_node in ctx.nodes.iter().filter(|n| n.conf.id != slow_node) {
+        sim.set_link_latency(slow_node.clone(), other_node.conf.id.clone(), slowness);
+    }
+
+    _ = sim.run();
+
+    Ok(())
+}
+
+pub fn simulation_two_slow_nodes(ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyhow::Result<()> {
+    let slowness = Duration::from_secs(ctx.random_between(1, 5));
+    let slow_node = ctx.random_id();
+    let slow_node_2 = loop {
+        let random2 = ctx.random_id();
+        if random2 != slow_node {
+            break random2;
+        }
+    };
+
+    for other_node in ctx.nodes.iter().filter(|n| n.conf.id != slow_node) {
+        sim.set_link_latency(slow_node.clone(), other_node.conf.id.clone(), slowness);
+    }
+
+    for other_node in ctx.nodes.iter().filter(|n| n.conf.id != slow_node_2) {
+        sim.set_link_latency(slow_node_2.clone(), other_node.conf.id.clone(), slowness);
+    }
+
+    _ = sim.run();
+
+    Ok(())
+}
 
 pub fn simulation_hold(ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyhow::Result<()> {
     let mut finished: bool;
 
-    let from = ctx.random(1, 4);
+    let from = ctx.random_id();
     let to = loop {
-        let candidate = ctx.random(1, 4);
+        let candidate = ctx.random_id();
         if candidate != from {
             break candidate;
         }
     };
 
-    let when = ctx.random(5, 15);
-    let duration = ctx.random(2, 10);
+    let when = ctx.random_between(5, 15);
+    let duration = ctx.random_between(2, 10);
 
     tracing::info!(
         "Holding messages from {} to {} at {} for {} seconds",
@@ -101,11 +160,11 @@ pub fn simulation_hold(ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyhow::Resul
         if current_time > Duration::from_secs(when)
             && current_time <= Duration::from_secs(when + duration)
         {
-            sim.hold(ctx.conf(from).id, ctx.conf(to).id);
+            sim.hold(from.clone(), to.clone());
         }
 
         if current_time > Duration::from_secs(when + duration) {
-            sim.release(ctx.conf(from).id, ctx.conf(to).id);
+            sim.release(from.clone(), to.clone());
         }
 
         if finished {
@@ -117,7 +176,7 @@ pub fn simulation_hold(ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyhow::Resul
 pub fn simulation_one_more_node(ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyhow::Result<()> {
     let mut finished: bool;
 
-    let when = ctx.random(5, 15);
+    let when = ctx.random_between(5, 15);
 
     let mut added_nodes = 0;
 

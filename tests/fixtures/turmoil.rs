@@ -194,7 +194,11 @@ impl TurmoilCtx {
         self.nodes.get((n - 1) as usize).unwrap().clone().conf
     }
 
-    pub fn random(&mut self, from: u64, to: u64) -> u64 {
+    pub fn random_between(&mut self, from: u64, to: u64) -> u64 {
         from + (self.rng.next_u64() % (to - from))
+    }
+    pub fn random_id(&mut self) -> String {
+        let random_n = self.random_between(1, self.nodes.len() as u64);
+        self.conf(random_n).id
     }
 }
