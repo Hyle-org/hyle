@@ -40,7 +40,7 @@ impl TurmoilNodeProcess {
                 .expect("Creating client");
         TurmoilNodeProcess {
             conf: conf.clone(),
-            client: client.clone(),
+            client: client.with_retry(3, Duration::from_millis(1000)),
         }
     }
 }

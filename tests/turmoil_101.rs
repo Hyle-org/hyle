@@ -69,7 +69,7 @@ macro_rules! turmoil_simple {
 
 // turmoil_simple!(400..=420, simulation_basic, submit_10_contracts);
 // turmoil_simple!(500..=520, simulation_hold, submit_10_contracts);
-turmoil_simple!(501, simulation_one_more_node, submit_10_contracts);
+turmoil_simple!(500..=600, simulation_one_more_node, submit_10_contracts);
 
 pub fn simulation_hold(ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyhow::Result<()> {
     let mut finished: bool;
@@ -165,12 +165,9 @@ pub async fn submit_10_contracts(ctx: &mut TurmoilCtx) -> anyhow::Result<()> {
         _ = log_error!(client.send_tx_blob(&tx).await, "Sending tx blob");
     }
     for i in 1..10 {
-        let contract = loop {
-            if let Ok(c) = client.get_contract(&format!("contract-{}", i).into()).await {
-                break c;
-            }
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        };
+        let contract = client
+            .get_contract(&format!("contract-{}", i).into())
+            .await?;
         assert_eq!(contract.name.0, format!("contract-{}", i).as_str());
     }
 
