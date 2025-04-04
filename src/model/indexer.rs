@@ -35,7 +35,7 @@ impl From<BlockDb> for APIBlock {
             hash: value.hash,
             parent_hash: value.parent_hash,
             height: value.height,
-            timestamp: value.timestamp.and_utc().timestamp(),
+            timestamp: value.timestamp.and_utc().timestamp_millis(),
         }
     }
 }
@@ -249,7 +249,7 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for TxHashDb {
     }
 }
 
-pub fn into_utc_date_time(ts: TimestampMs) -> Result<DateTime<Utc>> {
+pub fn into_utc_date_time(ts: &TimestampMs) -> Result<DateTime<Utc>> {
     DateTime::from_timestamp_millis(ts.0.try_into().context("Converting u64 into i64")?)
         .context("Converting i64 into UTC DateTime")
 }
