@@ -79,7 +79,11 @@ impl Staking {
     }
 
     pub fn compute_voting_power(&self, validators: &[ValidatorPublicKey]) -> u128 {
-        validators
+        // Deduplicate validators before computing voting power
+        let mut unique_validators = validators.to_vec();
+        unique_validators.sort();
+        unique_validators.dedup();
+        unique_validators
             .iter()
             .flat_map(|v| self.get_stake(v))
             .sum::<u128>()
