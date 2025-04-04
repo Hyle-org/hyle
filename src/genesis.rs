@@ -391,6 +391,7 @@ impl Genesis {
     ) {
         let staking_program_id = hyle_contracts::STAKING_ID.to_vec();
         let hyllar_program_id = hyle_contracts::HYLLAR_ID.to_vec();
+        let smt_token_program_id = hyle_contracts::SMT_TOKEN_ID.to_vec();
         let hydentity_program_id = hyle_contracts::HYDENTITY_ID.to_vec();
 
         let hydentity_state = hydentity::Hydentity::default();
@@ -408,6 +409,7 @@ impl Genesis {
         map.insert("sha3_256".into(), NativeVerifiers::Sha3_256.into());
         map.insert("secp256k1".into(), NativeVerifiers::Secp256k1.into());
         map.insert("hyllar".into(), ProgramId(hyllar_program_id.clone()));
+        map.insert("smt_token".into(), ProgramId(smt_token_program_id.clone()));
         map.insert("hydentity".into(), ProgramId(hydentity_program_id.clone()));
         map.insert("staking".into(), ProgramId(staking_program_id.clone()));
         map.insert(
@@ -461,6 +463,15 @@ impl Genesis {
             ctx.hyllar.commit(),
         )
         .expect("register hyllar");
+
+        register_hyle_contract(
+            &mut register_tx,
+            "smt_token".into(),
+            hyle_model::verifiers::RISC0_1.into(),
+            smt_token_program_id.clone().into(),
+            ctx.hyllar.commit(),
+        )
+        .expect("register smt_token");
 
         register_hyle_contract(
             &mut register_tx,
