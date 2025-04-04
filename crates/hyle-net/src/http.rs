@@ -1,10 +1,12 @@
-use anyhow::Context;
+use std::{future::Future, time::Duration};
+
+use anyhow::{Context, Result};
 use bytes::Buf;
 use http_body_util::BodyExt;
 use hyper::{body::Incoming, client::conn::http1, Method, Request, Response, Uri};
 use hyper_util::rt::TokioIo;
 use serde::{de::DeserializeOwned, Serialize};
-use tracing::error;
+use tracing::{error, warn};
 
 pub enum ContentType {
     Text,
@@ -15,6 +17,7 @@ pub enum ContentType {
 pub struct HttpClient {
     pub url: Uri,
     pub api_key: Option<String>,
+    pub retry: Option<(usize, Duration)>,
 }
 impl HttpClient {
     pub async fn request<T>(
@@ -108,22 +111,58 @@ impl HttpClient {
         Ok(result)
     }
 
+    async fn retry<F, Fut, R>(&self, do_request: F) -> Result<R>
+    where
+        F: Fn() -> Fut,
+        Fut: Future<Output = anyhow::Result<R>>,
+    {
+        match self.retry {
+            Some((n, duration)) => {
+                let mut inner_n = n;
+
+                loop {
+                    match do_request().await {
+                        Ok(res) => break Ok(res),
+                        Err(e) => {
+                            if inner_n > 0 {
+                                warn!(
+                                "Error when doing request, waiting {} millis before retrying: {}",
+                                duration.as_millis(),
+                                e
+                            );
+                                tokio::time::sleep(duration).await;
+                                inner_n -= 1;
+                            } else {
+                                // Stop retrying
+                                break Err(e)
+                                    .context("Client errored after {} retries, stopping now.");
+                            }
+                        }
+                    }
+                }
+            }
+            None => do_request().await,
+        }
+    }
+
     pub async fn get<R>(&self, endpoint: &str) -> anyhow::Result<R>
     where
         R: DeserializeOwned,
     {
-        let response = self
-            .request::<String>(endpoint, Method::GET, ContentType::Json, None)
-            .await?;
-
+        let do_request = async || {
+            self.request::<String>(endpoint, Method::GET, ContentType::Json, None)
+                .await
+        };
+        let response = self.retry(do_request).await?;
         Self::parse_response_json(response).await
     }
 
     pub async fn get_str(&self, endpoint: &str) -> anyhow::Result<String> {
-        let response = self
-            .request::<String>(endpoint, Method::GET, ContentType::Text, None)
-            .await?;
-
+        let do_request = async || {
+            self.request::<String>(endpoint, Method::GET, ContentType::Text, None)
+                .await
+        };
+        let response = self.retry(do_request).await?;
         Self::parse_response_text(response).await
     }
 
@@ -132,10 +171,11 @@ impl HttpClient {
         R: DeserializeOwned,
         T: Serialize,
     {
-        let response = self
-            .request::<T>(endpoint, Method::POST, ContentType::Json, Some(body))
-            .await?;
-
+        let do_request = async || {
+            self.request::<T>(endpoint, Method::POST, ContentType::Json, Some(body))
+                .await
+        };
+        let response = self.retry(do_request).await?;
         Self::parse_response_json(response).await
     }
 }
