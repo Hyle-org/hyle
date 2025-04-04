@@ -27,9 +27,9 @@ use hyle_contract_sdk::{
 };
 use hyle_net::net::bind_tcp_listener;
 
-use crate::fixtures::test_helpers::wait_height_timeout;
+use crate::fixtures::test_helpers::{wait_height_timeout, IndexerOrNodeHttpClient};
 
-use super::test_helpers::{self, wait_height, ConfMaker};
+use super::test_helpers::{self, wait_height, wait_indexer_height, ConfMaker};
 
 pub trait E2EContract {
     fn verifier() -> Verifier;
@@ -187,7 +187,12 @@ impl E2ECtx {
         conf_maker.default.consensus.slot_duration = Duration::from_millis(slot_duration_ms);
 
         let (nodes, clients) = Self::build_nodes(count, &mut conf_maker).await;
-        wait_height_timeout(clients.first().unwrap(), 1, 120).await?;
+        wait_height_timeout(
+            &IndexerOrNodeHttpClient::Node(clients.first().unwrap().clone()),
+            1,
+            120,
+        )
+        .await?;
 
         loop {
             let mut stop = true;
@@ -425,6 +430,10 @@ impl E2ECtx {
 
     pub async fn wait_height(&self, height: u64) -> Result<()> {
         wait_height(self.client(), height).await
+    }
+
+    pub async fn wait_indexer_height(&self, height: u64) -> Result<()> {
+        wait_indexer_height(self.indexer_client(), height).await
     }
 
     pub async fn get_contract(&self, name: &str) -> Result<Contract> {
