@@ -16,6 +16,11 @@ pub struct Hello {
     pub da_address: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
+pub struct Verack {
+    pub version: u16,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OutboundMessage {
     SendMessage {
@@ -99,7 +104,7 @@ pub enum NetMessage {
 #[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
 pub enum HandshakeNetMessage {
     Hello(SignedByValidator<Hello>),
-    Verack,
+    Verack(SignedByValidator<Verack>),
     Ping,
     Pong,
 }
