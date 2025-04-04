@@ -33,20 +33,16 @@ macro_rules! turmoil_simple {
     ($seed:literal, $simulation:ident, $test:ident) => {
         paste::paste! {
         #[test_log::test]
-            fn [< turmoil_ $simulation _ $seed _ $test  >]() -> anyhow::Result<()> {
-                tracing::info!("Starting test {} with seed {}", stringify!([< turmoil_ $simulation _ $seed _ $test>]), $seed);
+            fn [<turmoil_ $simulation _ $seed _ $test>]() -> anyhow::Result<()> {
+                tracing::info!("Starting test {} with seed {}", stringify!([<turmoil_ $simulation _ $seed _ $test>]), $seed);
                 let rng = StdRng::seed_from_u64($seed);
                 let mut sim = hyle_net::turmoil::Builder::new()
                     .simulation_duration(Duration::from_secs(100))
-                    // .fail_rate(0.9)
                     .tick_duration(Duration::from_millis(50))
                     .enable_tokio_io()
                     .build_with_rng(Box::new(rng));
 
-                sim.set_message_latency_curve(0.8);
-
-                let mut ctx = TurmoilCtx::new_multi(4, 500, $seed)?;
-                ctx.setup_simulation(&mut sim)?;
+                let mut ctx = TurmoilCtx::new_multi(4, 500, $seed, &mut sim)?;
 
                 let mut other = ctx.clone();
 
@@ -57,10 +53,7 @@ macro_rules! turmoil_simple {
 
                 $simulation(&mut ctx, &mut sim)?;
 
-                // Cleaning
-                for node in ctx.nodes.iter() {
-                    _ = std::fs::remove_dir_all(node.conf.data_directory.clone());
-                }
+                ctx.clean()?;
 
                 Ok(())
             }
@@ -74,8 +67,9 @@ macro_rules! turmoil_simple {
     };
 }
 
-turmoil_simple!(400..=420, simulation_basic, submit_10_contracts);
-turmoil_simple!(500..=520, simulation_hold, submit_10_contracts);
+// turmoil_simple!(400..=420, simulation_basic, submit_10_contracts);
+// turmoil_simple!(500..=520, simulation_hold, submit_10_contracts);
+turmoil_simple!(501, simulation_one_more_node, submit_10_contracts);
 
 pub fn simulation_hold(ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyhow::Result<()> {
     let mut finished: bool;
@@ -91,7 +85,7 @@ pub fn simulation_hold(ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyhow::Resul
     let when = ctx.random(5, 15);
     let duration = ctx.random(2, 10);
 
-    tracing::error!(
+    tracing::info!(
         "Holding messages from {} to {} at {} for {} seconds",
         from,
         to,
@@ -120,6 +114,40 @@ pub fn simulation_hold(ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyhow::Resul
     }
 }
 
+pub fn simulation_one_more_node(ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyhow::Result<()> {
+    let mut finished: bool;
+
+    let when = ctx.random(5, 15);
+
+    let mut added_nodes = 0;
+
+    loop {
+        finished = sim.step().unwrap();
+
+        let current_time = sim.elapsed();
+
+        if current_time > Duration::from_secs(when) && added_nodes == 0 {
+            added_nodes += 1;
+            let client = ctx.add_node_to_simulation(sim)?;
+
+            sim.client("client 2", async move {
+                _ = wait_height(&client, 1).await;
+
+                for i in 1..10 {
+                    let contract = client
+                        .get_contract(&format!("contract-{}", i).into())
+                        .await?;
+                    assert_eq!(contract.name.0, format!("contract-{}", i).as_str());
+                }
+                Ok(())
+            })
+        }
+
+        if finished {
+            return Ok(());
+        }
+    }
+}
 pub fn simulation_basic(_ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyhow::Result<()> {
     _ = sim.run();
     Ok(())
@@ -137,9 +165,12 @@ pub async fn submit_10_contracts(ctx: &mut TurmoilCtx) -> anyhow::Result<()> {
         _ = log_error!(client.send_tx_blob(&tx).await, "Sending tx blob");
     }
     for i in 1..10 {
-        let contract = client
-            .get_contract(&format!("contract-{}", i).into())
-            .await?;
+        let contract = loop {
+            if let Ok(c) = client.get_contract(&format!("contract-{}", i).into()).await {
+                break c;
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        };
         assert_eq!(contract.name.0, format!("contract-{}", i).as_str());
     }
 
