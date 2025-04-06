@@ -18,7 +18,11 @@ use crate::{
     single_node_consensus::SingleNodeConsensus,
     tcp_server::TcpServer,
     tools::mock_workflow::MockWorkflowHandler,
-    utils::{conf, crypto::SharedBlstCrypto, modules::ModulesHandler},
+    utils::{
+        conf::{self, P2pMode},
+        crypto::SharedBlstCrypto,
+        modules::ModulesHandler,
+    },
 };
 use anyhow::{bail, Context, Result};
 use axum::Router;
@@ -83,6 +87,69 @@ impl Drop for RunPg {
     }
 }
 
+pub fn welcome_message(conf: &conf::Conf) {
+    let version = env!("CARGO_PKG_VERSION");
+
+    let check_or_cross = |val: bool| {
+        if val {
+            "✔"
+        } else {
+            "✘"
+        }
+    };
+
+    tracing::info!(
+        r#"
+
+                                    
+   ██╗  ██╗██╗   ██╗██╗     ██╗     {mode} [{id}] v{version} 
+   ██║  ██║╚██╗ ██╔╝██║     ██║         {validator_details}
+   ███████║ ╚████╔╝ ██║     ██║     {check_p2p} p2p::{p2p_port} | {check_http} http::{http_port} | {check_tcp} tcp::{tcp_port} | ◆ da::{da_port}
+   ██╔══██║  ╚██╔╝  ██║     ██║     
+   ██║  ██║   ██║   ███████╗██║     {check_indexer} indexer ↯ {database_url}
+   ╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═╝     ∎ ./{data_directory}
+ 
+   Minimal, yet sufficient. Hope you like it.
+                                 
+    "#,
+        version = version,
+        id = conf.id,
+        mode = if conf.p2p.mode == P2pMode::FullValidator {
+            "⇄  Validator"
+        } else if conf.p2p.mode == P2pMode::LaneManager {
+            "≡  Lane Operator"
+        } else {
+            "✘ NO P2P"
+        },
+        check_p2p = check_or_cross(!matches!(conf.p2p.mode, P2pMode::None)),
+        p2p_port = conf.p2p.server_port,
+        check_http = check_or_cross(conf.run_rest_server),
+        http_port = conf.rest_server_port,
+        check_tcp = check_or_cross(conf.run_tcp_server),
+        tcp_port = conf.tcp_server_port,
+        da_port = conf.da_server_port,
+        check_indexer = check_or_cross(conf.run_indexer),
+        database_url = conf.database_url,
+        data_directory = conf.data_directory.to_string_lossy(),
+        validator_details = if matches!(conf.p2p.mode, P2pMode::FullValidator) {
+            let c_mode = if conf.consensus.solo {
+                "↘ single"
+            } else {
+                "↘ multi"
+            };
+            let sd = conf.consensus.slot_duration.as_millis();
+            let peers = if conf.consensus.solo {
+                "".to_string()
+            } else {
+                conf.p2p.peers.join(" ")
+            };
+            format!("{} {}ms {}", c_mode, sd, peers)
+        } else {
+            "".to_string()
+        },
+    );
+}
+
 pub async fn main_loop(config: conf::Conf, crypto: Option<SharedBlstCrypto>) -> Result<()> {
     let mut handler = common_main(config, crypto).await?;
     handler.exit_loop().await?;
@@ -103,6 +170,7 @@ async fn common_main(
 ) -> Result<ModulesHandler> {
     let config = Arc::new(config);
 
+    welcome_message(&config);
     info!("Starting node with config: {:?}", &config);
 
     let registry = Registry::new();
