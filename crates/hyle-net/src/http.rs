@@ -123,20 +123,18 @@ impl HttpClient {
                 loop {
                     match do_request().await {
                         Ok(res) => break Ok(res),
-                        Err(e) => {
-                            if inner_n > 0 {
-                                warn!(
+                        Err(e) if inner_n > 0 => {
+                            warn!(
                                 "Error when doing request, waiting {} millis before retrying: {}",
                                 duration.as_millis(),
                                 e
                             );
-                                tokio::time::sleep(duration).await;
-                                inner_n -= 1;
-                            } else {
-                                // Stop retrying
-                                break Err(e)
-                                    .context("Client errored after {} retries, stopping now.");
-                            }
+                            inner_n -= 1;
+                            tokio::time::sleep(duration).await;
+                        }
+                        Err(e) => {
+                            // Stop retrying
+                            break Err(e).context("Client errored after {} retries, stopping now.");
                         }
                     }
                 }
