@@ -90,8 +90,8 @@ mod e2e_hyllar {
         info!("➡️  Sending proof for hyllar");
         ctx.send_proof_single(hyllar_proof).await?;
 
-        info!("➡️  Waiting for height 5");
-        ctx.wait_height(5).await?;
+        info!("➡️  Waiting for height 5 on indexer");
+        ctx.wait_indexer_height(5).await?;
 
         let state: Hyllar = ctx
             .indexer_client()
