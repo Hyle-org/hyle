@@ -33,23 +33,8 @@ pub struct LeaderState {
     pub(super) pending_ticket: Option<Ticket>,
 }
 
-pub(crate) trait LeaderRole {
-    fn is_round_leader(&self) -> bool;
-    async fn start_round(&mut self, current_timestamp: TimestampMs) -> Result<()>;
-    fn on_prepare_vote(
-        &mut self,
-        msg: SignedByValidator<ConsensusNetMessage>,
-        consensus_proposal_hash: ConsensusProposalHash,
-    ) -> Result<()>;
-    fn on_confirm_ack(
-        &mut self,
-        msg: SignedByValidator<ConsensusNetMessage>,
-        consensus_proposal_hash: ConsensusProposalHash,
-    ) -> Result<()>;
-}
-
-impl LeaderRole for Consensus {
-    async fn start_round(&mut self, current_timestamp: TimestampMs) -> Result<()> {
+impl Consensus {
+    pub(super) async fn start_round(&mut self, current_timestamp: TimestampMs) -> Result<()> {
         if !matches!(self.bft_round_state.leader.step, Step::StartNewSlot) {
             bail!(
                 "Cannot start a new slot while in step {:?}",
@@ -175,11 +160,11 @@ impl LeaderRole for Consensus {
         Ok(())
     }
 
-    fn is_round_leader(&self) -> bool {
+    pub(super) fn is_round_leader(&self) -> bool {
         matches!(self.bft_round_state.state_tag, StateTag::Leader)
     }
 
-    fn on_prepare_vote(
+    pub(super) fn on_prepare_vote(
         &mut self,
         msg: SignedByValidator<ConsensusNetMessage>,
         consensus_proposal_hash: ConsensusProposalHash,
@@ -276,7 +261,7 @@ impl LeaderRole for Consensus {
         Ok(())
     }
 
-    fn on_confirm_ack(
+    pub(super) fn on_confirm_ack(
         &mut self,
         msg: SignedByValidator<ConsensusNetMessage>,
         consensus_proposal_hash: ConsensusProposalHash,
