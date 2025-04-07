@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use sdk::Identity;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sparse_merkle_tree::{default_store::DefaultStore, traits::Value, SparseMerkleTree, H256};
@@ -13,7 +14,7 @@ impl Default for AccountSMT {
     fn default() -> Self {
         let mut accounts = SparseMerkleTree::default();
         let faucet_account = Account {
-            address: FAUCET_ID.to_string(),
+            address: FAUCET_ID.into(),
             balance: TOTAL_SUPPLY,
             allowances: BTreeMap::new(),
         };
@@ -30,13 +31,13 @@ impl Default for AccountSMT {
     Debug, Default, Clone, PartialEq, BorshDeserialize, BorshSerialize, Serialize, Deserialize,
 )]
 pub struct Account {
-    pub address: String,
+    pub address: Identity,
     pub balance: u128,
-    pub allowances: BTreeMap<String, u128>,
+    pub allowances: BTreeMap<Identity, u128>,
 }
 
 impl Account {
-    pub fn new(address: String, balance: u128) -> Self {
+    pub fn new(address: Identity, balance: u128) -> Self {
         Account {
             address,
             balance,
@@ -45,19 +46,19 @@ impl Account {
     }
 
     pub fn get_key(&self) -> H256 {
-        Account::compute_key(self.address.clone())
+        Account::compute_key(&self.address)
     }
 
-    pub fn compute_key(address: String) -> H256 {
+    pub fn compute_key(address: &Identity) -> H256 {
         let mut hasher = Sha256::new();
-        hasher.update(address.as_bytes());
+        hasher.update(address.0.as_bytes());
         let result = hasher.finalize();
         let mut h = [0u8; 32];
         h.copy_from_slice(&result);
         H256::from(h)
     }
 
-    pub fn update_allowances(&mut self, spender: String, amount: u128) {
+    pub fn update_allowances(&mut self, spender: Identity, amount: u128) {
         self.allowances.insert(spender, amount);
     }
 }

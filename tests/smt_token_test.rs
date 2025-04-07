@@ -83,8 +83,8 @@ mod e2e_smt_token {
         executor.smt_token.transfer(
             &mut tx,
             "smt_token".into(),
-            FAUCET_ID.to_string(),
-            "bob.hydentity".to_string(),
+            FAUCET_ID.into(),
+            "bob.hydentity".into(),
             25,
         )?;
 
@@ -112,7 +112,7 @@ mod e2e_smt_token {
         let state = executor.smt_token.get_state();
         assert_eq!(
             state
-                .get("bob.hydentity")
+                .get(&"bob.hydentity".into())
                 .expect("bob identity not found")
                 .balance,
             25

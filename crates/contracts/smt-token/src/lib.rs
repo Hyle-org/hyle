@@ -2,7 +2,7 @@ use account::Account;
 use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::utils::parse_calldata;
 use sdk::{
-    Blob, BlobData, BlobIndex, Calldata, ContractAction, ContractName, StateCommitment,
+    Blob, BlobData, BlobIndex, Calldata, ContractAction, ContractName, Identity, StateCommitment,
     StructuredBlobData,
 };
 use sdk::{RunResult, ZkContract};
@@ -31,13 +31,13 @@ pub enum SmtTokenAction {
     },
     TransferFrom {
         owner_account: Account,
-        spender: String,
+        spender: Identity,
         recipient_account: Account,
         amount: u128,
     },
     Approve {
         owner_account: Account,
-        spender: String,
+        spender: Identity,
         amount: u128,
     },
 }
@@ -149,7 +149,7 @@ impl SmtTokenContract {
     pub fn transfer_from(
         &mut self,
         owner_account: Account,
-        spender: String,
+        spender: Identity,
         recipient_account: Account,
         amount: u128,
     ) -> Result<String, String> {
@@ -169,7 +169,7 @@ impl SmtTokenContract {
     pub fn approve(
         &mut self,
         mut owner_account: Account,
-        spender: String,
+        spender: Identity,
         amount: u128,
     ) -> Result<String, String> {
         let owner_key = owner_account.get_key();
@@ -234,8 +234,8 @@ mod tests {
         let mut smt = AccountSMT::default();
 
         // Create some test accounts
-        let mut account1 = Account::new("faucet".to_string(), 10000);
-        let mut account2 = Account::new("alice".to_string(), 100);
+        let mut account1 = Account::new(FAUCET_ID.into(), 10000);
+        let mut account2 = Account::new(Identity::from("alice"), 100);
 
         // Create keys for the accounts
         let key1 = account1.get_key();
@@ -301,8 +301,8 @@ mod tests {
         let mut smt = AccountSMT::default();
 
         // Create some test accounts
-        let mut account1 = Account::new("faucet".to_string(), 10000);
-        let mut account2 = Account::new("alice".to_string(), 0);
+        let mut account1 = Account::new(FAUCET_ID.into(), 10000);
+        let mut account2 = Account::new(Identity::from("alice"), 0);
 
         // Create keys for the accounts
         let key1 = account1.get_key();
@@ -369,9 +369,9 @@ mod tests {
         let mut smt = AccountSMT::default();
 
         // Create some test accounts
-        let mut owner_account = Account::new("owner".to_string(), 10000);
-        let mut recipient_account = Account::new("recipient".to_string(), 0);
-        let spender = "spender".to_string();
+        let mut owner_account = Account::new(Identity::from("owner"), 10000);
+        let mut recipient_account = Account::new(Identity::from("recipient"), 0);
+        let spender = Identity::from("spender");
 
         // Set allowance for spender
         owner_account.update_allowances(spender.clone(), 500);
@@ -446,8 +446,8 @@ mod tests {
         let mut smt = AccountSMT::default();
 
         // Create a test account
-        let mut owner_account = Account::new("owner".to_string(), 10000);
-        let spender = "spender".to_string();
+        let mut owner_account = Account::new(Identity::from("owner"), 10000);
+        let spender = Identity::from("spender");
 
         // Create key for the account
         let owner_key = owner_account.get_key();
@@ -484,7 +484,7 @@ mod tests {
             .unwrap();
 
         // Update allowance
-        owner_account.update_allowances(spender.clone(), 500);
+        owner_account.update_allowances(spender, 500);
 
         let expected_root = smt
             .0

@@ -6,7 +6,7 @@ use client_sdk::{
 };
 use sdk::{
     utils::{as_hyle_output, parse_calldata},
-    Calldata, ContractName, HyleOutput, StateCommitment, StructuredBlob,
+    Calldata, ContractName, HyleOutput, Identity, StateCommitment, StructuredBlob,
 };
 
 pub mod metadata {
@@ -25,7 +25,7 @@ use crate::{
 pub type SmtTokenProvableState = AccountSMT;
 
 impl SmtTokenProvableState {
-    pub fn get_state(&self) -> HashMap<String, Account> {
+    pub fn get_state(&self) -> HashMap<Identity, Account> {
         self.0
             .store()
             .leaves_map()
@@ -34,8 +34,8 @@ impl SmtTokenProvableState {
             .collect()
     }
 
-    pub fn get_account(&self, address: &str) -> anyhow::Result<Option<Account>> {
-        let key = Account::compute_key(address.to_string());
+    pub fn get_account(&self, address: &Identity) -> anyhow::Result<Option<Account>> {
+        let key = Account::compute_key(address);
         self.0.store().get_leaf(&key).map_err(anyhow::Error::from)
     }
 }
@@ -210,8 +210,8 @@ impl SmtTokenProvableState {
         &self,
         builder: &mut ProvableBlobTx,
         contract_name: ContractName,
-        sender: String,
-        recipient: String,
+        sender: Identity,
+        recipient: Identity,
         amount: u128,
     ) -> anyhow::Result<()> {
         let sender_account = match self.get_account(&sender) {
@@ -244,9 +244,9 @@ impl SmtTokenProvableState {
         &self,
         builder: &mut ProvableBlobTx,
         contract_name: ContractName,
-        owner: String,
-        spender: String,
-        recipient: String,
+        owner: Identity,
+        spender: Identity,
+        recipient: Identity,
         amount: u128,
     ) -> anyhow::Result<()> {
         let owner_account = match self.get_account(&owner) {
@@ -280,8 +280,8 @@ impl SmtTokenProvableState {
         &self,
         builder: &mut ProvableBlobTx,
         contract_name: ContractName,
-        owner: String,
-        spender: String,
+        owner: Identity,
+        spender: Identity,
         amount: u128,
     ) -> anyhow::Result<()> {
         let owner_account = match self.get_account(&owner) {

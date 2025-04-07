@@ -5,7 +5,7 @@ use hyle_smt_token::{
     utils::BorshableMerkleProof,
     SmtTokenAction, SmtTokenContract,
 };
-use sdk::{BlobIndex, Calldata, ContractAction, StateCommitment, TxHash};
+use sdk::{BlobIndex, Calldata, ContractAction, Identity, StateCommitment, TxHash};
 
 #[tokio::main]
 async fn main() {
@@ -14,13 +14,13 @@ async fn main() {
 
     // Create some test accounts
     for user in 0..1000 {
-        let account = Account::new(format!("{user}"), 100);
+        let account = Account::new(Identity::from(user.to_string()), 100);
         let key = account.get_key();
         smt.0.update(key, account).expect("Failed to update SMT");
     }
 
-    let account1 = Account::new("1".to_string(), 100);
-    let account2 = Account::new("2".to_string(), 100);
+    let account1 = Account::new(Identity::from("1"), 100);
+    let account2 = Account::new(Identity::from("2"), 100);
 
     // Create keys for the accounts
     let key1 = account1.get_key();

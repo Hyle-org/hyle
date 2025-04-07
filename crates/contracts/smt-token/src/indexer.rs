@@ -81,10 +81,10 @@ pub async fn get_balance(
     let state = contract.get_state();
 
     state
-        .get(&address.0)
+        .get(&address)
         .cloned()
         .map(|account| BalanceResponse {
-            address: account.address,
+            address: account.address.0,
             balance: account.balance,
         })
         .map(Json)
@@ -124,12 +124,12 @@ pub async fn get_allowance(
     let state = contract.get_state();
 
     state
-        .get(&owner.0)
+        .get(&owner)
         .cloned()
         .map(|account| AllowanceResponse {
-            owner: account.address,
+            owner: account.address.0,
             spender: spender.0.clone(),
-            allowance: account.allowances.get(&spender.0).cloned().unwrap_or(0),
+            allowance: account.allowances.get(&spender).cloned().unwrap_or(0),
         })
         .map(Json)
         .ok_or_else(|| AppError(StatusCode::NOT_FOUND, anyhow!("Account not found")))
