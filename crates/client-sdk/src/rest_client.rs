@@ -162,10 +162,18 @@ impl NodeApiHttpClient {
             },
         })
     }
-    pub fn with_retry(mut self, n: usize, duration: Duration) -> Self {
-        self.retry = Some((n, duration));
-        self
+    /// Create a new client with a retry configuration (retrying `n` times, waiting `duration` before each retry)
+    pub fn with_retry(&self, n: usize, duration: Duration) -> Self {
+        let mut cloned = self.clone();
+        cloned.retry = Some((n, duration));
+        cloned
     }
+
+    /// Create a client with the retry configuration (n=3, duration=1000ms)
+    pub fn retry_3times_1000ms(&self) -> Self {
+        self.with_retry(3, Duration::from_millis(1000))
+    }
+
     pub async fn register_contract(&self, tx: &APIRegisterContract) -> Result<TxHash> {
         self.post_json("v1/contract/register", tx)
             .await

@@ -194,11 +194,27 @@ impl TurmoilCtx {
         self.nodes.get((n - 1) as usize).unwrap().clone().conf
     }
 
+    /// Generate a random number between specified `from` and `to`
     pub fn random_between(&mut self, from: u64, to: u64) -> u64 {
-        from + (self.rng.next_u64() % (to - from))
+        from + (self.rng.next_u64() % (to - from + 1))
     }
+
+    /// Pick randomly a node id of the current context
     pub fn random_id(&mut self) -> String {
         let random_n = self.random_between(1, self.nodes.len() as u64);
         self.conf(random_n).id
+    }
+
+    /// Pick randomly two **different** node ids of the current context
+    pub fn random_id_pair(&mut self) -> (String, String) {
+        let from = self.random_id();
+        let to = loop {
+            let candidate = self.random_id();
+            if candidate != from {
+                break candidate;
+            }
+        };
+
+        (from, to)
     }
 }
