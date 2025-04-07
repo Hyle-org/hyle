@@ -3,7 +3,7 @@ CREATE TABLE blocks (
     hash TEXT PRIMARY KEY,          -- Corresponds to BlockHash 
     parent_hash TEXT NOT NULL,      -- Parent block hash (BlockHash)
     height BIGINT NOT NULL,         -- Corresponds to BlockHeight (u64)
-    timestamp TIMESTAMP NOT NULL,   -- UNIX timestamp (u64)
+    timestamp TIMESTAMP(3) NOT NULL,   -- UNIX timestamp (u64)
     UNIQUE (height),                -- Ensure each block height is unique
     CHECK (length(hash) = 64),      -- Ensure the hash is exactly 64
     CHECK (height >= 0)             -- Ensure the height is positive
