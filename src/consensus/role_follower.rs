@@ -26,32 +26,8 @@ pub(super) struct FollowerState {
     pub(super) buffered_prepares: BufferedPrepares, // History of seen prepares & buffer of future prepares
 }
 
-pub(super) trait FollowerRole {
-    fn on_prepare(
-        &mut self,
-        sender: ValidatorPublicKey,
-        consensus_proposal: ConsensusProposal,
-        ticket: Ticket,
-        view: View,
-    ) -> Result<()>;
-    fn on_confirm(
-        &mut self,
-        sender: ValidatorPublicKey,
-        prepare_quorum_certificate: QuorumCertificate,
-        proposal_hash_hint: ConsensusProposalHash,
-    ) -> Result<()>;
-    fn on_commit(
-        &mut self,
-        sender: ValidatorPublicKey,
-        commit_quorum_certificate: QuorumCertificate,
-        proposal_hash_hint: ConsensusProposalHash,
-    ) -> Result<()>;
-    fn verify_poda(&mut self, consensus_proposal: &ConsensusProposal) -> Result<()>;
-    fn verify_timestamp(&self, consensus_proposal: &ConsensusProposal) -> Result<()>;
-}
-
-impl FollowerRole for Consensus {
-    fn on_prepare(
+impl Consensus {
+    pub(super) fn on_prepare(
         &mut self,
         sender: ValidatorPublicKey,
         consensus_proposal: ConsensusProposal,
@@ -125,19 +101,13 @@ impl FollowerRole for Consensus {
                 }
             }
             Ticket::TimeoutQC(timeout_qc, tc_kind_data) => {
-                if log_error!(
-                    self.try_process_timeout_qc(
-                        timeout_qc.clone(),
-                        tc_kind_data,
-                        &consensus_proposal,
-                        view
-                    ),
-                    "Processing Timeout ticket"
+                self.try_process_timeout_qc(
+                    timeout_qc.clone(),
+                    tc_kind_data,
+                    &consensus_proposal,
+                    view,
                 )
-                .is_err()
-                {
-                    bail!("Invalid timeout ticket");
-                }
+                .context("Processing Timeout ticket")?;
             }
             els => {
                 bail!("Invalid TimedOutCommit ticket here {:?}", els);
@@ -220,7 +190,7 @@ impl FollowerRole for Consensus {
         Ok(())
     }
 
-    fn on_confirm(
+    pub(super) fn on_confirm(
         &mut self,
         sender: ValidatorPublicKey,
         prepare_quorum_certificate: QuorumCertificate,
@@ -282,7 +252,7 @@ impl FollowerRole for Consensus {
         Ok(())
     }
 
-    fn on_commit(
+    pub(super) fn on_commit(
         &mut self,
         sender: ValidatorPublicKey,
         commit_quorum_certificate: QuorumCertificate,
@@ -370,7 +340,7 @@ impl FollowerRole for Consensus {
         Ok(())
     }
 
-    fn verify_timestamp(
+    pub(super) fn verify_timestamp(
         &self,
         ConsensusProposal { timestamp, .. }: &ConsensusProposal,
     ) -> Result<()> {
