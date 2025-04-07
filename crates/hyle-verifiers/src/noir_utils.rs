@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 use anyhow::{Context, Error};
 use hyle_model::{flatten_blobs, Blob, BlobIndex, HyleOutput, StateCommitment, TxHash};
