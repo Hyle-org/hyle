@@ -50,6 +50,11 @@ impl IndexerApiHttpClient {
             .context(format!("getting contract {contract_name} state"))
     }
 
+    pub async fn get_block_height(&self) -> Result<BlockHeight> {
+        let block: APIBlock = self.get_last_block().await?;
+        Ok(BlockHeight(block.height))
+    }
+
     pub async fn get_blocks(&self) -> Result<Vec<APIBlock>> {
         self.get("v1/indexer/blocks")
             .await

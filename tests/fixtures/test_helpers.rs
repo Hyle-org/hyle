@@ -1,6 +1,9 @@
 use anyhow::Context;
 use assert_cmd::prelude::*;
-use client_sdk::transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutor};
+use client_sdk::{
+    rest_client::IndexerApiHttpClient,
+    transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutor},
+};
 
 use hyle::{
     model::BlobTransaction,
@@ -165,18 +168,41 @@ impl TestProcess {
         }
     }
 }
+
+pub enum IndexerOrNodeHttpClient {
+    Node(NodeApiHttpClient),
+    Indexer(IndexerApiHttpClient),
+}
+
 pub async fn wait_height(client: &NodeApiHttpClient, heights: u64) -> anyhow::Result<()> {
-    wait_height_timeout(client, heights, 30).await
+    wait_height_timeout(&IndexerOrNodeHttpClient::Node(client.clone()), heights, 30).await
+}
+
+pub async fn wait_indexer_height(
+    client: &IndexerApiHttpClient,
+    heights: u64,
+) -> anyhow::Result<()> {
+    wait_height_timeout(
+        &IndexerOrNodeHttpClient::Indexer(client.clone()),
+        heights,
+        30,
+    )
+    .await
 }
 
 pub async fn wait_height_timeout(
-    client: &NodeApiHttpClient,
+    client: &IndexerOrNodeHttpClient,
     heights: u64,
     timeout_duration: u64,
 ) -> anyhow::Result<()> {
     timeout(Duration::from_secs(timeout_duration), async {
         loop {
-            if let Ok(mut current_height) = client.get_block_height().await {
+            let current_height = match client {
+                IndexerOrNodeHttpClient::Node(node) => node.get_block_height().await,
+                IndexerOrNodeHttpClient::Indexer(indexer) => indexer.get_block_height().await,
+            };
+
+            if let Ok(mut current_height) = current_height {
                 let target_height = current_height + heights;
                 while current_height.0 < target_height.0 {
                     info!(
@@ -184,7 +210,12 @@ pub async fn wait_height_timeout(
                         target_height, current_height
                     );
                     tokio::time::sleep(Duration::from_millis(250)).await;
-                    current_height = client.get_block_height().await?;
+                    current_height = match client {
+                        IndexerOrNodeHttpClient::Node(node) => node.get_block_height().await?,
+                        IndexerOrNodeHttpClient::Indexer(indexer) => {
+                            indexer.get_block_height().await?
+                        }
+                    };
                 }
                 return anyhow::Ok(());
             } else {

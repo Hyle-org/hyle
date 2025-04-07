@@ -188,8 +188,8 @@ mod e2e_amm {
         info!("➡️  Sending proof for hyllar");
         ctx.send_proof_single(bob_transfer_proof).await?;
 
-        info!("➡️  Waiting for height 5");
-        ctx.wait_height(5).await?;
+        info!("➡️  Waiting for height 5 on indexer");
+        ctx.wait_indexer_height(5).await?;
 
         let state: Hyllar = ctx
             .indexer_client()
@@ -237,8 +237,8 @@ mod e2e_amm {
         info!("➡️  Sending proof for hyllar");
         ctx.send_proof_single(bob_transfer_proof).await?;
 
-        info!("➡️  Waiting for height 5");
-        ctx.wait_height(5).await?;
+        info!("➡️  Waiting for height 5 on indexer");
+        ctx.wait_indexer_height(5).await?;
 
         assert_multiple_balances(
             &ctx,
@@ -282,8 +282,8 @@ mod e2e_amm {
         info!("➡️  Sending proof for approve hyllar");
         ctx.send_proof_single(bob_approve_hyllar_proof).await?;
 
-        info!("➡️  Waiting for height 5");
-        ctx.wait_height(5).await?;
+        info!("➡️  Waiting for height 5 on indexer");
+        ctx.wait_indexer_height(5).await?;
 
         assert_account_allowance(&ctx, "hyllar", "bob.hydentity", AMM_CONTRACT_NAME, 100).await?;
         /////////////////////////////////////////////////////////////////////
@@ -313,8 +313,8 @@ mod e2e_amm {
         info!("➡️  Sending proof for approve hyllar2");
         ctx.send_proof_single(bob_approve_hyllar2_proof).await?;
 
-        info!("➡️  Waiting for height 5");
-        ctx.wait_height(5).await?;
+        info!("➡️  Waiting for height 5 on indexer");
+        ctx.wait_indexer_height(5).await?;
 
         assert_account_allowance(&ctx, "hyllar2", "bob.hydentity", AMM_CONTRACT_NAME, 100).await?;
         /////////////////////////////////////////////////////////////////////
@@ -358,8 +358,8 @@ mod e2e_amm {
         info!("➡️  Sending proof for hyllar2");
         ctx.send_proof_single(bob_transfer_hyllar2_proof).await?;
 
-        info!("➡️  Waiting for height 5");
-        ctx.wait_height(5).await?;
+        info!("➡️  Waiting for height 5 on indexer");
+        ctx.wait_indexer_height(5).await?;
 
         assert_multiple_balances(
             &ctx,
@@ -440,8 +440,8 @@ mod e2e_amm {
         )
         .await?;
 
-        info!("➡️  Waiting for height 5");
-        ctx.wait_height(5).await?;
+        info!("➡️  Waiting for height 5 on indexer");
+        ctx.wait_indexer_height(5).await?;
 
         assert_multiple_balances(
             &ctx,
