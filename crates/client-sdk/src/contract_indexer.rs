@@ -59,7 +59,7 @@ where
         let calldata = Calldata {
             identity: tx.identity.clone(),
             index,
-            blobs: BlobVec(tx.blobs.clone()).into(),
+            blobs: tx.blobs.clone().into(),
             tx_blob_count: tx.blobs.len(),
             tx_hash: tx.hashed(),
             tx_ctx: Some(tx_context),

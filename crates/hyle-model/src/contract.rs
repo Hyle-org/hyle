@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     fmt::Display,
-    ops::{Add, Sub},
+    ops::{Add, Deref, Sub},
 };
 
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -49,13 +49,53 @@ pub trait DataSized {
 /// This struct is passed from the application backend to the contract as an input.
 /// It contains the data that the contract will use to run the blob's action on its state.
 #[derive(Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
+pub struct IndexedBlobs(pub Vec<(BlobIndex, Blob)>);
+
+impl From<Vec<Blob>> for IndexedBlobs {
+    fn from(vec: Vec<Blob>) -> Self {
+        let mut blobs = BTreeMap::new();
+        for (i, blob) in vec.into_iter().enumerate() {
+            blobs.insert(BlobIndex(i), blob);
+        }
+        IndexedBlobs(blobs.into_iter().collect())
+    }
+}
+
+impl Deref for IndexedBlobs {
+    type Target = Vec<(BlobIndex, Blob)>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl IndexedBlobs {
+    pub fn get(&self, index: &BlobIndex) -> Option<&Blob> {
+        self.0.iter().find(|(i, _)| i == index).map(|(_, b)| b)
+    }
+}
+
+impl Iterator for IndexedBlobs {
+    type Item = (BlobIndex, Blob);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.0.is_empty() {
+            return None;
+        }
+        let (i, b) = self.0.remove(0);
+        Some((i, b))
+    }
+}
+
+/// This struct is passed from the application backend to the contract as a zkvm input.
+#[derive(Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
 pub struct Calldata {
     /// TxHash of the BlobTransaction being proved
     pub tx_hash: TxHash,
     /// User's identity used for the BlobTransaction
     pub identity: Identity,
     /// Subset of [Blob]s of the BlobTransaction
-    pub blobs: BTreeMap<BlobIndex, Blob>,
+    pub blobs: IndexedBlobs,
     /// Number of ALL blobs in the transaction. tx_blob_count >= blobs.len()
     pub tx_blob_count: usize,
     /// Index of the blob corresponding to the contract.
@@ -374,13 +414,27 @@ pub trait ContractAction: Send {
 }
 
 pub fn flatten_blobs_vec(blobs: &[Blob]) -> Vec<(BlobIndex, Vec<u8>)> {
-    let blob_indicex: Vec<BlobIndex> = (0..blobs.len()).map(BlobIndex).collect();
-    flatten_blobs(blob_indicex.iter().zip(blobs.iter()))
+    blobs
+        .iter()
+        .enumerate()
+        .map(|(i, b)| {
+            (
+                BlobIndex(i),
+                b.contract_name
+                    .0
+                    .as_bytes()
+                    .iter()
+                    .chain(b.data.0.iter())
+                    .copied()
+                    .collect::<Vec<u8>>(),
+            )
+        })
+        .collect()
 }
 
 pub fn flatten_blobs<'a, I>(blobs: I) -> Vec<(BlobIndex, Vec<u8>)>
 where
-    I: IntoIterator<Item = (&'a BlobIndex, &'a Blob)> + 'a,
+    I: IntoIterator<Item = &'a (BlobIndex, Blob)> + 'a,
 {
     blobs
         .into_iter()
@@ -772,20 +826,5 @@ impl Hashed<TxHash> for RegisterContractEffect {
         hasher.update(self.contract_name.0.clone());
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
-    }
-}
-
-/// Intermediate struct used to convert a Vec<Blob> to a BTreeMap<BlobIndex, Blob>.
-/// Due to rust orphan rule, we can't implement From on a Vec
-pub struct BlobVec(pub Vec<Blob>);
-
-impl From<BlobVec> for BTreeMap<BlobIndex, Blob> {
-    fn from(blob_vec: BlobVec) -> Self {
-        blob_vec
-            .0
-            .into_iter()
-            .enumerate()
-            .map(|(i, blob)| (BlobIndex(i), blob))
-            .collect()
     }
 }

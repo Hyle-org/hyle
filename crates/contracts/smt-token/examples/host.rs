@@ -5,7 +5,7 @@ use hyle_smt_token::{
     SmtTokenAction, SmtTokenContract,
 };
 use sdk::{
-    merkle_utils::BorshableMerkleProof, BlobIndex, BlobVec, Calldata, ContractAction, Identity,
+    merkle_utils::BorshableMerkleProof, BlobIndex, Calldata, ContractAction, Identity,
     StateCommitment, TxHash,
 };
 
@@ -50,7 +50,7 @@ async fn main() {
     let commitment_metadata = borsh::to_vec(&smt_token).unwrap();
     let calldata = Calldata {
         identity: "alice".into(),
-        blobs: BlobVec(vec![token_action.as_blob("smt-token".into(), None, None)]).into(),
+        blobs: vec![token_action.as_blob("smt-token".into(), None, None)].into(),
         tx_blob_count: 1,
         index: BlobIndex(0),
         tx_hash: TxHash::default(),

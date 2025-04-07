@@ -1,7 +1,7 @@
-use std::collections::BTreeMap;
-
 use hyllar::HyllarAction;
-use sdk::{utils::parse_calldata, Blob, BlobIndex, Calldata, RunResult, StakingAction, ZkContract};
+use sdk::{
+    utils::parse_calldata, BlobIndex, Calldata, IndexedBlobs, RunResult, StakingAction, ZkContract,
+};
 use sha2::{Digest, Sha256};
 use state::Staking;
 
@@ -61,11 +61,7 @@ impl ZkContract for Staking {
     }
 }
 
-fn check_transfer_blob(
-    blobs: &BTreeMap<BlobIndex, Blob>,
-    index: BlobIndex,
-    amount: u128,
-) -> Result<(), String> {
+fn check_transfer_blob(blobs: &IndexedBlobs, index: BlobIndex, amount: u128) -> Result<(), String> {
     let transfer_action = sdk::utils::parse_structured_blob::<HyllarAction>(blobs, &index)
         .ok_or("No transfer blob found".to_string())?;
     match transfer_action.data.parameters {

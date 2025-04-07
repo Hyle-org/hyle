@@ -3,7 +3,7 @@ use hyle_hyllar::erc20::ERC20;
 use hyle_hyllar::{
     client::tx_executor_handler::metadata::HYLLAR_ELF, Hyllar, HyllarAction, FAUCET_ID,
 };
-use sdk::{BlobIndex, BlobVec, Calldata, ContractAction, TxHash};
+use sdk::{BlobIndex, Calldata, ContractAction, TxHash};
 
 #[tokio::main]
 async fn main() {
@@ -25,7 +25,7 @@ async fn main() {
     let commitment_metadata = hyllar.to_bytes();
     let calldata = Calldata {
         identity: FAUCET_ID.into(),
-        blobs: BlobVec(vec![hyllar_action.as_blob("hyllar".into(), None, None)]).into(),
+        blobs: vec![hyllar_action.as_blob("hyllar".into(), None, None)].into(),
         tx_blob_count: 1,
         index: BlobIndex(0),
         tx_hash: TxHash::default(),
