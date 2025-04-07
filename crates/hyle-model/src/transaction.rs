@@ -212,27 +212,38 @@ impl<'de> Deserialize<'de> for ProofData {
     where
         D: serde::Deserializer<'de>,
     {
-        use base64::prelude::*;
-        let value = serde_json::Value::deserialize(deserializer)?;
+        struct ProofDataVisitor;
 
-        match value {
-            serde_json::Value::String(base64_str) => {
-                // Try to decode as Base64
+        impl<'de> serde::de::Visitor<'de> for ProofDataVisitor {
+            type Value = ProofData;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a Base64 string or a Vec<u8>")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                use base64::prelude::*;
                 let decoded = BASE64_STANDARD
-                    .decode(&base64_str)
+                    .decode(value)
                     .map_err(serde::de::Error::custom)?;
                 Ok(ProofData(decoded))
             }
-            serde_json::Value::Array(_) => {
-                // Try to deserialize as Vec<u8>
-                let vec_u8: Vec<u8> = serde_json::from_value(value)
-                    .map_err(|_| serde::de::Error::custom("Invalid byte in Vec<u8>"))?;
+
+            fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let vec_u8: Vec<u8> = serde::de::Deserialize::deserialize(
+                    serde::de::value::SeqAccessDeserializer::new(seq),
+                )?;
                 Ok(ProofData(vec_u8))
             }
-            _ => Err(serde::de::Error::custom(
-                "Expected a Base64 string or a Vec<u8>",
-            )),
         }
+
+        deserializer.deserialize_any(ProofDataVisitor)
     }
 }
 
