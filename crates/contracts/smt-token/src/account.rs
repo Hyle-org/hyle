@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use sdk::merkle_utils::SHA256Hasher;
 use sdk::Identity;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sparse_merkle_tree::{default_store::DefaultStore, traits::Value, SparseMerkleTree, H256};
 
-use crate::{utils::SHA256Hasher, FAUCET_ID, TOTAL_SUPPLY};
+use crate::{FAUCET_ID, TOTAL_SUPPLY};
 
 pub struct AccountSMT(pub SparseMerkleTree<SHA256Hasher, Account, DefaultStore<Account>>);
 

@@ -1,8 +1,11 @@
+extern crate alloc;
+
+use alloc::vec::Vec;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use sha2::{Digest, Sha256};
 use sparse_merkle_tree::{merge::MergeValue, traits::Hasher, MerkleProof, H256};
 
-// FIXME: Find a better way to make MerkleProof Borshable
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BorshableMerkleProof(pub MerkleProof);
 
@@ -18,7 +21,7 @@ impl From<MerkleProof> for BorshableMerkleProof {
 }
 
 impl BorshSerialize for BorshableMerkleProof {
-    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+    fn serialize<W: borsh::io::Write>(&self, writer: &mut W) -> borsh::io::Result<()> {
         BorshSerialize::serialize(&(self.0.leaves_count() as u32), writer)?;
         for leaf in self.0.leaves_bitmap() {
             writer.write_all(leaf.as_slice())?;
@@ -47,7 +50,7 @@ impl BorshSerialize for BorshableMerkleProof {
 }
 
 impl BorshDeserialize for BorshableMerkleProof {
-    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+    fn deserialize_reader<R: borsh::io::Read>(reader: &mut R) -> borsh::io::Result<Self> {
         let leaves_count = u32::deserialize_reader(reader)?;
         let mut leaves_bitmap = Vec::with_capacity(leaves_count as usize);
         for _ in 0..leaves_count {
@@ -81,8 +84,8 @@ impl BorshDeserialize for BorshableMerkleProof {
                     });
                 }
                 _ => {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
+                    return Err(borsh::io::Error::new(
+                        borsh::io::ErrorKind::InvalidData,
                         "Invalid marker for MergeValue",
                     ));
                 }

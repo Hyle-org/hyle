@@ -1,5 +1,6 @@
 use account::Account;
 use borsh::{BorshDeserialize, BorshSerialize};
+use sdk::merkle_utils::{BorshableMerkleProof, SHA256Hasher};
 use sdk::utils::parse_calldata;
 use sdk::{
     Blob, BlobData, BlobIndex, Calldata, ContractAction, ContractName, Identity, StateCommitment,
@@ -7,7 +8,6 @@ use sdk::{
 };
 use sdk::{RunResult, ZkContract};
 use sparse_merkle_tree::traits::Value;
-use utils::{BorshableMerkleProof, SHA256Hasher};
 
 extern crate alloc;
 
@@ -16,7 +16,6 @@ pub mod account;
 pub mod client;
 #[cfg(feature = "client")]
 pub mod indexer;
-pub mod utils;
 
 pub const TOTAL_SUPPLY: u128 = 100_000_000_000;
 pub const FAUCET_ID: &str = "faucet.hydentity";

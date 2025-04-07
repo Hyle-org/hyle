@@ -5,6 +5,7 @@ use client_sdk::{
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder, TxExecutorHandler},
 };
 use sdk::{
+    merkle_utils::BorshableMerkleProof,
     utils::{as_hyle_output, parse_calldata},
     Calldata, ContractName, HyleOutput, Identity, StateCommitment, StructuredBlob,
 };
@@ -18,7 +19,6 @@ use sparse_merkle_tree::{traits::StoreReadOps, SparseMerkleTree};
 
 use crate::{
     account::{Account, AccountSMT},
-    utils::BorshableMerkleProof,
     SmtTokenAction, SmtTokenContract,
 };
 

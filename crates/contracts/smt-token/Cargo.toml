@@ -20,7 +20,7 @@ path = "examples/host.rs"
 
 [dependencies]
 anyhow = "1.0.96"
-sdk = { workspace = true }
+sdk = { workspace = true, features = ["smt"] }
 sha2 = "=0.10.8" # precompile patched at workspace root
 borsh = { version = "1.5.5", features = ["derive"] }
 sparse-merkle-tree = "0.6.1"

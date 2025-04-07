@@ -2915,7 +2915,9 @@ dependencies = [
  "hyle-model",
  "risc0-zkvm",
  "serde",
+ "sha2",
  "sp1-zkvm",
+ "sparse-merkle-tree",
  "tracing",
 ]
 

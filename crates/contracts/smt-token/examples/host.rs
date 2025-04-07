@@ -2,10 +2,12 @@ use client_sdk::helpers::risc0::Risc0Prover;
 use hyle_smt_token::{
     account::{Account, AccountSMT},
     client::tx_executor_handler::metadata::SMT_TOKEN_ELF,
-    utils::BorshableMerkleProof,
     SmtTokenAction, SmtTokenContract,
 };
-use sdk::{BlobIndex, Calldata, ContractAction, Identity, StateCommitment, TxHash};
+use sdk::{
+    merkle_utils::BorshableMerkleProof, BlobIndex, Calldata, ContractAction, Identity,
+    StateCommitment, TxHash,
+};
 
 #[tokio::main]
 async fn main() {
