@@ -115,7 +115,7 @@ bytes = { version = "1.10.0" }
 clap = { version = "4.5.31", features = ["derive"] }
 config = { version = "0.15.9", default-features = false, features = ["toml"] }
 futures = { version = "0.3.31" }
-indexmap = { version = "2.7.1", features = ["serde"] }
+indexmap = { version = "2.9.0", features = ["serde"] }
 # opentelemetry and axum-otel-metrics must be updated together (so that there is only one opentelemetry version)
 opentelemetry = { version = "0.28" }
 opentelemetry-prometheus = { version = "0.28.0" }
