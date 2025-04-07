@@ -124,7 +124,7 @@ pub fn welcome_message(conf: &conf::Conf) {
    ██║  ██║   ██║   ███████╗██████╗     {check_indexer} indexer {database_url}
    ╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═════╝     ∎ ./{data_directory}
  
-   Minimal, yet sufficient. Hope You Like It.
+   Minimal, yet sufficient.
                                  
     "#,
         version = version,
