@@ -14,7 +14,7 @@
 //! You can start from our templates for [Risc0](https://github.com/Hyle-org/template-risc0)
 //! or [SP1](https://github.com/Hyle-org/template-sp1).
 //!
-//! If your contract needs to interact with other contracts, take a lookt at
+//! If your contract needs to interact with other contracts, take a look at
 //! [StructuredBlobData]. More is coming on that soon.
 #![cfg_attr(not(test), no_std)]
 
@@ -25,6 +25,8 @@ use alloc::vec::Vec;
 
 pub mod caller;
 pub mod guest;
+#[cfg(feature = "smt")]
+pub mod merkle_utils;
 pub mod utils;
 
 use caller::ExecutionContext;

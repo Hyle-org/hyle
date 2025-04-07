@@ -8,13 +8,14 @@ fn main() {}
         feature = "amm",
         feature = "hydentity",
         feature = "hyllar",
+        feature = "smt-token",
         feature = "staking",
         feature = "risc0-recursion",
         feature = "uuid-tld"
     ))
 ))]
 fn main() {
-    compile_error!("When the 'build' feature is enabled, at least one of the following features must also be enabled: all, amm, hydentity, hyllar, staking, risc0-recursion, uuid-tld.");
+    compile_error!("When the 'build' feature is enabled, at least one of the following features must also be enabled: all, amm, hydentity, hyllar, smt-token, staking, risc0-recursion, uuid-tld.");
 }
 
 #[cfg(all(
@@ -24,6 +25,7 @@ fn main() {
         feature = "amm",
         feature = "hydentity",
         feature = "hyllar",
+        feature = "smt-token",
         feature = "staking",
         feature = "risc0-recursion",
         feature = "uuid-tld"
@@ -82,6 +84,8 @@ fn main() {
         "hydentity",
         #[cfg(feature = "hyllar")]
         "hyllar",
+        #[cfg(feature = "smt-token")]
+        "smt-token",
         #[cfg(feature = "staking")]
         "staking",
         #[cfg(feature = "risc0-recursion")]

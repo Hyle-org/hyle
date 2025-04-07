@@ -15,6 +15,9 @@ mod metadata {
     pub const HYLLAR_ELF: &[u8] = crate::methods::HYLLAR_ELF;
     pub const HYLLAR_ID: [u8; 32] = sdk::to_u8_array(&crate::methods::HYLLAR_ID);
 
+    pub const SMT_TOKEN_ELF: &[u8] = crate::methods::SMT_TOKEN_ELF;
+    pub const SMT_TOKEN_ID: [u8; 32] = sdk::to_u8_array(&crate::methods::SMT_TOKEN_ID);
+
     pub const STAKING_ELF: &[u8] = crate::methods::STAKING_ELF;
     pub const STAKING_ID: [u8; 32] = sdk::to_u8_array(&crate::methods::STAKING_ID);
 
@@ -36,6 +39,10 @@ mod metadata {
 
     pub const HYLLAR_ELF: &[u8] = hyllar::client::tx_executor_handler::metadata::HYLLAR_ELF;
     pub const HYLLAR_ID: [u8; 32] = hyllar::client::tx_executor_handler::metadata::PROGRAM_ID;
+
+    pub const SMT_TOKEN_ELF: &[u8] =
+        smt_token::client::tx_executor_handler::metadata::SMT_TOKEN_ELF;
+    pub const SMT_TOKEN_ID: [u8; 32] = smt_token::client::tx_executor_handler::metadata::PROGRAM_ID;
 
     pub const STAKING_ELF: &[u8] = staking::client::tx_executor_handler::metadata::STAKING_ELF;
     pub const STAKING_ID: [u8; 32] = staking::client::tx_executor_handler::metadata::PROGRAM_ID;

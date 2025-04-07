@@ -355,10 +355,11 @@ pub trait TxExecutorHandler {
 
 /// Macro to easily define the full state of a TxExecutor
 /// Struct-like syntax.
-/// Must have Calldata, ContractName, HyleOutput, ProvableContractState and anyhow in scope.
+/// Must have Calldata, ContractName, HyleOutput, TxExecutorHandler and anyhow in scope.
 /// Example:
 /// use anyhow;
-/// use hyle_contract_sdk::{Blob, Calldata, ContractName, HyleOutput, ProvableContractState};
+/// use hyle_contract_sdk::{Blob, Calldata, ContractName, HyleOutput};
+/// use client_sdk::transaction_builder::TxExecutorHandler;
 #[macro_export]
 macro_rules! contract_states {
     ($(#[$meta:meta])* $vis:vis struct $name:ident { $($mvis:vis $contract_name:ident: $contract_state:ty,)* }) => {
