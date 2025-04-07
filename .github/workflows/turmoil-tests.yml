@@ -1,11 +1,7 @@
 name: Run Turmoil Tests
 
 on:
-  push:
-    branches: [feat/turmoil_add_macro_simulation_test]
-  pull_request:
-    branches: [feat/turmoil_add_macro_simulation_test]
-  workflow_dispatch: {}  # permet de le lancer manuellement
+  workflow_dispatch: {}
 
 jobs:
   test-turmoil:
