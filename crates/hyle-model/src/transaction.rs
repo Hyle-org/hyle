@@ -237,8 +237,10 @@ pub struct BlobTransaction {
     pub blobs: Vec<Blob>,
     // FIXME: add a nonce or something to prevent BlobTransaction to share the same hash
     #[borsh(skip)]
+    #[serde(skip_serializing, skip_deserializing)]
     hash_cache: RwLock<Option<TxHash>>,
     #[borsh(skip)]
+    #[serde(skip_serializing, skip_deserializing)]
     blobshash_cache: RwLock<Option<BlobsHash>>,
 }
 

@@ -1,4 +1,7 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    ops::{Deref, DerefMut},
+    time::Duration,
+};
 
 use anyhow::{Context, Result};
 use hyle_net::http::HttpClient;
@@ -22,6 +25,7 @@ impl IndexerApiHttpClient {
             client: HttpClient {
                 url: url.parse()?,
                 api_key: None,
+                retry: None,
             },
         })
     }
@@ -154,8 +158,14 @@ impl NodeApiHttpClient {
             client: HttpClient {
                 url: url.parse()?,
                 api_key: None,
+                retry: None,
             },
         })
+    }
+
+    pub fn with_retry(mut self, n: usize, duration: Duration) -> Self {
+        self.retry = Some((n, duration));
+        self
     }
     pub async fn register_contract(&self, tx: &APIRegisterContract) -> Result<TxHash> {
         self.post_json("v1/contract/register", tx)
