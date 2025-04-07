@@ -20,7 +20,7 @@ run_tcp_server = true
 tcp_server_port = 1414
 
 # Indexer
-run_indexer = false
+run_indexer = true
 database_url = "postgres://postgres:postgres@localhost:5432/postgres"
 da_address = "127.0.0.1:4141"
 
