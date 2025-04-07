@@ -62,15 +62,26 @@ struct SettlementResult {
 
 #[derive(Debug, Clone)]
 pub struct NodeState {
-    pub metrics: NodeStateMetrics,
+    metrics: NodeStateMetrics,
     pub store: NodeStateStore,
 }
 
 impl NodeState {
-    pub fn create(node_id: String, module_name: &'static str) -> Self {
+    pub fn create(node_id: impl Into<String>, module_name: &'static str) -> Self {
         NodeState {
-            metrics: NodeStateMetrics::global(node_id, module_name),
+            metrics: NodeStateMetrics::global(node_id.into(), module_name),
             store: NodeStateStore::default(),
+        }
+    }
+
+    pub fn new_from_store(
+        node_id: impl Into<String>,
+        module_name: &'static str,
+        store: NodeStateStore,
+    ) -> Self {
+        NodeState {
+            metrics: NodeStateMetrics::global(node_id.into(), module_name),
+            store,
         }
     }
 }
@@ -104,8 +115,14 @@ pub struct NodeStateStore {
 // TODO: we should register the 'hyle' TLD in the genesis block.
 impl Default for NodeStateStore {
     fn default() -> Self {
+        Self::new(BlockHeight(100))
+    }
+}
+
+impl NodeStateStore {
+    pub fn new(timeout_window: BlockHeight) -> Self {
         let mut ret = Self {
-            timeouts: Timeouts::default(),
+            timeouts: Timeouts::new(timeout_window),
             current_height: BlockHeight(0),
             contracts: HashMap::new(),
             unsettled_transactions: OrderedTxMap::default(),
