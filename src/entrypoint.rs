@@ -87,6 +87,21 @@ impl Drop for RunPg {
     }
 }
 
+fn mask_postgres_uri(uri: &str) -> String {
+    // On cherche le prefix postgres://user:pass@...
+    if let Some(start) = uri.find("://") {
+        if let Some(at) = uri[start + 3..].find('@') {
+            let creds_part = &uri[start + 3..start + 3 + at];
+            if let Some(colon) = creds_part.find(':') {
+                let user = &creds_part[..colon];
+                let rest = &uri[start + 3 + at..]; // tout après @
+                return format!("postgres://{}:{}{}", user, "*****", rest);
+            }
+        }
+    }
+    uri.to_string() // fallback : renvoyer tel quel si pas reconnu
+}
+
 pub fn welcome_message(conf: &conf::Conf) {
     let version = env!("CARGO_PKG_VERSION");
 
@@ -106,10 +121,10 @@ pub fn welcome_message(conf: &conf::Conf) {
    ██║  ██║╚██╗ ██╔╝██║     ██║         {validator_details}
    ███████║ ╚████╔╝ ██║     ██║     {check_p2p} p2p::{p2p_port} | {check_http} http::{http_port} | {check_tcp} tcp::{tcp_port} | ◆ da::{da_port}
    ██╔══██║  ╚██╔╝  ██║     ██║     
-   ██║  ██║   ██║   ███████╗██║     {check_indexer} indexer ↯ {database_url}
+   ██║  ██║   ██║   ███████╗██║     {check_indexer} indexer {database_url}
    ╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═╝     ∎ ./{data_directory}
  
-   Minimal, yet sufficient. Hope you like it.
+   Minimal, yet sufficient. Hope You Like It.
                                  
     "#,
         version = version,
@@ -129,7 +144,11 @@ pub fn welcome_message(conf: &conf::Conf) {
         tcp_port = conf.tcp_server_port,
         da_port = conf.da_server_port,
         check_indexer = check_or_cross(conf.run_indexer),
-        database_url = conf.database_url,
+        database_url = if conf.run_indexer {
+            format!("↯ {}", mask_postgres_uri(conf.database_url.as_str()))
+        } else {
+            "".to_string()
+        },
         data_directory = conf.data_directory.to_string_lossy(),
         validator_details = if matches!(conf.p2p.mode, P2pMode::FullValidator) {
             let c_mode = if conf.consensus.solo {
