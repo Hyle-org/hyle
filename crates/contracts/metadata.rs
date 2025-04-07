@@ -18,9 +18,6 @@ mod metadata {
     pub const SMT_TOKEN_ELF: &[u8] = crate::methods::SMT_TOKEN_ELF;
     pub const SMT_TOKEN_ID: [u8; 32] = sdk::to_u8_array(&crate::methods::SMT_TOKEN_ID);
 
-    pub const SMT_TOKEN_ELF: &[u8] = crate::methods::SMT_TOKEN_ELF;
-    pub const SMT_TOKEN_ID: [u8; 32] = sdk::to_u8_array(&crate::methods::SMT_TOKEN_ID);
-
     pub const STAKING_ELF: &[u8] = crate::methods::STAKING_ELF;
     pub const STAKING_ID: [u8; 32] = sdk::to_u8_array(&crate::methods::STAKING_ID);
 
