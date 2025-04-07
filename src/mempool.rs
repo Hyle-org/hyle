@@ -21,7 +21,7 @@ use anyhow::{bail, Context, Result};
 use api::RestApiMessage;
 use block_construction::BlockUnderConstruction;
 use borsh::{BorshDeserialize, BorshSerialize};
-use client_sdk::tcp::TcpServerMessage;
+use client_sdk::tcp_client::TcpServerMessage;
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
@@ -32,6 +32,7 @@ use std::{
     ops::{Deref, DerefMut},
     path::PathBuf,
     sync::Arc,
+    time::Duration,
 };
 use storage::{LaneEntry, Storage};
 use tokio::task::JoinSet;
@@ -96,6 +97,7 @@ pub struct MempoolStore {
 
     // block_construction.rs
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
+    #[borsh(skip)]
     buc_build_start_height: Option<u64>,
 
     // Common
@@ -166,6 +168,7 @@ impl BusMessage for MempoolStatusEvent {}
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum InternalMempoolEvent {
     OnProcessedNewTx(Transaction),
+    OnHashedDataProposal((LaneId, DataProposal)),
     OnProcessedDataProposal((LaneId, DataProposalVerdict, DataProposal)),
 }
 impl BusMessage for InternalMempoolEvent {}
@@ -233,8 +236,11 @@ impl Module for Mempool {
 impl Mempool {
     /// start starts the mempool server.
     pub async fn start(&mut self) -> Result<()> {
-        let tick_time = std::cmp::min(self.conf.consensus.slot_duration / 2, 500);
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(tick_time));
+        let tick_interval = std::cmp::min(
+            self.conf.consensus.slot_duration / 2,
+            Duration::from_millis(500),
+        );
+        let mut interval = tokio::time::interval(tick_interval);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
         // TODO: Recompute optimistic node_state for contract registrations.
@@ -358,6 +364,9 @@ impl Mempool {
             InternalMempoolEvent::OnProcessedNewTx(tx) => {
                 self.on_new_tx(tx).context("Processing new tx")
             }
+            InternalMempoolEvent::OnHashedDataProposal((lane_id, data_proposal)) => self
+                .on_hashed_data_proposal(&lane_id, data_proposal)
+                .context("Hashing data proposal"),
             InternalMempoolEvent::OnProcessedDataProposal((lane_id, verdict, data_proposal)) => {
                 self.on_processed_data_proposal(lane_id, verdict, data_proposal)
                     .context("Processing data proposal")
@@ -686,6 +695,7 @@ pub mod test {
     use assertables::assert_ok;
     use hyle_contract_sdk::StateCommitment;
     use tokio::sync::broadcast::Receiver;
+    use utils::TimestampMs;
 
     pub struct MempoolTestCtx {
         pub name: String,
@@ -1071,11 +1081,9 @@ pub mod test {
                         staking: self.mempool.staking.clone(),
                         consensus_proposal: model::ConsensusProposal {
                             slot,
-                            view: 0,
-                            round_leader: leader.clone(),
                             cut: cut.clone(),
                             staking_actions: vec![],
-                            timestamp: 777,
+                            timestamp: TimestampMs(777),
                             parent_hash: ConsensusProposalHash("test".to_string()),
                         },
                         certificate: AggregateSignature::default(),

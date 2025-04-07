@@ -4,21 +4,20 @@ use anyhow::Result;
 use client_sdk::helpers::risc0::Risc0Prover;
 use client_sdk::helpers::test::TestProver;
 use client_sdk::rest_client::NodeApiHttpClient;
-use client_sdk::tcp::{codec_tcp_server, TcpServerMessage};
+use client_sdk::tcp_client::{codec_tcp_server, TcpServerMessage};
 use client_sdk::transaction_builder::{
-    ProvableBlobTx, StateUpdater, TxExecutor, TxExecutorBuilder,
+    ProvableBlobTx, StateUpdater, TxExecutor, TxExecutorBuilder, TxExecutorHandler,
 };
 use client_sdk::{contract_states, transaction_builder};
-use hydentity::client::{register_identity, verify_identity};
+use hydentity::client::tx_executor_handler::{register_identity, verify_identity};
 use hydentity::Hydentity;
-use hyle_contract_sdk::HyleContract;
 use hyle_contract_sdk::Identity;
 use hyle_contract_sdk::TxHash;
-use hyle_contract_sdk::{guest, ContractInput, ContractName, HyleOutput};
 use hyle_contract_sdk::{Blob, BlobData, ContractAction, RegisterContractAction};
 use hyle_contract_sdk::{BlobTransaction, Transaction};
+use hyle_contract_sdk::{Calldata, ContractName, HyleOutput, ZkContract};
 use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF};
-use hyllar::client::transfer;
+use hyllar::client::tx_executor_handler::transfer;
 use hyllar::erc20::ERC20;
 use hyllar::{Hyllar, FAUCET_ID};
 use rand::Rng;
@@ -74,27 +73,45 @@ impl transaction_builder::StateUpdater for CanonicalStates {
         Ok(())
     }
 
-    fn get(&self, contract_name: &ContractName) -> anyhow::Result<Vec<u8>> {
+    fn get(&self, contract_name: &ContractName) -> anyhow::Result<Box<dyn std::any::Any>> {
         if contract_name == &self.hydentity_name {
-            Ok(borsh::to_vec(&self.hydentity).map_err(|e| anyhow::anyhow!(e))?)
+            Ok(Box::new(self.hydentity.clone()))
         } else if contract_name == &self.hyllar_name {
-            Ok(borsh::to_vec(&self.hyllar).map_err(|e| anyhow::anyhow!(e))?)
+            Ok(Box::new(self.hyllar.clone()))
         } else {
             anyhow::bail!("Unknown contract name: {contract_name}");
         }
     }
 
     fn execute(
+        &mut self,
+        contract_name: &ContractName,
+        calldata: &Calldata,
+    ) -> anyhow::Result<HyleOutput> {
+        if contract_name == &self.hydentity_name {
+            self.hydentity
+                .handle(calldata)
+                .map_err(|e| anyhow::anyhow!(e))
+        } else if contract_name == &self.hyllar_name {
+            self.hyllar.handle(calldata).map_err(|e| anyhow::anyhow!(e))
+        } else {
+            anyhow::bail!("Unknown contract name: {contract_name}");
+        }
+    }
+
+    fn build_commitment_metadata(
         &self,
         contract_name: &ContractName,
-        contract_input: &ContractInput,
-    ) -> anyhow::Result<(Box<dyn std::any::Any>, HyleOutput)> {
+        blob: &Blob,
+    ) -> anyhow::Result<Vec<u8>> {
         if contract_name == &self.hydentity_name {
-            let (state, output) = guest::execute::<Hydentity>(contract_input);
-            Ok((Box::new(state) as Box<dyn std::any::Any>, output))
+            self.hydentity
+                .build_commitment_metadata(blob)
+                .map_err(|e| anyhow::anyhow!(e))
         } else if contract_name == &self.hyllar_name {
-            let (state, output) = guest::execute::<Hyllar>(contract_input);
-            Ok((Box::new(state) as Box<dyn std::any::Any>, output))
+            self.hyllar
+                .build_commitment_metadata(blob)
+                .map_err(|e| anyhow::anyhow!(e))
         } else {
             anyhow::bail!("Unknown contract name: {contract_name}");
         }
@@ -348,11 +365,11 @@ pub async fn send_proof_txs(url: String, proof_txs: Vec<Transaction>) -> Result<
     Ok(())
 }
 
-pub fn get_current_timestamp_ms() -> u64 {
+pub fn get_current_timestamp_ms() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
-        .as_millis() as u64
+        .as_millis()
 }
 
 pub async fn send_transaction<S: StateUpdater>(
@@ -391,12 +408,12 @@ pub async fn send_transaction<S: StateUpdater>(
     tx_hash
 }
 
-pub async fn long_running_test(node_url: String, _indexer_url: String) -> Result<()> {
+pub async fn long_running_test(node_url: String) -> Result<()> {
     loop {
+        tracing::warn!("{}", node_url.clone());
         let mut client = NodeApiHttpClient::new(node_url.clone())?;
         client.api_key = Some("KEY_LOADTEST".to_string());
         // let indexer = IndexerApiHttpClient::new(indexer_url)?;
-
         // Generate a random number of iterations for a generated hydentity + hyllar
         let rand_iterations = get_current_timestamp_ms() % 1000;
 
@@ -433,7 +450,7 @@ pub async fn long_running_test(node_url: String, _indexer_url: String) -> Result
 
         tokio::time::sleep(Duration::from_secs(5)).await;
 
-        let mut users: Vec<u64> = vec![];
+        let mut users: Vec<u128> = vec![];
 
         let mut tx_ctx = TxExecutorBuilder::new(CanonicalStates {
             hydentity: Hydentity::default(),

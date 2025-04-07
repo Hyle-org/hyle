@@ -184,7 +184,7 @@ pub trait ERC20 {
 #[cfg(test)]
 mod tests {
 
-    use crate::HyleContract;
+    use crate::ZkContract;
 
     use super::*;
     use mockall::{
@@ -203,8 +203,8 @@ mod tests {
             fn approve(&mut self, owner: &str, spender: &str, amount: u128) -> Result<(), String>;
             fn allowance(&self, owner: &str, spender: &str) -> Result<u128, String>;
         }
-        impl HyleContract for ERC20Contract {
-            fn execute(&mut self, contract_input: &sdk::ContractInput) -> crate::RunResult {
+        impl ZkContract for ERC20Contract {
+            fn execute(&mut self, zk_program_input: &sdk::Calldata) -> crate::RunResult {
                 unimplemented!()
             }
             fn commit(&self) -> sdk::StateCommitment {

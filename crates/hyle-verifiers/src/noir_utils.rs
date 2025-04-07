@@ -2,8 +2,8 @@ use std::collections::VecDeque;
 
 use anyhow::{Context, Error};
 use hyle_model::{
-    BlobIndex, BlockHeight, ConsensusProposalHash, HyleOutput, LaneId, StateCommitment, TxHash,
-    HYLE_TESTNET_CHAIN_ID,
+    utils::TimestampMs, BlobIndex, BlockHeight, ConsensusProposalHash, HyleOutput, LaneId,
+    StateCommitment, TxHash, HYLE_TESTNET_CHAIN_ID,
 };
 
 pub fn parse_noir_output(vector: &mut Vec<String>) -> Result<HyleOutput, Error> {
@@ -28,7 +28,7 @@ pub fn parse_noir_output(vector: &mut Vec<String>) -> Result<HyleOutput, Error> 
             lane_id: LaneId::default(),
             block_hash: ConsensusProposalHash::default(),
             block_height: BlockHeight(0),
-            timestamp: 1,
+            timestamp: TimestampMs(1),
             chain_id: HYLE_TESTNET_CHAIN_ID,
         }),
         index: BlobIndex(index as usize),

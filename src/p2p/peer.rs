@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use anyhow::Context;
 use anyhow::{Error, Result};
-use tokio::net::TcpStream;
+use hyle_net::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tokio_util::codec::Framed;
@@ -264,7 +264,7 @@ impl Peer {
             HandshakeNetMessage::Hello(self.crypto.sign(Hello {
                 version: 1,
                 name: self.conf.id.clone(),
-                da_address: self.conf.da_address.clone(),
+                da_address: format!("{}:{}", self.conf.hostname, self.conf.da_server_port),
             })?)
             .into(),
         )

@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, Context, Error};
 use futures::{SinkExt, StreamExt};
-use tokio::net::TcpStream;
+use hyle_net::net::TcpStream;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use tracing::trace;
 

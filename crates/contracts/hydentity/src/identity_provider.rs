@@ -90,7 +90,7 @@ pub trait IdentityVerification {
 
 #[cfg(test)]
 mod tests {
-    use crate::HyleContract;
+    use crate::ZkContract;
 
     use super::*;
     use mockall::{mock, predicate::*};
@@ -104,8 +104,8 @@ mod tests {
             fn get_identity_info(&self, account: &str) -> Result<String, &'static str>;
         }
 
-        impl HyleContract for IdentityVerification {
-            fn execute(&mut self, contract_input: &sdk::ContractInput) -> crate::RunResult {
+        impl ZkContract for IdentityVerification {
+            fn execute(&mut self, calldata: &sdk::Calldata) -> crate::RunResult {
                 unimplemented!()
             }
             fn commit(&self) -> sdk::StateCommitment;

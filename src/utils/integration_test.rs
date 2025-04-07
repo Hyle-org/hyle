@@ -34,7 +34,9 @@ use super::modules::{module_bus_client, Module};
 
 // Assume that we can reuse the OS-provided port.
 pub async fn find_available_port() -> u16 {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = hyle_net::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .unwrap();
     let addr = listener.local_addr().unwrap();
     addr.port()
 }
@@ -98,10 +100,10 @@ impl NodeIntegrationCtxBuilder {
             Some(false),
         )
         .expect("conf ok");
-        conf.p2p.address = format!("localhost:{}", find_available_port().await);
-        conf.da_address = format!("localhost:{}", find_available_port().await);
-        conf.tcp_address = Some(format!("localhost:{}", find_available_port().await));
-        conf.rest_address = format!("localhost:{}", find_available_port().await);
+        conf.p2p.server_port = find_available_port().await;
+        conf.da_server_port = find_available_port().await;
+        conf.tcp_server_port = find_available_port().await;
+        conf.rest_server_port = find_available_port().await;
 
         Self {
             tmpdir,
@@ -143,13 +145,14 @@ impl NodeIntegrationCtxBuilder {
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
 
         let node_task = Some(tokio::spawn(async move {
+            node_modules.start_modules().await?;
             tokio::select! {
-                res = node_modules.start_modules() => {
+                res = node_modules.shutdown_loop() => {
                     res
                 }
                 Ok(_) = rx => {
                     info!("Node shutdown requested");
-                    let _ = node_modules.shutdown_next_module().await;
+                    let _ = node_modules.shutdown_modules().await;
                     Ok(())
                 }
             }
@@ -211,6 +214,7 @@ impl Drop for NodeIntegrationCtx {
             }
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
+        info!("Node shutdown complete");
     }
 }
 
@@ -294,19 +298,19 @@ impl NodeIntegrationCtx {
             Self::build_module::<RestApi>(
                 &mut handler,
                 &ctx,
-                RestApiRunContext {
-                    rest_addr: ctx.common.config.rest_address.clone(),
-                    max_body_size: ctx.common.config.rest_max_body_size,
-                    info: NodeInfo {
+                RestApiRunContext::new(
+                    config.rest_server_port,
+                    NodeInfo {
                         id: config.id.clone(),
                         pubkey: Some(pubkey),
-                        da_address: config.da_address.clone(),
+                        da_address: format!("{}:{}", config.hostname, config.da_server_port),
                     },
-                    bus: ctx.common.bus.new_handle(),
-                    metrics_layer: None,
-                    router: router.clone(),
-                    openapi: Default::default(),
-                },
+                    ctx.common.bus.new_handle(),
+                    router.clone(),
+                    None,
+                    ctx.common.config.rest_server_max_body_size,
+                    Default::default(),
+                ),
                 &mut mocks,
             )
             .await?;

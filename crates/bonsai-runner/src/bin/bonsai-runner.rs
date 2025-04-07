@@ -1,7 +1,7 @@
 use axum::{extract::Json, http::StatusCode, response::IntoResponse, routing::post, Router};
 use risc0_zkvm::Receipt;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, fs, net::SocketAddr, sync::Arc};
+use std::{collections::HashSet, fs, sync::Arc};
 use tracing::{info, Level};
 
 #[derive(Deserialize)]
@@ -30,10 +30,8 @@ async fn main() {
         .route("/prove", post(prove_handler))
         .layer(axum::Extension(shared_api_keys));
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    info!("Server listening on {}", addr);
-
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    let listener = hyle_net::net::bind_tcp_listener(3000).await.unwrap();
+    info!("Server listening on {}", listener.local_addr().unwrap());
     axum::serve(listener, app).await.unwrap();
 }
 

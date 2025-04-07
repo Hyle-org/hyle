@@ -1,11 +1,15 @@
 use anyhow::{Context, Result};
 use config::{Config, Environment, File};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fmt::Debug, path::PathBuf, sync::Arc};
+use serde_with::serde_as;
+use serde_with::DurationMilliSeconds;
+use std::{collections::HashMap, fmt::Debug, path::PathBuf, sync::Arc, time::Duration};
 
+#[serde_as]
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Consensus {
-    pub slot_duration: u64,
+    #[serde_as(as = "DurationMilliSeconds")]
+    pub slot_duration: Duration,
     /// Whether the network runs as a single node or with a multi-node consensus.
     pub solo: bool,
 }
@@ -23,7 +27,7 @@ pub struct GenesisConf {
 pub struct P2pConf {
     pub mode: P2pMode,
     /// Server address for the P2P layer
-    pub address: String,
+    pub server_port: u16,
     /// IPs of peers to connect to
     pub peers: Vec<String>,
     /// Time in milliseconds between pings to peers
@@ -47,6 +51,9 @@ pub type SharedConf = Arc<Conf>;
 pub struct Conf {
     /// Human-readable identifier for this node.
     pub id: String,
+
+    // Network host name
+    pub hostname: String,
     /// The log format to use - "json", "node" or "full" (default)
     pub log_format: String,
     /// Directory name to store node state.
@@ -64,19 +71,20 @@ pub struct Conf {
     // Module options below
     /// If full node: server address for the DA layer, which streams historical & new blocks. It might be used by indexers.
     /// If "None", this is instead the address to connect to.
+    pub da_server_port: u16,
+
+    /// For a Da client
     pub da_address: String,
 
-    /// Whether to run the REST API
     pub run_rest_server: bool,
-    /// Server address for the REST API
-    pub rest_address: String,
+    /// Server port for the REST API
+    pub rest_server_port: u16,
     /// Maximum body size for REST requests
-    pub rest_max_body_size: usize,
+    pub rest_server_max_body_size: usize,
 
-    /// Whether to run the TCP server
     pub run_tcp_server: bool,
-    /// Server address for the TCP API
-    pub tcp_address: Option<String>,
+    /// Server port for the TCP API
+    pub tcp_server_port: u16,
 
     /// Whether to run the indexer
     pub run_indexer: bool,
@@ -108,6 +116,34 @@ impl Conf {
                     .try_parsing(true),
             )
             .set_override_option("data_directory", data_directory)?
+            .set_override_option(
+                "tcp_server_port",
+                std::env::var("HYLE_TCP__SERVER__PORT")
+                    .ok()
+                    .and_then(|port| port.parse::<u16>().ok()), // Convertir en u16 si possible
+            )?
+            .set_override_option(
+                "rest_server_port",
+                std::env::var("HYLE_REST__SERVER__PORT")
+                    .ok()
+                    .and_then(|port| port.parse::<u16>().ok()), // Convertir en u16 si possible
+            )?
+            .set_override_option(
+                "da_server_port",
+                std::env::var("HYLE_DA__SERVER__PORT")
+                    .ok()
+                    .and_then(|port| port.parse::<u16>().ok()), // Convertir en u16 si possible
+            )?
+            .set_override_option(
+                "da_server_port",
+                std::env::var("HYLE_DA__SERVER__PORT")
+                    .ok()
+                    .and_then(|port| port.parse::<u16>().ok()), // Convertir en u16 si possible
+            )?
+            .set_override(
+                "hostname",
+                std::env::var("HOSTNAME").unwrap_or("localhost".to_string()),
+            )?
             .set_override_option("run_indexer", run_indexer)?
             .build()?
             .try_deserialize()?;
@@ -134,5 +170,39 @@ mod tests {
     #[test]
     fn test_load_default_conf() {
         assert_ok!(Conf::new(None, None, None));
+    }
+
+    #[test]
+    fn test_override_tcp_server_port() {
+        let conf = Conf::new(None, None, None).unwrap();
+        assert_eq!(conf.tcp_server_port, 1414);
+
+        std::env::set_var("HYLE_TCP__SERVER__PORT", "9090");
+        let conf = Conf::new(None, None, None).unwrap();
+        assert_eq!(conf.tcp_server_port, 9090);
+    }
+    #[test]
+    fn test_override_rest_server_port() {
+        let conf = Conf::new(None, None, None).unwrap();
+        assert_eq!(conf.rest_server_port, 4321);
+        std::env::set_var("HYLE_REST__SERVER__PORT", "9090");
+        let conf = Conf::new(None, None, None).unwrap();
+        assert_eq!(conf.rest_server_port, 9090);
+    }
+    #[test]
+    fn test_override_da_server_port() {
+        let conf = Conf::new(None, None, None).unwrap();
+        assert_eq!(conf.da_server_port, 4141);
+        std::env::set_var("HYLE_DA__SERVER__PORT", "9090");
+        let conf = Conf::new(None, None, None).unwrap();
+        assert_eq!(conf.da_server_port, 9090);
+    }
+    #[test]
+    fn test_override_hostname() {
+        let conf = Conf::new(None, None, None).unwrap();
+        assert_eq!(conf.hostname, "localhost");
+        std::env::set_var("HOSTNAME", "hyli-node");
+        let conf = Conf::new(None, None, None).unwrap();
+        assert_eq!(conf.hostname, "hyli-node");
     }
 }

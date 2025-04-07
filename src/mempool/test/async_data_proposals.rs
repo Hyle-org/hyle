@@ -1,5 +1,6 @@
 use std::sync::atomic::AtomicI32;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{bail, Result};
 use assertables::assert_ok;
@@ -40,7 +41,7 @@ async fn test_mempool_isnt_blocked_by_proof_verification() {
 
 async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
     let mut node_modules = NodeIntegrationCtxBuilder::new().await;
-    node_modules.conf.consensus.slot_duration = 200;
+    node_modules.conf.consensus.slot_duration = Duration::from_millis(200);
 
     let mut node_modules = node_modules
         .skip::<Genesis>()
@@ -170,7 +171,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
         count.load(std::sync::atomic::Ordering::SeqCst)
     );
     let expected_commits = (start_time.elapsed().as_millis()
-        / node_modules.conf.consensus.slot_duration as u128) as i32;
+        / node_modules.conf.consensus.slot_duration.as_millis()) as i32;
 
     // Add a little bit of leeway
     if count.load(std::sync::atomic::Ordering::SeqCst) < expected_commits - 1 {
@@ -252,7 +253,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
         count.load(std::sync::atomic::Ordering::SeqCst)
     );
     let expected_commits = (start_time.elapsed().as_millis()
-        / node_modules.conf.consensus.slot_duration as u128) as i32;
+        / node_modules.conf.consensus.slot_duration.as_millis()) as i32;
 
     // Add a little bit of leeway
     if count.load(std::sync::atomic::Ordering::SeqCst) < expected_commits - 1 {

@@ -8,26 +8,27 @@ data_directory = "data_node"
 # Data availability module, which streams historical & new blocks.
 # If full node: server address for the DA layer, which streams historical & new blocks. It might be used by indexers.
 # If "None", this is instead the address to connect to.
-da_address = "127.0.0.1:4141"
+da_server_port = 4141
 
 # Rest API
 run_rest_server = true
-rest_address = "127.0.0.1:4321"
-rest_max_body_size = 10_485_760 # 10 MB
+rest_server_port = 4321
+rest_server_max_body_size = 10_485_760 # 10 MB
 
 # TCP API
 run_tcp_server = true
-tcp_address = "127.0.0.1:1414"
+tcp_server_port = 1414
 
 # Indexer
 run_indexer = true
 database_url = "postgres://postgres:postgres@localhost:5432/postgres"
+da_address = "127.0.0.1:4141"
 
 [p2p]
 # "FullValidator" runs a full node, "LaneManager" skips consensus, or "None" to disable most modules.
 mode = "FullValidator"
 # TCP server for the p2p incoming connections.
-address = "127.0.0.1:1231"
+server_port = 1231
 # Peer IPs to connect to
 peers = []
 # Interval the p2p layer does a ping to check aliveness of other peers.
@@ -44,7 +45,7 @@ solo = true
 # Stakers and their inigial stake.
 # Default conf has to be empty as config is additive
 # but if you copy the file you can add values like (e.g.):
-# stakers: { "node1": 1000, "node2": 1000 }
+# stakers: { "node1"= 1000, "node2"= 1000 }
 # All genesis node requires the same config here
 # Keys are all nodes “id”, and values are the stake amount for each one of them.
 stakers = {}

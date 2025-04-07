@@ -1,10 +1,9 @@
-
 [package]
 name = "hyle-contracts"
 description = "Metadata of hyle built-in contracts"
+license-file = { workspace = true }
 version = { workspace = true }
 edition = { workspace = true }
-# license = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }
 rust-version = "1.81"
@@ -14,20 +13,36 @@ path = "metadata.rs"
 
 [dependencies]
 sdk = { workspace = true }
+amm = { workspace = true, features = ["client"] }
+hydentity = { workspace = true, features = ["client"] }
+hyllar = { workspace = true, features = ["client"] }
+risc0-recursion = { workspace = true, features = ["client"] }
+staking = { workspace = true, features = ["client"] }
+uuid-tld = { workspace = true, features = ["client"] }
+
 
 [build-dependencies]
-risc0-build = { version = "1.2.4", optional = true }
+risc0-build = { version = "2.0.1", optional = true }
 
 [package.metadata.risc0]
 methods = [
-    "amm",
-    "hyllar",
-    "hydentity",
-    "staking",
-    "risc0-recursion",
-    "uuid-tld",
+  "amm",
+  "hyllar",
+  "hydentity",
+  "staking",
+  "risc0-recursion",
+  "uuid-tld",
 ]
 
 [features]
 build = ["dep:risc0-build"]
-nonreproducible = ["build"]
+nonreproducible = ["build", "all"]
+
+# Following features are used to choose which contracts should be rebuild with docker
+all = ["amm", "hyllar", "hydentity", "staking", "risc0-recursion", "uuid-tld"]
+amm = []
+hyllar = []
+hydentity = []
+staking = []
+risc0-recursion = []
+uuid-tld = []

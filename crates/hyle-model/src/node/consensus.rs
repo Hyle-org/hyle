@@ -4,6 +4,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use strum_macros::IntoStaticStr;
+use utils::TimestampMs;
 use utoipa::ToSchema;
 
 use crate::{staking::*, *};
@@ -107,7 +108,8 @@ pub enum Ticket {
     // Special value for the initial Cut, needed because we don't have a quorum certificate for the genesis block.
     Genesis,
     CommitQC(QuorumCertificate),
-    TimeoutQC(QuorumCertificate),
+    TimeoutQC(QuorumCertificate, TCKind),
+    ForcedCommitQc(QuorumCertificate),
 }
 
 #[cfg(feature = "sqlx")]
@@ -157,19 +159,11 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for ConsensusProposalHash {
     PartialOrd,
 )]
 pub struct ConsensusProposal {
-    // These first few items are checked when receiving the proposal from the leader.
     pub slot: Slot,
-    pub view: View,
-    // This field is necessary for joining the network.
-    // Without it, new joiners cannot safely know who the leader is
-    // as we cannot verify that the sender of the Prepare message is indeed the leader.
-    // Additionally, this information is not present in any other message.
-    pub round_leader: ValidatorPublicKey,
-    // Below items aren't.
+    pub parent_hash: ConsensusProposalHash,
     pub cut: Cut,
     pub staking_actions: Vec<ConsensusStakingAction>,
-    pub timestamp: u64,
-    pub parent_hash: ConsensusProposalHash,
+    pub timestamp: TimestampMs,
 }
 
 /// This is the hash of the proposal, signed by validators
@@ -178,8 +172,6 @@ impl Hashed<ConsensusProposalHash> for ConsensusProposal {
     fn hashed(&self) -> ConsensusProposalHash {
         let mut hasher = Sha3_256::new();
         hasher.update(self.slot.to_le_bytes());
-        hasher.update(self.view.to_le_bytes());
-        hasher.update(&self.round_leader.0);
         self.cut.iter().for_each(|(lane_id, hash, _, _)| {
             hasher.update(&lane_id.0 .0);
             hasher.update(hash.0.as_bytes());
@@ -194,7 +186,7 @@ impl Hashed<ConsensusProposalHash> for ConsensusProposal {
                 hasher.update(cumul_size.0.to_le_bytes())
             }
         });
-        hasher.update(self.timestamp.to_le_bytes());
+        hasher.update(self.timestamp.0.to_le_bytes());
         hasher.update(self.parent_hash.0.as_bytes());
         ConsensusProposalHash(hex::encode(hasher.finalize()))
     }
@@ -256,15 +248,70 @@ impl From<NewValidatorCandidate> for ConsensusStakingAction {
     Ord,
     PartialOrd,
 )]
+pub enum TCKind {
+    NilProposal,
+    PrepareQC((QuorumCertificate, ConsensusProposal)),
+}
+
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    BorshSerialize,
+    BorshDeserialize,
+    PartialEq,
+    Eq,
+    IntoStaticStr,
+    Hash,
+    Ord,
+    PartialOrd,
+)]
+/// There are two possible setups on timeout: either we should timeout with no proposal,
+/// or there is a chance one had committed on some validator and we must propose the same.
+/// To handle these two cases, we need specific data on top of the regular timeout message.
+pub enum TimeoutKind {
+    /// Sign a different message to signify 'nil proposal' for aggregation
+    NilProposal(SignedByValidator<(Slot, View, ConsensusProposalHash, ())>),
+    /// Resending the prepare QC & matching proposal (for convenience for the leader to repropose)
+    PrepareQC((QuorumCertificate, ConsensusProposal)),
+}
+
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    BorshSerialize,
+    BorshDeserialize,
+    PartialEq,
+    Eq,
+    IntoStaticStr,
+    Hash,
+    Ord,
+    PartialOrd,
+)]
 pub enum ConsensusNetMessage {
-    Prepare(ConsensusProposal, Ticket),
+    Prepare(ConsensusProposal, Ticket, View),
     PrepareVote(ConsensusProposalHash),
-    Confirm(QuorumCertificate),
+    Confirm(QuorumCertificate, ConsensusProposalHash),
     ConfirmAck(ConsensusProposalHash),
     Commit(QuorumCertificate, ConsensusProposalHash),
-    Timeout(Slot, View),
-    TimeoutCertificate(QuorumCertificate, Slot, View),
+    /// We do signature aggregation, so we would need everyone to send the same PQC.
+    /// To work around that, send two signatures for now.
+    /// To successfully send a nil certificate, we need a proof of 2f+1 nil timeouts, so we can't really avoid the double-signature.
+    /// TODO:but we could avoid signing the top-level message
+    Timeout(
+        /// Here we add the parent hash purely to avoid replay attacks
+        /// This first message will be used if the TC to generate a proof of timeout
+        SignedByValidator<(Slot, View, ConsensusProposalHash)>,
+        /// The second data is sued to pick a specific TC type
+        TimeoutKind,
+    ),
+    TimeoutCertificate(QuorumCertificate, TCKind, Slot, View),
     ValidatorCandidacy(ValidatorCandidacy),
+    SyncRequest(ConsensusProposalHash),
+    SyncReply((ValidatorPublicKey, ConsensusProposal, Ticket, View)),
 }
 
 impl Hashed<QuorumCertificateHash> for QuorumCertificate {
@@ -295,11 +342,10 @@ impl Display for ConsensusProposal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Hash: {}, Parent Hash: {}, Slot: {}, View: {}, Cut: {:?}, staking_actions: {:?}",
+            "Hash: {}, Parent Hash: {}, Slot: {}, Cut: {:?}, staking_actions: {:?}",
             self.hashed(),
             self.parent_hash,
             self.slot,
-            self.view,
             self.cut,
             self.staking_actions,
         )
@@ -326,21 +372,25 @@ impl Display for ConsensusNetMessage {
         let enum_variant: &'static str = self.into();
 
         match self {
-            ConsensusNetMessage::Prepare(cp, ticket) => {
-                write!(f, "{} CP: {}, ticket: {}", enum_variant, cp, ticket)
+            ConsensusNetMessage::Prepare(cp, ticket, view) => {
+                write!(
+                    f,
+                    "{} CP: {}, ticket: {}, view: {}",
+                    enum_variant, cp, ticket, view
+                )
             }
             ConsensusNetMessage::PrepareVote(cphash) => {
                 write!(f, "{} (CP hash: {})", enum_variant, cphash)
             }
-            ConsensusNetMessage::Confirm(cert) => {
-                _ = writeln!(f, "{}", enum_variant);
+            ConsensusNetMessage::Confirm(cert, cphash) => {
+                _ = writeln!(f, "{} (CP hash: {})", enum_variant, cphash);
                 _ = write!(f, "Certificate {} with validators ", cert.signature);
                 for v in cert.validators.iter() {
                     _ = write!(f, "{},", v);
                 }
                 write!(f, "")
             }
-            ConsensusNetMessage::ConfirmAck(cphash) => {
+            ConsensusNetMessage::ConfirmAck(cphash, ..) => {
                 write!(f, "{} (CP hash: {})", enum_variant, cphash)
             }
             ConsensusNetMessage::Commit(cert, cphash) => {
@@ -353,18 +403,61 @@ impl Display for ConsensusNetMessage {
             }
 
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
-                write!(f, "{} (CP hash {})", enum_variant, candidacy)
+                write!(f, "{} (Candidacy {})", enum_variant, candidacy)
             }
-            ConsensusNetMessage::Timeout(slot, view) => {
-                write!(f, "{} - Slot: {} View: {}", enum_variant, slot, view)
+            ConsensusNetMessage::Timeout(signed_slot_view, tk) => {
+                _ = writeln!(
+                    f,
+                    "{} - Slot: {} View: {}",
+                    enum_variant, signed_slot_view.msg.0, signed_slot_view.msg.1
+                );
+                match tk {
+                    TimeoutKind::NilProposal(_) => {
+                        _ = writeln!(f, "NilProposal Timeout");
+                    }
+                    TimeoutKind::PrepareQC((cert, cp)) => {
+                        _ = writeln!(f, "PrepareQC certificate {}", cert.signature);
+                        _ = write!(f, "CP: {}", cp);
+                        for v in cert.validators.iter() {
+                            _ = write!(f, "{},", v);
+                        }
+                    }
+                }
+                write!(f, "")
             }
-            ConsensusNetMessage::TimeoutCertificate(cert, slot, view) => {
+            ConsensusNetMessage::TimeoutCertificate(cert, kindcert, slot, view) => {
                 _ = writeln!(f, "{} - Slot: {} View: {}", enum_variant, slot, view);
-                _ = write!(f, "Certificate {} with validators ", cert.signature);
+                _ = writeln!(f, "Validators {}", cert.signature);
                 for v in cert.validators.iter() {
                     _ = write!(f, "{},", v);
                 }
+                match kindcert {
+                    TCKind::NilProposal => {
+                        _ = writeln!(f, "NilProposal certificate");
+                    }
+                    TCKind::PrepareQC((kindcert, cp)) => {
+                        _ = writeln!(
+                            f,
+                            "PrepareQC certificate {} on CP hash {}",
+                            kindcert.signature,
+                            cp.hashed()
+                        );
+                        for v in kindcert.validators.iter() {
+                            _ = write!(f, "{},", v);
+                        }
+                    }
+                }
                 write!(f, "")
+            }
+            ConsensusNetMessage::SyncRequest(consensus_proposal_hash) => {
+                write!(f, "{} (CP hash: {})", enum_variant, consensus_proposal_hash)
+            }
+            ConsensusNetMessage::SyncReply((sender, consensus_proposal, ticket, view)) => {
+                write!(
+                    f,
+                    "{} sender: {}, CP: {}, ticket: {}, view: {}",
+                    enum_variant, sender, consensus_proposal, ticket, view
+                )
             }
         }
     }
@@ -378,23 +471,19 @@ mod tests {
         use super::*;
         let proposal = ConsensusProposal {
             slot: 1,
-            view: 1,
-            round_leader: ValidatorPublicKey(vec![1, 2, 3]),
             cut: Cut::default(),
             staking_actions: vec![],
-            timestamp: 1,
+            timestamp: TimestampMs(1),
             parent_hash: ConsensusProposalHash("".to_string()),
         };
         let hash = proposal.hashed();
         assert_eq!(hash.0.len(), 64);
     }
     #[test]
-    fn test_consensus_proposal_hash_ignored_fields() {
+    fn test_consensus_proposal_hash_all_items() {
         use super::*;
         let mut a = ConsensusProposal {
             slot: 1,
-            view: 1,
-            round_leader: ValidatorPublicKey(vec![1, 2, 3]),
             cut: vec![(
                 LaneId(ValidatorPublicKey(vec![1])),
                 DataProposalHash("propA".to_string()),
@@ -412,13 +501,11 @@ mod tests {
                 },
             }
             .into()],
-            timestamp: 1,
+            timestamp: TimestampMs(1),
             parent_hash: ConsensusProposalHash("parent".to_string()),
         };
         let mut b = ConsensusProposal {
             slot: 1,
-            view: 1,
-            round_leader: ValidatorPublicKey(vec![1, 2, 3]),
             cut: vec![(
                 LaneId(ValidatorPublicKey(vec![1])),
                 DataProposalHash("propA".to_string()),
@@ -441,28 +528,18 @@ mod tests {
                 },
             }
             .into()],
-            timestamp: 1,
+            timestamp: TimestampMs(1),
             parent_hash: ConsensusProposalHash("parent".to_string()),
         };
         assert_eq!(a.hashed(), b.hashed());
-        a.timestamp = 2;
+        a.timestamp = TimestampMs(2);
         assert_ne!(a.hashed(), b.hashed());
-        b.timestamp = 2;
+        b.timestamp = TimestampMs(2);
         assert_eq!(a.hashed(), b.hashed());
 
         a.slot = 2;
         assert_ne!(a.hashed(), b.hashed());
         b.slot = 2;
-        assert_eq!(a.hashed(), b.hashed());
-
-        a.view = 2;
-        assert_ne!(a.hashed(), b.hashed());
-        b.view = 2;
-        assert_eq!(a.hashed(), b.hashed());
-
-        a.round_leader = ValidatorPublicKey(vec![4, 5, 6]);
-        assert_ne!(a.hashed(), b.hashed());
-        b.round_leader = ValidatorPublicKey(vec![4, 5, 6]);
         assert_eq!(a.hashed(), b.hashed());
 
         a.parent_hash = ConsensusProposalHash("different".to_string());

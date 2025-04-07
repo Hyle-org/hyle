@@ -2,11 +2,9 @@ use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use erc20::ERC20;
-use sdk::utils::parse_contract_input;
-use sdk::{
-    Blob, BlobData, BlobIndex, ContractAction, ContractInput, ContractName, StructuredBlobData,
-};
-use sdk::{HyleContract, RunResult};
+use sdk::utils::parse_calldata;
+use sdk::{Blob, BlobData, BlobIndex, Calldata, ContractAction, ContractName, StructuredBlobData};
+use sdk::{RunResult, ZkContract};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha2::{Digest, Sha256};
@@ -23,9 +21,9 @@ pub mod erc20;
 pub const TOTAL_SUPPLY: u128 = 100_000_000_000;
 pub const FAUCET_ID: &str = "faucet.hydentity";
 
-impl HyleContract for Hyllar {
-    fn execute(&mut self, contract_input: &ContractInput) -> RunResult {
-        let (action, execution_ctx) = parse_contract_input::<HyllarAction>(contract_input)?;
+impl ZkContract for Hyllar {
+    fn execute(&mut self, calldata: &Calldata) -> RunResult {
+        let (action, execution_ctx) = parse_calldata::<HyllarAction>(calldata)?;
         let output = self.execute_token_action(action, &execution_ctx);
 
         match output {

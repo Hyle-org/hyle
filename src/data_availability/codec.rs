@@ -1,5 +1,4 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use client_sdk::tcp::tcp_client_server;
 use hyle_model::{BlockHeight, MempoolStatusEvent, SignedBlock};
 
 // Da Listener
@@ -13,7 +12,7 @@ pub enum DataAvailabilityEvent {
     MempoolStatusEvent(MempoolStatusEvent),
 }
 
-tcp_client_server! {
+hyle_net::tcp_client_server! {
     pub DataAvailability,
     request: DataAvailabilityRequest,
     response: DataAvailabilityEvent

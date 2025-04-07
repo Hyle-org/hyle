@@ -15,7 +15,7 @@ use crate::{
 };
 use anyhow::{bail, Error, Result};
 use futures::future::select_all;
-use rand::{distr::Alphanumeric, Rng};
+use rand::{distributions::Alphanumeric, Rng};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, trace};
 
@@ -71,7 +71,7 @@ where
         // State 2 starts creating a tmp file data.state2.tmp
         // rename data.state2.tmp into store (atomic override)
         // renemae data.state1.tmp into
-        let salt: String = rand::rng()
+        let salt: String = rand::thread_rng()
             .sample_iter(&Alphanumeric)
             .take(8)
             .map(char::from)
@@ -122,7 +122,7 @@ pub mod signal {
         >,
     ) -> anyhow::Result<()> {
         if *should_shutdown {
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             return Ok(());
         }
         while let Ok(shutdown_event) = shutdown_receiver.recv().await {
@@ -132,7 +132,7 @@ pub mod signal {
                     std::any::type_name::<T>()
                 );
                 *should_shutdown = true;
-                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                 return Ok(());
             }
         }
@@ -147,7 +147,7 @@ pub mod signal {
 macro_rules! module_handle_messages {
     (on_bus $bus:expr, delay_shutdown_until  $lay_shutdow_until:block, $($rest:tt)*) => {
         {
-            let mut shutdown_receiver = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$crate::utils::modules::signal::ShutdownModule>>::splitting_get_mut(&mut $bus) };
+            let mut shutdown_receiver = unsafe { &mut *$crate::utils::static_type_map::Pick::<tokio::sync::broadcast::Receiver<$crate::utils::modules::signal::ShutdownModule>>::splitting_get_mut(&mut $bus) };
             let mut should_shutdown = false;
             $crate::handle_messages! {
                 on_bus $bus,
@@ -164,7 +164,7 @@ macro_rules! module_handle_messages {
     };
     (on_bus $bus:expr, $($rest:tt)*) => {
         {
-            let mut shutdown_receiver = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$crate::utils::modules::signal::ShutdownModule>>::splitting_get_mut(&mut $bus) };
+            let mut shutdown_receiver = unsafe { &mut *$crate::utils::static_type_map::Pick::<tokio::sync::broadcast::Receiver<$crate::utils::modules::signal::ShutdownModule>>::splitting_get_mut(&mut $bus) };
             let mut should_shutdown = false;
             $crate::handle_messages! {
                 on_bus $bus,
@@ -271,6 +271,7 @@ impl ModulesHandler {
         Ok(())
     }
 
+    /// Setup a loop waiting for shutdown signals from modules
     pub async fn shutdown_loop(&mut self) -> Result<()> {
         if self.started_modules.is_empty() {
             return Ok(());
@@ -306,7 +307,8 @@ impl ModulesHandler {
             })?;
 
         let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
-        // Return a future that waits for the first error or the abort command.
+
+        // Trigger shutdown chain when one shutdown message is received for a long running module
         handle_messages! {
             on_bus shutdown_client,
             listen<signal::ShutdownCompleted> msg => {
@@ -332,7 +334,7 @@ impl ModulesHandler {
     }
 
     /// Shutdown modules in reverse order (start A, B, C, shutdown C, B, A)
-    pub async fn shutdown_next_module(&mut self) -> Result<()> {
+    async fn shutdown_next_module(&mut self) -> Result<()> {
         let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
         if let Some(module_name) = self.started_modules.pop() {
             // May be the shutdown message was skipped because the module failed somehow
@@ -355,6 +357,48 @@ impl ModulesHandler {
         self.shutdown_next_module().await?;
         self.shutdown_loop().await?;
 
+        Ok(())
+    }
+
+    pub async fn exit_loop(&mut self) -> Result<()> {
+        _ = log_error!(self.shutdown_loop().await, "Shutdown Loop triggered");
+        _ = self.shutdown_modules().await;
+
+        Ok(())
+    }
+
+    /// If the node is run as a process, we want to setup a proper exit loop with SIGINT/SIGTERM
+    pub async fn exit_process(&mut self) -> Result<()> {
+        #[cfg(unix)]
+        {
+            use tokio::signal::unix;
+            let mut interrupt = unix::signal(unix::SignalKind::interrupt())?;
+            let mut terminate = unix::signal(unix::SignalKind::terminate())?;
+            tokio::select! {
+                res = self.shutdown_loop() => {
+                    _ = log_error!(res, "Shutdown Loop triggered");
+                }
+                _ = interrupt.recv() =>  {
+                    info!("SIGINT received, shutting down");
+                }
+                _ = terminate.recv() =>  {
+                    info!("SIGTERM received, shutting down");
+                }
+            }
+            _ = self.shutdown_modules().await;
+        }
+        #[cfg(not(unix))]
+        {
+            tokio::select! {
+                res = self.shutdown_loop() => {
+                    _ = log_error!(res, "Shutdown Loop triggered");
+                }
+                _ = tokio::signal::ctrl_c() => {
+                    info!("Ctrl-C received, shutting down");
+                }
+            }
+            _ = self.shutdown_modules().await;
+        }
         Ok(())
     }
 

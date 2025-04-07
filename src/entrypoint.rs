@@ -25,6 +25,7 @@ use axum::Router;
 use axum_otel_metrics::HttpMetricsLayerBuilder;
 use hydentity::Hydentity;
 use hyllar::Hyllar;
+use prometheus::Registry;
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -82,16 +83,34 @@ impl Drop for RunPg {
     }
 }
 
-pub async fn common_main(config: conf::Conf, crypto: Option<SharedBlstCrypto>) -> Result<()> {
+pub async fn main_loop(config: conf::Conf, crypto: Option<SharedBlstCrypto>) -> Result<()> {
+    let mut handler = common_main(config, crypto).await?;
+    handler.exit_loop().await?;
+
+    Ok(())
+}
+
+pub async fn main_process(config: conf::Conf, crypto: Option<SharedBlstCrypto>) -> Result<()> {
+    let mut handler = common_main(config, crypto).await?;
+    handler.exit_process().await?;
+
+    Ok(())
+}
+
+async fn common_main(
+    config: conf::Conf,
+    crypto: Option<SharedBlstCrypto>,
+) -> Result<ModulesHandler> {
     let config = Arc::new(config);
 
     info!("Starting node with config: {:?}", &config);
 
+    let registry = Registry::new();
     // Init global metrics meter we expose as an endpoint
     let provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
         .with_reader(
             opentelemetry_prometheus::exporter()
-                .with_registry(prometheus::default_registry().clone())
+                .with_registry(registry.clone())
                 .build()
                 .context("starting prometheus exporter")?,
         )
@@ -203,19 +222,22 @@ pub async fn common_main(config: conf::Conf, crypto: Option<SharedBlstCrypto>) -
             .clone();
 
         handler
-            .build_module::<RestApi>(RestApiRunContext {
-                rest_addr: config.rest_address.clone(),
-                max_body_size: config.rest_max_body_size,
-                info: NodeInfo {
-                    id: config.id.clone(),
-                    pubkey: crypto.as_ref().map(|c| c.validator_pubkey()).cloned(),
-                    da_address: config.da_address.clone(),
-                },
-                bus: common_run_ctx.bus.new_handle(),
-                metrics_layer: Some(metrics_layer),
-                router: router.clone(),
-                openapi,
-            })
+            .build_module::<RestApi>(
+                RestApiRunContext::new(
+                    config.rest_server_port,
+                    NodeInfo {
+                        id: config.id.clone(),
+                        pubkey: crypto.as_ref().map(|c| c.validator_pubkey()).cloned(),
+                        da_address: format!("{}:{}", config.hostname, config.da_server_port),
+                    },
+                    common_run_ctx.bus.new_handle(),
+                    router.clone(),
+                    Some(metrics_layer),
+                    config.rest_server_max_body_size,
+                    openapi,
+                )
+                .with_registry(registry),
+            )
             .await?;
     }
 
@@ -227,40 +249,5 @@ pub async fn common_main(config: conf::Conf, crypto: Option<SharedBlstCrypto>) -
 
     _ = handler.start_modules().await;
 
-    #[cfg(unix)]
-    {
-        use tokio::signal::unix;
-        let mut interrupt = unix::signal(unix::SignalKind::interrupt())?;
-        let mut terminate = unix::signal(unix::SignalKind::terminate())?;
-        tokio::select! {
-            res = handler.shutdown_loop() => {
-                if let Err(e) = res {
-                    error!("Error running modules: {:?}", e);
-                }
-            }
-            _ = interrupt.recv() =>  {
-                info!("SIGINT received, shutting down");
-            }
-            _ = terminate.recv() =>  {
-                info!("SIGTERM received, shutting down");
-            }
-        }
-        _ = handler.shutdown_modules().await;
-    }
-    #[cfg(not(unix))]
-    {
-        tokio::select! {
-            res = handler.shutdown_loop() => {
-                if let Err(e) = res {
-                    error!("Error running modules: {:?}", e);
-                }
-            }
-            _ = tokio::signal::ctrl_c() => {
-                info!("Ctrl-C received, shutting down");
-            }
-        }
-        _ = handler.shutdown_modules().await;
-    }
-
-    Ok(())
+    Ok(handler)
 }

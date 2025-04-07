@@ -11,7 +11,7 @@ use crate::{
     ValidatorPublicKey, Verifier,
 };
 
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, ToSchema)]
 pub struct NodeInfo {
     pub id: String,
     pub pubkey: Option<ValidatorPublicKey>,
@@ -179,5 +179,6 @@ pub struct APIBlob {
     pub contract_name: String, // Contract name associated with the blob
     #[serde_as(as = "serde_with::hex::Hex")]
     pub data: Vec<u8>, // Actual blob data
+    pub proof_outputs: Vec<serde_json::Value>, // outputs of proofs
     pub verified: bool,        // Verification status
 }

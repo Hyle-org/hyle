@@ -8,6 +8,9 @@ pub mod metadata {
 
 extern crate alloc;
 
+#[cfg(feature = "client")]
+pub mod client;
+
 use alloc::vec::Vec;
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]

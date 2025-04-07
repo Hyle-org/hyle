@@ -36,7 +36,6 @@ use blst::min_pk::{
     Signature as BlstSignature,
 };
 pub use hyle_model::{AggregateSignature, Signed, SignedByValidator, ValidatorSignature};
-use rand::Rng;
 
 use crate::model::ValidatorPublicKey;
 
@@ -63,7 +62,14 @@ impl BlstCrypto {
         let sk = Self::load_from_env().or_else(|err| {
             if let Ok(use_keyring) = std::env::var("HYLE_USE_KEYRING") {
                 if use_keyring == "true" {
-                    return Self::load_from_keyring(validator_name);
+                    #[cfg(feature = "keyring")]
+                    {
+                        return Self::load_from_keyring(validator_name);
+                    }
+                    #[cfg(not(feature = "keyring"))]
+                    {
+                        return Err(anyhow!("HYLE_USE_KEYRING is set to true but the keyring feature is not enabled. Please enable it with --features keyring"));
+                    }
                 }
             }
             println!("---------------------- 🚨 SECURITY 🚨  ------------------------------ ");
@@ -96,7 +102,10 @@ impl BlstCrypto {
 
     /// Load the secret key from the keyring. If the key does not exist, a new random one is generated.
     #[cfg(not(test))]
+    #[cfg(feature = "keyring")]
     fn load_from_keyring(validator_name: &str) -> Result<SecretKey> {
+        use rand::Rng;
+
         println!("Loading secret key from keyring...");
         let user = whoami::username();
         let entry = keyring::Entry::new_with_target("hyle", validator_name, &user)?;
@@ -106,7 +115,7 @@ impl BlstCrypto {
                 .map_err(|e| anyhow!("Could not generate key from keyring secret: {:?}", e))?,
             Err(keyring::Error::NoEntry) => {
                 let mut ikm = [0u8; 32];
-                rand::rng().fill(&mut ikm);
+                rand::thread_rng().fill(&mut ikm);
                 entry.set_password(&hex::encode(ikm))?;
                 SecretKey::key_gen(&ikm, &[])
                     .map_err(|e| anyhow!("Could not generate new key: {:?}", e))?
@@ -143,9 +152,11 @@ impl BlstCrypto {
 
     #[cfg(test)]
     pub fn new_random() -> Result<Self> {
-        let mut rng = rand::rng();
+        use rand::Rng;
+
+        let mut rng = rand::thread_rng();
         let id: String = (0..32)
-            .map(|_| rng.random_range(33..127) as u8 as char) // Caractères imprimables ASCII
+            .map(|_| rng.gen_range(33..127) as u8 as char) // Caractères imprimables ASCII
             .collect();
         Self::new(id.as_str())
     }

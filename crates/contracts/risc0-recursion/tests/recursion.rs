@@ -1,10 +1,10 @@
 use client_sdk::{
     contract_states,
-    transaction_builder::{ProvableBlobTx, TxExecutorBuilder},
+    transaction_builder::{ProvableBlobTx, TxExecutorBuilder, TxExecutorHandler},
 };
-use hydentity::{client::register_identity, Hydentity};
+use hydentity::{client::tx_executor_handler::register_identity, Hydentity};
 use hyle_risc0_recursion::ProofInput;
-use sdk::{guest, ContractInput, ContractName, HyleOutput};
+use sdk::{Blob, Calldata, ContractName, HyleOutput};
 
 contract_states!(
     struct States {

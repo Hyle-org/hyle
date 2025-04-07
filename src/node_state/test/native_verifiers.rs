@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::Result;
 use assertables::assert_ok;
 use hyle_model::{Blob, BlobTransaction, ContractName, Hashed, Identity};
@@ -21,7 +23,7 @@ bus_client! {
     }
 }
 
-#[test_log::test(tokio::test)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 2))]
 async fn test_blst_native_verifier() {
     let contract_name: ContractName = "blst".into();
     let identity: Identity = format!("bob.{contract_name}").into();
@@ -45,7 +47,7 @@ async fn test_blst_native_verifier() {
     assert_ok!(res);
 }
 
-#[test_log::test(tokio::test)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 2))]
 async fn test_sha3_256_native_verifier() {
     let contract_name: ContractName = "sha3_256".into();
     let identity: Identity = format!("bob.{contract_name}").into();
@@ -68,7 +70,7 @@ async fn test_sha3_256_native_verifier() {
 
 async fn scenario(identity: Identity, blob: Blob) -> Result<()> {
     let mut node_modules = NodeIntegrationCtxBuilder::new().await;
-    node_modules.conf.consensus.slot_duration = 200;
+    node_modules.conf.consensus.slot_duration = Duration::from_millis(200);
     let mut node_modules = node_modules.skip::<RestApi>().build().await?;
 
     let mut node_client = Client::new_from_bus(node_modules.bus.new_handle()).await;

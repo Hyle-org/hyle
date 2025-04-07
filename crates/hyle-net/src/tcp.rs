@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    net::Ipv4Addr,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -9,14 +10,13 @@ use futures::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
-use sdk::Transaction;
 use tokio::{
-    net::{TcpListener, TcpStream},
     sync::mpsc::{Receiver, Sender},
     task::JoinHandle,
 };
 use tokio_util::codec::{Decoder, Encoder, Framed, LengthDelimitedCodec};
 
+use crate::net::{TcpListener, TcpStream};
 use anyhow::{anyhow, bail, Context, Result};
 use tracing::{debug, error, info, trace, warn};
 
@@ -107,7 +107,6 @@ where
     }
 }
 
-#[derive(Debug)]
 pub struct TcpServer<Codec, Req: Clone, Res: Clone + std::fmt::Debug>
 where
     Codec: Decoder<Item = Req> + Encoder<Res> + Default,
@@ -128,13 +127,13 @@ where
     Req: BorshDeserialize + Clone + Send + 'static + std::fmt::Debug,
     Res: BorshSerialize + Clone + Send + 'static + std::fmt::Debug,
 {
-    pub async fn start(addr: String, pool_name: &'static str) -> Result<Self> {
-        let tcp_listener = TcpListener::bind(&addr).await?;
+    pub async fn start(port: u16, pool_name: &'static str) -> Result<Self> {
+        let tcp_listener = TcpListener::bind(&(Ipv4Addr::UNSPECIFIED, port)).await?;
         let (pool_sender, pool_receiver) = tokio::sync::mpsc::channel(100);
         let (ping_sender, ping_receiver) = tokio::sync::mpsc::channel(100);
-        info!(
-            "📡  Starting Tcp Connection Pool {}, listening for stream requests on {}",
-            &pool_name, &addr
+        debug!(
+            "Starting TcpConnectionPool {}, listening for stream requests on {}",
+            &pool_name, port
         );
         Ok(TcpServer::<Codec, Req, Res> {
             peers: HashMap::new(),
@@ -312,36 +311,44 @@ where
     Res: BorshDeserialize + std::fmt::Debug + Clone + Send + 'static,
     Req: BorshSerialize + Clone + Send + 'static,
 {
-    pub async fn connect(id: String, target: String) -> Result<TcpClient<ClientCodec, Req, Res>> {
+    pub async fn connect<
+        Id: std::fmt::Display,
+        A: crate::net::ToSocketAddrs + std::fmt::Display,
+    >(
+        id: Id,
+        target: A,
+    ) -> Result<TcpClient<ClientCodec, Req, Res>> {
         let timeout = std::time::Duration::from_secs(10);
         let start = std::time::Instant::now();
         let tcp_stream = loop {
-            debug!("Trying to connect to {}", target);
+            debug!("TcpClient {} - Trying to connect to {}", id, &target);
             match TcpStream::connect(&target).await {
                 Ok(stream) => break stream,
                 Err(e) => {
                     if start.elapsed() >= timeout {
-                        bail!("Failed to connect to {}: {}. Timeout reached.", target, e);
+                        bail!(
+                            "TcpClient {} - Failed to connect to {}: {}. Timeout reached.",
+                            id,
+                            &target,
+                            e
+                        );
                     }
                     warn!(
-                        "Failed to connect to {}: {}. Retrying in 1 second...",
-                        target, e
+                        "TcpClient {} - Failed to connect to {}: {}. Retrying in 1 second...",
+                        id, target, e
                     );
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 }
             }
         };
         let addr = tcp_stream.local_addr()?;
-        info!(
-            "Client {} connected to data stream to {} on {}.",
-            id, &target, addr
-        );
+        info!("TcpClient {} - Connected to data stream on {}.", id, addr);
 
         let (sender, receiver) =
             Framed::new(tcp_stream, TcpMessageCodec::<ClientCodec>::default()).split();
 
         Ok(TcpClient {
-            id,
+            id: id.to_string(),
             sender,
             receiver,
         })
@@ -451,10 +458,10 @@ macro_rules! tcp_client_server {
             pub type Client = $crate::tcp::TcpClient<ClientCodec, $req, $res>;
             pub type Server = $crate::tcp::TcpServer<ServerCodec, $req, $res>;
 
-            pub async fn start_server(addr: String) -> Result<Server> {
-                $crate::tcp::TcpServer::<ServerCodec, $req, $res>::start(addr, stringify!($name)).await
+            pub async fn start_server(port: u16) -> Result<Server> {
+                $crate::tcp::TcpServer::<ServerCodec, $req, $res>::start(port, stringify!($name)).await
             }
-            pub async fn connect(id: String, addr: String) -> Result<Client> {
+            pub async fn connect<Id: std::fmt::Display, A: $crate::net::ToSocketAddrs + std::fmt::Display>(id: Id, addr: A) -> Result<Client> {
                 $crate::tcp::TcpClient::<ClientCodec, $req, $res>::connect(id, addr).await
             }
         }
@@ -463,23 +470,6 @@ macro_rules! tcp_client_server {
 }
 
 pub use tcp_client_server;
-
-// Client - servers
-//
-// TCP Client
-
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
-pub enum TcpServerMessage {
-    NewTx(Transaction),
-}
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
-pub struct TcpServerResponse;
-
-tcp_client_server! {
-    pub TcpServer,
-    request: TcpServerMessage,
-    response: TcpServerResponse
-}
 
 #[cfg(test)]
 pub mod tests {
@@ -490,14 +480,13 @@ pub mod tests {
     use anyhow::Result;
     use borsh::{BorshDeserialize, BorshSerialize};
     use futures::TryStreamExt;
-    use sdk::{BlockHeight, SignedBlock};
 
     #[derive(BorshDeserialize, BorshSerialize, Clone, Debug, PartialEq, Eq)]
-    pub struct DataAvailabilityRequest(pub BlockHeight);
+    pub struct DataAvailabilityRequest(pub usize);
 
     #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
     pub enum DataAvailabilityEvent {
-        SignedBlock(SignedBlock),
+        SignedBlock(String),
     }
 
     tcp_client_server! {
@@ -508,32 +497,31 @@ pub mod tests {
 
     #[tokio::test]
     async fn tcp_test() -> Result<()> {
-        let mut server = codec_data_availability::start_server("0.0.0.0:2345".to_string()).await?;
+        let mut server = codec_data_availability::start_server(2345).await?;
 
-        let mut client =
-            codec_data_availability::connect("me".to_string(), "0.0.0.0:2345".to_string()).await?;
+        let mut client = codec_data_availability::connect("me".to_string(), "0.0.0.0:2345").await?;
 
         // Ping
         client.ping().await?;
 
         // Send data to server
-        client.send(DataAvailabilityRequest(BlockHeight(2))).await?;
+        client.send(DataAvailabilityRequest(2)).await?;
 
         tokio::time::sleep(Duration::from_secs(1)).await;
 
         let d = server.listen_next().await.unwrap().data;
 
-        assert_eq!(DataAvailabilityRequest(BlockHeight(2)), *d);
+        assert_eq!(DataAvailabilityRequest(2), *d);
         assert!(server.pool_receiver.try_recv().is_err());
 
         // From server to client
         _ = server
-            .broadcast(DataAvailabilityEvent::SignedBlock(SignedBlock::default()))
+            .broadcast(DataAvailabilityEvent::SignedBlock("blabla".to_string()))
             .await;
 
         assert_eq!(
             client.receiver.try_next().await.unwrap().unwrap(),
-            TcpMessage::Data(DataAvailabilityEvent::SignedBlock(SignedBlock::default()))
+            TcpMessage::Data(DataAvailabilityEvent::SignedBlock("blabla".to_string()))
         );
 
         Ok(())

@@ -11,21 +11,25 @@ use anyhow::{Error, Result};
 use client_sdk::{
     contract_states,
     helpers::register_hyle_contract,
-    transaction_builder::{ProofTxBuilder, ProvableBlobTx, TxExecutor, TxExecutorBuilder},
+    transaction_builder::{
+        ProofTxBuilder, ProvableBlobTx, TxExecutor, TxExecutorBuilder, TxExecutorHandler,
+    },
 };
 use hydentity::{
-    client::{register_identity, verify_identity},
+    client::tx_executor_handler::{register_identity, verify_identity},
     Hydentity,
 };
-use hyle_contract_sdk::{guest, Identity, StateCommitment};
-use hyle_contract_sdk::{ContractName, HyleContract, ProgramId};
-use hyllar::{client::transfer, Hyllar, FAUCET_ID};
+use hyle_contract_sdk::{
+    Blob, Calldata, ContractName, Identity, ProgramId, StateCommitment, ZkContract,
+};
+use hyllar::{client::tx_executor_handler::transfer, Hyllar, FAUCET_ID};
 use serde::{Deserialize, Serialize};
 use staking::{
-    client::{delegate, deposit_for_fees, stake},
+    client::tx_executor_handler::{delegate, deposit_for_fees, stake},
     state::Staking,
 };
 use tracing::{debug, error, info};
+use utils::TimestampMs;
 use verifiers::NativeVerifiers;
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
@@ -402,6 +406,7 @@ impl Genesis {
         let mut map = BTreeMap::default();
         map.insert("blst".into(), NativeVerifiers::Blst.into());
         map.insert("sha3_256".into(), NativeVerifiers::Sha3_256.into());
+        map.insert("secp256k1".into(), NativeVerifiers::Secp256k1.into());
         map.insert("hyllar".into(), ProgramId(hyllar_program_id.clone()));
         map.insert("hydentity".into(), ProgramId(hydentity_program_id.clone()));
         map.insert("staking".into(), ProgramId(staking_program_id.clone()));
@@ -432,8 +437,17 @@ impl Genesis {
 
         register_hyle_contract(
             &mut register_tx,
+            "secp256k1".into(),
+            "secp256k1".into(),
+            NativeVerifiers::Secp256k1.into(),
+            StateCommitment::default(),
+        )
+        .expect("register secp256k1");
+
+        register_hyle_contract(
+            &mut register_tx,
             "staking".into(),
-            hyle_verifiers::versions::RISC0_1.into(),
+            hyle_model::verifiers::RISC0_1.into(),
             staking_program_id.clone().into(),
             ctx.staking.commit(),
         )
@@ -442,7 +456,7 @@ impl Genesis {
         register_hyle_contract(
             &mut register_tx,
             "hyllar".into(),
-            hyle_verifiers::versions::RISC0_1.into(),
+            hyle_model::verifiers::RISC0_1.into(),
             hyllar_program_id.clone().into(),
             ctx.hyllar.commit(),
         )
@@ -451,7 +465,7 @@ impl Genesis {
         register_hyle_contract(
             &mut register_tx,
             "hydentity".into(),
-            hyle_verifiers::versions::RISC0_1.into(),
+            hyle_model::verifiers::RISC0_1.into(),
             hydentity_program_id.clone().into(),
             ctx.hydentity.commit(),
         )
@@ -460,7 +474,7 @@ impl Genesis {
         register_hyle_contract(
             &mut register_tx,
             "risc0-recursion".into(),
-            hyle_verifiers::versions::RISC0_1.into(),
+            hyle_model::verifiers::RISC0_1.into(),
             hyle_contracts::RISC0_RECURSION_ID.to_vec().into(),
             StateCommitment::default(),
         )
@@ -492,10 +506,8 @@ impl Genesis {
             },
             consensus_proposal: ConsensusProposal {
                 slot: 0,
-                view: 0,
-                round_leader: round_leader.clone(),
                 // TODO: genesis block should have a consistent, up-to-date timestamp
-                timestamp: 1735689600000, // 1st of Jan 25 for now
+                timestamp: TimestampMs(1735689600000), // 1st of Jan 25 for now
                 // TODO: We aren't actually storing the data proposal above, so we cannot store it here,
                 // or we might mistakenly request data from that cut, but mempool hasn't seen it.
                 // This should be fixed by storing the data proposal in mempool or handling this whole thing differently.

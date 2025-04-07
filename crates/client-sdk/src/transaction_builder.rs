@@ -8,8 +8,8 @@ use std::{
 
 use anyhow::{bail, Result};
 use sdk::{
-    Blob, BlobIndex, BlobTransaction, ContractAction, ContractInput, ContractName, Hashed,
-    HyleOutput, Identity, ProofTransaction, TxContext,
+    Blob, BlobIndex, BlobTransaction, Calldata, ContractAction, ContractName, Hashed, HyleOutput,
+    Identity, ProofTransaction, TxContext,
 };
 
 use crate::helpers::ClientSdkProver;
@@ -97,7 +97,13 @@ impl ProofTxBuilder {
                 .clone();
             async move {
                 let proof = prover
-                    .prove(runner.contract_input.take().expect("no input for prover"))
+                    .prove(
+                        runner
+                            .commitment_metadata
+                            .take()
+                            .expect("no commitment metadata for prover"),
+                        runner.calldata.take().expect("no calldata for prover"),
+                    )
                     .await;
                 proof.map(|proof| ProofTransaction {
                     proof,
@@ -118,12 +124,17 @@ where
 {
     fn setup(&self, ctx: &mut TxExecutorBuilder<Self>);
     fn update(&mut self, contract_name: &ContractName, new_state: &mut dyn Any) -> Result<()>;
-    fn get(&self, contract_name: &ContractName) -> Result<Vec<u8>>;
-    fn execute(
+    fn get(&self, contract_name: &ContractName) -> Result<Box<dyn Any>>;
+    fn build_commitment_metadata(
         &self,
         contract_name: &ContractName,
-        contract_input: &ContractInput,
-    ) -> anyhow::Result<(Box<dyn Any>, sdk::HyleOutput)>;
+        blob: &Blob,
+    ) -> anyhow::Result<Vec<u8>>;
+    fn execute(
+        &mut self,
+        contract_name: &ContractName,
+        calldata: &Calldata,
+    ) -> anyhow::Result<HyleOutput>;
 }
 
 pub struct TxExecutor<S: StateUpdater> {
@@ -220,18 +231,29 @@ impl<S: StateUpdater> TxExecutor<S> {
         // Keep track of all state involved in the transaction
         for blob in tx.blobs.iter() {
             let state = self.states.get(&blob.contract_name)?;
-            old_states.insert(blob.contract_name.clone(), state.clone());
+            old_states.insert(blob.contract_name.clone(), state);
         }
 
         for runner in tx.runners.iter_mut() {
-            let state = self.states.get(&runner.contract_name)?;
+            // We get the blob that contains the action for that runner.
+            // We build the commitment metadata for that blob. (i.e. the action that will be executed)
+            let blob = &tx.blobs[runner.index.0];
+            let commitment_metadata = self
+                .states
+                .build_commitment_metadata(&runner.contract_name, blob)
+                .unwrap()
+                .clone();
 
-            runner.build_contract_input(tx.tx_context.clone(), tx.blobs.clone(), state);
+            runner.build_zk_program_input(
+                tx.tx_context.clone(),
+                tx.blobs.clone(),
+                commitment_metadata,
+            );
 
             tracing::info!("Checking transition for {}...", runner.contract_name);
-            let (mut state, out) = match self
+            let out = match self
                 .states
-                .execute(&runner.contract_name, runner.contract_input.get().unwrap())
+                .execute(&runner.contract_name, runner.calldata.get().unwrap())
             {
                 Ok(result) => result,
                 Err(e) => {
@@ -242,18 +264,19 @@ impl<S: StateUpdater> TxExecutor<S> {
                     bail!("Execution failed for {}: {}", runner.contract_name, e);
                 }
             };
-
             if !out.success {
+                // Revert all state changes
+                for (contract_name, state) in old_states.iter_mut() {
+                    self.states.update(contract_name, &mut *state)?;
+                }
                 let program_error = std::str::from_utf8(&out.program_outputs).unwrap();
                 bail!(
                     "Execution failed on runner for blob {:?} on contrat {:?} ! Program output: {}",
-                    runner.contract_input.get().unwrap().index,
+                    runner.calldata.get().unwrap().index,
                     runner.contract_name,
                     program_error
                 );
             }
-
-            self.states.update(&runner.contract_name, &mut *state)?;
 
             outputs.push((runner.contract_name.clone(), out));
         }
@@ -274,7 +297,8 @@ pub struct ContractRunner {
     identity: Identity,
     index: BlobIndex,
     private_input: Option<Vec<u8>>,
-    contract_input: OnceLock<ContractInput>,
+    commitment_metadata: OnceLock<Vec<u8>>,
+    calldata: OnceLock<Calldata>,
 }
 
 impl ContractRunner {
@@ -289,23 +313,24 @@ impl ContractRunner {
             identity,
             index,
             private_input,
-            contract_input: OnceLock::new(),
+            commitment_metadata: OnceLock::new(),
+            calldata: OnceLock::new(),
         })
     }
 
-    fn build_contract_input(
+    fn build_zk_program_input(
         &mut self,
         tx_context: Option<TxContext>,
         blobs: Vec<Blob>,
-        state: Vec<u8>,
+        commitment_metadata: Vec<u8>,
     ) {
         let tx_hash = BlobTransaction::new(self.identity.clone(), blobs.clone()).hashed();
 
-        self.contract_input.get_or_init(|| ContractInput {
-            state,
+        self.commitment_metadata.get_or_init(|| commitment_metadata);
+        self.calldata.get_or_init(|| Calldata {
             identity: self.identity.clone(),
-            index: self.index,
             blobs,
+            index: self.index,
             tx_hash,
             tx_ctx: tx_context,
             private_input: self.private_input.clone().unwrap_or_default(),
@@ -313,9 +338,27 @@ impl ContractRunner {
     }
 }
 
+pub trait TxExecutorHandler {
+    /// Entry point for contract execution for the SDK's TxExecutor tool
+    /// This handler provides a way to execute contract logic with access to the full provable state,
+    /// as opposed to the ZkContract trait which only works with commitment metadata.
+    ///
+    /// Example: For a contract using a MerkleTrie, this handler can access and update the entire trie,
+    /// while the ZkContract would only work with the root hash.
+    fn handle(&mut self, calldata: &Calldata) -> Result<HyleOutput, String>;
+
+    /// This is the function that creates the commitment metadata.
+    /// It provides the minimum information necessary to construct the commitment_medata field of the input
+    /// that will be used to execute the program in the zkvm.
+    fn build_commitment_metadata(&self, blob: &Blob) -> Result<Vec<u8>, String>;
+}
+
 /// Macro to easily define the full state of a TxExecutor
 /// Struct-like syntax.
-/// Must have ContractName, StateCommitment, HyleContract and anyhow in scope.
+/// Must have Calldata, ContractName, HyleOutput, ProvableContractState and anyhow in scope.
+/// Example:
+/// use anyhow;
+/// use hyle_contract_sdk::{Blob, Calldata, ContractName, HyleOutput, ProvableContractState};
 #[macro_export]
 macro_rules! contract_states {
     ($(#[$meta:meta])* $vis:vis struct $name:ident { $($mvis:vis $contract_name:ident: $contract_state:ty,)* }) => {
@@ -347,18 +390,26 @@ macro_rules! contract_states {
                 Ok(())
             }
 
-            fn get(&self, contract_name: &ContractName) -> anyhow::Result<Vec<u8>> {
+            fn get(&self, contract_name: &ContractName) -> anyhow::Result<Box<dyn std::any::Any>> {
                 match contract_name.0.as_str() {
-                    $(stringify!($contract_name) => Ok(borsh::to_vec(&self.$contract_name).map_err(|e| anyhow::anyhow!(e))?),)*
+                    $(stringify!($contract_name) => Ok(Box::new(self.$contract_name.clone())),)*
                     _ => anyhow::bail!("Unknown contract name: {contract_name}"),
                 }
             }
 
-            fn execute(&self, contract_name: &ContractName, contract_input: &ContractInput) -> anyhow::Result<(Box<dyn std::any::Any>, HyleOutput)> {
+            fn build_commitment_metadata(&self, contract_name: &ContractName, blob: &Blob) -> anyhow::Result<Vec<u8>> {
+                match contract_name.0.as_str() {
+                    $(stringify!($contract_name) => Ok(self.$contract_name.build_commitment_metadata(blob).map_err(|e| anyhow::anyhow!(e))?),)*
+                    _ => anyhow::bail!("Unknown contract name: {contract_name}"),
+                }
+            }
+
+            fn execute(&mut self, contract_name: &ContractName, calldata: &Calldata) -> anyhow::Result<HyleOutput> {
                 match contract_name.0.as_str() {
                     $(stringify!($contract_name) => {
-                        let (state, output) = guest::execute::<$contract_state>(contract_input);
-                        Ok((Box::new(state) as Box<dyn std::any::Any>, output))
+                        self.$contract_name
+                            .handle(calldata)
+                            .map_err(|e| anyhow::anyhow!(e))
                     })*
                     _ => anyhow::bail!("Unknown contract name: {contract_name}"),
                 }

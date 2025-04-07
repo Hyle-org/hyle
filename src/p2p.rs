@@ -13,7 +13,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use std::{collections::HashSet, sync::Arc, time::Duration};
-use tokio::{net::TcpListener, time::sleep};
+use tokio::time::sleep;
 use tracing::{error, info, trace, warn};
 
 mod fifo_filter;
@@ -64,7 +64,9 @@ impl Module for P2P {
 
 impl P2P {
     fn spawn_peer(&mut self, peer_address: String) {
-        if self.connected_peers.contains(&peer_address) || peer_address == self.config.p2p.address {
+        if self.connected_peers.contains(&peer_address)
+            || peer_address == format!("{}:{}", self.config.hostname, self.config.p2p.server_port)
+        {
             return;
         }
 
@@ -129,7 +131,7 @@ impl P2P {
         // Wait all other threads to start correctly
         sleep(Duration::from_secs(1)).await;
 
-        let listener = TcpListener::bind(&self.config.p2p.address).await?;
+        let listener = hyle_net::net::bind_tcp_listener(self.config.p2p.server_port).await?;
         info!(
             "📡  Starting P2P module, listening on {}",
             listener.local_addr()?

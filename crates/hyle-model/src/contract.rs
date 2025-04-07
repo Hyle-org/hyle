@@ -6,7 +6,13 @@ use std::{
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
-use crate::LaneId;
+use crate::{utils::TimestampMs, LaneId};
+
+pub mod verifiers {
+    pub const RISC0_1: &str = "risc0-1";
+    pub const NOIR: &str = "noir";
+    pub const SP1_4: &str = "sp1-4";
+}
 
 #[derive(
     Debug,
@@ -39,11 +45,10 @@ pub trait DataSized {
     fn estimate_size(&self) -> usize;
 }
 
-/// This struct is passed from the application backend to the contract as a zkvm input.
+/// This struct is passed from the application backend to the contract as an input.
+/// It contains the data that the contract will use to run the blob's action on its state.
 #[derive(Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
-pub struct ContractInput {
-    /// Borsh serialization of the contract state
-    pub state: Vec<u8>,
+pub struct Calldata {
     /// TxHash of the BlobTransaction being proved
     pub tx_hash: TxHash,
     /// User's identity used for the BlobTransaction
@@ -457,7 +462,7 @@ pub struct TxContext {
     pub lane_id: LaneId,
     pub block_hash: BlockHash,
     pub block_height: BlockHeight,
-    pub timestamp: u128,
+    pub timestamp: TimestampMs,
     pub chain_id: u128,
 }
 
@@ -601,7 +606,7 @@ impl Add<BlockHeight> for BlockHeight {
 #[derive(
     Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize,
 )]
-/// Used as a blob action to register a contract in the 'hyle' TLD.
+/// Used as a blob action to register a contract.
 pub struct RegisterContractAction {
     pub verifier: Verifier,
     pub program_id: ProgramId,
@@ -645,7 +650,7 @@ impl ContractAction for RegisterContractAction {
 #[derive(
     Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize,
 )]
-/// Used as a blob action to delete a contract in the 'hyle' TLD.
+/// Used as a blob action to delete a contract.
 pub struct DeleteContractAction {
     pub contract_name: ContractName,
 }

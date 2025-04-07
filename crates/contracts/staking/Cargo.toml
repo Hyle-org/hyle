@@ -1,9 +1,9 @@
 [package]
 name = "hyle-staking"
 description = "Hyle Smart Contract"
+license-file = { workspace = true }
 version = { workspace = true }
 edition = { workspace = true }
-# license = { workspace = true }
 homepage = { workspace = true }
 repository = { workspace = true }
 rust-version = "1.81"
@@ -18,24 +18,24 @@ test = false
 sdk = { workspace = true, features = ["full-model"] }
 hyllar = { workspace = true }
 serde = { version = "1.0", default-features = false, features = [
-    "derive",
-    "alloc",
+  "derive",
+  "alloc",
 ] }
 anyhow = "1.0.96"
 sha2 = "=0.10.8" # precompile patched at workspace root
-borsh = { version = "1.5.5", features = ["derive"] }
+borsh = { version = "1.5.6", features = ["derive"] }
 
-risc0-zkvm = { version = "1.2.4", default-features = false, optional = true, features = [
-    'std',
+risc0-zkvm = { version = "2.0.0", default-features = false, optional = true, features = [
+  'std',
 ] }
 client-sdk = { workspace = true, default-features = false, features = [
-    "risc0",
+  "risc0",
 ], optional = true }
 
 [dev-dependencies]
-risc0-zkvm = { version = "1.2.4", default-features = false, features = [
-    'std',
-    'prove',
+risc0-zkvm = { version = "2.0.0", default-features = false, features = [
+  'std',
+  'prove',
 ] }
 
 [features]
