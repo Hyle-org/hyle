@@ -1423,7 +1423,7 @@ pub mod test {
     }
 
     #[test_log::test(tokio::test)]
-    async fn prepare_wrong_timestamp_too_old() {
+    async fn prepare_timestamp_too_old() {
         let (mut node1, mut node2, mut node3, mut node4): (
             ConsensusTestCtx,
             ConsensusTestCtx,
@@ -1468,10 +1468,42 @@ pub mod test {
                 );
             }
         };
+
+        // Do a timeout round to be able to repropse another prepare
+        simple_timeout_round_at_4(&mut node3, &mut node1, &mut node4).await;
+
+        // Propose a prepare with a timestamp identical to the timestamp of the previous block
+        node3.start_round_at(TimestampMs(1000)).await;
+
+        broadcast! {
+            description: "Leader Node3 third round",
+            from: node3, to: [],
+            message_matches: ConsensusNetMessage::Prepare(next_cp, next_ticket, cp_view) => {
+
+                assert_eq!(next_cp.timestamp, TimestampMs(1000));
+
+                let prepare_msg = node3
+                    .consensus
+                    .sign_net_message(ConsensusNetMessage::Prepare(next_cp.clone(), next_ticket.clone(), *cp_view))
+                    .unwrap();
+
+                assert_contains!(
+                    format!("{:#}", node1.handle_msg_err(&prepare_msg)),
+                    "too old"
+                );
+
+                // Node2 is at 900ms, so it is ok for 1000ms
+
+                assert_contains!(
+                    format!("{:#}", node4.handle_msg_err(&prepare_msg)),
+                    "too old"
+                );
+            }
+        };
     }
 
     #[test_log::test(tokio::test)]
-    async fn prepare_valid_timestamp() {
+    async fn prepare_timestamp_valid() {
         let (mut node1, mut node2, mut node3, mut node4): (
             ConsensusTestCtx,
             ConsensusTestCtx,
@@ -1526,7 +1558,7 @@ pub mod test {
     }
 
     #[test_log::test(tokio::test)]
-    async fn prepare_too_futuresque_timestamp() {
+    async fn prepare_timestamp_too_futuresque() {
         let (mut node1, mut node2, mut node3, mut node4): (
             ConsensusTestCtx,
             ConsensusTestCtx,
@@ -1558,7 +1590,10 @@ pub mod test {
             TimestampMs(1000)
         );
 
-        simple_timeout_round_at_4(&mut node2, &mut node3, &mut node1, &mut node4).await;
+        // Broadcasted prepare is ignored
+        node2.assert_broadcast("Lost prepare");
+
+        simple_timeout_round_at_4(&mut node3, &mut node1, &mut node4).await;
 
         // Legit timestamp increasing previous one of 5000ms (Timeout waiting time)
         node3.start_round_at(TimestampMs(8000)).await;
@@ -1624,14 +1659,10 @@ pub mod test {
     }
 
     async fn simple_timeout_round_at_4(
-        leader: &mut ConsensusTestCtx,
         next_leader: &mut ConsensusTestCtx,
         other_2: &mut ConsensusTestCtx,
         other_3: &mut ConsensusTestCtx,
     ) {
-        // Broadcasted prepare is ignored
-        leader.assert_broadcast("Lost prepare");
-
         // Make others timeout
         ConsensusTestCtx::timeout(&mut [next_leader, other_2, other_3]).await;
 
@@ -1674,7 +1705,10 @@ pub mod test {
         node1.start_round().await;
         // Slot 1 - leader = node1
 
-        simple_timeout_round_at_4(&mut node1, &mut node2, &mut node3, &mut node4).await;
+        // Broadcasted prepare is ignored
+        node1.assert_broadcast("Lost prepare");
+
+        simple_timeout_round_at_4(&mut node2, &mut node3, &mut node4).await;
 
         node2.start_round().await;
 

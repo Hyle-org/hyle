@@ -358,7 +358,7 @@ impl Consensus {
             + (self.config.consensus.slot_duration * 2
                 + TimeoutState::TIMEOUT_SECS * (self.bft_round_state.view as u32));
 
-        if &previous_timestamp > timestamp {
+        if timestamp <= &previous_timestamp {
             bail!(
                 "Timestamp {} too old (should be > {}, {} ms too old)",
                 timestamp,
