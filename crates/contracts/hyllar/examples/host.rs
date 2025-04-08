@@ -25,7 +25,8 @@ async fn main() {
     let commitment_metadata = hyllar.to_bytes();
     let calldata = Calldata {
         identity: FAUCET_ID.into(),
-        blobs: vec![hyllar_action.as_blob("hyllar".into(), None, None)],
+        blobs: vec![hyllar_action.as_blob("hyllar".into(), None, None)].into(),
+        tx_blob_count: 1,
         index: BlobIndex(0),
         tx_hash: TxHash::default(),
         tx_ctx: None,
