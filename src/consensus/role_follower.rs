@@ -354,10 +354,6 @@ impl Consensus {
             return Ok(());
         }
 
-        let next_max_timestamp = previous_timestamp.clone()
-            + (self.config.consensus.slot_duration * 2
-                + TimeoutState::TIMEOUT_SECS * (self.bft_round_state.view as u32));
-
         let monotonic_check = || {
             if timestamp <= &previous_timestamp {
                 bail!(
@@ -380,6 +376,10 @@ impl Consensus {
             }
             TimestampCheck::Full => {
                 monotonic_check()?;
+
+                let next_max_timestamp = previous_timestamp.clone()
+                    + (self.config.consensus.slot_duration * 2
+                        + TimeoutState::TIMEOUT_SECS * (self.bft_round_state.view as u32));
 
                 if &next_max_timestamp < timestamp {
                     bail!(
