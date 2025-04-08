@@ -46,8 +46,7 @@ pub trait DataSized {
     fn estimate_size(&self) -> usize;
 }
 
-/// This struct is passed from the application backend to the contract as an input.
-/// It contains the data that the contract will use to run the blob's action on its state.
+/// Blob of the transactions the contract uses to validate its transition
 #[derive(Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
 pub struct IndexedBlobs(pub Vec<(BlobIndex, Blob)>);
 
@@ -87,7 +86,8 @@ impl Iterator for IndexedBlobs {
     }
 }
 
-/// This struct is passed from the application backend to the contract as a zkvm input.
+/// This struct is passed from the application backend to the contract as an input.
+/// It contains the data that the contract will use to run the blob's action on its state.
 #[derive(Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
 pub struct Calldata {
     /// TxHash of the BlobTransaction being proved
