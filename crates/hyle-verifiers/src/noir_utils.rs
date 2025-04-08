@@ -49,7 +49,7 @@ fn parse_sized_string(vector: &mut Vec<String>, length: usize) -> Result<String,
 }
 
 /// Variable string hash trailing zeros
-/// total length is always 64 (could be set to hight if needed)
+/// total length is always 64 (could be set to height if needed)
 /// parsed length is the length of the expected string (without trailing zeros)
 fn parse_variable_string(vector: &mut Vec<String>) -> Result<String, Error> {
     let length =
