@@ -9,9 +9,7 @@ use axum::{
     Router,
 };
 use borsh::{BorshDeserialize, BorshSerialize};
-use sdk::{
-    info, Blob, BlobIndex, BlobTransaction, Calldata, ContractName, Hashed, TxContext, TxId,
-};
+use sdk::*;
 use utoipa::openapi::OpenApi;
 
 pub use axum;
@@ -61,7 +59,8 @@ where
         let calldata = Calldata {
             identity: tx.identity.clone(),
             index,
-            blobs: tx.blobs.clone(),
+            blobs: tx.blobs.clone().into(),
+            tx_blob_count: tx.blobs.len(),
             tx_hash: tx.hashed(),
             tx_ctx: Some(tx_context),
             private_input: vec![],

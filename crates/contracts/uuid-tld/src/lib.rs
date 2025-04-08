@@ -45,7 +45,7 @@ impl ZkContract for UuidTld {
         // Not an identity provider
         if calldata.identity.0.ends_with(&format!(
             ".{}",
-            calldata.blobs[calldata.index.0].contract_name.0
+            calldata.blobs.get(&calldata.index).unwrap().contract_name.0
         )) {
             return Err("Invalid identity".to_string());
         }
@@ -175,7 +175,9 @@ mod test {
                     data: BlobData(vec![]),
                 },
                 action.as_blob("uuid".into(), None, None),
-            ],
+            ]
+            .into(),
+            tx_blob_count: 1,
             index: BlobIndex(1),
         }
     }

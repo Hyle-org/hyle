@@ -37,7 +37,9 @@ fn execute_transfer_from() {
                 recipient: "amm".into(),
                 amount: 100,
             }
-            .as_blob(ContractName::new("hyllar"), None, None)],
+            .as_blob(ContractName::new("hyllar"), None, None)]
+            .into(),
+            tx_blob_count: 1,
             index: BlobIndex(0),
         },
     ));
