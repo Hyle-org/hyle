@@ -6,7 +6,7 @@ use tracing::{debug, info, trace, warn};
 use super::Consensus;
 use crate::{
     bus::BusClientSender,
-    consensus::StateTag,
+    consensus::{role_timeout::TimeoutState, StateTag},
     log_error,
     mempool::MempoolNetMessage,
     model::{Hashed, Signed, ValidatorPublicKey},
@@ -340,7 +340,7 @@ impl Consensus {
         Ok(())
     }
 
-    pub(super) fn verify_timestamp(
+    fn verify_timestamp(
         &self,
         ConsensusProposal { timestamp, .. }: &ConsensusProposal,
     ) -> Result<()> {
@@ -354,8 +354,9 @@ impl Consensus {
             return Ok(());
         }
 
-        let next_max_timestamp =
-            previous_timestamp.clone() + (2 * self.config.consensus.slot_duration);
+        let next_max_timestamp = previous_timestamp.clone()
+            + (self.config.consensus.slot_duration * 2
+                + TimeoutState::TIMEOUT_SECS * (self.bft_round_state.view as u32));
 
         if &previous_timestamp > timestamp {
             bail!(
@@ -367,7 +368,7 @@ impl Consensus {
         }
 
         if &next_max_timestamp < timestamp {
-            warn!(
+            bail!(
                 "Timestamp {} too late (should be < {}, exceeded by {} ms)",
                 timestamp,
                 next_max_timestamp,
@@ -384,9 +385,7 @@ impl Consensus {
 
         Ok(())
     }
-}
 
-impl Consensus {
     fn try_process_timeout_qc(
         &mut self,
         timeout_qc: QuorumCertificate,

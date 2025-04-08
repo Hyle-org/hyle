@@ -1470,7 +1470,6 @@ pub mod test {
         };
     }
 
-    #[ignore]
     #[test_log::test(tokio::test)]
     async fn prepare_valid_timestamp() {
         let (mut node1, mut node2, mut node3, mut node4): (
@@ -1527,6 +1526,76 @@ pub mod test {
     }
 
     #[test_log::test(tokio::test)]
+    async fn prepare_too_futuresque_timestamp() {
+        let (mut node1, mut node2, mut node3, mut node4): (
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+            ConsensusTestCtx,
+        ) = build_nodes!(4).await;
+
+        node1.start_round_at(TimestampMs(1000)).await;
+
+        let (cp, ..) = simple_commit_round! {
+            leader: node1,
+            followers: [node2, node3, node4]
+        };
+
+        assert_eq!(cp.timestamp, TimestampMs(1000));
+
+        node2.start_round_at(TimestampMs(3000)).await;
+
+        assert_eq!(
+            node1.consensus.bft_round_state.current_proposal.timestamp,
+            TimestampMs(1000)
+        );
+        assert_eq!(
+            node3.consensus.bft_round_state.current_proposal.timestamp,
+            TimestampMs(1000)
+        );
+        assert_eq!(
+            node4.consensus.bft_round_state.current_proposal.timestamp,
+            TimestampMs(1000)
+        );
+
+        simple_timeout_round_at_4(&mut node2, &mut node3, &mut node1, &mut node4).await;
+
+        // Legit timestamp increasing previous one of 5000ms (Timeout waiting time)
+        node3.start_round_at(TimestampMs(8000)).await;
+
+        let (cp, ticket, cp_view) = simple_commit_round! {
+            leader: node3,
+            followers: [node2, node1, node4]
+        };
+
+        assert_eq!(cp.slot, 2);
+        assert_eq!(cp_view, 1);
+        assert!(matches!(ticket, Ticket::TimeoutQC(_, TCKind::NilProposal)));
+
+        assert_eq!(
+            node1.consensus.bft_round_state.current_proposal.timestamp,
+            TimestampMs(8000)
+        );
+        assert_eq!(
+            node2.consensus.bft_round_state.current_proposal.timestamp,
+            TimestampMs(8000)
+        );
+        assert_eq!(
+            node4.consensus.bft_round_state.current_proposal.timestamp,
+            TimestampMs(8000)
+        );
+
+        // Test sending a timestamp in the future
+        node3.start_round_at(TimestampMs(10001)).await;
+
+        let prepare_msg = node3.assert_broadcast("Prepare with future timestamp");
+
+        node1.handle_msg_err(&prepare_msg);
+        node2.handle_msg_err(&prepare_msg);
+        node4.handle_msg_err(&prepare_msg);
+    }
+
+    #[test_log::test(tokio::test)]
     async fn timeout_only_one_4() {
         let (mut node1, mut node2, mut node3, mut node4): (
             ConsensusTestCtx,
@@ -1554,6 +1623,45 @@ pub mod test {
         assert!(matches!(ticket, Ticket::Genesis));
     }
 
+    async fn simple_timeout_round_at_4(
+        leader: &mut ConsensusTestCtx,
+        next_leader: &mut ConsensusTestCtx,
+        other_2: &mut ConsensusTestCtx,
+        other_3: &mut ConsensusTestCtx,
+    ) {
+        // Broadcasted prepare is ignored
+        leader.assert_broadcast("Lost prepare");
+
+        // Make others timeout
+        ConsensusTestCtx::timeout(&mut [next_leader, other_2, other_3]).await;
+
+        broadcast! {
+            description: "Follower - Timeout",
+            from: next_leader, to: [other_2, other_3],
+            message_matches: ConsensusNetMessage::Timeout(..)
+        };
+        broadcast! {
+            description: "Follower - Timeout",
+            from: other_2, to: [next_leader, other_3],
+            message_matches: ConsensusNetMessage::Timeout(..)
+        };
+
+        // node 4 should join the mutiny
+        broadcast! {
+            description: "Follower - Timeout",
+            from: other_3, to: [next_leader, other_2],
+            message_matches: ConsensusNetMessage::Timeout(..)
+        };
+
+        // After this broadcast, every node has 2f+1 timeouts and can create a timeout certificate
+
+        // Next leader does not emits a timeout certificate since it will broadcast the next Prepare with it
+        next_leader.assert_no_broadcast("Timeout Certificate 2");
+
+        other_2.assert_broadcast("Timeout Certificate 3");
+        other_3.assert_broadcast("Timeout Certificate 4");
+    }
+
     #[test_log::test(tokio::test)]
     async fn test_timeout_join_mutiny_4() {
         let (mut node1, mut node2, mut node3, mut node4): (
@@ -1566,38 +1674,7 @@ pub mod test {
         node1.start_round().await;
         // Slot 1 - leader = node1
 
-        // Broadcasted prepare is ignored
-        node1.assert_broadcast("Lost prepare");
-
-        // Make node2 and node3 timeout, node4 will not timeout but follow mutiny
-        // , because at f+1, mutiny join
-        ConsensusTestCtx::timeout(&mut [&mut node2, &mut node3]).await;
-
-        broadcast! {
-            description: "Follower - Timeout",
-            from: node2, to: [node3, node4],
-            message_matches: ConsensusNetMessage::Timeout(..)
-        };
-        broadcast! {
-            description: "Follower - Timeout",
-            from: node3, to: [node2, node4],
-            message_matches: ConsensusNetMessage::Timeout(..)
-        };
-
-        // node 4 should join the mutiny
-        broadcast! {
-            description: "Follower - Timeout",
-            from: node4, to: [node2, node3],
-            message_matches: ConsensusNetMessage::Timeout(..)
-        };
-
-        // After this broadcast, every node has 2f+1 timeouts and can create a timeout certificate
-
-        // Node 2 is next leader, and does not emits a timeout certificate since it will broadcast the next Prepare with it
-        node2.assert_no_broadcast("Timeout Certificate 2");
-
-        node3.assert_broadcast("Timeout Certificate 3");
-        node4.assert_broadcast("Timeout Certificate 4");
+        simple_timeout_round_at_4(&mut node1, &mut node2, &mut node3, &mut node4).await;
 
         node2.start_round().await;
 
