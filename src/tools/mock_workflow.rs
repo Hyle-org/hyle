@@ -4,8 +4,8 @@ use crate::{
     bus::{BusClientSender, BusMessage},
     mempool::api::RestApiMessage,
     model::{
-        utils::get_current_timestamp, Blob, BlobData, BlobTransaction, ContractName, ProofData,
-        ProofTransaction, SharedRunContext, Transaction,
+        Blob, BlobData, BlobTransaction, ContractName, ProofData, ProofTransaction,
+        SharedRunContext, Transaction,
     },
     module_handle_messages,
     utils::modules::{module_bus_client, Module},
@@ -14,6 +14,7 @@ use anyhow::Result;
 use client_sdk::rest_client::NodeApiHttpClient;
 use hyle_contract_sdk::{Identity, ProgramId, StateCommitment};
 use hyle_model::{ContractAction, RegisterContractAction};
+use hyle_net::clock::TimestampMsClock;
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 use tracing::{error, info, warn};
@@ -177,11 +178,12 @@ impl MockWorkflowHandler {
 
         let millis_interval = 1000_u64.div_ceil(qps);
 
-        let injection_stop_date = get_current_timestamp() + injection_duration_seconds;
+        let injection_stop_date =
+            TimestampMsClock::now() + Duration::from_secs(injection_duration_seconds);
 
         let mut i = 0;
         loop {
-            if get_current_timestamp() > injection_stop_date {
+            if TimestampMsClock::now() > injection_stop_date {
                 info!("Stopped injection");
                 break Ok(());
             }

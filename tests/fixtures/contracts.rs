@@ -1,7 +1,7 @@
-use hyle_contract_sdk::HyleContract;
 use hyle_contract_sdk::ProgramId;
 use hyle_contract_sdk::StateCommitment;
 use hyle_contract_sdk::Verifier;
+use hyle_contract_sdk::ZkContract;
 use hyllar::Hyllar;
 
 use super::ctx::E2EContract;

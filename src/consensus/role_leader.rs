@@ -11,7 +11,7 @@ use crate::{
 };
 use anyhow::{anyhow, bail, Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_model::{ConsensusProposal, ConsensusStakingAction};
+use hyle_model::{utils::TimestampMs, ConsensusProposal, ConsensusStakingAction};
 use staking::state::MIN_STAKE;
 use tracing::{debug, error, trace};
 
@@ -33,23 +33,8 @@ pub struct LeaderState {
     pub(super) pending_ticket: Option<Ticket>,
 }
 
-pub(crate) trait LeaderRole {
-    fn is_round_leader(&self) -> bool;
-    async fn start_round(&mut self, current_timestamp: u64) -> Result<()>;
-    fn on_prepare_vote(
-        &mut self,
-        msg: SignedByValidator<ConsensusNetMessage>,
-        consensus_proposal_hash: ConsensusProposalHash,
-    ) -> Result<()>;
-    fn on_confirm_ack(
-        &mut self,
-        msg: SignedByValidator<ConsensusNetMessage>,
-        consensus_proposal_hash: ConsensusProposalHash,
-    ) -> Result<()>;
-}
-
-impl LeaderRole for Consensus {
-    async fn start_round(&mut self, current_timestamp: u64) -> Result<()> {
+impl Consensus {
+    pub(super) async fn start_round(&mut self, current_timestamp: TimestampMs) -> Result<()> {
         if !matches!(self.bft_round_state.leader.step, Step::StartNewSlot) {
             bail!(
                 "Cannot start a new slot while in step {:?}",
@@ -74,74 +59,81 @@ impl LeaderRole for Consensus {
             .take()
             .ok_or(anyhow!("No ticket available for this slot"))?;
 
-        // TODO: keep candidates around?
-        let mut new_validators_to_bond = std::mem::take(&mut self.validator_candidates);
-        new_validators_to_bond.retain(|v| {
-            self.bft_round_state
-                .staking
-                .get_stake(&v.pubkey)
-                .unwrap_or(0)
-                > MIN_STAKE
-                && !self.bft_round_state.staking.is_bonded(&v.pubkey)
-        });
+        // If we already have a consensusproposal for this slot, then we voted on it,
+        // and so we must repropose it (in case a commit was reached somewhere)
+        if self.bft_round_state.current_proposal.slot == self.bft_round_state.slot {
+            debug!("♻️ Starting new view with the same ConsensusProposal as previous views")
+        } else {
+            // TODO: keep candidates around?
+            let mut new_validators_to_bond = std::mem::take(&mut self.validator_candidates);
+            new_validators_to_bond.retain(|v| {
+                self.bft_round_state
+                    .staking
+                    .get_stake(&v.pubkey)
+                    .unwrap_or(0)
+                    > MIN_STAKE
+                    && !self.bft_round_state.staking.is_bonded(&v.pubkey)
+            });
 
-        debug!(
-            "🚀 Starting new slot {} (view {}) with {} existing validators and {} candidates",
-            self.bft_round_state.slot,
-            self.bft_round_state.view,
-            self.bft_round_state.staking.bonded().len(),
-            new_validators_to_bond.len()
-        );
+            debug!(
+                "🚀 Starting new slot {} (view {}) with {} existing validators and {} candidates",
+                self.bft_round_state.slot,
+                self.bft_round_state.view,
+                self.bft_round_state.staking.bonded().len(),
+                new_validators_to_bond.len()
+            );
 
-        // Creates ConsensusProposal
-        // Query new cut to Mempool
-        trace!(
-            "Querying Mempool for a new cut with Staking: {:#?}",
-            self.bft_round_state.staking
-        );
+            // Creates ConsensusProposal
+            // Query new cut to Mempool
+            trace!(
+                "Querying Mempool for a new cut with Staking: {:#?}",
+                self.bft_round_state.staking
+            );
 
-        let cut = match tokio::time::timeout(
-            std::time::Duration::from_millis(self.config.consensus.slot_duration),
-            self.bus
-                .request(QueryNewCut(self.bft_round_state.staking.clone())),
-        )
-        .await
-        .context("Timeout while querying Mempool")
-        {
-            Ok(Ok(cut)) => cut,
-            Ok(Err(err)) | Err(err) => {
-                // In case of an error, we reuse the last cut to avoid being considered byzantine
-                error!(
-                    "Could not get a new cut from Mempool {:?}. Reusing previous one...",
-                    err
-                );
-                self.bft_round_state.last_cut_seen.clone()
+            let cut = match tokio::time::timeout(
+                self.config.consensus.slot_duration,
+                self.bus
+                    .request(QueryNewCut(self.bft_round_state.staking.clone())),
+            )
+            .await
+            .context("Timeout while querying Mempool")
+            {
+                Ok(Ok(cut)) => cut,
+                Ok(Err(err)) | Err(err) => {
+                    // In case of an error, we reuse the last cut to avoid being considered byzantine
+                    error!(
+                        "Could not get a new cut from Mempool {:?}. Reusing previous one...",
+                        err
+                    );
+                    self.bft_round_state.last_cut_seen.clone()
+                }
+            };
+
+            let mut staking_actions: Vec<ConsensusStakingAction> = new_validators_to_bond
+                .into_iter()
+                .map(|v| v.into())
+                .collect();
+
+            for tx in cut.iter() {
+                debug!("📦 Lane {} cumulated size: {}", tx.0, tx.2);
+                staking_actions.push(ConsensusStakingAction::PayFeesForDaDi {
+                    lane_id: tx.0.clone(),
+                    cumul_size: tx.2,
+                });
             }
-        };
 
+            // Start Consensus with following cut
+            self.bft_round_state.last_cut_seen = cut.clone();
+            self.bft_round_state.current_proposal = ConsensusProposal {
+                slot: self.bft_round_state.slot,
+                cut,
+                staking_actions,
+                timestamp: current_timestamp,
+                parent_hash: self.bft_round_state.parent_hash.clone(),
+            };
+        }
         self.bft_round_state.leader.step = Step::PrepareVote;
 
-        let mut staking_actions: Vec<ConsensusStakingAction> = new_validators_to_bond
-            .into_iter()
-            .map(|v| v.into())
-            .collect();
-
-        for tx in cut.iter() {
-            debug!("📦 Lane {} cumulated size: {}", tx.0, tx.2);
-            staking_actions.push(ConsensusStakingAction::PayFeesForDaDi {
-                lane_id: tx.0.clone(),
-                cumul_size: tx.2,
-            });
-        }
-
-        // Start Consensus with following cut
-        self.bft_round_state.current_proposal = ConsensusProposal {
-            slot: self.bft_round_state.slot,
-            cut,
-            staking_actions,
-            timestamp: current_timestamp,
-            parent_hash: self.bft_round_state.parent_hash.clone(),
-        };
         let prepare = (
             self.crypto.validator_pubkey().clone(),
             self.bft_round_state.current_proposal.clone(),
@@ -168,11 +160,11 @@ impl LeaderRole for Consensus {
         Ok(())
     }
 
-    fn is_round_leader(&self) -> bool {
+    pub(super) fn is_round_leader(&self) -> bool {
         matches!(self.bft_round_state.state_tag, StateTag::Leader)
     }
 
-    fn on_prepare_vote(
+    pub(super) fn on_prepare_vote(
         &mut self,
         msg: SignedByValidator<ConsensusNetMessage>,
         consensus_proposal_hash: ConsensusProposalHash,
@@ -269,7 +261,7 @@ impl LeaderRole for Consensus {
         Ok(())
     }
 
-    fn on_confirm_ack(
+    pub(super) fn on_confirm_ack(
         &mut self,
         msg: SignedByValidator<ConsensusNetMessage>,
         consensus_proposal_hash: ConsensusProposalHash,

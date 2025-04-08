@@ -2,25 +2,13 @@ use anyhow::Result;
 use hyle_model::{ConsensusProposalHash, ValidatorPublicKey};
 use tracing::debug;
 
-use super::{
-    role_follower::{FollowerRole, Prepare},
-    Consensus,
-};
+use super::{role_follower::Prepare, Consensus};
 
-pub(super) trait RoleSync {
-    fn on_sync_request(
-        &mut self,
-        sender: ValidatorPublicKey,
-        proposal_hash: ConsensusProposalHash,
-    ) -> Result<()>;
-    fn on_sync_reply(&mut self, prepare: Prepare) -> Result<()>;
-}
-
-impl RoleSync for Consensus {
+impl Consensus {
     /// When a validator receives a sync request from another validator, it will check if it has the prepare message in its buffer.
     /// If it has the prepare message, it will send the prepare message to the requesting validator.
     /// If it does not have the prepare message, it will ignore the request to avoid unnecessary network traffic.
-    fn on_sync_request(
+    pub(super) fn on_sync_request(
         &mut self,
         sender: ValidatorPublicKey,
         proposal_hash: ConsensusProposalHash,
@@ -38,7 +26,7 @@ impl RoleSync for Consensus {
         Ok(())
     }
 
-    fn on_sync_reply(&mut self, prepare: Prepare) -> Result<()> {
+    pub(super) fn on_sync_reply(&mut self, prepare: Prepare) -> Result<()> {
         let (sender, proposal, ticket, view) = prepare;
         self.on_prepare(sender, proposal, ticket, view)
     }

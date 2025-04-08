@@ -12,17 +12,17 @@ mod e2e_consensus {
     use client_sdk::helpers::risc0::Risc0Prover;
     use client_sdk::transaction_builder::{ProvableBlobTx, TxExecutor, TxExecutorBuilder};
     use fixtures::test_helpers::send_transaction;
-    use hydentity::client::{register_identity, verify_identity};
+    use hydentity::client::tx_executor_handler::{register_identity, verify_identity};
     use hydentity::Hydentity;
     use hyle::genesis::States;
-    use hyle_contract_sdk::HyleContract;
     use hyle_contract_sdk::Identity;
+    use hyle_contract_sdk::ZkContract;
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF, STAKING_ELF};
     use hyle_model::{ContractName, StateCommitment};
-    use hyllar::client::transfer;
+    use hyllar::client::tx_executor_handler::transfer;
     use hyllar::erc20::ERC20;
     use hyllar::{Hyllar, FAUCET_ID};
-    use staking::client::{delegate, stake};
+    use staking::client::tx_executor_handler::{delegate, stake};
     use staking::state::Staking;
     use tracing::{info, warn};
 
@@ -352,7 +352,8 @@ mod e2e_consensus {
             _ = gen_txs(&mut ctx, &mut tx_ctx, format!("alex{}", i), 100 + i).await;
         }
 
-        ctx.wait_height(3).await?;
+        ctx.wait_height(5).await?;
+        ctx.wait_indexer_height(5).await?;
 
         let state: Hyllar = ctx
             .indexer_client()
@@ -364,6 +365,36 @@ mod e2e_consensus {
             info!("Checking alex{}.hydentity balance: {:?}", i, balance);
             assert_eq!(balance.unwrap(), ((100 + i) as u128));
         }
+
+        Ok(())
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn multiple_nonconsecutive_timeouts() -> Result<()> {
+        let mut ctx = E2ECtx::new_multi(8, 500).await?;
+        ctx.stop_node(7).await.unwrap();
+        ctx.stop_node(3).await.unwrap();
+
+        _ = ctx.wait_height(1).await;
+
+        warn!("Ready to go");
+
+        _ = ctx.wait_height(8).await;
+
+        Ok(())
+    }
+    #[test_log::test(tokio::test)]
+    async fn multiple_consecutive_timeouts() -> Result<()> {
+        let mut ctx = E2ECtx::new_multi(8, 500).await?;
+        // These end up being consecutive with crypto pubkey sorting.
+        ctx.stop_node(7).await.unwrap();
+        ctx.stop_node(1).await.unwrap();
+
+        _ = ctx.wait_height(1).await;
+
+        warn!("Ready to go");
+
+        _ = ctx.wait_height(8).await;
 
         Ok(())
     }

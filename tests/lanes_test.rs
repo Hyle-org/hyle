@@ -8,15 +8,15 @@ use client_sdk::{
 };
 use fixtures::{ctx::E2ECtx, test_helpers::send_transaction};
 use hydentity::{
-    client::{register_identity, verify_identity},
+    client::tx_executor_handler::{register_identity, verify_identity},
     Hydentity,
 };
 use hyle::genesis::States;
 use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF, STAKING_ELF};
 use hyle_model::{api::APIRegisterContract, ContractName, Identity, ProgramId, StateCommitment};
-use hyllar::{client::transfer, Hyllar, FAUCET_ID};
+use hyllar::{client::tx_executor_handler::transfer, Hyllar, FAUCET_ID};
 use staking::{
-    client::{delegate, deposit_for_fees, stake},
+    client::tx_executor_handler::{delegate, deposit_for_fees, stake},
     state::Staking,
 };
 
@@ -127,7 +127,7 @@ async fn faucet_and_delegate(
 }
 
 async fn scenario_lane_manager_outside_consensus(mut ctx: E2ECtx, delegate: bool) -> Result<()> {
-    let mut conf = ctx.make_conf("lane_mgr");
+    let mut conf = ctx.make_conf("lane_mgr").await;
     conf.p2p.mode = hyle::utils::conf::P2pMode::LaneManager;
     // Remove indexer
     conf.p2p.peers.pop();

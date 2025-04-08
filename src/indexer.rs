@@ -21,7 +21,6 @@ use axum::{
     routing::get,
     Router,
 };
-use chrono::DateTime;
 use futures::{SinkExt, StreamExt};
 use hyle_contract_sdk::TxHash;
 use hyle_model::api::{
@@ -217,6 +216,10 @@ impl Indexer {
                 "/blob_transactions/contract/{contract_name}/ws",
                 get(Self::get_blob_transactions_by_contract_ws_handler),
             )
+            // proof transaction
+            .routes(routes!(api::get_proofs))
+            .routes(routes!(api::get_proofs_by_height))
+            .routes(routes!(api::get_proof_with_hash))
             // blob
             .routes(routes!(api::get_blobs_by_tx_hash))
             .routes(routes!(api::get_blob))
@@ -361,14 +364,8 @@ impl Indexer {
         let block_height = i64::try_from(block.block_height.0)
             .map_err(|_| anyhow::anyhow!("Block height is too large to fit into an i64"))?;
 
-        let block_timestamp = match DateTime::from_timestamp(
-            i64::try_from(block.block_timestamp)
-                .map_err(|_| anyhow::anyhow!("Timestamp too large for i64"))?,
-            0,
-        ) {
-            Some(date) => date,
-            None => bail!("Block's timestamp is incorrect"),
-        };
+        let block_timestamp =
+            into_utc_date_time(&block.block_timestamp).context("Block's timestamp is incorrect")?;
 
         sqlx::query(
             "INSERT INTO blocks (hash, parent_hash, height, timestamp) VALUES ($1, $2, $3, $4)",
@@ -822,10 +819,8 @@ mod test {
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateCommitment, TxHash};
     use hyle_model::api::{APIBlock, APIContract, APITransaction};
     use serde_json::json;
-    use std::{
-        future::IntoFuture,
-        net::{Ipv4Addr, SocketAddr},
-    };
+    use std::future::IntoFuture;
+    use utils::TimestampMs;
 
     use crate::{
         bus::SharedMessageBus,
@@ -903,6 +898,7 @@ mod test {
     }
 
     fn new_proof_tx(
+        identity: Identity,
         contract_name: ContractName,
         blob_index: BlobIndex,
         blob_tx_hash: TxHash,
@@ -925,7 +921,7 @@ mod test {
                         version: 1,
                         initial_state,
                         next_state,
-                        identity: Identity::new("test.c1"),
+                        identity,
                         tx_hash: blob_tx_hash,
                         tx_ctx: None,
                         index: blob_index,
@@ -997,6 +993,7 @@ mod test {
         let blob_transaction_hash = blob_transaction.hashed();
 
         let proof_tx_1 = new_proof_tx(
+            Identity::new("test.c1"),
             first_contract_name.clone(),
             BlobIndex(0),
             blob_transaction_hash.clone(),
@@ -1006,6 +1003,7 @@ mod test {
         );
 
         let proof_tx_2 = new_proof_tx(
+            Identity::new("test.c1"),
             second_contract_name.clone(),
             BlobIndex(1),
             blob_transaction_hash.clone(),
@@ -1022,6 +1020,7 @@ mod test {
         let other_blob_transaction_hash = other_blob_transaction.hashed();
         // Send two proofs for the same blob
         let proof_tx_3 = new_proof_tx(
+            Identity::new("test.c1"),
             first_contract_name.clone(),
             BlobIndex(1),
             other_blob_transaction_hash.clone(),
@@ -1030,6 +1029,7 @@ mod test {
             vec![99, 50, 1, 2, 3, 99, 49, 1, 2, 3],
         );
         let proof_tx_4 = new_proof_tx(
+            Identity::new("test.c1"),
             first_contract_name.clone(),
             BlobIndex(1),
             other_blob_transaction_hash.clone(),
@@ -1091,6 +1091,7 @@ mod test {
         let blob_transaction_hash_wd = blob_transaction_wd.hashed();
 
         let proof_tx_1_wd = new_proof_tx(
+            Identity::new("test.wd1"),
             first_contract_name_wd.clone(),
             BlobIndex(0),
             blob_transaction_hash_wd.clone(),
@@ -1200,24 +1201,19 @@ mod test {
             TransactionStatusDb::DataProposalCreated,
         )
         .await;
-        assert_tx_status(
-            &server,
-            proof_tx_1_wd.hashed(),
-            TransactionStatusDb::DataProposalCreated,
-        )
-        .await;
+        assert_tx_not_found(&server, proof_tx_1_wd.hashed()).await;
 
         let mut signed_block = SignedBlock::default();
-        signed_block.consensus_proposal.timestamp = 1234;
+        signed_block.consensus_proposal.timestamp = TimestampMs(12345);
         signed_block.consensus_proposal.slot = 2;
         signed_block.data_proposals.push((
             LaneId(ValidatorPublicKey("ttt".into())),
             vec![data_proposal],
         ));
-        let block = node_state.handle_signed_block(&signed_block);
-
+        let block_2 = node_state.handle_signed_block(&signed_block);
+        let block_2_hash = block_2.hash.clone();
         indexer
-            .handle_processed_block(block)
+            .handle_processed_block(block_2)
             .await
             .expect("Failed to handle block");
 
@@ -1239,18 +1235,19 @@ mod test {
             TransactionStatusDb::Sequenced,
         )
         .await;
-        assert_tx_status(
-            &server,
-            proof_tx_1_wd.hashed(),
-            TransactionStatusDb::Success,
-        )
-        .await;
+        assert_tx_not_found(&server, proof_tx_1_wd.hashed()).await;
 
         // Check a mempool status event does not change a Success/Sequenced status
         indexer
             .handle_mempool_status_event(data_proposal_created_event.clone())
             .await
             .expect("MempoolStatusEvent");
+
+        // Check blocks have correct data
+        let blocks = server.get("/blocks").await.json::<Vec<APIBlock>>();
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks.last().unwrap().timestamp, 0);
+        assert_eq!(blocks.first().unwrap().timestamp, 12345);
 
         let transactions_response = server.get("/contract/c1").await;
         transactions_response.assert_status_ok();
@@ -1307,11 +1304,7 @@ mod test {
                 { "index": 0, "transaction_type": "BlobTransaction", "transaction_status": "Success" },
                 { "index": 1, "transaction_type": "BlobTransaction", "transaction_status": "Success" },
                 { "index": 2, "transaction_type": "BlobTransaction", "transaction_status": "Success" },
-                { "index": 3, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
-                { "index": 4, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
-                { "index": 5, "transaction_type": "BlobTransaction", "transaction_status": "Sequenced" },
-                { "index": 6, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
-                { "index": 7, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
+                { "index": 5, "transaction_type": "BlobTransaction", "transaction_status": "Sequenced" }
             ])
         );
 
@@ -1338,6 +1331,51 @@ mod test {
                 }
             ])
         );
+
+        // Test proof transaction endpoints
+        let proofs_response = server.get("/proofs").await;
+        proofs_response.assert_status_ok();
+        assert_json_include!(
+            actual: proofs_response.json::<serde_json::Value>(),
+            expected: json!([
+                { "index": 3, "transaction_type": "ProofTransaction", "transaction_status": "Success", "block_hash": block_2_hash },
+                { "index": 3, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
+                { "index": 4, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
+                { "index": 6, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
+                { "index": 7, "transaction_type": "ProofTransaction", "transaction_status": "Success" }
+            ])
+        );
+
+        let proofs_by_height = server.get("/proofs/block/0").await;
+        proofs_by_height.assert_status_ok();
+        assert_json_include!(
+            actual: proofs_by_height.json::<serde_json::Value>(),
+            expected: json!([
+                { "index": 3, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
+                { "index": 4, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
+                { "index": 6, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
+                { "index": 7, "transaction_type": "ProofTransaction", "transaction_status": "Success" }
+            ])
+        );
+
+        let proof_by_hash = server
+            .get(format!("/proof/hash/{}", proof_tx_1_wd.hashed()).as_str())
+            .await;
+        proof_by_hash.assert_status_ok();
+        assert_json_include!(
+            actual: proof_by_hash.json::<serde_json::Value>(),
+            expected: json!({
+                "index": 3,
+                "transaction_type": "ProofTransaction",
+                "transaction_status": "Success"
+            })
+        );
+
+        // Test non-existent proof
+        let non_existent_proof = server
+            .get("/proof/hash/1111111111111111111111111111111111111111111111111111111111111111")
+            .await;
+        non_existent_proof.assert_status_not_found();
 
         Ok(())
     }
@@ -1499,9 +1537,7 @@ mod test {
         assert!(!transactions_response.text().is_empty());
 
         // Websocket
-        let listener = tokio::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)))
-            .await
-            .unwrap();
+        let listener = hyle_net::net::bind_tcp_listener(0).await.unwrap();
         let addr = listener.local_addr().unwrap();
 
         tokio::spawn(axum::serve(listener, indexer.api(None)).into_future());

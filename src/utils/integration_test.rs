@@ -10,7 +10,6 @@ use axum::Router;
 use client_sdk::rest_client::NodeApiHttpClient;
 use hyle_model::api::NodeInfo;
 use hyle_model::TxHash;
-use prometheus::Registry;
 use tracing::info;
 
 use crate::bus::metrics::BusMetrics;
@@ -35,7 +34,9 @@ use super::modules::{module_bus_client, Module};
 
 // Assume that we can reuse the OS-provided port.
 pub async fn find_available_port() -> u16 {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = hyle_net::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .unwrap();
     let addr = listener.local_addr().unwrap();
     addr.port()
 }
@@ -297,20 +298,19 @@ impl NodeIntegrationCtx {
             Self::build_module::<RestApi>(
                 &mut handler,
                 &ctx,
-                RestApiRunContext {
-                    port: config.rest_server_port,
-                    max_body_size: ctx.common.config.rest_server_max_body_size,
-                    info: NodeInfo {
+                RestApiRunContext::new(
+                    config.rest_server_port,
+                    NodeInfo {
                         id: config.id.clone(),
                         pubkey: Some(pubkey),
                         da_address: format!("{}:{}", config.hostname, config.da_server_port),
                     },
-                    bus: ctx.common.bus.new_handle(),
-                    metrics_layer: None,
-                    registry: Registry::new(),
-                    router: router.clone(),
-                    openapi: Default::default(),
-                },
+                    ctx.common.bus.new_handle(),
+                    router.clone(),
+                    None,
+                    ctx.common.config.rest_server_max_body_size,
+                    Default::default(),
+                ),
                 &mut mocks,
             )
             .await?;

@@ -10,15 +10,15 @@ mod e2e_hyllar {
     use client_sdk::{
         contract_states,
         helpers::risc0::Risc0Prover,
-        transaction_builder::{ProvableBlobTx, TxExecutorBuilder},
+        transaction_builder::{ProvableBlobTx, TxExecutorBuilder, TxExecutorHandler},
     };
     use hydentity::{
-        client::{register_identity, verify_identity},
+        client::tx_executor_handler::{register_identity, verify_identity},
         Hydentity,
     };
-    use hyle_contract_sdk::{guest, ContractInput, ContractName, HyleOutput};
+    use hyle_contract_sdk::{Blob, Calldata, ContractName, HyleOutput};
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF};
-    use hyllar::{client::transfer, erc20::ERC20, Hyllar, FAUCET_ID};
+    use hyllar::{client::tx_executor_handler::transfer, erc20::ERC20, Hyllar, FAUCET_ID};
 
     use super::*;
 
@@ -90,8 +90,8 @@ mod e2e_hyllar {
         info!("➡️  Sending proof for hyllar");
         ctx.send_proof_single(hyllar_proof).await?;
 
-        info!("➡️  Waiting for height 5");
-        ctx.wait_height(5).await?;
+        info!("➡️  Waiting for height 5 on indexer");
+        ctx.wait_indexer_height(5).await?;
 
         let state: Hyllar = ctx
             .indexer_client()

@@ -4,7 +4,7 @@ mod block;
 mod node;
 #[cfg(feature = "full")]
 mod transaction;
-#[cfg(feature = "full")]
+
 pub mod utils;
 
 #[cfg(feature = "full")]

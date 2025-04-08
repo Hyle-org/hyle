@@ -1,13 +1,15 @@
 #![allow(unused)]
 #![allow(clippy::indexing_slicing)]
 
-use std::time::Duration;
+use std::{
+    net::{Ipv4Addr, TcpListener},
+    time::Duration,
+};
 
 use anyhow::{Context, Result};
 use api::APIContract;
 use assertables::assert_ok;
 use client_sdk::transaction_builder::ProvableBlobTx;
-use reqwest::{Client, Url};
 use testcontainers_modules::{
     postgres::Postgres,
     testcontainers::{runners::AsyncRunner, ContainerAsync, ImageExt},
@@ -23,10 +25,11 @@ use hyle_contract_sdk::{
     flatten_blobs, BlobIndex, ContractName, HyleOutput, Identity, ProgramId, StateCommitment,
     TxHash, Verifier,
 };
+use hyle_net::net::bind_tcp_listener;
 
-use crate::fixtures::test_helpers::wait_height_timeout;
+use crate::fixtures::test_helpers::{wait_height_timeout, IndexerOrNodeHttpClient};
 
-use super::test_helpers::{self, wait_height, ConfMaker};
+use super::test_helpers::{self, wait_height, wait_indexer_height, ConfMaker};
 
 pub trait E2EContract {
     fn verifier() -> Verifier;
@@ -40,7 +43,7 @@ pub struct E2ECtx {
     clients: Vec<NodeApiHttpClient>,
     client_index: usize,
     indexer_client: Option<IndexerApiHttpClient>,
-    slot_duration: u64,
+    slot_duration: Duration,
 }
 
 impl E2ECtx {
@@ -54,7 +57,7 @@ impl E2ECtx {
             .unwrap()
     }
 
-    fn build_nodes(
+    async fn build_nodes(
         count: usize,
         conf_maker: &mut ConfMaker,
     ) -> (Vec<test_helpers::TestProcess>, Vec<NodeApiHttpClient>) {
@@ -65,7 +68,7 @@ impl E2ECtx {
         let mut genesis_stakers = std::collections::HashMap::new();
 
         for i in 0..count {
-            let mut node_conf = conf_maker.build("node");
+            let mut node_conf = conf_maker.build("node").await;
             node_conf.p2p.peers = peers.clone();
             genesis_stakers.insert(node_conf.id.clone(), 100);
             peers.push(format!(
@@ -82,45 +85,35 @@ impl E2ECtx {
                 .start();
 
             // Request something on node1 to be sure it's alive and working
-            let client = NodeApiHttpClient {
-                url: Url::parse(&format!(
-                    "http://localhost:{}/",
-                    &node.conf.rest_server_port
-                ))
-                .unwrap(),
-                reqwest_client: Client::new(),
-                api_key: None,
-            };
+            let client = NodeApiHttpClient::new(format!(
+                "http://localhost:{}/",
+                &node.conf.rest_server_port
+            ))
+            .expect("Creating http client for node");
             nodes.push(node);
             clients.push(client);
         }
         (nodes, clients)
     }
 
-    pub async fn new_single(slot_duration: u64) -> Result<E2ECtx> {
+    pub async fn new_single(slot_duration_ms: u64) -> Result<E2ECtx> {
         std::env::set_var("RISC0_DEV_MODE", "1");
 
         let mut conf_maker = ConfMaker::default();
-        conf_maker.default.consensus.slot_duration = slot_duration;
+        conf_maker.default.consensus.slot_duration = Duration::from_millis(slot_duration_ms);
         conf_maker.default.consensus.solo = true;
         conf_maker.default.genesis.stakers =
             vec![("single-node".to_string(), 100)].into_iter().collect();
 
-        let node_conf = conf_maker.build("single-node");
+        let node_conf = conf_maker.build("single-node").await;
         let node = test_helpers::TestProcess::new("hyle", node_conf)
             //.log("hyle=info,tower_http=error")
             .start();
 
         // Request something on node1 to be sure it's alive and working
-        let client = NodeApiHttpClient {
-            url: Url::parse(&format!(
-                "http://localhost:{}/",
-                &node.conf.rest_server_port
-            ))
-            .unwrap(),
-            reqwest_client: Client::new(),
-            api_key: None,
-        };
+        let client =
+            NodeApiHttpClient::new(format!("http://localhost:{}/", &node.conf.rest_server_port))
+                .expect("Creating http client for node");
 
         while client.get_node_info().await.is_err() {
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -133,17 +126,17 @@ impl E2ECtx {
             clients: vec![client],
             client_index: 0,
             indexer_client: None,
-            slot_duration,
+            slot_duration: Duration::from_millis(slot_duration_ms),
         })
     }
 
-    pub async fn new_single_with_indexer(slot_duration: u64) -> Result<E2ECtx> {
+    pub async fn new_single_with_indexer(slot_duration_ms: u64) -> Result<E2ECtx> {
         std::env::set_var("RISC0_DEV_MODE", "1");
 
         let pg = Self::init().await;
 
         let mut conf_maker = ConfMaker::default();
-        conf_maker.default.consensus.slot_duration = slot_duration;
+        conf_maker.default.consensus.slot_duration = Duration::from_millis(slot_duration_ms);
         conf_maker.default.consensus.solo = true;
         conf_maker.default.genesis.stakers =
             vec![("single-node".to_string(), 100)].into_iter().collect();
@@ -152,24 +145,18 @@ impl E2ECtx {
             pg.get_host_port_ipv4(5432).await.unwrap()
         );
 
-        let node_conf = conf_maker.build("single-node");
+        let node_conf = conf_maker.build("single-node").await;
         let node = test_helpers::TestProcess::new("hyle", node_conf.clone())
             //.log("hyle=info,tower_http=error")
             .start();
 
         // Request something on node1 to be sure it's alive and working
-        let client = NodeApiHttpClient {
-            url: Url::parse(&format!(
-                "http://localhost:{}/",
-                &node.conf.rest_server_port
-            ))
-            .unwrap(),
-            reqwest_client: Client::new(),
-            api_key: None,
-        };
+        let client =
+            NodeApiHttpClient::new(format!("http://localhost:{}/", &node.conf.rest_server_port))
+                .expect("Creating http client for node");
 
         // Start indexer
-        let mut indexer_conf = conf_maker.build("indexer");
+        let mut indexer_conf = conf_maker.build("indexer").await;
         indexer_conf.da_address = format!("localhost:{}", node_conf.da_server_port);
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
@@ -190,17 +177,22 @@ impl E2ECtx {
             clients: vec![client],
             client_index: 0,
             indexer_client: Some(indexer_client),
-            slot_duration,
+            slot_duration: Duration::from_millis(slot_duration_ms),
         })
     }
-    pub async fn new_multi(count: usize, slot_duration: u64) -> Result<E2ECtx> {
+    pub async fn new_multi(count: usize, slot_duration_ms: u64) -> Result<E2ECtx> {
         std::env::set_var("RISC0_DEV_MODE", "1");
 
         let mut conf_maker = ConfMaker::default();
-        conf_maker.default.consensus.slot_duration = slot_duration;
+        conf_maker.default.consensus.slot_duration = Duration::from_millis(slot_duration_ms);
 
-        let (nodes, clients) = Self::build_nodes(count, &mut conf_maker);
-        wait_height_timeout(clients.first().unwrap(), 1, 120).await?;
+        let (nodes, clients) = Self::build_nodes(count, &mut conf_maker).await;
+        wait_height_timeout(
+            &IndexerOrNodeHttpClient::Node(clients.first().unwrap().clone()),
+            1,
+            120,
+        )
+        .await?;
 
         loop {
             let mut stop = true;
@@ -222,13 +214,13 @@ impl E2ECtx {
             clients,
             client_index: 0,
             indexer_client: None,
-            slot_duration,
+            slot_duration: Duration::from_millis(slot_duration_ms),
         })
     }
 
-    pub fn make_conf(&self, prefix: &str) -> Conf {
+    pub async fn make_conf(&self, prefix: &str) -> Conf {
         let mut conf_maker = ConfMaker::default();
-        let mut node_conf = conf_maker.build(prefix);
+        let mut node_conf = conf_maker.build(prefix).await;
         node_conf.consensus.slot_duration = self.slot_duration;
         node_conf.p2p.peers = self
             .nodes
@@ -239,7 +231,8 @@ impl E2ECtx {
     }
 
     pub async fn add_node(&mut self) -> Result<&NodeApiHttpClient> {
-        self.add_node_with_conf(self.make_conf("new_node")).await
+        self.add_node_with_conf(self.make_conf("new_node").await)
+            .await
     }
 
     pub async fn add_node_with_conf(&mut self, node_conf: Conf) -> Result<&NodeApiHttpClient> {
@@ -247,15 +240,9 @@ impl E2ECtx {
             //.log("hyle=info,tower_http=error")
             .start();
         // Request something on node1 to be sure it's alive and working
-        let client = NodeApiHttpClient {
-            url: Url::parse(&format!(
-                "http://localhost:{}/",
-                &node.conf.rest_server_port
-            ))
-            .unwrap(),
-            reqwest_client: Client::new(),
-            api_key: None,
-        };
+        let client =
+            NodeApiHttpClient::new(format!("http://localhost:{}/", &node.conf.rest_server_port))
+                .expect("Creating http client for node");
 
         wait_height(&client, 1).await?;
         self.nodes.push(node);
@@ -263,22 +250,22 @@ impl E2ECtx {
         Ok(self.clients.last().unwrap())
     }
 
-    pub async fn new_multi_with_indexer(count: usize, slot_duration: u64) -> Result<E2ECtx> {
+    pub async fn new_multi_with_indexer(count: usize, slot_duration_ms: u64) -> Result<E2ECtx> {
         std::env::set_var("RISC0_DEV_MODE", "1");
 
         let pg = Self::init().await;
 
         let mut conf_maker = ConfMaker::default();
-        conf_maker.default.consensus.slot_duration = slot_duration;
+        conf_maker.default.consensus.slot_duration = Duration::from_millis(slot_duration_ms);
         conf_maker.default.database_url = format!(
             "postgres://postgres:postgres@localhost:{}/postgres",
             pg.get_host_port_ipv4(5432).await.unwrap()
         );
 
-        let (mut nodes, mut clients) = Self::build_nodes(count, &mut conf_maker);
+        let (mut nodes, mut clients) = Self::build_nodes(count, &mut conf_maker).await;
 
         // Start indexer
-        let mut indexer_conf = conf_maker.build("indexer");
+        let mut indexer_conf = conf_maker.build("indexer").await;
         indexer_conf.run_indexer = true;
         indexer_conf.da_address =
             format!("localhost:{}", nodes.last().unwrap().conf.da_server_port);
@@ -314,7 +301,7 @@ impl E2ECtx {
             clients,
             client_index: 0,
             indexer_client: Some(indexer_client),
-            slot_duration,
+            slot_duration: Duration::from_millis(slot_duration_ms),
         })
     }
 
@@ -443,6 +430,10 @@ impl E2ECtx {
 
     pub async fn wait_height(&self, height: u64) -> Result<()> {
         wait_height(self.client(), height).await
+    }
+
+    pub async fn wait_indexer_height(&self, height: u64) -> Result<()> {
+        wait_indexer_height(self.indexer_client(), height).await
     }
 
     pub async fn get_contract(&self, name: &str) -> Result<Contract> {

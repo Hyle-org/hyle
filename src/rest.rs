@@ -1,7 +1,5 @@
 //! Public API for interacting with the node.
 
-use std::net::Ipv4Addr;
-
 use anyhow::{Context, Result};
 pub use axum::Router;
 use axum::{
@@ -43,6 +41,32 @@ pub struct RestApiRunContext {
     pub metrics_layer: Option<HttpMetricsLayer>,
     pub max_body_size: usize,
     pub openapi: utoipa::openapi::OpenApi,
+}
+
+impl RestApiRunContext {
+    pub fn new(
+        port: u16,
+        info: NodeInfo,
+        bus: SharedMessageBus,
+        router: Router,
+        metrics_layer: Option<HttpMetricsLayer>,
+        max_body_size: usize,
+        openapi: utoipa::openapi::OpenApi,
+    ) -> RestApiRunContext {
+        Self {
+            port,
+            info,
+            bus,
+            router,
+            registry: Registry::new(),
+            metrics_layer,
+            max_body_size,
+            openapi,
+        }
+    }
+    pub fn with_registry(self, registry: Registry) -> Self {
+        Self { registry, ..self }
+    }
 }
 
 pub struct RouterState {
@@ -147,7 +171,7 @@ impl RestApi {
             self.port
         );
 
-        let listener = tokio::net::TcpListener::bind(&(Ipv4Addr::UNSPECIFIED, self.port))
+        let listener = hyle_net::net::bind_tcp_listener(self.port)
             .await
             .context("Starting rest server")?;
 
@@ -314,8 +338,14 @@ mod tests {
             .get_node_info()
             .await
             .expect_err("Expected request to fail after shutdown");
+        let err = format!("{:#}", err);
         assert!(
-            err.to_string().contains("etting node info request fai"),
+            err.to_string().contains("getting node info"),
+            "Expected connection error, got: {}",
+            err
+        );
+        assert!(
+            err.to_string().contains("Connection refused"),
             "Expected connection error, got: {}",
             err
         );

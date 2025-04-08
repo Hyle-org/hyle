@@ -6,6 +6,7 @@ use hyle_contract_sdk::{
 pub enum NativeVerifiers {
     Blst,
     Sha3_256,
+    Secp256k1,
 }
 
 impl From<NativeVerifiers> for ProgramId {
@@ -13,6 +14,7 @@ impl From<NativeVerifiers> for ProgramId {
         match value {
             NativeVerifiers::Blst => ProgramId("blst".as_bytes().to_vec()),
             NativeVerifiers::Sha3_256 => ProgramId("sha3_256".as_bytes().to_vec()),
+            NativeVerifiers::Secp256k1 => ProgramId("secp256k1".as_bytes().to_vec()),
         }
     }
 }
@@ -23,6 +25,7 @@ impl TryFrom<&Verifier> for NativeVerifiers {
         match value.0.as_str() {
             "blst" => Ok(Self::Blst),
             "sha3_256" => Ok(Self::Sha3_256),
+            "secp256k1" => Ok(Self::Secp256k1),
             _ => Err(format!("Unknown native verifier: {}", value)),
         }
     }
@@ -84,6 +87,36 @@ impl ContractAction for ShaBlob {
         Blob {
             contract_name,
             data: BlobData(borsh::to_vec(self).expect("failed to encode ShaBlob")),
+        }
+    }
+}
+
+/// Format of the BlobData for native secp256k1 contract
+#[derive(Debug, borsh::BorshSerialize, borsh::BorshDeserialize)]
+pub struct Secp256k1Blob {
+    pub identity: Identity,
+    pub data: [u8; 32],
+    pub public_key: [u8; 33],
+    pub signature: [u8; 64],
+}
+
+impl Secp256k1Blob {
+    pub fn as_blob(&self) -> Blob {
+        <Self as ContractAction>::as_blob(self, "secp256k1".into(), None, None)
+    }
+}
+
+impl ContractAction for Secp256k1Blob {
+    fn as_blob(
+        &self,
+        contract_name: ContractName,
+        _caller: Option<BlobIndex>,
+        _callees: Option<Vec<BlobIndex>>,
+    ) -> Blob {
+        #[allow(clippy::expect_used)]
+        Blob {
+            contract_name,
+            data: BlobData(borsh::to_vec(self).expect("failed to encode Secp256k1Blob")),
         }
     }
 }

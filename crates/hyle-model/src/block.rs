@@ -5,6 +5,7 @@ use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
 use derive_more::derive::Display;
 use serde::{Deserialize, Serialize};
+use utils::TimestampMs;
 
 use crate::{staking::*, *};
 
@@ -15,7 +16,7 @@ pub struct Block {
     pub parent_hash: ConsensusProposalHash,
     pub hash: ConsensusProposalHash,
     pub block_height: BlockHeight,
-    pub block_timestamp: u64,
+    pub block_timestamp: TimestampMs,
     pub txs: Vec<(TxId, Transaction)>,
     pub dp_parent_hashes: BTreeMap<TxHash, DataProposalHash>,
     pub lane_ids: BTreeMap<TxHash, LaneId>,
@@ -95,10 +96,11 @@ impl SignedBlock {
             .flat_map(|(lane_id, dps)| std::iter::zip(std::iter::repeat(lane_id.clone()), dps))
             .map(|(lane_id, dp)| {
                 (
-                    lane_id,
+                    lane_id.clone(),
                     dp.parent_data_proposal_hash
                         .clone()
-                        .unwrap_or(DataProposalHash("".to_string())),
+                        // This is weird but has to match the workaround in own_lane.rs
+                        .unwrap_or(DataProposalHash(lane_id.0.to_string())),
                     &dp.txs,
                 )
             })

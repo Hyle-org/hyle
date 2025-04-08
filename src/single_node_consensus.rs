@@ -5,7 +5,7 @@ use crate::bus::BusClientSender;
 use crate::consensus::{CommittedConsensusProposal, ConsensusEvent, QueryConsensusInfo};
 use crate::genesis::GenesisEvent;
 use crate::mempool::QueryNewCut;
-use crate::model::{utils::get_current_timestamp_ms, *};
+use crate::model::*;
 use crate::module_handle_messages;
 use crate::utils::conf::SharedConf;
 use crate::utils::crypto::SharedBlstCrypto;
@@ -13,6 +13,7 @@ use crate::utils::modules::module_bus_client;
 use crate::{model::SharedRunContext, utils::modules::Module};
 use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
+use hyle_net::clock::TimestampMsClock;
 use staking::state::Staking;
 use tracing::{debug, warn};
 
@@ -130,9 +131,7 @@ impl SingleNodeConsensus {
             tracing::trace!("Genesis block done");
         }
 
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(
-            self.config.consensus.slot_duration,
-        ));
+        let mut interval = tokio::time::interval(self.config.consensus.slot_duration);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         interval.tick().await; // First tick is immediate
 
@@ -179,7 +178,7 @@ impl SingleNodeConsensus {
         let new_slot = self.store.last_slot + 1;
         let consensus_proposal = ConsensusProposal {
             slot: new_slot,
-            timestamp: get_current_timestamp_ms(),
+            timestamp: TimestampMsClock::now(),
             cut: self.store.last_cut.clone(),
             staking_actions: vec![],
             parent_hash: std::mem::take(&mut self.store.last_consensus_proposal_hash),
