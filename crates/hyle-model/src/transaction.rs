@@ -203,18 +203,49 @@ impl Hashed<TxHash> for VerifiedProofTransaction {
 }
 
 #[derive(
-    Debug,
-    Default,
-    Serialize,
-    Deserialize,
-    ToSchema,
-    PartialEq,
-    Eq,
-    Clone,
-    BorshSerialize,
-    BorshDeserialize,
+    Debug, Default, Serialize, ToSchema, PartialEq, Eq, Clone, BorshSerialize, BorshDeserialize,
 )]
 pub struct ProofData(#[serde(with = "base64_field")] pub Vec<u8>);
+
+impl<'de> Deserialize<'de> for ProofData {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct ProofDataVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for ProofDataVisitor {
+            type Value = ProofData;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a Base64 string or a Vec<u8>")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                use base64::prelude::*;
+                let decoded = BASE64_STANDARD
+                    .decode(value)
+                    .map_err(serde::de::Error::custom)?;
+                Ok(ProofData(decoded))
+            }
+
+            fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let vec_u8: Vec<u8> = serde::de::Deserialize::deserialize(
+                    serde::de::value::SeqAccessDeserializer::new(seq),
+                )?;
+                Ok(ProofData(vec_u8))
+            }
+        }
+
+        deserializer.deserialize_any(ProofDataVisitor)
+    }
+}
 
 #[derive(
     Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize,
