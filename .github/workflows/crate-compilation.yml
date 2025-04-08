@@ -16,7 +16,7 @@ jobs:
           - crate: hyle
             features: sp1
           - crate: hyle-client-sdk
-            features: rest,indexer,risc0,sp1
+            features: rest,indexer,risc0,sp1,turmoil
           - crate: hyle-contract-sdk
             features: sp1
           - crate: hyle-contract-sdk
@@ -37,7 +37,7 @@ jobs:
         run: cargo build -p ${{ matrix.crate }}
 
       - name: Build doc for crate '${{ matrix.crate }}'
-        run: cargo doc -p ${{ matrix.crate }}
+        run: cargo doc -p ${{ matrix.crate }} --features ${{ matrix.features }}
 
       - name: Compile crate '${{ matrix.crate }}' with specific features
         if: matrix.features != ''
