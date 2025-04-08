@@ -246,22 +246,20 @@ impl ModulesHandler {
             debug!("Starting module {}", module.name);
 
             let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
-            let task = tokio::task::Builder::new()
-                .name(module.name)
-                .spawn(async move {
-                    match module.starter.await {
-                        Ok(_) => tracing::debug!("Module {} exited with no error.", module.name),
-                        Err(e) => {
-                            tracing::error!("Module {} exited with error: {:?}", module.name, e);
-                        }
+            let task = tokio::spawn(async move {
+                match module.starter.await {
+                    Ok(_) => tracing::debug!("Module {} exited with no error.", module.name),
+                    Err(e) => {
+                        tracing::error!("Module {} exited with error: {:?}", module.name, e);
                     }
-                    _ = log_error!(
-                        shutdown_client.send(signal::ShutdownCompleted {
-                            module: module.name.to_string(),
-                        }),
-                        "Sending ShutdownCompleted message"
-                    );
-                })?;
+                }
+                _ = log_error!(
+                    shutdown_client.send(signal::ShutdownCompleted {
+                        module: module.name.to_string(),
+                    }),
+                    "Sending ShutdownCompleted message"
+                );
+            });
 
             if Self::long_running_module(module.name) {
                 self.running_modules.push(task);
@@ -282,29 +280,27 @@ impl ModulesHandler {
         // Sends a trigger event when one task ends (should not, but in case of panic, no event is sent)
         let join_set: Vec<JoinHandle<()>> = self.running_modules.drain(..).collect();
         let started_modules_cloned = self.started_modules.clone();
-        tokio::task::Builder::new()
-            .name("module-panic-failure-listener")
-            .spawn(async move {
-                trace!("Module failure listener - Join set size {}", join_set.len());
-                trace!(
-                    "Module failure listener - Started modules {:?}",
-                    started_modules_cloned.clone()
-                );
-                if join_set.is_empty() {
-                    return;
-                }
-                let (_res, idx, _remaining) = select_all(join_set).await;
-                if let Some(module_name) = started_modules_cloned.get(idx) {
-                    debug!("First module to shutdown {}", module_name);
+        tokio::spawn(async move {
+            trace!("Module failure listener - Join set size {}", join_set.len());
+            trace!(
+                "Module failure listener - Started modules {:?}",
+                started_modules_cloned.clone()
+            );
+            if join_set.is_empty() {
+                return;
+            }
+            let (_res, idx, _remaining) = select_all(join_set).await;
+            if let Some(module_name) = started_modules_cloned.get(idx) {
+                debug!("First module to shutdown {}", module_name);
 
-                    _ = log_error!(
-                        shutdown_client.send(signal::ShutdownCompleted {
-                            module: module_name.to_string(),
-                        }),
-                        "Sending ShutdownCompleted message"
-                    );
-                }
-            })?;
+                _ = log_error!(
+                    shutdown_client.send(signal::ShutdownCompleted {
+                        module: module_name.to_string(),
+                    }),
+                    "Sending ShutdownCompleted message"
+                );
+            }
+        });
 
         let mut shutdown_client = ShutdownClient::new_from_bus(self.bus.new_handle()).await;
 

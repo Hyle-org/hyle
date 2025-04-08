@@ -140,9 +140,7 @@ impl Indexer {
                     .or_default()
                     .push(tx);
 
-                tokio::task::Builder::new()
-                    .name("indexer-recv")
-                    .spawn(async move {
+                tokio::spawn(async move {
                         let (mut ws_tx, mut ws_rx) = socket.split();
 
                         loop {
@@ -179,7 +177,7 @@ impl Indexer {
                                 }
                             }
                         }
-                    })?;
+                    });
             }
         };
         Ok(())

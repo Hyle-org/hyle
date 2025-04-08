@@ -305,20 +305,18 @@ impl Consensus {
             >::get(&self.bus)
             .clone();
             let interval = self.config.consensus.slot_duration;
-            tokio::task::Builder::new()
-                .name("sleep-consensus")
-                .spawn(async move {
-                    debug!(
-                        "⏱️  Sleeping {} milliseconds before starting a new slot",
-                        interval.as_millis()
-                    );
-                    sleep(interval).await;
+            tokio::spawn(async move {
+                debug!(
+                    "⏱️  Sleeping {} milliseconds before starting a new slot",
+                    interval.as_millis()
+                );
+                sleep(interval).await;
 
-                    _ = log_error!(
-                        command_sender.send(ConsensusCommand::StartNewSlot),
-                        "Cannot send StartNewSlot message over channel"
-                    );
-                })?;
+                _ = log_error!(
+                    command_sender.send(ConsensusCommand::StartNewSlot),
+                    "Cannot send StartNewSlot message over channel"
+                );
+            });
             Ok(())
         }
         #[cfg(test)]
