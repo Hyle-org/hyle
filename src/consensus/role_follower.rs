@@ -340,10 +340,12 @@ impl Consensus {
         Ok(())
     }
 
-    fn verify_timestamp(
-        &self,
-        ConsensusProposal { timestamp, .. }: &ConsensusProposal,
-    ) -> Result<()> {
+    fn verify_timestamp(&self, received_cp: &ConsensusProposal) -> Result<()> {
+        if received_cp == &self.bft_round_state.current_proposal {
+            return Ok(());
+        }
+
+        let timestamp = &received_cp.timestamp;
         let previous_timestamp = self.bft_round_state.current_proposal.timestamp.clone();
 
         if previous_timestamp == TimestampMs::ZERO {
