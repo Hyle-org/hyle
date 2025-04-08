@@ -1,5 +1,3 @@
-use std::collections::{HashMap, VecDeque};
-
 use anyhow::{Context, Error};
 use hyle_model::{flatten_blobs, Blob, BlobIndex, HyleOutput, StateCommitment, TxHash};
 use tracing::debug;
@@ -84,7 +82,7 @@ fn parse_blobs(blob_data: &mut Vec<String>) -> Result<Vec<(BlobIndex, Vec<u8>)>,
         blob_data.remove(0).strip_prefix("0x").context("parsing")?,
         16,
     )?;
-    let mut blobs = HashMap::new();
+    let mut blobs = Vec::new();
 
     debug!("blob_number: {}", blob_number);
 
@@ -114,16 +112,16 @@ fn parse_blobs(blob_data: &mut Vec<String>) -> Result<Vec<(BlobIndex, Vec<u8>)>,
         }
 
         debug!("blob data: {:?}", blob);
-        blobs.insert(
+        blobs.push((
             BlobIndex(index),
             Blob {
                 contract_name: contract_name.into(),
                 data: hyle_model::BlobData(blob),
             },
-        );
+        ));
     }
 
-    let blobs = flatten_blobs(blobs.iter());
+    let blobs = flatten_blobs(&blobs);
 
     debug!("Parsed blobs: {:?}", blobs);
 
