@@ -1,6 +1,7 @@
 use std::{
+    collections::BTreeMap,
     fmt::Display,
-    ops::{Add, Sub},
+    ops::{Add, Deref, Sub},
 };
 
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -45,6 +46,46 @@ pub trait DataSized {
     fn estimate_size(&self) -> usize;
 }
 
+/// Blob of the transactions the contract uses to validate its transition
+#[derive(Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
+pub struct IndexedBlobs(pub Vec<(BlobIndex, Blob)>);
+
+impl From<Vec<Blob>> for IndexedBlobs {
+    fn from(vec: Vec<Blob>) -> Self {
+        let mut blobs = BTreeMap::new();
+        for (i, blob) in vec.into_iter().enumerate() {
+            blobs.insert(BlobIndex(i), blob);
+        }
+        IndexedBlobs(blobs.into_iter().collect())
+    }
+}
+
+impl Deref for IndexedBlobs {
+    type Target = Vec<(BlobIndex, Blob)>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl IndexedBlobs {
+    pub fn get(&self, index: &BlobIndex) -> Option<&Blob> {
+        self.0.iter().find(|(i, _)| i == index).map(|(_, b)| b)
+    }
+}
+
+impl Iterator for IndexedBlobs {
+    type Item = (BlobIndex, Blob);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.0.is_empty() {
+            return None;
+        }
+        let (i, b) = self.0.remove(0);
+        Some((i, b))
+    }
+}
+
 /// This struct is passed from the application backend to the contract as an input.
 /// It contains the data that the contract will use to run the blob's action on its state.
 #[derive(Default, Serialize, Deserialize, BorshSerialize, BorshDeserialize, Debug, Clone)]
@@ -53,8 +94,10 @@ pub struct Calldata {
     pub tx_hash: TxHash,
     /// User's identity used for the BlobTransaction
     pub identity: Identity,
-    /// All [Blob]s of the BlobTransaction
-    pub blobs: Vec<Blob>,
+    /// Subset of [Blob]s of the BlobTransaction
+    pub blobs: IndexedBlobs,
+    /// Number of ALL blobs in the transaction. tx_blob_count >= blobs.len()
+    pub tx_blob_count: usize,
     /// Index of the blob corresponding to the contract.
     /// The [Blob] referenced by this index has to be parsed by the contract
     pub index: BlobIndex,
@@ -125,6 +168,8 @@ pub struct TxHash(pub String);
     BorshDeserialize,
     BorshSerialize,
     Copy,
+    PartialOrd,
+    Ord,
 )]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct BlobIndex(pub usize);
@@ -304,6 +349,34 @@ pub struct Blob {
     pub data: BlobData,
 }
 
+#[derive(
+    Default,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Hash,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
+pub struct BlobHash(pub String);
+
+#[cfg(feature = "full")]
+impl Hashed<BlobHash> for Blob {
+    fn hashed(&self) -> BlobHash {
+        use sha3::{Digest, Sha3_256};
+
+        let mut hasher = Sha3_256::new();
+        hasher.update(self.contract_name.0.clone());
+        hasher.update(self.data.0.clone());
+        let hash_bytes = hasher.finalize();
+        BlobHash(hex::encode(hash_bytes))
+    }
+}
+
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct StructuredBlob<Action> {
     pub contract_name: ContractName,
@@ -340,16 +413,42 @@ pub trait ContractAction: Send {
     ) -> Blob;
 }
 
-pub fn flatten_blobs(blobs: &[Blob]) -> Vec<u8> {
+pub fn flatten_blobs_vec(blobs: &[Blob]) -> Vec<(BlobIndex, Vec<u8>)> {
     blobs
         .iter()
-        .flat_map(|b| {
-            b.contract_name
-                .0
-                .as_bytes()
-                .iter()
-                .chain(b.data.0.iter())
-                .copied()
+        .enumerate()
+        .map(|(i, b)| {
+            (
+                BlobIndex(i),
+                b.contract_name
+                    .0
+                    .as_bytes()
+                    .iter()
+                    .chain(b.data.0.iter())
+                    .copied()
+                    .collect::<Vec<u8>>(),
+            )
+        })
+        .collect()
+}
+
+pub fn flatten_blobs<'a, I>(blobs: I) -> Vec<(BlobIndex, Vec<u8>)>
+where
+    I: IntoIterator<Item = &'a (BlobIndex, Blob)> + 'a,
+{
+    blobs
+        .into_iter()
+        .map(|(i, b)| {
+            (
+                i.to_owned(),
+                b.contract_name
+                    .0
+                    .as_bytes()
+                    .iter()
+                    .chain(b.data.0.iter())
+                    .copied()
+                    .collect::<Vec<u8>>(),
+            )
         })
         .collect()
 }
@@ -428,20 +527,40 @@ pub enum OnchainEffect {
 )]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct HyleOutput {
+    /// The version of the HyleOutput. This is unchecked for now.
     pub version: u32,
+    /// The initial state of the contract. This is the state before the transaction is executed.
     pub initial_state: StateCommitment,
+    /// The state of the contract after the transaction is executed.
     pub next_state: StateCommitment,
+    /// The identity used to execute the transaction. This is the same as the one used in the
+    /// BlobTransaction.
     pub identity: Identity,
+
+    /// The index of the blob being executed.
     pub index: BlobIndex,
-    pub blobs: Vec<u8>,
+    /// The blobs that were used by the contract. It has to be a subset of the transactions blobs
+    /// It can be the complete list of blobs if the contract used all of them.
+    /// the Vec<u8> is the contract name as bytes concatenated with the blob data.
+    pub blobs: Vec<(BlobIndex, Vec<u8>)>,
+    /// Number of blobs in the transaction. tx_blob_count >= blobs.len()
+    pub tx_blob_count: usize,
+
+    /// TxHash of the BlobTransaction.
     pub tx_hash: TxHash, // Technically redundant with identity + blobs hash
+
+    /// Whether the execution was successful or not. If false, the BlobTransaction will be
+    /// settled as failed.
     pub success: bool,
 
-    // Optional - if empty, these won't be checked, but also can't be used inside the program.
+    /// Optional - if empty, these won't be checked, but also can't be used inside the program.
     pub tx_ctx: Option<TxContext>,
 
     pub onchain_effects: Vec<OnchainEffect>,
 
+    /// Arbitrary data that could be used by indexers or other tools. Some contracts write a utf-8
+    /// string here, but it can be anything.
+    /// Note: As this data is generated by the contract in the zkvm, this can be trusted.
     pub program_outputs: Vec<u8>,
 }
 

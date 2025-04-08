@@ -14,6 +14,7 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       matrix:
         toolchain:
@@ -65,6 +66,7 @@ jobs:
   coverage:
     name: Unit tests coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       matrix:
         toolchain:
@@ -97,6 +99,7 @@ jobs:
   features_flags:
     name: Build with different feature flags
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       matrix:
         toolchain:
@@ -121,6 +124,7 @@ jobs:
     name: Check unused dependencies
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Machete

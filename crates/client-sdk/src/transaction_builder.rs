@@ -329,8 +329,9 @@ impl ContractRunner {
         self.commitment_metadata.get_or_init(|| commitment_metadata);
         self.calldata.get_or_init(|| Calldata {
             identity: self.identity.clone(),
-            blobs,
             index: self.index,
+            tx_blob_count: blobs.len(),
+            blobs: blobs.into(),
             tx_hash,
             tx_ctx: tx_context,
             private_input: self.private_input.clone().unwrap_or_default(),
