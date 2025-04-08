@@ -1317,10 +1317,10 @@ mod test {
         assert_json_include!(
             actual: all_txs.json::<serde_json::Value>(),
             expected: json!([
-                { "index": 0, "transaction_type": "BlobTransaction", "transaction_status": "Success" },
-                { "index": 1, "transaction_type": "BlobTransaction", "transaction_status": "Success" },
+                { "index": 5, "transaction_type": "BlobTransaction", "transaction_status": "Sequenced" },
                 { "index": 2, "transaction_type": "BlobTransaction", "transaction_status": "Success" },
-                { "index": 5, "transaction_type": "BlobTransaction", "transaction_status": "Sequenced" }
+                { "index": 1, "transaction_type": "BlobTransaction", "transaction_status": "Success" },
+                { "index": 0, "transaction_type": "BlobTransaction", "transaction_status": "Success" },
             ])
         );
 
@@ -1355,10 +1355,10 @@ mod test {
             actual: proofs_response.json::<serde_json::Value>(),
             expected: json!([
                 { "index": 3, "transaction_type": "ProofTransaction", "transaction_status": "Success", "block_hash": block_2_hash },
-                { "index": 3, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
-                { "index": 4, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
+                { "index": 7, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
                 { "index": 6, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
-                { "index": 7, "transaction_type": "ProofTransaction", "transaction_status": "Success" }
+                { "index": 4, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
+                { "index": 3, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
             ])
         );
 
@@ -1367,10 +1367,10 @@ mod test {
         assert_json_include!(
             actual: proofs_by_height.json::<serde_json::Value>(),
             expected: json!([
-                { "index": 3, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
-                { "index": 4, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
+                { "index": 7, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
                 { "index": 6, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
-                { "index": 7, "transaction_type": "ProofTransaction", "transaction_status": "Success" }
+                { "index": 4, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
+                { "index": 3, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
             ])
         );
 
