@@ -37,6 +37,11 @@ jobs:
         run: cargo build -p ${{ matrix.crate }}
 
       - name: Build doc for crate '${{ matrix.crate }}'
+        if: matrix.features == ''
+        run: cargo doc -p ${{ matrix.crate }}
+
+      - name: Build doc for crate '${{ matrix.crate }}' with features
+        if: matrix.features != ''
         run: cargo doc -p ${{ matrix.crate }} --features ${{ matrix.features }}
 
       - name: Compile crate '${{ matrix.crate }}' with specific features
