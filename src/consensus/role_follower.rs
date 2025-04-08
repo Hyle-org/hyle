@@ -11,7 +11,7 @@ use crate::{
     mempool::MempoolNetMessage,
     model::{Hashed, Signed, ValidatorPublicKey},
     p2p::P2PCommand,
-    utils::crypto::BlstCrypto,
+    utils::{conf::TimestampCheck, crypto::BlstCrypto},
 };
 use anyhow::{bail, Context, Result};
 use hyle_model::{
@@ -340,13 +340,11 @@ impl Consensus {
         Ok(())
     }
 
-    fn verify_timestamp(&self, received_cp: &ConsensusProposal) -> Result<()> {
-        if received_cp == &self.bft_round_state.current_proposal {
-            return Ok(());
-        }
-
-        let timestamp = &received_cp.timestamp;
-        let previous_timestamp = self.bft_round_state.current_proposal.timestamp.clone();
+    fn verify_timestamp(
+        &self,
+        ConsensusProposal { timestamp, .. }: &ConsensusProposal,
+    ) -> Result<()> {
+        let previous_timestamp = self.bft_round_state.parent_timestamp.clone();
 
         if previous_timestamp == TimestampMs::ZERO {
             warn!(
@@ -360,22 +358,38 @@ impl Consensus {
             + (self.config.consensus.slot_duration * 2
                 + TimeoutState::TIMEOUT_SECS * (self.bft_round_state.view as u32));
 
-        if timestamp <= &previous_timestamp {
-            bail!(
-                "Timestamp {} too old (should be > {}, {} ms too old)",
-                timestamp,
-                previous_timestamp,
-                (previous_timestamp.clone() - timestamp.clone()).as_millis()
-            );
-        }
+        let monotonic_check = || {
+            if timestamp <= &previous_timestamp {
+                bail!(
+                    "Timestamp {} too old (should be > {}, {} ms too old)",
+                    timestamp,
+                    previous_timestamp,
+                    (previous_timestamp.clone() - timestamp.clone()).as_millis()
+                );
+            }
 
-        if &next_max_timestamp < timestamp {
-            bail!(
-                "Timestamp {} too late (should be < {}, exceeded by {} ms)",
-                timestamp,
-                next_max_timestamp,
-                (timestamp.clone() - next_max_timestamp.clone()).as_millis()
-            );
+            Ok(())
+        };
+
+        match self.config.consensus.timestamp_checks {
+            TimestampCheck::NoCheck => {
+                return Ok(());
+            }
+            TimestampCheck::Monotonic => {
+                monotonic_check()?;
+            }
+            TimestampCheck::Full => {
+                monotonic_check()?;
+
+                if &next_max_timestamp < timestamp {
+                    bail!(
+                        "Timestamp {} too late (should be < {}, exceeded by {} ms)",
+                        timestamp,
+                        next_max_timestamp,
+                        (timestamp.clone() - next_max_timestamp.clone()).as_millis()
+                    );
+                }
+            }
         }
 
         trace!(

@@ -19,7 +19,7 @@ use tracing::info;
 use hyle::{
     model::*,
     rest::client::{IndexerApiHttpClient, NodeApiHttpClient},
-    utils::conf::Conf,
+    utils::conf::{Conf, TimestampCheck},
 };
 use hyle_contract_sdk::{
     flatten_blobs, BlobIndex, ContractName, HyleOutput, Identity, ProgramId, StateCommitment,
@@ -249,8 +249,20 @@ impl E2ECtx {
         self.clients.push(client);
         Ok(self.clients.last().unwrap())
     }
-
     pub async fn new_multi_with_indexer(count: usize, slot_duration_ms: u64) -> Result<E2ECtx> {
+        Self::new_multi_with_indexer_and_timestamp_checks(
+            count,
+            slot_duration_ms,
+            TimestampCheck::Full,
+        )
+        .await
+    }
+
+    pub async fn new_multi_with_indexer_and_timestamp_checks(
+        count: usize,
+        slot_duration_ms: u64,
+        timestamp_checks: TimestampCheck,
+    ) -> Result<E2ECtx> {
         std::env::set_var("RISC0_DEV_MODE", "1");
 
         let pg = Self::init().await;

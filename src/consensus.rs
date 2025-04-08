@@ -20,6 +20,7 @@ use crate::{
 };
 use anyhow::{anyhow, bail, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
+use hyle_model::utils::TimestampMs;
 use hyle_net::clock::TimestampMsClock;
 use metrics::ConsensusMetrics;
 use role_follower::FollowerState;
@@ -101,6 +102,7 @@ pub struct BFTRoundState {
     slot: Slot,
     view: View,
     parent_hash: ConsensusProposalHash,
+    parent_timestamp: TimestampMs,
 
     current_proposal: ConsensusProposal,
     last_cut_seen: Cut,
@@ -202,6 +204,8 @@ impl Consensus {
                 self.bft_round_state.slot += 1;
                 self.bft_round_state.view = 0;
                 self.bft_round_state.parent_hash = self.bft_round_state.current_proposal.hashed();
+                self.bft_round_state.parent_timestamp =
+                    self.bft_round_state.current_proposal.timestamp.clone();
 
                 // Store the last commited QC to avoid issues when parsing Commit messages before Prepare
                 self.bft_round_state.follower.buffered_quorum_certificate = match ticket {
