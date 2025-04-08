@@ -15,7 +15,7 @@ members = [
   "crates/hyle-loadtest",
   "crates/hyle-model",
   "crates/hyle-verifiers",
-  ".",
+  "crates/noir-tools",
 ]
 default-members = [
   "crates/contracts",

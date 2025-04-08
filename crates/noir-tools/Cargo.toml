@@ -1,0 +1,13 @@
+[package]
+name = "hyle-noir-tools"
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+hex = "0.4"
+hyle-verifiers = { workspace = true }
+tracing = { version = "0.1", features = ["log"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
