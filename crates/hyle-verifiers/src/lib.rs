@@ -221,7 +221,7 @@ mod tests {
                             "3f368bf90c71946fc7b0cde9161ace42985d235f.ecdsa_secp256r1".to_owned()
                         ),
                         index: BlobIndex(0),
-                        blobs: vec![1, 1, 1, 1, 1],
+                        blobs: vec![(BlobIndex(0), vec![1, 1, 1, 1, 1])],
                         success: true,
                         tx_hash: TxHash::default(), // TODO
                         tx_ctx: None,

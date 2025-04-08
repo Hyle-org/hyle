@@ -881,7 +881,7 @@ impl NodeState {
 
         // blob_hash verification
         let extracted_blobs_hash = BlobsHash::from_concatenated(&hyle_output.blobs);
-        if extracted_blobs_hash != unsettled_tx.blobs_hash {
+        if !unsettled_tx.blobs_hash.includes_all(&extracted_blobs_hash) {
             bail!(
                 "Proof blobs hash '{}' do not correspond to BlobTx blobs hash '{}'.",
                 extracted_blobs_hash,

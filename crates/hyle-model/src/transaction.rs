@@ -1,7 +1,6 @@
 use std::sync::RwLock;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use derive_more::derive::Display;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use strum::IntoDiscriminant;
@@ -302,7 +301,9 @@ impl Hashed<TxHash> for BlobTransaction {
         }
         let mut hasher = Sha3_256::new();
         hasher.update(self.identity.0.as_bytes());
-        hasher.update(self.blobs_hash().0);
+        for blob in self.blobs.iter() {
+            hasher.update(blob.hashed().0);
+        }
         let hash_bytes = hasher.finalize();
         let tx_hash = TxHash(hex::encode(hash_bytes));
         *self.hash_cache.write().unwrap() = Some(tx_hash.clone());
@@ -351,7 +352,6 @@ impl BlobTransaction {
 
 #[derive(
     Debug,
-    Display,
     Default,
     Clone,
     Serialize,
@@ -363,22 +363,50 @@ impl BlobTransaction {
     BorshSerialize,
     BorshDeserialize,
 )]
-pub struct BlobsHash(pub String);
+pub struct BlobsHash(pub Vec<(BlobIndex, BlobHash)>);
 
 impl BlobsHash {
     pub fn new(s: &str) -> BlobsHash {
-        BlobsHash(s.into())
+        BlobsHash(vec![(BlobIndex(0), BlobHash(s.into()))])
     }
 
     pub fn from_vec(vec: &[Blob]) -> BlobsHash {
         Self::from_concatenated(&flatten_blobs(vec))
     }
 
-    pub fn from_concatenated(vec: &Vec<u8>) -> BlobsHash {
-        let mut hasher = Sha3_256::new();
-        hasher.update(vec.as_slice());
-        let hash_bytes = hasher.finalize();
-        BlobsHash(hex::encode(hash_bytes))
+    pub fn from_concatenated(vec: &[(BlobIndex, Vec<u8>)]) -> BlobsHash {
+        BlobsHash(
+            vec.iter()
+                .map(|(index, blob)| {
+                    let mut hasher = Sha3_256::new();
+                    hasher.update(blob);
+                    let hash_bytes = hasher.finalize();
+                    (*index, BlobHash(hex::encode(hash_bytes)))
+                })
+                .collect(),
+        )
+    }
+
+    pub fn includes_all(&self, other: &BlobsHash) -> bool {
+        for (index, hash) in other.0.iter() {
+            if !self
+                .0
+                .iter()
+                .any(|(other_index, other_hash)| index == other_index && hash == other_hash)
+            {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+impl std::fmt::Display for BlobsHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (BlobIndex(index), BlobHash(hash)) in self.0.iter() {
+            write!(f, "[{}]: {}", index, hash)?;
+        }
+        Ok(())
     }
 }
 

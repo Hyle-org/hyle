@@ -904,7 +904,7 @@ mod test {
         blob_tx_hash: TxHash,
         initial_state: StateCommitment,
         next_state: StateCommitment,
-        blobs: Vec<u8>,
+        blobs: Vec<(BlobIndex, Vec<u8>)>,
     ) -> Transaction {
         let proof = ProofData(initial_state.0.clone());
         Transaction {
@@ -999,7 +999,10 @@ mod test {
             blob_transaction_hash.clone(),
             initial_state.clone(),
             next_state.clone(),
-            vec![99, 49, 1, 2, 3, 99, 50, 1, 2, 3],
+            vec![
+                (BlobIndex(0), vec![99, 49, 1, 2, 3]),
+                (BlobIndex(1), vec![99, 50, 1, 2, 3]),
+            ],
         );
 
         let proof_tx_2 = new_proof_tx(
@@ -1009,7 +1012,10 @@ mod test {
             blob_transaction_hash.clone(),
             initial_state.clone(),
             next_state.clone(),
-            vec![99, 49, 1, 2, 3, 99, 50, 1, 2, 3],
+            vec![
+                (BlobIndex(0), vec![99, 49, 1, 2, 3]),
+                (BlobIndex(1), vec![99, 50, 1, 2, 3]),
+            ],
         );
 
         let other_blob_transaction = new_blob_tx(
@@ -1026,7 +1032,10 @@ mod test {
             other_blob_transaction_hash.clone(),
             StateCommitment(vec![7, 7, 7]),
             StateCommitment(vec![9, 9, 9]),
-            vec![99, 50, 1, 2, 3, 99, 49, 1, 2, 3],
+            vec![
+                (BlobIndex(0), vec![99, 50, 1, 2, 3]),
+                (BlobIndex(1), vec![99, 49, 1, 2, 3]),
+            ],
         );
         let proof_tx_4 = new_proof_tx(
             Identity::new("test.c1"),
@@ -1035,7 +1044,10 @@ mod test {
             other_blob_transaction_hash.clone(),
             StateCommitment(vec![8, 8]),
             StateCommitment(vec![9, 9]),
-            vec![99, 50, 1, 2, 3, 99, 49, 1, 2, 3],
+            vec![
+                (BlobIndex(0), vec![99, 50, 1, 2, 3]),
+                (BlobIndex(1), vec![99, 49, 1, 2, 3]),
+            ],
         );
 
         let txs = vec![
@@ -1097,7 +1109,10 @@ mod test {
             blob_transaction_hash_wd.clone(),
             initial_state_wd.clone(),
             next_state_wd.clone(),
-            vec![99, 49, 1, 2, 3, 99, 50, 1, 2, 3],
+            vec![
+                (BlobIndex(0), vec![99, 49, 1, 2, 3]),
+                (BlobIndex(1), vec![99, 50, 1, 2, 3]),
+            ],
         );
 
         let register_tx_1_wd = Transaction {
