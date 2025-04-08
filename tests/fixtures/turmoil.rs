@@ -11,8 +11,8 @@ use hyle::{
     entrypoint::main_process,
     utils::{conf::Conf, crypto::BlstCrypto},
 };
-use hyle_model::Contract;
 use hyle_net::net::Sim;
+use rand::{rngs::StdRng, RngCore, SeedableRng};
 use tokio::sync::Mutex;
 use tracing::info;
 
@@ -33,43 +33,50 @@ impl TurmoilNodeProcess {
 
         Ok(())
     }
+
+    pub fn from(conf: &Conf) -> TurmoilNodeProcess {
+        let client =
+            NodeApiHttpClient::new(format!("http://{}:{}", conf.id, &conf.rest_server_port))
+                .expect("Creating client");
+        TurmoilNodeProcess {
+            conf: conf.clone(),
+            client: client.with_retry(3, Duration::from_millis(1000)),
+        }
+    }
 }
 
-impl ConfMaker {
-    pub fn build_turmoil(&mut self, prefix: &str) -> Conf {
-        self.i += 1;
+#[derive(Clone)]
+pub struct TurmoilCtx {
+    pub nodes: Vec<TurmoilNodeProcess>,
+    slot_duration: Duration,
+    seed: u64,
+    pub rng: StdRng,
+}
 
+impl TurmoilCtx {
+    pub fn build_conf(seed: u64, i: usize) -> Conf {
         let mut node_conf = Conf {
-            id: if prefix == "single-node" {
-                prefix.into()
-            } else {
-                format!("{}-{}", prefix, self.i)
-            },
-            ..self.default.clone()
+            id: format!("node-{}", i),
+            ..ConfMaker::default().default
         };
         node_conf.hostname = node_conf.id.clone();
         node_conf.data_directory.pop();
         node_conf
             .data_directory
-            .push(format!("data_{}", node_conf.id));
+            .push(format!("data_{}_{}", seed, node_conf.id));
         node_conf
     }
-}
 
-pub struct TurmoilCtx {
-    pub nodes: Vec<TurmoilNodeProcess>,
-    slot_duration: Duration,
-}
-
-impl TurmoilCtx {
-    fn build_nodes(count: usize, conf_maker: &mut ConfMaker) -> Vec<TurmoilNodeProcess> {
+    fn build_nodes(count: usize, slot_duration: Duration, seed: u64) -> Vec<TurmoilNodeProcess> {
         let mut nodes = Vec::new();
         let mut peers = Vec::new();
         let mut confs = Vec::new();
         let mut genesis_stakers = std::collections::HashMap::new();
 
-        for _ in 0..count {
-            let mut node_conf = conf_maker.build_turmoil("node");
+        for i in 0..count {
+            let mut node_conf = Self::build_conf(seed, i + 1);
+            _ = std::fs::remove_dir_all(&node_conf.data_directory);
+            node_conf.consensus.slot_duration = slot_duration;
             node_conf.p2p.peers = peers.clone();
             genesis_stakers.insert(node_conf.id.clone(), 100);
             peers.push(format!("{}:{}", node_conf.id, node_conf.p2p.server_port));
@@ -78,38 +85,56 @@ impl TurmoilCtx {
 
         for node_conf in confs.iter_mut() {
             node_conf.genesis.stakers = genesis_stakers.clone();
-            let conf_clone = node_conf.clone();
-            let client = NodeApiHttpClient::new(format!(
-                "http://{}:{}",
-                conf_clone.id, &conf_clone.rest_server_port
-            ))
-            .expect("Creating client");
-            let node = TurmoilNodeProcess {
-                conf: conf_clone.clone(),
-                client: client.clone(),
-            };
-
+            let node = TurmoilNodeProcess::from(node_conf);
             nodes.push(node);
         }
         nodes
     }
-    pub fn new_multi(count: usize, slot_duration_ms: u64) -> Result<TurmoilCtx> {
+    pub fn new_multi(
+        count: usize,
+        slot_duration_ms: u64,
+        seed: u64,
+        sim: &mut Sim<'_>,
+    ) -> Result<TurmoilCtx> {
         std::env::set_var("RISC0_DEV_MODE", "1");
 
-        let mut conf_maker = ConfMaker::default();
-        conf_maker.default.consensus.slot_duration = Duration::from_millis(slot_duration_ms);
+        let rng = StdRng::seed_from_u64(seed);
 
-        let nodes = Self::build_nodes(count, &mut conf_maker);
+        let slot_duration = Duration::from_millis(slot_duration_ms);
+
+        let nodes = Self::build_nodes(count, slot_duration, seed);
+
+        _ = Self::setup_simulation(nodes.as_slice(), sim);
 
         info!("🚀 E2E test environment is ready!");
+
         Ok(TurmoilCtx {
             nodes,
             slot_duration: Duration::from_millis(slot_duration_ms),
+            seed,
+            rng,
         })
     }
 
-    pub fn setup_simulation(&self, sim: &mut Sim<'_>) -> anyhow::Result<()> {
-        let mut nodes = self.nodes.clone();
+    pub fn add_node_to_simulation(&mut self, sim: &mut Sim<'_>) -> Result<NodeApiHttpClient> {
+        let mut node_conf = Self::build_conf(self.seed, self.nodes.len() + 1);
+        node_conf.consensus.slot_duration = self.slot_duration;
+        node_conf.p2p.peers = self
+            .nodes
+            .iter()
+            .map(|node| format!("{}:{}", node.conf.hostname, node.conf.p2p.server_port))
+            .collect();
+
+        let node = TurmoilNodeProcess::from(&node_conf);
+
+        _ = Self::setup_simulation(&[node.clone()], sim);
+
+        self.nodes.push(node);
+        Ok(self.nodes.last().unwrap().client.clone())
+    }
+
+    fn setup_simulation(nodes: &[TurmoilNodeProcess], sim: &mut Sim<'_>) -> anyhow::Result<()> {
+        let mut nodes = nodes.to_vec();
         nodes.reverse();
 
         let turmoil_node = nodes.pop().unwrap();
@@ -151,11 +176,45 @@ impl TurmoilCtx {
         }
         Ok(())
     }
+
+    pub fn clean(&self) -> Result<()> {
+        // Cleaning
+        for node in self.nodes.iter() {
+            _ = std::fs::remove_dir_all(node.conf.data_directory.clone());
+        }
+
+        Ok(())
+    }
+
     pub fn client(&self) -> NodeApiHttpClient {
         self.nodes.first().unwrap().client.clone()
     }
 
-    pub async fn get_contract(&self, name: &str) -> Result<Contract> {
-        self.client().get_contract(&name.into()).await
+    pub fn conf(&self, n: u64) -> Conf {
+        self.nodes.get((n - 1) as usize).unwrap().clone().conf
+    }
+
+    /// Generate a random number between specified `from` and `to`
+    pub fn random_between(&mut self, from: u64, to: u64) -> u64 {
+        from + (self.rng.next_u64() % (to - from + 1))
+    }
+
+    /// Pick randomly a node id of the current context
+    pub fn random_id(&mut self) -> String {
+        let random_n = self.random_between(1, self.nodes.len() as u64);
+        self.conf(random_n).id
+    }
+
+    /// Pick randomly two **different** node ids of the current context
+    pub fn random_id_pair(&mut self) -> (String, String) {
+        let from = self.random_id();
+        let to = loop {
+            let candidate = self.random_id();
+            if candidate != from {
+                break candidate;
+            }
+        };
+
+        (from, to)
     }
 }
