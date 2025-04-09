@@ -235,29 +235,27 @@ where
         let ping_sender = self.ping_sender.clone();
         let pool_sender = self.pool_sender.clone();
         let cloned_peer_ip = peer_ip.clone();
-        let abort = tokio::task::Builder::new()
-            .name("peer-stream-abort")
-            .spawn(async move {
-                while let Some(msg) = receiver.next().await {
-                    debug!("Received message {:?}", &msg);
-                    match msg {
-                        Ok(TcpMessage::Ping) => {
-                            _ = ping_sender.send(cloned_peer_ip.clone()).await;
-                        }
-                        Ok(TcpMessage::Data(data)) => {
-                            _ = pool_sender
-                                .send(TcpEvent {
-                                    dest: cloned_peer_ip.clone(),
-                                    data: Box::new(data),
-                                })
-                                .await;
-                        }
-                        Err(_) => {
-                            error!("Decoding message in peer event loop");
-                        }
+        let abort = tokio::spawn(async move {
+            while let Some(msg) = receiver.next().await {
+                debug!("Received message {:?}", &msg);
+                match msg {
+                    Ok(TcpMessage::Ping) => {
+                        _ = ping_sender.send(cloned_peer_ip.clone()).await;
+                    }
+                    Ok(TcpMessage::Data(data)) => {
+                        _ = pool_sender
+                            .send(TcpEvent {
+                                dest: cloned_peer_ip.clone(),
+                                data: Box::new(data),
+                            })
+                            .await;
+                    }
+                    Err(_) => {
+                        error!("Decoding message in peer event loop");
                     }
                 }
-            })?;
+            }
+        });
 
         tracing::debug!("Peer {} connected", peer_ip);
         // Store peer in the list.
