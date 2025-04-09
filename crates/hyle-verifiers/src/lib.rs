@@ -5,7 +5,6 @@ use std::io::Read;
 
 use anyhow::{bail, Context, Error};
 use hyle_model::{HyleOutput, ProgramId};
-use noir_utils::{deflatten_fields, extract_public_inputs};
 use rand::Rng;
 
 #[cfg(feature = "sp1")]
