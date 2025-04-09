@@ -55,6 +55,8 @@ pub fn noir_proof_verifier(proof: &[u8], image_id: &[u8]) -> Result<Vec<HyleOutp
     std::fs::write(proof_path, proof)?;
     std::fs::write(vk_path, image_id)?;
 
+    debug!("Proof path: {proof_path} VK path: {vk_path} Output path: {output_path}");
+
     // Verifying proof
     let verification_output = std::process::Command::new("bb")
         .arg("verify")
@@ -71,37 +73,14 @@ pub fn noir_proof_verifier(proof: &[u8], image_id: &[u8]) -> Result<Vec<HyleOutp
         );
     }
 
-    // // Extracting outputs
-    // let public_outputs_output = std::process::Command::new("bb")
-    //     .arg("OLD_API")
-    //     .arg("proof_as_fields")
-    //     .arg("-p")
-    //     .arg(proof_path)
-    //     .arg("-k")
-    //     .arg(vk_path)
-    //     .arg("-o")
-    //     .arg(output_path)
-    //     .output()?;
-    //
-    debug!("Proof path: {proof_path} VK path: {vk_path} Output path: {output_path}");
-    //
-    // if !public_outputs_output.status.success() {
-    //     bail!(
-    //         "Could not extract output from Noir proof: {}",
-    //         String::from_utf8_lossy(&verification_output.stderr)
-    //     );
-    // }
-
-    // // Reading output
+    // Extracting outputs
     let mut file = std::fs::File::open(proof_path).context("Failed to open output file")?;
     let mut output = Vec::new();
     file.read_to_end(&mut output)
         .context("Failed to read output file content")?;
 
-    // let mut public_outputs: Vec<String> = serde_json::from_str(&output_json)?;
-    let mut public_outputs = deflatten_fields(extract_public_inputs(&output));
     // TODO: support multi-output proofs.
-    let hyle_output = crate::noir_utils::parse_noir_output(&mut public_outputs)?;
+    let hyle_output = crate::noir_utils::parse_noir_output(&output)?;
 
     // Delete proof_path, vk_path, output_path
     let _ = std::fs::remove_file(proof_path);

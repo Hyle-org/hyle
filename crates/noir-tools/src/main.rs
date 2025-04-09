@@ -47,11 +47,7 @@ fn main() -> std::io::Result<()> {
     let mut output = Vec::new();
     file.read_to_end(&mut output)?;
 
-    println!("Output length: {}", output.len());
-
-    let mut public_outputs = deflatten_fields(extract_public_inputs(&output));
-
-    let ho = hyle_verifiers::noir_utils::parse_noir_output(&mut public_outputs).map_err(|e| {
+    let ho = hyle_verifiers::noir_utils::parse_noir_output(&output).map_err(|e| {
         eprintln!("Error parsing output: {}", e);
         std::io::Error::new(std::io::ErrorKind::InvalidData, e)
     })?;

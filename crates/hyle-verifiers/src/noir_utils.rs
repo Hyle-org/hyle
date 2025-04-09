@@ -25,16 +25,19 @@ pub fn deflatten_fields(flattened_fields: &[u8]) -> Vec<String> {
     result
 }
 
-pub fn parse_noir_output(vector: &mut Vec<String>) -> Result<HyleOutput, Error> {
+pub fn parse_noir_output(output: &[u8]) -> Result<HyleOutput, Error> {
+    // let mut public_outputs: Vec<String> = serde_json::from_str(&output_json)?;
+    let mut vector = deflatten_fields(extract_public_inputs(output));
+
     let version = u32::from_str_radix(&vector.remove(0), 16)?;
     debug!("Parsed version: {}", version);
-    let initial_state = parse_array(vector)?;
-    let next_state = parse_array(vector)?;
-    let identity = parse_variable_string(vector)?;
-    let tx_hash = parse_sized_string(vector, 64)?;
+    let initial_state = parse_array(&mut vector)?;
+    let next_state = parse_array(&mut vector)?;
+    let identity = parse_variable_string(&mut vector)?;
+    let tx_hash = parse_sized_string(&mut vector, 64)?;
     let index = u32::from_str_radix(&vector.remove(0), 16)?;
     debug!("Parsed index: {}", index);
-    let blobs = parse_blobs(vector)?;
+    let blobs = parse_blobs(&mut vector)?;
     let tx_blob_count = usize::from_str_radix(&vector.remove(0), 16)?;
     debug!("Parsed tx_blob_count: {}", tx_blob_count);
     let success = u32::from_str_radix(&vector.remove(0), 16)? == 1;
