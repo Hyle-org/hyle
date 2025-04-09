@@ -39,6 +39,23 @@ pub fn risc0_proof_verifier(
 /// At present, we are using binary to facilitate the integration of the Noir verifier.
 /// This is not meant to be a permanent solution.
 pub fn noir_proof_verifier(proof: &[u8], image_id: &[u8]) -> Result<Vec<HyleOutput>, Error> {
+    // Define a struct with Drop implementation for cleanup
+    struct TempFiles {
+        proof_path: String,
+        vk_path: String,
+    }
+
+    impl Drop for TempFiles {
+        fn drop(&mut self) {
+            if std::env::var("HYLE_KEEP_NOIR_TMP_FILES").unwrap_or_else(|_| "false".to_string())
+                != "true"
+            {
+                let _ = std::fs::remove_file(&self.proof_path);
+                let _ = std::fs::remove_file(&self.vk_path);
+            }
+        }
+    }
+
     let mut rng = rand::rng();
     let salt: [u8; 16] = rng.random();
     let mut salt_hex = String::with_capacity(salt.len() * 2);
@@ -46,22 +63,28 @@ pub fn noir_proof_verifier(proof: &[u8], image_id: &[u8]) -> Result<Vec<HyleOutp
         write!(salt_hex, "{:02x}", b).unwrap();
     }
 
-    let proof_path = &format!("/tmp/noir-proof-{salt_hex}");
-    let vk_path = &format!("/tmp/noir-vk-{salt_hex}");
+    // Create the temp files struct which will auto-clean on function exit
+    let temp_files = TempFiles {
+        proof_path: format!("/tmp/noir-proof-{salt_hex}"),
+        vk_path: format!("/tmp/noir-vk-{salt_hex}"),
+    };
 
     // Write proof and publicKey to files
-    std::fs::write(proof_path, proof)?;
-    std::fs::write(vk_path, image_id)?;
+    std::fs::write(&temp_files.proof_path, proof)?;
+    std::fs::write(&temp_files.vk_path, image_id)?;
 
-    debug!("Proof path: {proof_path} VK path: {vk_path}");
+    debug!(
+        "Proof path: {} VK path: {}",
+        temp_files.proof_path, temp_files.vk_path
+    );
 
     // Verifying proof
     let verification_output = std::process::Command::new("bb")
         .arg("verify")
         .arg("-p")
-        .arg(proof_path)
+        .arg(&temp_files.proof_path)
         .arg("-k")
-        .arg(vk_path)
+        .arg(&temp_files.vk_path)
         .output()?;
 
     if !verification_output.status.success() {
@@ -72,7 +95,8 @@ pub fn noir_proof_verifier(proof: &[u8], image_id: &[u8]) -> Result<Vec<HyleOutp
     }
 
     // Extracting outputs
-    let mut file = std::fs::File::open(proof_path).context("Failed to open proof file")?;
+    let mut file =
+        std::fs::File::open(&temp_files.proof_path).context("Failed to open proof file")?;
     let mut proof = Vec::new();
     file.read_to_end(&mut proof)
         .context("Failed to read proof file content")?;
@@ -80,13 +104,10 @@ pub fn noir_proof_verifier(proof: &[u8], image_id: &[u8]) -> Result<Vec<HyleOutp
     // TODO: support multi-output proofs.
     let hyle_output = crate::noir_utils::parse_noir_output(&proof)?;
 
-    // Delete proof_path, vk_path, output_path
-    let _ = std::fs::remove_file(proof_path);
-    let _ = std::fs::remove_file(vk_path);
-
     tracing::info!("✅ Noir proof verified.");
 
     Ok(vec![hyle_output])
+    // temp_files is automatically dropped here, cleaning up all files
 }
 
 /// The following environment variables are used to configure the prover:
