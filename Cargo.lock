@@ -3039,7 +3039,6 @@ dependencies = [
 name = "hyle-noir-tools"
 version = "0.13.0-rc.4"
 dependencies = [
- "hex",
  "hyle-verifiers",
  "tracing",
  "tracing-subscriber 0.3.19",
