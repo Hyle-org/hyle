@@ -4,7 +4,7 @@ use std::fmt::Write;
 use std::io::Read;
 
 use anyhow::{bail, Context, Error};
-use hyle_model::{HyleOutput, ProgramId};
+use hyle_model::{HyleOutput, ProgramId, ProofData, Verifier};
 use rand::Rng;
 
 #[cfg(feature = "sp1")]
@@ -13,156 +13,219 @@ use tracing::debug;
 
 pub mod noir_utils;
 
-pub mod risc0 {
-    pub use risc0_zkvm::serde::from_slice;
+pub fn verify(
+    verifier: &Verifier,
+    proof: &ProofData,
+    program_id: &ProgramId,
+) -> Result<Vec<HyleOutput>, Error> {
+    match verifier.0.as_str() {
+        hyle_model::verifiers::RISC0_1 => risc0_1::verify(proof, program_id),
+        hyle_model::verifiers::NOIR => noir::verify(proof, program_id),
+        #[cfg(feature = "sp1")]
+        hyle_model::verifiers::SP1_4 => sp1_4::verify(&proof.0, &program_id.0),
+        _ => Err(anyhow::anyhow!("{} verifier not implemented yet", verifier)),
+    }
 }
 
-pub fn risc0_proof_verifier(
-    encoded_receipt: &[u8],
-    image_id: &[u8],
-) -> Result<risc0_zkvm::Journal, Error> {
-    let receipt = borsh::from_slice::<risc0_zkvm::Receipt>(encoded_receipt)
-        .context("Error while decoding Risc0 proof's receipt")?;
+pub mod risc0_1 {
+    use super::*;
 
-    let image_bytes: risc0_zkvm::sha::Digest =
-        image_id.try_into().context("Invalid Risc0 image ID")?;
+    pub type Risc0ProgramId = [u8; 32];
+    pub type Risc0Journal = Vec<u8>;
 
-    receipt
-        .verify(image_bytes)
-        .context("Risc0 proof verification failed")?;
+    pub fn verify(proof: &ProofData, program_id: &ProgramId) -> Result<Vec<HyleOutput>, Error> {
+        let journal = risc0_proof_verifier(&proof.0, &program_id.0)?;
+        // First try to decode it as a single HyleOutput
+        Ok(match journal.decode::<HyleOutput>() {
+            Ok(ho) => vec![ho],
+            Err(_) => {
+                let hyle_output = journal
+                    .decode::<Vec<Vec<u8>>>()
+                    .context("Failed to extract HyleOuput from Risc0's journal")?;
 
-    tracing::info!("✅ Risc0 proof verified.");
-
-    Ok(receipt.journal)
-}
-
-/// At present, we are using binary to facilitate the integration of the Noir verifier.
-/// This is not meant to be a permanent solution.
-pub fn noir_proof_verifier(proof: &[u8], image_id: &[u8]) -> Result<Vec<HyleOutput>, Error> {
-    // Define a struct with Drop implementation for cleanup
-    struct TempFiles {
-        proof_path: String,
-        vk_path: String,
+                // Doesn't actually work to just deserialize in one go.
+                hyle_output
+                    .iter()
+                    .map(|o| risc0_zkvm::serde::from_slice::<HyleOutput, _>(o))
+                    .collect::<Result<Vec<_>, _>>()
+                    .context("Failed to decode HyleOutput")?
+            }
+        })
     }
 
-    impl Drop for TempFiles {
-        fn drop(&mut self) {
-            if std::env::var("HYLE_KEEP_NOIR_TMP_FILES").unwrap_or_else(|_| "false".to_string())
-                != "true"
-            {
-                let _ = std::fs::remove_file(&self.proof_path);
-                let _ = std::fs::remove_file(&self.vk_path);
+    pub fn verify_recursive(
+        proof: &ProofData,
+        program_id: &ProgramId,
+    ) -> Result<(Vec<ProgramId>, Vec<HyleOutput>), Error> {
+        let journal = risc0_proof_verifier(&proof.0, &program_id.0)?;
+        let mut output = journal
+            .decode::<Vec<(Risc0ProgramId, Risc0Journal)>>()
+            .context("Failed to extract HyleOuput from Risc0's journal")?;
+
+        // Doesn't actually work to just deserialize in one go.
+        output
+            .drain(..)
+            .map(|o| {
+                risc0_zkvm::serde::from_slice::<HyleOutput, _>(&o.1)
+                    .map(|h| (ProgramId(o.0.to_vec()), h))
+            })
+            .collect::<Result<(Vec<_>, Vec<_>), _>>()
+            .context("Failed to decode HyleOutput")
+    }
+
+    pub fn risc0_proof_verifier(
+        encoded_receipt: &[u8],
+        image_id: &[u8],
+    ) -> Result<risc0_zkvm::Journal, Error> {
+        let receipt = borsh::from_slice::<risc0_zkvm::Receipt>(encoded_receipt)
+            .context("Error while decoding Risc0 proof's receipt")?;
+
+        let image_bytes: risc0_zkvm::sha::Digest =
+            image_id.try_into().context("Invalid Risc0 image ID")?;
+
+        receipt
+            .verify(image_bytes)
+            .context("Risc0 proof verification failed")?;
+
+        tracing::info!("✅ Risc0 proof verified.");
+
+        Ok(receipt.journal)
+    }
+
+    pub fn validate_program_id(program_id: &ProgramId) -> Result<(), Error> {
+        std::convert::TryInto::<risc0_zkvm::sha::Digest>::try_into(program_id.0.as_slice())
+            .map_err(|e| anyhow::anyhow!("Invalid Risc0 image ID: {}", e))?;
+        Ok(())
+    }
+}
+
+pub mod noir {
+    use super::*;
+
+    /// At present, we are using binary to facilitate the integration of the Noir verifier.
+    /// This is not meant to be a permanent solution.
+    pub fn verify(proof: &ProofData, image_id: &ProgramId) -> Result<Vec<HyleOutput>, Error> {
+        // Define a struct with Drop implementation for cleanup
+        struct TempFiles {
+            proof_path: String,
+            vk_path: String,
+        }
+
+        impl Drop for TempFiles {
+            fn drop(&mut self) {
+                if std::env::var("HYLE_KEEP_NOIR_TMP_FILES").unwrap_or_else(|_| "false".to_string())
+                    != "true"
+                {
+                    let _ = std::fs::remove_file(&self.proof_path);
+                    let _ = std::fs::remove_file(&self.vk_path);
+                }
             }
         }
-    }
 
-    let mut rng = rand::rng();
-    let salt: [u8; 16] = rng.random();
-    let mut salt_hex = String::with_capacity(salt.len() * 2);
-    for b in &salt {
-        write!(salt_hex, "{:02x}", b).unwrap();
-    }
+        let mut rng = rand::rng();
+        let salt: [u8; 16] = rng.random();
+        let mut salt_hex = String::with_capacity(salt.len() * 2);
+        for b in &salt {
+            write!(salt_hex, "{:02x}", b).unwrap();
+        }
 
-    // Create the temp files struct which will auto-clean on function exit
-    let temp_files = TempFiles {
-        proof_path: format!("/tmp/noir-proof-{salt_hex}"),
-        vk_path: format!("/tmp/noir-vk-{salt_hex}"),
-    };
+        // Create the temp files struct which will auto-clean on function exit
+        let temp_files = TempFiles {
+            proof_path: format!("/tmp/noir-proof-{salt_hex}"),
+            vk_path: format!("/tmp/noir-vk-{salt_hex}"),
+        };
 
-    // Write proof and publicKey to files
-    std::fs::write(&temp_files.proof_path, proof)?;
-    std::fs::write(&temp_files.vk_path, image_id)?;
+        // Write proof and publicKey to files
+        std::fs::write(&temp_files.proof_path, &proof.0)?;
+        std::fs::write(&temp_files.vk_path, &image_id.0)?;
 
-    debug!(
-        "Proof path: {} VK path: {}",
-        temp_files.proof_path, temp_files.vk_path
-    );
-
-    // Verifying proof
-    let verification_output = std::process::Command::new("bb")
-        .arg("verify")
-        .arg("-p")
-        .arg(&temp_files.proof_path)
-        .arg("-k")
-        .arg(&temp_files.vk_path)
-        .output()?;
-
-    if !verification_output.status.success() {
-        bail!(
-            "Noir proof verification failed: {}",
-            String::from_utf8_lossy(&verification_output.stderr)
+        debug!(
+            "Proof path: {} VK path: {}",
+            temp_files.proof_path, temp_files.vk_path
         );
+
+        // Verifying proof
+        let verification_output = std::process::Command::new("bb")
+            .arg("verify")
+            .arg("-p")
+            .arg(&temp_files.proof_path)
+            .arg("-k")
+            .arg(&temp_files.vk_path)
+            .output()?;
+
+        if !verification_output.status.success() {
+            bail!(
+                "Noir proof verification failed: {}",
+                String::from_utf8_lossy(&verification_output.stderr)
+            );
+        }
+
+        // Extracting outputs
+        let mut file =
+            std::fs::File::open(&temp_files.proof_path).context("Failed to open proof file")?;
+        let mut proof = Vec::new();
+        file.read_to_end(&mut proof)
+            .context("Failed to read proof file content")?;
+
+        // TODO: support multi-output proofs.
+        let hyle_output = crate::noir_utils::parse_noir_output(&proof)?;
+
+        tracing::info!("✅ Noir proof verified.");
+
+        Ok(vec![hyle_output])
+        // temp_files is automatically dropped here, cleaning up all files
     }
-
-    // Extracting outputs
-    let mut file =
-        std::fs::File::open(&temp_files.proof_path).context("Failed to open proof file")?;
-    let mut proof = Vec::new();
-    file.read_to_end(&mut proof)
-        .context("Failed to read proof file content")?;
-
-    // TODO: support multi-output proofs.
-    let hyle_output = crate::noir_utils::parse_noir_output(&proof)?;
-
-    tracing::info!("✅ Noir proof verified.");
-
-    Ok(vec![hyle_output])
-    // temp_files is automatically dropped here, cleaning up all files
 }
 
 /// The following environment variables are used to configure the prover:
 /// - `SP1_PROVER`: The type of prover to use. Must be one of `mock`, `local`, `cuda`, or `network`.
 #[cfg(feature = "sp1")]
-pub fn sp1_proof_verifier(
-    proof_bin: &[u8],
-    verification_key: &[u8],
-) -> Result<Vec<HyleOutput>, Error> {
-    // Setup the prover client.
-    let client = ProverClient::from_env();
+pub mod sp1_4 {
+    pub fn verify(
+        proof_bin: &ProofData,
+        verification_key: &ProgramId,
+    ) -> Result<Vec<HyleOutput>, Error> {
+        // Setup the prover client.
+        let client = ProverClient::from_env();
 
-    let proof: SP1ProofWithPublicValues =
-        bincode::deserialize(proof_bin).context("Error while decoding SP1 proof.")?;
+        let proof: SP1ProofWithPublicValues =
+            bincode::deserialize(proof_bin.0).context("Error while decoding SP1 proof.")?;
 
-    // Deserialize verification key from JSON
-    let vk: SP1VerifyingKey =
-        serde_json::from_slice(verification_key).context("Invalid SP1 image ID")?;
+        // Deserialize verification key from JSON
+        let vk: SP1VerifyingKey =
+            serde_json::from_slice(verification_key.0).context("Invalid SP1 image ID")?;
 
-    // Verify the proof.
-    client
-        .verify(&proof, &vk)
-        .context("SP1 proof verification failed")?;
+        // Verify the proof.
+        client
+            .verify(&proof, &vk)
+            .context("SP1 proof verification failed")?;
 
-    // TODO: support multi-output proofs.
-    let hyle_output = borsh::from_slice::<HyleOutput>(proof.public_values.as_slice())
-        .context("Failed to extract HyleOuput from SP1 proof")?;
+        // TODO: support multi-output proofs.
+        let hyle_output = borsh::from_slice::<HyleOutput>(proof.public_values.as_slice())
+            .context("Failed to extract HyleOuput from SP1 proof")?;
 
-    tracing::info!("✅ SP1 proof verified.",);
+        tracing::info!("✅ SP1 proof verified.",);
 
-    Ok(vec![hyle_output])
-}
+        Ok(vec![hyle_output])
+    }
 
-pub fn validate_risc0_program_id(program_id: &ProgramId) -> Result<(), Error> {
-    std::convert::TryInto::<risc0_zkvm::sha::Digest>::try_into(program_id.0.as_slice())
-        .map_err(|e| anyhow::anyhow!("Invalid Risc0 image ID: {}", e))?;
-    Ok(())
-}
-
-#[cfg(feature = "sp1")]
-pub fn validate_sp1_program_id(program_id: &ProgramId) -> Result<(), Error> {
-    serde_json::from_slice::<SP1VerifyingKey>(program_id.0.as_slice())
-        .map_err(|e| anyhow::anyhow!("Invalid SP1 image ID: {}", e))?;
-    Ok(())
+    pub fn validate_program_id(program_id: &ProgramId) -> Result<(), Error> {
+        serde_json::from_slice::<SP1VerifyingKey>(program_id.0.as_slice())
+            .map_err(|e| anyhow::anyhow!("Invalid SP1 image ID: {}", e))?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::{fs::File, io::Read};
 
-    use hyle_model::{BlobIndex, HyleOutput, Identity, ProgramId, StateCommitment, TxHash};
+    use hyle_model::{
+        BlobIndex, HyleOutput, Identity, ProgramId, ProofData, StateCommitment, TxHash,
+    };
 
-    use crate::validate_risc0_program_id;
-
-    use super::noir_proof_verifier;
+    use super::noir::verify as noir_proof_verifier;
+    use super::risc0_1::validate_program_id as validate_risc0_program_id;
 
     fn load_file_as_bytes(path: &str) -> Vec<u8> {
         let mut file = File::open(path).expect("Failed to open file");
@@ -214,7 +277,7 @@ mod tests {
         let noir_proof = load_file_as_bytes("./tests/proofs/webauthn.noir.proof");
         let image_id = load_file_as_bytes("./tests/proofs/webauthn.noir.vk");
 
-        let result = noir_proof_verifier(&noir_proof, &image_id);
+        let result = noir_proof_verifier(&ProofData(noir_proof), &ProgramId(image_id));
         match result {
             Ok(outputs) => {
                 assert_eq!(
