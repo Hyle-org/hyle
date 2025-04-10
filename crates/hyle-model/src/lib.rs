@@ -19,8 +19,10 @@ pub mod api;
 
 mod contract;
 mod staking;
+pub mod verifiers;
 pub use contract::*;
 pub use staking::*;
+pub use verifiers::*;
 
 pub const HASH_DISPLAY_SIZE: usize = 3;
 
