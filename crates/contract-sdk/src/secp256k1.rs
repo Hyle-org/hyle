@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 /// - the identity and the data of the blob.
 /// - the contract name of the blob.
 /// - the data of the blob.
+///
 /// secp256k1 blobs are used to verify the signature of a transaction, the signature is
 /// natively verified by the node (aka not in a zkvm).
 /// Example usage:
