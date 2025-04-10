@@ -2,6 +2,21 @@ use alloc::string::String;
 use hyle_model::{BlobIndex, Calldata, ContractName, Secp256k1Blob};
 use sha2::{Digest, Sha256};
 
+/// This struct allows to check the existence of a secp256k1 blob in the calldata.
+/// It will check:
+/// - the identity and the data of the blob.
+/// - the contract name of the blob.
+/// - the data of the blob.
+/// secp256k1 blobs are used to verify the signature of a transaction, the signature is
+/// natively verified by the node (aka not in a zkvm).
+/// Example usage:
+/// ```rust,no_run,compileç_fail
+/// let calldata = Calldata::default();
+/// let expected_data = b"expected data";
+///
+/// let check = CheckSecp256k1::new(&calldata, expected_data);
+/// check.expect().unwrap();
+/// ```
 pub struct CheckSecp256k1<'a> {
     contract_input: &'a Calldata,
     expected_data: &'a [u8],

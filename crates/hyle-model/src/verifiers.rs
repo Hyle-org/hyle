@@ -15,9 +15,10 @@ pub struct Secp256k1Blob {
 
 impl Secp256k1Blob {
     #[cfg(feature = "full")]
+    /// Allow to create a Secp256k1Blob from the data, public_key and signature
     pub fn new(
         identity: Identity,
-        data: &str,
+        data: &[u8],
         public_key: &str,
         signature: &str,
     ) -> anyhow::Result<Self> {
