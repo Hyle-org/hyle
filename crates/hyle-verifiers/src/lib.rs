@@ -22,7 +22,7 @@ pub fn verify(
         hyle_model::verifiers::RISC0_1 => risc0_1::verify(proof, program_id),
         hyle_model::verifiers::NOIR => noir::verify(proof, program_id),
         #[cfg(feature = "sp1")]
-        hyle_model::verifiers::SP1_4 => sp1_4::verify(&proof.0, &program_id.0),
+        hyle_model::verifiers::SP1_4 => sp1_4::verify(proof, program_id),
         _ => Err(anyhow::anyhow!("{} verifier not implemented yet", verifier)),
     }
 }
@@ -181,6 +181,8 @@ pub mod noir {
 /// - `SP1_PROVER`: The type of prover to use. Must be one of `mock`, `local`, `cuda`, or `network`.
 #[cfg(feature = "sp1")]
 pub mod sp1_4 {
+    use super::*;
+
     pub fn verify(
         proof_bin: &ProofData,
         verification_key: &ProgramId,
@@ -189,11 +191,11 @@ pub mod sp1_4 {
         let client = ProverClient::from_env();
 
         let proof: SP1ProofWithPublicValues =
-            bincode::deserialize(proof_bin.0).context("Error while decoding SP1 proof.")?;
+            bincode::deserialize(&proof_bin.0).context("Error while decoding SP1 proof.")?;
 
         // Deserialize verification key from JSON
         let vk: SP1VerifyingKey =
-            serde_json::from_slice(verification_key.0).context("Invalid SP1 image ID")?;
+            serde_json::from_slice(&verification_key.0).context("Invalid SP1 image ID")?;
 
         // Verify the proof.
         client
