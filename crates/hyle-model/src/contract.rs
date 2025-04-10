@@ -500,6 +500,67 @@ pub struct Verifier(pub String);
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct ProgramId(pub Vec<u8>);
 
+#[derive(Debug, Default, PartialEq, Eq, Clone, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(feature = "full", derive(Serialize, utoipa::ToSchema))]
+pub struct ProofData(#[cfg_attr(feature = "full", serde(with = "base64_field"))] pub Vec<u8>);
+
+#[cfg(feature = "full")]
+impl<'de> Deserialize<'de> for ProofData {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct ProofDataVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for ProofDataVisitor {
+            type Value = ProofData;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a Base64 string or a Vec<u8>")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                use base64::prelude::*;
+                let decoded = BASE64_STANDARD
+                    .decode(value)
+                    .map_err(serde::de::Error::custom)?;
+                Ok(ProofData(decoded))
+            }
+
+            fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let vec_u8: Vec<u8> = serde::de::Deserialize::deserialize(
+                    serde::de::value::SeqAccessDeserializer::new(seq),
+                )?;
+                Ok(ProofData(vec_u8))
+            }
+        }
+
+        deserializer.deserialize_any(ProofDataVisitor)
+    }
+}
+
+#[derive(
+    Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize,
+)]
+pub struct ProofDataHash(pub String);
+
+#[cfg(feature = "full")]
+impl Hashed<ProofDataHash> for ProofData {
+    fn hashed(&self) -> ProofDataHash {
+        use sha3::Digest;
+        let mut hasher = sha3::Sha3_256::new();
+        hasher.update(self.0.as_slice());
+        let hash_bytes = hasher.finalize();
+        ProofDataHash(hex::encode(hash_bytes))
+    }
+}
+
 #[derive(
     Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize,
 )]
@@ -827,5 +888,27 @@ impl Hashed<TxHash> for RegisterContractEffect {
         hasher.update(self.contract_name.0.clone());
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
+    }
+}
+
+#[cfg(feature = "full")]
+pub mod base64_field {
+    use base64::prelude::*;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let encoded = BASE64_STANDARD.encode(bytes);
+        serializer.serialize_str(&encoded)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        BASE64_STANDARD.decode(&s).map_err(serde::de::Error::custom)
     }
 }
