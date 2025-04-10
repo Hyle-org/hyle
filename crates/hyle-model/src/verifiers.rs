@@ -34,7 +34,7 @@ impl Secp256k1Blob {
         let signature = secp256k1::ecdsa::Signature::from_der(
             &hex::decode(signature).context("invalid signature format")?,
         )
-        .context("canot parse signature")?
+        .context("cannot parse signature")?
         .serialize_compact();
 
         let mut hasher = sha2::Sha256::new();

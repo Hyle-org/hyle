@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 /// secp256k1 blobs are used to verify the signature of a transaction, the signature is
 /// natively verified by the node (aka not in a zkvm).
 /// Example usage:
-/// ```rust,no_run,compileç_fail
+/// ```rust,no_run,compile_fail
 /// let calldata = Calldata::default();
 /// let expected_data = b"expected data";
 ///
