@@ -1,4 +1,4 @@
-use anyhow::Error;
+use anyhow::{Context, Error};
 use hyle_model::{flatten_blobs, Blob, BlobIndex, HyleOutput, StateCommitment, TxHash};
 use tracing::debug;
 
@@ -115,9 +115,12 @@ fn parse_blobs(blob_data: &mut Vec<String>) -> Result<Vec<(BlobIndex, Vec<u8>)>,
 
         let mut blob = Vec::with_capacity(blob_len);
 
-        for _ in 0..blob_len {
+        for i in 0..blob_len {
             let v = &blob_data.remove(0);
-            blob.push(u8::from_str_radix(v, 16)?);
+            blob.push(
+                u8::from_str_radix(v, 16)
+                    .context(format!("Failed to parse blob data at {i}/{blob_len}"))?,
+            );
         }
 
         debug!("blob data: {:?}", blob);
