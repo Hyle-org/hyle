@@ -630,8 +630,8 @@ impl Mempool {
             let lane = self
                 .inner
                 .buffered_podas
-                .get_mut(lane_id)
-                .context("Getting lane")?;
+                .entry(lane_id.clone())
+                .or_default();
 
             lane.push(PlainPoDA {
                 dp_hash: data_proposal_hash.clone(),
