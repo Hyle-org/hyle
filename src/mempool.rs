@@ -4,7 +4,7 @@ use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{CommittedConsensusProposal, ConsensusEvent},
     genesis::GenesisEvent,
-    log_error,
+    log_error, log_warn,
     model::*,
     module_handle_messages,
     node_state::module::NodeStateEvent,
@@ -90,6 +90,12 @@ struct MempoolBusClient {
 }
 }
 
+#[derive(Clone, Default, BorshSerialize, BorshDeserialize)]
+struct PlainPoDA {
+    dp_hash: DataProposalHash,
+    signatures: Vec<SignedByValidator<MempoolNetMessage>>,
+}
+
 #[derive(Default, BorshSerialize, BorshDeserialize)]
 pub struct MempoolStore {
     // own_lane.rs
@@ -101,6 +107,7 @@ pub struct MempoolStore {
     notify_new_tx_to_process: tokio::sync::Notify,
     waiting_dissemination_txs: Vec<Transaction>,
     buffered_proposals: BTreeMap<LaneId, Vec<DataProposal>>,
+    buffered_podas: BTreeMap<LaneId, Vec<PlainPoDA>>,
 
     // block_construction.rs
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
@@ -607,9 +614,31 @@ impl Mempool {
 
         // FIXME: In case of data proposal being processed while receiving the PodaUpdate, add_signatures will fail
         // (dp still not regsitered in the storage), and we will miss a poda, which is sad.
-        self.lanes
-            .add_signatures(lane_id, data_proposal_hash, signatures)
-            .context("PodaUpdate")?;
+        if log_warn!(
+            self.lanes
+                .add_signatures(lane_id, data_proposal_hash, signatures.clone()),
+            "PodaUpdate"
+        )
+        .is_err()
+        {
+            info!(
+                "Buffering poda of {} signatures for DP: {}",
+                signatures.len(),
+                data_proposal_hash
+            );
+
+            let lane = self
+                .inner
+                .buffered_podas
+                .get_mut(lane_id)
+                .context("Getting lane")?;
+
+            lane.push(PlainPoDA {
+                dp_hash: data_proposal_hash.clone(),
+                signatures,
+            });
+        }
+
         Ok(())
     }
 
