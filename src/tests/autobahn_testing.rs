@@ -549,6 +549,70 @@ async fn mempool_broadcast_multiple_data_proposals() {
 }
 
 #[test_log::test(tokio::test)]
+async fn mempool_podaupdate_too_early() {
+    let (mut node1, mut node2, mut node3, mut node4) = build_nodes!(4).await;
+
+    // First data proposal
+
+    let register_tx = make_register_contract_tx(ContractName::new("test1"));
+
+    let dp = node1.mempool_ctx.create_data_proposal(None, &[register_tx]);
+    node1
+        .mempool_ctx
+        .process_new_data_proposal(dp.clone())
+        .unwrap();
+    node1.mempool_ctx.timer_tick().unwrap();
+
+    let dp_msg = broadcast! {
+        description: "Disseminate Tx",
+        from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx],
+        message_matches: MempoolNetMessage::DataProposal(_)
+    };
+
+    join_all(
+        [&mut node2.mempool_ctx, &mut node3.mempool_ctx]
+            .iter_mut()
+            .map(|ctx| ctx.handle_processed_data_proposals()),
+    )
+    .await;
+
+    send! {
+        description: "Disseminated Tx Vote",
+        from: [node2.mempool_ctx, node3.mempool_ctx], to: node1.mempool_ctx,
+        message_matches: MempoolNetMessage::DataVote(..)
+    };
+
+    let poda = broadcast! {
+        description: "Disseminate Tx",
+        from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx],
+        message_matches: MempoolNetMessage::PoDAUpdate(hash, signatures) => {
+            assert_eq!(hash, &dp.hashed());
+            assert_eq!(2, signatures.len());
+        }
+    };
+
+    node4.mempool_ctx.handle_msg(&poda, "Poda handling");
+    node4.mempool_ctx.handle_msg(&dp_msg, "Data Proposal");
+
+    node4.mempool_ctx.handle_processed_data_proposals().await;
+
+    send! {
+        description: "Disseminated Tx Vote",
+        from: [node4.mempool_ctx], to: node1.mempool_ctx,
+        message_matches: MempoolNetMessage::DataVote(..)
+    };
+
+    broadcast! {
+        description: "Disseminate Tx",
+        from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
+        message_matches: MempoolNetMessage::PoDAUpdate(hash, signatures) => {
+            assert_eq!(hash, &dp.hashed());
+            assert_eq!(3, signatures.len());
+        }
+    };
+}
+
+#[test_log::test(tokio::test)]
 async fn mempool_fail_to_vote_on_fork() {
     let (mut node1, mut node2, mut node3, mut node4) = build_nodes!(4).await;
 
