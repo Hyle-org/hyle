@@ -612,8 +612,6 @@ impl Mempool {
             lane_id
         );
 
-        // FIXME: In case of data proposal being processed while receiving the PodaUpdate, add_signatures will fail
-        // (dp still not regsitered in the storage), and we will miss a poda, which is sad.
         if log_warn!(
             self.lanes
                 .add_signatures(lane_id, data_proposal_hash, signatures.clone()),
