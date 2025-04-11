@@ -6,12 +6,12 @@ use tracing::{debug, info, trace, warn};
 use super::Consensus;
 use crate::{
     bus::BusClientSender,
-    consensus::StateTag,
+    consensus::{role_timeout::TimeoutState, StateTag},
     log_error,
     mempool::MempoolNetMessage,
     model::{Hashed, Signed, ValidatorPublicKey},
     p2p::P2PCommand,
-    utils::crypto::BlstCrypto,
+    utils::{conf::TimestampCheck, crypto::BlstCrypto},
 };
 use anyhow::{bail, Context, Result};
 use hyle_model::{
@@ -340,11 +340,11 @@ impl Consensus {
         Ok(())
     }
 
-    pub(super) fn verify_timestamp(
+    fn verify_timestamp(
         &self,
         ConsensusProposal { timestamp, .. }: &ConsensusProposal,
     ) -> Result<()> {
-        let previous_timestamp = self.bft_round_state.current_proposal.timestamp.clone();
+        let previous_timestamp = self.bft_round_state.parent_timestamp.clone();
 
         if previous_timestamp == TimestampMs::ZERO {
             warn!(
@@ -354,25 +354,42 @@ impl Consensus {
             return Ok(());
         }
 
-        let next_max_timestamp =
-            previous_timestamp.clone() + (2 * self.config.consensus.slot_duration);
+        let monotonic_check = || {
+            if timestamp <= &previous_timestamp {
+                bail!(
+                    "Timestamp {} too old (should be > {}, {} ms too old)",
+                    timestamp,
+                    previous_timestamp,
+                    (previous_timestamp.clone() - timestamp.clone()).as_millis()
+                );
+            }
 
-        if &previous_timestamp > timestamp {
-            bail!(
-                "Timestamp {} too old (should be > {}, {} ms too old)",
-                timestamp,
-                previous_timestamp,
-                (previous_timestamp.clone() - timestamp.clone()).as_millis()
-            );
-        }
+            Ok(())
+        };
 
-        if &next_max_timestamp < timestamp {
-            warn!(
-                "Timestamp {} too late (should be < {}, exceeded by {} ms)",
-                timestamp,
-                next_max_timestamp,
-                (timestamp.clone() - next_max_timestamp.clone()).as_millis()
-            );
+        match self.config.consensus.timestamp_checks {
+            TimestampCheck::NoCheck => {
+                return Ok(());
+            }
+            TimestampCheck::Monotonic => {
+                monotonic_check()?;
+            }
+            TimestampCheck::Full => {
+                monotonic_check()?;
+
+                let next_max_timestamp = previous_timestamp.clone()
+                    + (self.config.consensus.slot_duration * 2
+                        + TimeoutState::TIMEOUT_SECS * (self.bft_round_state.view as u32));
+
+                if &next_max_timestamp < timestamp {
+                    bail!(
+                        "Timestamp {} too late (should be < {}, exceeded by {} ms)",
+                        timestamp,
+                        next_max_timestamp,
+                        (timestamp.clone() - next_max_timestamp.clone()).as_millis()
+                    );
+                }
+            }
         }
 
         trace!(
@@ -384,9 +401,7 @@ impl Consensus {
 
         Ok(())
     }
-}
 
-impl Consensus {
     fn try_process_timeout_qc(
         &mut self,
         timeout_qc: QuorumCertificate,

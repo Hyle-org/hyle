@@ -183,6 +183,7 @@ pub(crate) use assert_chanmsg_matches;
 pub(crate) use broadcast;
 pub(crate) use build_tuple;
 use futures::future::join_all;
+use hyle_model::utils::TimestampMs;
 pub(crate) use send;
 pub(crate) use simple_commit_round;
 
@@ -283,7 +284,7 @@ impl AutobahnTestCtx {
     }
 
     /// Spawn a coroutine to answer the command response call of start_round, with the current current of mempool
-    async fn start_round_with_cut_from_mempool(&mut self) {
+    async fn start_round_with_cut_from_mempool(&mut self, ts: TimestampMs) {
         let staking = self.consensus_ctx.staking();
         let latest_cut: Cut = self.mempool_ctx.gen_cut(&staking);
 
@@ -305,12 +306,12 @@ impl AutobahnTestCtx {
             }
         });
 
-        self.consensus_ctx.start_round().await;
+        self.consensus_ctx.start_round_at(ts).await;
     }
 
     /// Just start the round and wait for the timeout
-    async fn start_round_with_last_seen_cut(&mut self) {
-        self.consensus_ctx.start_round().await;
+    async fn start_round_with_last_seen_cut(&mut self, ts: TimestampMs) {
+        self.consensus_ctx.start_round_at(ts).await;
     }
 }
 
@@ -384,7 +385,9 @@ async fn autobahn_basic_flow() {
         .expect("Current hash should be there");
     let node1_l_size = node1.mempool_ctx.current_size().unwrap();
 
-    node1.start_round_with_cut_from_mempool().await;
+    node1
+        .start_round_with_cut_from_mempool(TimestampMs(1000))
+        .await;
 
     let consensus_proposal;
 
@@ -743,8 +746,10 @@ async fn autobahn_rejoin_flow() {
 
     // Do a few rounds of consensus-with-lag and note that we don't actually catch up.
     // (this is expected because DA stopped receiving new blocks, as it did indeed catch up)
-    for _ in 0..3 {
-        node1.start_round_with_cut_from_mempool().await;
+    for i in 1..4 {
+        node1
+            .start_round_with_cut_from_mempool(TimestampMs(1000 * i))
+            .await;
 
         simple_commit_round! {
             leader: node1.consensus_ctx,
@@ -769,7 +774,9 @@ async fn autobahn_rejoin_flow() {
     }
 
     // Process round
-    node1.start_round_with_cut_from_mempool().await;
+    node1
+        .start_round_with_cut_from_mempool(TimestampMs(5000))
+        .await;
 
     simple_commit_round! {
         leader: node1.consensus_ctx,
@@ -806,7 +813,9 @@ async fn autobahn_rejoin_flow() {
     }
 
     // Process round
-    node1.start_round_with_cut_from_mempool().await;
+    node1
+        .start_round_with_cut_from_mempool(TimestampMs(6000))
+        .await;
 
     simple_commit_round! {
         leader: node1.consensus_ctx,
@@ -973,7 +982,9 @@ async fn protocol_fees() {
 
     // Let's do a consensus round
 
-    node1.start_round_with_cut_from_mempool().await;
+    node1
+        .start_round_with_cut_from_mempool(TimestampMs(2000))
+        .await;
     let prepare = broadcast! {
         description: "Prepare",
         from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
@@ -1025,7 +1036,9 @@ async fn autobahn_missed_a_confirm_message() {
         0,
     );
 
-    node1.start_round_with_cut_from_mempool().await;
+    node1
+        .start_round_with_cut_from_mempool(TimestampMs(1000))
+        .await;
 
     // Slot from node-1 not yet sent to node 4
     broadcast! {
@@ -1061,7 +1074,9 @@ async fn autobahn_missed_a_confirm_message() {
     };
 
     // Slot 6 starts with new leader, sending to all
-    node2.start_round_with_cut_from_mempool().await;
+    node2
+        .start_round_with_cut_from_mempool(TimestampMs(2000))
+        .await;
 
     broadcast! {
         description: "Prepare",
@@ -1118,7 +1133,9 @@ async fn autobahn_missed_confirm_and_commit_messages() {
         0,
     );
 
-    node1.start_round_with_cut_from_mempool().await;
+    node1
+        .start_round_with_cut_from_mempool(TimestampMs(1000))
+        .await;
 
     broadcast! {
         description: "Prepare - Slot from node-1 not yet sent to node 4",
@@ -1151,7 +1168,9 @@ async fn autobahn_missed_confirm_and_commit_messages() {
     };
 
     // Slot 6 starts with new leader, sending to all
-    node2.start_round_with_cut_from_mempool().await;
+    node2
+        .start_round_with_cut_from_mempool(TimestampMs(2000))
+        .await;
 
     broadcast! {
         description: "Prepare",
@@ -1202,7 +1221,9 @@ async fn autobahn_buffer_early_messages() {
     );
 
     // Slot 5 starts, all nodes receive the prepare
-    node1.start_round_with_cut_from_mempool().await;
+    node1
+        .start_round_with_cut_from_mempool(TimestampMs(1000))
+        .await;
 
     broadcast! {
         description: "Prepare",
@@ -1235,7 +1256,9 @@ async fn autobahn_buffer_early_messages() {
     };
 
     // Slot 4 starts with new leader with node4 disconnected
-    node2.start_round_with_cut_from_mempool().await;
+    node2
+        .start_round_with_cut_from_mempool(TimestampMs(2000))
+        .await;
 
     broadcast! {
         description: "Prepare",
@@ -1268,7 +1291,9 @@ async fn autobahn_buffer_early_messages() {
     };
 
     // Slot 5 starts with new leader but node4 is back online
-    node3.start_round_with_cut_from_mempool().await;
+    node3
+        .start_round_with_cut_from_mempool(TimestampMs(3000))
+        .await;
 
     broadcast! {
         description: "Prepare",
@@ -1328,7 +1353,9 @@ async fn autobahn_buffer_early_messages() {
     };
 
     // Slot 6 starts with node4 as leader
-    node4.start_round_with_cut_from_mempool().await;
+    node4
+        .start_round_with_cut_from_mempool(TimestampMs(4000))
+        .await;
 
     broadcast! {
         description: "Prepare",
@@ -1355,7 +1382,9 @@ async fn autobahn_got_timed_out_during_sync() {
     );
 
     // Slot 5 starts, all nodes receive the prepare
-    node0.start_round_with_cut_from_mempool().await;
+    node0
+        .start_round_with_cut_from_mempool(TimestampMs(1000))
+        .await;
 
     broadcast! {
         description: "Prepare",
@@ -1421,7 +1450,9 @@ async fn autobahn_got_timed_out_during_sync() {
         .assert_broadcast("Timeout Certificate 4");
 
     // Slot 6 starts with new leader with node1 disconnected
-    node2.start_round_with_cut_from_mempool().await;
+    node2
+        .start_round_with_cut_from_mempool(TimestampMs(2000))
+        .await;
 
     broadcast! {
         description: "Prepare",
@@ -1454,7 +1485,9 @@ async fn autobahn_got_timed_out_during_sync() {
     };
 
     // Slot 5 starts but node1 is back online - leader is again node2
-    node2.start_round_with_cut_from_mempool().await;
+    node2
+        .start_round_with_cut_from_mempool(TimestampMs(3000))
+        .await;
 
     broadcast! {
         description: "Prepare",
@@ -1531,7 +1564,9 @@ async fn autobahn_commit_different_views_for_f() {
     );
 
     // Slot 5 starts, all nodes receive the prepare
-    node0.start_round_with_cut_from_mempool().await;
+    node0
+        .start_round_with_cut_from_mempool(TimestampMs(1000))
+        .await;
 
     broadcast! {
         description: "Prepare",
@@ -1601,14 +1636,18 @@ async fn autobahn_commit_different_views_for_f() {
         .consensus_ctx
         .assert_broadcast("Timeout Certificate 3");
 
-    node1.start_round_with_cut_from_mempool().await;
+    node1
+        .start_round_with_cut_from_mempool(TimestampMs(2000))
+        .await;
     simple_commit_round! {
         leader: node1.consensus_ctx,
         followers: [node2.consensus_ctx, node3.consensus_ctx]
     };
 
     // Node 1 is the leader of the next slot as well
-    node1.start_round_with_last_seen_cut().await;
+    node1
+        .start_round_with_last_seen_cut(TimestampMs(2000))
+        .await;
 
     // At this point node 0 silently reconnects. However, since it has already committed slot 5,
     // it will emit a warn on receiving a different CQC than the one it buffered.
@@ -1636,7 +1675,9 @@ async fn autobahn_commit_different_views_for_fplusone() {
     );
 
     // Slot 5 starts, all nodes receive the prepare
-    node0.start_round_with_cut_from_mempool().await;
+    node0
+        .start_round_with_cut_from_mempool(TimestampMs(1000))
+        .await;
 
     broadcast! {
         description: "Prepare",
@@ -1714,7 +1755,9 @@ async fn autobahn_commit_byzantine_across_views_attempts() {
     // Goal of the test: at slot 5 view 0, we have nodes voting on a prepare. A commit could in theory be created if someone side-channels the confirmacks
     // so we must ensure that we cannot commit another value. Attempt to do so and notice failures.
     // Node 1 fails to receive the initial proposal and proposes a different one.
-    node0.start_round_with_cut_from_mempool().await;
+    node0
+        .start_round_with_cut_from_mempool(TimestampMs(1000))
+        .await;
 
     let initial_cp;
 
@@ -1794,7 +1837,9 @@ async fn autobahn_commit_byzantine_across_views_attempts() {
         .unwrap();
     node1.mempool_ctx.timer_tick().unwrap();
 
-    node1.start_round_with_cut_from_mempool().await;
+    node1
+        .start_round_with_cut_from_mempool(TimestampMs(2000))
+        .await;
 
     // Check that the node is reproposing the same.
     broadcast! {
@@ -1824,7 +1869,9 @@ async fn autobahn_commit_prepare_qc_across_multiple_views() {
     );
 
     // Slot 5 starts, all nodes receive the prepare
-    node0.start_round_with_cut_from_mempool().await;
+    node0
+        .start_round_with_cut_from_mempool(TimestampMs(1000))
+        .await;
 
     let initial_cp;
     broadcast! {
@@ -1925,7 +1972,9 @@ async fn autobahn_commit_prepare_qc_across_multiple_views() {
         .assert_broadcast("Timeout Certificate 3");
 
     // Start next round with node2 as leader
-    node2.start_round_with_cut_from_mempool().await;
+    node2
+        .start_round_with_cut_from_mempool(TimestampMs(2000))
+        .await;
 
     // Check that node2 is reproposing the same CP from view 0
     broadcast! {

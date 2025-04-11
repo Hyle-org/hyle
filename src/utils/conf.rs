@@ -4,14 +4,28 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serde_with::DurationMilliSeconds;
 use std::{collections::HashMap, fmt::Debug, path::PathBuf, sync::Arc, time::Duration};
+use strum_macros::IntoStaticStr;
 
 #[serde_as]
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Consensus {
     #[serde_as(as = "DurationMilliSeconds")]
     pub slot_duration: Duration,
+    /// Checks during consensus that blocks have legit timestamps
+    pub timestamp_checks: TimestampCheck,
     /// Whether the network runs as a single node or with a multi-node consensus.
     pub solo: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, IntoStaticStr)]
+pub enum TimestampCheck {
+    /// Checks that timestamps are not in the future, and not too old.
+    #[default]
+    Full,
+    /// Checks that timestamps are growing
+    Monotonic,
+    /// Does not check timestamps
+    NoCheck,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
