@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use hyle_model::{Identity, ProofData, Signed, ValidatorSignature};
+use hyle_model::{Identity, ProofData, Secp256k1Blob, Signed, ValidatorSignature};
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
 use sha3::Digest;
 
@@ -10,7 +10,7 @@ use hyle_contract_sdk::{
 use hyle_verifiers::{noir_proof_verifier, risc0_proof_verifier, validate_risc0_program_id};
 
 use crate::{
-    model::verifiers::{BlstSignatureBlob, NativeVerifiers, Secp256k1Blob, ShaBlob},
+    model::verifiers::{BlstSignatureBlob, NativeVerifiers, ShaBlob},
     utils::crypto::BlstCrypto,
 };
 
