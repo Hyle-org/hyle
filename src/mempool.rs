@@ -604,8 +604,12 @@ impl Mempool {
             data_proposal_hash,
             lane_id
         );
+
+        // FIXME: In case of data proposal being processed while receiving the PodaUpdate, add_signatures will fail
+        // (dp still not regsitered in the storage), and we will miss a poda, which is sad.
         self.lanes
-            .add_signatures(lane_id, data_proposal_hash, signatures)?;
+            .add_signatures(lane_id, data_proposal_hash, signatures)
+            .context("PodaUpdate")?;
         Ok(())
     }
 
