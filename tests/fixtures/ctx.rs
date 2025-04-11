@@ -273,6 +273,7 @@ impl E2ECtx {
             "postgres://postgres:postgres@localhost:{}/postgres",
             pg.get_host_port_ipv4(5432).await.unwrap()
         );
+        conf_maker.default.consensus.timestamp_checks = timestamp_checks;
 
         let (mut nodes, mut clients) = Self::build_nodes(count, &mut conf_maker).await;
 
