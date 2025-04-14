@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use hyle_crypto::BlstCrypto;
 use tracing::{debug, info, trace, warn};
 
 use super::Consensus;
@@ -11,7 +12,6 @@ use crate::{
     mempool::MempoolNetMessage,
     model::{Hashed, Signed, ValidatorPublicKey},
     p2p::P2PCommand,
-    utils::crypto::BlstCrypto,
 };
 use anyhow::{bail, Context, Result};
 use hyle_model::{

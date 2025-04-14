@@ -11,6 +11,7 @@ use rand::Rng;
 use sp1_sdk::{ProverClient, SP1ProofWithPublicValues, SP1VerifyingKey};
 use tracing::debug;
 
+mod native_impl;
 pub mod noir_utils;
 
 pub fn verify(
@@ -215,6 +216,54 @@ pub mod sp1_4 {
         serde_json::from_slice::<SP1VerifyingKey>(program_id.0.as_slice())
             .map_err(|e| anyhow::anyhow!("Invalid SP1 image ID: {}", e))?;
         Ok(())
+    }
+}
+
+pub mod native {
+    use super::*;
+    use hyle_model::{
+        flatten_blobs_vec, verifiers::NativeVerifiers, Blob, BlobIndex, Identity, StateCommitment,
+        TxHash,
+    };
+
+    pub fn verify(
+        tx_hash: TxHash,
+        index: BlobIndex,
+        blobs: &[Blob],
+        verifier: NativeVerifiers,
+    ) -> HyleOutput {
+        #[allow(clippy::expect_used, reason = "Logic error in the code")]
+        let blob = blobs.get(index.0).expect("Invalid blob index");
+        let blobs = flatten_blobs_vec(blobs);
+
+        let (identity, success) = match crate::native_impl::verify_native_impl(blob, verifier) {
+            Ok((identity, success)) => (identity, success),
+            Err(e) => {
+                tracing::trace!("Native blob verification failed: {:?}", e);
+                (Identity::default(), false)
+            }
+        };
+
+        if success {
+            tracing::info!("✅ Native blob verified on {tx_hash}:{index}");
+        } else {
+            tracing::info!("❌ Native blob verification failed on {tx_hash}:{index}.");
+        }
+
+        HyleOutput {
+            version: 1,
+            initial_state: StateCommitment::default(),
+            next_state: StateCommitment::default(),
+            identity,
+            index,
+            tx_blob_count: blobs.len(),
+            blobs,
+            success,
+            tx_hash,
+            tx_ctx: None,
+            onchain_effects: vec![],
+            program_outputs: vec![],
+        }
     }
 }
 

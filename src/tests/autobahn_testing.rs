@@ -222,7 +222,7 @@ use crate::model::*;
 use crate::node_state::module::NodeStateEvent;
 use crate::p2p::network::OutboundMessage;
 use crate::p2p::P2PCommand;
-use crate::utils::crypto::{self, BlstCrypto};
+use hyle_crypto::BlstCrypto;
 use tracing::info;
 
 bus_client!(
@@ -272,7 +272,7 @@ impl AutobahnTestCtx {
     pub fn generate_cryptos(nb: usize) -> Vec<BlstCrypto> {
         let mut res: Vec<_> = (0..nb)
             .map(|i| {
-                let crypto = crypto::BlstCrypto::new(&format!("node-{i}")).unwrap();
+                let crypto = BlstCrypto::new(&format!("node-{i}")).unwrap();
                 info!("node {}: {}", i, crypto.validator_pubkey());
                 crypto
             })
@@ -693,7 +693,7 @@ async fn autobahn_rejoin_flow() {
         0,
     );
 
-    let crypto = crypto::BlstCrypto::new("node-3").unwrap();
+    let crypto = BlstCrypto::new("node-3").unwrap();
     let mut joining_node = AutobahnTestCtx::new("node-3", crypto).await;
     joining_node
         .consensus_ctx

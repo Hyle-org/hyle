@@ -2793,7 +2793,6 @@ dependencies = [
  "axum 0.8.3",
  "axum-otel-metrics",
  "axum-test",
- "blst",
  "borsh",
  "bytes",
  "chrono",
@@ -2807,6 +2806,7 @@ dependencies = [
  "hyle-client-sdk",
  "hyle-contract-sdk",
  "hyle-contracts",
+ "hyle-crypto",
  "hyle-hydentity",
  "hyle-hyllar",
  "hyle-model",
@@ -2817,7 +2817,6 @@ dependencies = [
  "hyle-uuid-tld",
  "hyle-verifiers",
  "indexmap 2.9.0",
- "keyring",
  "opentelemetry",
  "opentelemetry-prometheus",
  "opentelemetry_sdk",
@@ -2826,7 +2825,6 @@ dependencies = [
  "quote",
  "rand 0.8.5",
  "risc0-zkvm",
- "secp256k1",
  "seq-macro",
  "serde",
  "serde_json",
@@ -2935,6 +2933,20 @@ dependencies = [
  "hyle-staking",
  "hyle-uuid-tld",
  "risc0-build",
+]
+
+[[package]]
+name = "hyle-crypto"
+version = "0.13.0-rc.4"
+dependencies = [
+ "anyhow",
+ "blst",
+ "borsh",
+ "hex",
+ "hyle-model",
+ "keyring",
+ "rand 0.9.0",
+ "tracing",
 ]
 
 [[package]]
@@ -3116,10 +3128,13 @@ dependencies = [
  "bincode",
  "borsh",
  "hex",
+ "hyle-crypto",
  "hyle-model",
  "rand 0.9.0",
  "risc0-zkvm",
+ "secp256k1",
  "serde_json",
+ "sha3",
  "sp1-sdk",
  "test-log",
  "tracing",

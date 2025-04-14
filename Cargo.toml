@@ -14,6 +14,7 @@ members = [
   "crates/contract-sdk",
   "crates/hyle-loadtest",
   "crates/hyle-model",
+  "crates/hyle-crypto",
   "crates/hyle-verifiers",
   "crates/noir-tools",
 ]
@@ -22,6 +23,7 @@ default-members = [
   "crates/contracts/hydentity",
   "crates/hyle-loadtest",
   "crates/hyle-model",
+  "crates/hyle-crypto",
   "crates/hyle-net",
   ".",
 ]
@@ -42,6 +44,7 @@ hyle-contract-sdk = { version = "0.13.0-rc.4", default-features = false, path = 
 client-sdk = { version = "0.13.0-rc.4", default-features = false, path = "crates/client-sdk", package = "hyle-client-sdk" }
 hyle-net = { version = "0.13.0-rc.4", default-features = false, path = "crates/hyle-net", package = "hyle-net" }
 hyle-model = { version = "0.13.0-rc.4", default-features = false, path = "crates/hyle-model", package = "hyle-model" }
+hyle-crypto = { version = "0.13.0-rc.4", default-features = false, path = "crates/hyle-crypto", package = "hyle-crypto" }
 hyle-verifiers = { version = "0.13.0-rc.4", default-features = false, path = "crates/hyle-verifiers", package = "hyle-verifiers" }
 risc0-recursion = { version = "0.13.0-rc.4", default-features = false, path = "crates/contracts/risc0-recursion", package = "hyle-risc0-recursion" }
 hydentity = { version = "0.13.0-rc.4", default-features = false, path = "crates/contracts/hydentity", package = "hyle-hydentity" }
@@ -87,6 +90,7 @@ hyle-model = { workspace = true, default-features = false, features = [
   "full",
   "sqlx",
 ] }
+hyle-crypto = { workspace = true }
 hydentity = { workspace = true, features = ["client"] }
 hyllar = { workspace = true, features = ["client"] }
 smt-token = { workspace = true, features = ["client"] }
@@ -97,13 +101,11 @@ hyle-contracts = { workspace = true }
 
 anyhow = "1.0.96"
 borsh = { version = "1.5.6", features = ["rc"] }
-blst = { version = "0.3.14" }
 chrono = { version = "0.4", features = ["serde"] }
 hex = { version = "0.4.3" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1" }
 sha3 = "0.10.8"
-secp256k1 = { version = "0.30.0" }
 strum_macros = "0.27.1"
 tracing = "0.1"
 
@@ -146,11 +148,6 @@ utoipa = { version = "5.3.1", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "9.0.0", features = ["axum"] }
 utoipa-axum = { version = "0.2.0" }
 testcontainers-modules = { version = "0.11.6", features = ["postgres"] }
-keyring = { version = "3", features = [
-  "apple-native",
-  "windows-native",
-  "sync-secret-service",
-], optional = true }
 whoami = "1.5.2"
 toml = "0.8.20"
 
@@ -198,7 +195,7 @@ turmoil = ["hyle-net/turmoil", "client-sdk/turmoil"]
 sp1 = ["hyle-verifiers/sp1"]
 
 # Disable dependency keyring by default, as it requires libdbus
-keyring = ["dep:keyring"]
+keyring = ["hyle-crypto/keyring"]
 
 dhat = ["dep:dhat"]
 # Activate this feature to recompile contracts locally (mostly useful for iterating on tests)

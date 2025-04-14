@@ -9,12 +9,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{utils::TimestampMs, LaneId};
 
-pub mod verifiers {
-    pub const RISC0_1: &str = "risc0-1";
-    pub const NOIR: &str = "noir";
-    pub const SP1_4: &str = "sp1-4";
-}
-
 #[derive(
     Debug,
     Serialize,
