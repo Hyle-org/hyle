@@ -95,7 +95,7 @@ hyle-verifiers = { workspace = true }
 hyle-contracts = { workspace = true }
 
 
-anyhow = "1.0.96"
+anyhow = "1.0.98"
 borsh = { version = "1.5.6", features = ["rc"] }
 blst = { version = "0.3.14" }
 chrono = { version = "0.4", features = ["serde"] }

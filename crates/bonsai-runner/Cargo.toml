@@ -13,7 +13,7 @@ name = "bonsai-runner"
 required-features = ["bonsai-runner"]
 
 [dependencies]
-anyhow = "1.0.96"
+anyhow = "1.0.98"
 tracing = "0.1"
 hex = "0.4.3"
 borsh = "1.5.6"
