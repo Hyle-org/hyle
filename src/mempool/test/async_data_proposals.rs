@@ -102,16 +102,13 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
     );
     let blob_tx_hash = blob_tx.hashed();
     let proof = ProofData(
-        serde_json::to_vec(
-            &vec![HyleOutput {
-                success: true,
-                identity: blob_tx.identity.clone(),
-                blobs: flatten_blobs_vec(&blob_tx.blobs),
-                tx_hash: blob_tx_hash.clone(),
-                ..HyleOutput::default()
-            }],
-            // bincode::config::standard(),
-        )
+        serde_json::to_vec(&vec![HyleOutput {
+            success: true,
+            identity: blob_tx.identity.clone(),
+            blobs: blob_tx.blobs.clone().into(),
+            tx_hash: blob_tx_hash.clone(),
+            ..HyleOutput::default()
+        }])
         .unwrap(),
     );
     let proof_hash = proof.hashed();

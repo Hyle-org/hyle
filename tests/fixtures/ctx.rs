@@ -22,8 +22,7 @@ use hyle::{
     utils::conf::{Conf, TimestampCheck},
 };
 use hyle_contract_sdk::{
-    flatten_blobs, BlobIndex, ContractName, HyleOutput, Identity, ProgramId, StateCommitment,
-    TxHash, Verifier,
+    BlobIndex, ContractName, HyleOutput, Identity, ProgramId, StateCommitment, TxHash, Verifier,
 };
 use hyle_net::net::bind_tcp_listener;
 

@@ -348,7 +348,7 @@ impl BlobTransaction {
         if let Some(hash) = self.blobshash_cache.read().unwrap().clone() {
             return hash;
         }
-        let hash = BlobsHashes::from_vec(&self.blobs);
+        let hash: BlobsHashes = (&self.blobs).into();
         self.blobshash_cache.write().unwrap().replace(hash.clone());
         hash
     }
@@ -399,34 +399,30 @@ pub struct BlobsHashes {
     pub hashes: BTreeMap<BlobIndex, BlobHash>,
 }
 
-impl BlobsHashes {
-    pub fn new(s: &str) -> BlobsHashes {
+impl From<&Vec<Blob>> for BlobsHashes {
+    fn from(iter: &Vec<Blob>) -> Self {
         BlobsHashes {
-            hashes: vec![(BlobIndex(0), BlobHash(s.into()))]
-                .into_iter()
-                .collect(),
-        }
-    }
-
-    pub fn from_vec(vec: &[Blob]) -> BlobsHashes {
-        Self::from_concatenated(&flatten_blobs_vec(vec))
-    }
-
-    pub fn from_concatenated(vec: &[(BlobIndex, Vec<u8>)]) -> BlobsHashes {
-        BlobsHashes {
-            hashes: vec
+            hashes: iter
                 .iter()
-                .map(|(index, blob)| {
-                    let mut hasher = Sha3_256::new();
-                    hasher.update(blob);
-                    let hash_bytes = hasher.finalize();
-                    let hash = BlobHash(hex::encode(hash_bytes));
-                    (*index, hash)
-                })
+                .enumerate()
+                .map(|(index, blob)| (BlobIndex(index), blob.hashed()))
                 .collect(),
         }
     }
+}
 
+impl From<&IndexedBlobs> for BlobsHashes {
+    fn from(iter: &IndexedBlobs) -> Self {
+        BlobsHashes {
+            hashes: iter
+                .iter()
+                .map(|(index, blob)| (*index, blob.hashed()))
+                .collect(),
+        }
+    }
+}
+
+impl BlobsHashes {
     pub fn includes_all(&self, other: &BlobsHashes) -> bool {
         for (index, hash) in other.hashes.iter() {
             if !self
