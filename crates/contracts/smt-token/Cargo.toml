@@ -19,7 +19,7 @@ name = "smt-token-runner"
 path = "examples/host.rs"
 
 [dependencies]
-anyhow = "1.0.96"
+anyhow = "1.0.98"
 sdk = { workspace = true, features = ["smt"] }
 sha2 = "=0.10.8" # precompile patched at workspace root
 borsh = { version = "1.5.5", features = ["derive"] }
