@@ -19,7 +19,7 @@ use sha2::{Digest, Sha256};
 /// check.expect().unwrap();
 /// ```
 pub struct CheckSecp256k1<'a> {
-    contract_input: &'a Calldata,
+    calldata: &'a Calldata,
     expected_data: &'a [u8],
     blob_index: Option<BlobIndex>,
 }
@@ -44,7 +44,7 @@ impl<'a> CheckSecp256k1<'a> {
         let secp_blob = match self.blob_index {
             Some(idx) => {
                 let blob = self
-                    .contract_input
+                    .calldata
                     .blobs
                     .get(&idx)
                     .ok_or("Invalid blob index for secp256k1")?;
@@ -54,7 +54,7 @@ impl<'a> CheckSecp256k1<'a> {
                 blob
             }
             None => self
-                .contract_input
+                .calldata
                 .blobs
                 .iter()
                 .map(|(_, b)| b)
@@ -66,7 +66,7 @@ impl<'a> CheckSecp256k1<'a> {
             borsh::from_slice(&secp_blob.data.0).map_err(|_| "Failed to decode Secp256k1Blob")?;
 
         // Verify that the identity matches the user
-        if secp_data.identity != self.contract_input.identity {
+        if secp_data.identity != self.calldata.identity {
             return Err("Secp256k1Blob identity does not match");
         }
 
