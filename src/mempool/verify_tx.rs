@@ -105,23 +105,6 @@ impl super::Mempool {
         }
         Ok(())
     }
-    fn drain_filter<T, F>(vec: &mut Vec<T>, mut predicate: F) -> Vec<T>
-    where
-        F: FnMut(&mut T) -> bool,
-    {
-        let mut drained = Vec::new();
-        let mut i = 0;
-
-        while i < vec.len() {
-            if predicate(&mut vec[i]) {
-                drained.push(vec.remove(i));
-            } else {
-                i += 1;
-            }
-        }
-
-        drained
-    }
 
     pub(super) fn on_processed_data_proposal(
         &mut self,
@@ -129,8 +112,6 @@ impl super::Mempool {
         verdict: DataProposalVerdict,
         data_proposal: DataProposal,
     ) -> Result<()> {
-        let dp_hash = data_proposal.hashed();
-
         debug!(
             "Handling processed DataProposal {:?} one lane {} ({} txs)",
             data_proposal.hashed(),
@@ -153,15 +134,16 @@ impl super::Mempool {
                 let (hash, size) =
                     self.lanes
                         .store_data_proposal(&crypto, &lane_id, data_proposal)?;
-                self.send_vote(self.get_lane_operator(&lane_id), hash, size)?;
+                self.send_vote(self.get_lane_operator(&lane_id), hash.clone(), size)?;
 
-                if let Some(lane) = self.inner.buffered_podas.get_mut(&lane_id) {
-                    let podas_to_process = Self::drain_filter(lane, |x| x.dp_hash == dp_hash);
-
-                    for poda in podas_to_process {
-                        self.on_poda_update(&lane_id, &poda.dp_hash, poda.signatures.clone())
-                            .context("Processing buffered poda")?;
-                    }
+                if let Some(poda_signatures) = self
+                    .inner
+                    .buffered_podas
+                    .get_mut(&lane_id)
+                    .and_then(|lane| lane.remove(&hash))
+                {
+                    self.on_poda_update(&lane_id, &hash, poda_signatures)
+                        .context("Processing buffered poda")?;
                 }
             }
             DataProposalVerdict::Refuse => {

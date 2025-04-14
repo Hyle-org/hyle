@@ -90,12 +90,6 @@ struct MempoolBusClient {
 }
 }
 
-#[derive(Clone, Default, BorshSerialize, BorshDeserialize)]
-struct PlainPoDA {
-    dp_hash: DataProposalHash,
-    signatures: Vec<SignedByValidator<MempoolNetMessage>>,
-}
-
 #[derive(Default, BorshSerialize, BorshDeserialize)]
 pub struct MempoolStore {
     // own_lane.rs
@@ -107,7 +101,8 @@ pub struct MempoolStore {
     notify_new_tx_to_process: tokio::sync::Notify,
     waiting_dissemination_txs: Vec<Transaction>,
     buffered_proposals: BTreeMap<LaneId, Vec<DataProposal>>,
-    buffered_podas: BTreeMap<LaneId, Vec<PlainPoDA>>,
+    buffered_podas:
+        BTreeMap<LaneId, BTreeMap<DataProposalHash, Vec<SignedByValidator<MempoolNetMessage>>>>,
 
     // block_construction.rs
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
@@ -631,10 +626,14 @@ impl Mempool {
                 .entry(lane_id.clone())
                 .or_default();
 
-            lane.push(PlainPoDA {
-                dp_hash: data_proposal_hash.clone(),
-                signatures,
-            });
+            if let Some(sigs) = lane.get(data_proposal_hash) {
+                if sigs.len() > signatures.len() {
+                    debug!("Not updating poda for data proposal hash {} because a better one is already stored", data_proposal_hash);
+                    return Ok(());
+                }
+            }
+
+            lane.insert(data_proposal_hash.clone(), signatures);
         }
 
         Ok(())
