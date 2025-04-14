@@ -55,7 +55,7 @@ impl super::Mempool {
         // This garentees that the message is sent only once per threshold
         if old_voting_power < f && new_voting_power >= f
             || old_voting_power < 2 * f && new_voting_power >= 2 * f
-            || new_voting_power == 3 * f + 1
+            || new_voting_power > 3 * f
         {
             self.broadcast_net_message(MempoolNetMessage::PoDAUpdate(
                 data_proposal_hash,
