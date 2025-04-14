@@ -319,7 +319,12 @@ mod e2e_consensus {
 
     #[test_log::test(tokio::test)]
     async fn can_restart_multi_node_after_txs() -> Result<()> {
-        let mut ctx = E2ECtx::new_multi_with_indexer(4, 500).await?;
+        let mut ctx = E2ECtx::new_multi_with_indexer_and_timestamp_checks(
+            4,
+            500,
+            hyle::utils::conf::TimestampCheck::Monotonic,
+        )
+        .await?;
 
         _ = ctx.wait_height(1).await;
 

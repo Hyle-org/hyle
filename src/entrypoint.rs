@@ -151,18 +151,22 @@ pub fn welcome_message(conf: &conf::Conf) {
         },
         data_directory = conf.data_directory.to_string_lossy(),
         validator_details = if matches!(conf.p2p.mode, P2pMode::FullValidator) {
+            let timestamp_checks: &'static str = (&conf.consensus.timestamp_checks).into();
             let c_mode = if conf.consensus.solo {
-                "↘ single"
+                "single"
             } else {
-                "↘ multi"
+                "multi"
             };
             let sd = conf.consensus.slot_duration.as_millis();
             let peers = if conf.consensus.solo {
                 "".to_string()
             } else {
-                conf.p2p.peers.join(" ")
+                format!("| peers: [{}]", conf.p2p.peers.join(" ")).to_string()
             };
-            format!("{} {}ms {}", c_mode, sd, peers)
+            format!(
+                "{} | {}ms | timestamps: {} {}",
+                c_mode, sd, timestamp_checks, peers
+            )
         } else {
             "".to_string()
         },
