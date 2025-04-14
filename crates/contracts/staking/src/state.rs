@@ -75,7 +75,7 @@ impl Staking {
 
     /// Compute f value
     pub fn compute_f(&self) -> u128 {
-        self.total_bond().div_ceil(3)
+        self.total_bond().div_euclid(3)
     }
 
     pub fn compute_voting_power(&self, validators: &[ValidatorPublicKey]) -> u128 {

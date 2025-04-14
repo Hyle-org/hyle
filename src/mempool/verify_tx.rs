@@ -105,6 +105,23 @@ impl super::Mempool {
         }
         Ok(())
     }
+    fn drain_filter<T, F>(vec: &mut Vec<T>, mut predicate: F) -> Vec<T>
+    where
+        F: FnMut(&mut T) -> bool,
+    {
+        let mut drained = Vec::new();
+        let mut i = 0;
+
+        while i < vec.len() {
+            if predicate(&mut vec[i]) {
+                drained.push(vec.remove(i));
+            } else {
+                i += 1;
+            }
+        }
+
+        drained
+    }
 
     pub(super) fn on_processed_data_proposal(
         &mut self,
@@ -138,22 +155,13 @@ impl super::Mempool {
                         .store_data_proposal(&crypto, &lane_id, data_proposal)?;
                 self.send_vote(self.get_lane_operator(&lane_id), hash, size)?;
 
-                let mut podas_to_process = Vec::new();
-
                 if let Some(lane) = self.inner.buffered_podas.get_mut(&lane_id) {
-                    lane.retain(|x| {
-                        if x.dp_hash == dp_hash {
-                            podas_to_process.push(x.clone());
-                            false
-                        } else {
-                            true
-                        }
-                    });
-                }
+                    let podas_to_process = Self::drain_filter(lane, |x| x.dp_hash == dp_hash);
 
-                for poda in podas_to_process {
-                    self.on_poda_update(&lane_id, &poda.dp_hash, poda.signatures.clone())
-                        .context("Processing buffered poda")?;
+                    for poda in podas_to_process {
+                        self.on_poda_update(&lane_id, &poda.dp_hash, poda.signatures.clone())
+                            .context("Processing buffered poda")?;
+                    }
                 }
             }
             DataProposalVerdict::Refuse => {

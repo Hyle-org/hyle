@@ -507,8 +507,9 @@ async fn mempool_broadcast_multiple_data_proposals() {
         message_matches: MempoolNetMessage::DataVote(..)
     };
 
-    node1.mempool_ctx.assert_broadcast("poda update");
-    node1.mempool_ctx.assert_broadcast("poda update");
+    node1.mempool_ctx.assert_broadcast("poda update f+1");
+    node1.mempool_ctx.assert_broadcast("poda update 2f+1");
+    node1.mempool_ctx.assert_broadcast("poda update 3f+1");
 
     // Second data proposal
 
@@ -557,6 +558,7 @@ async fn mempool_podaupdate_too_early() {
     let register_tx = make_register_contract_tx(ContractName::new("test1"));
 
     let dp = node1.mempool_ctx.create_data_proposal(None, &[register_tx]);
+    let lane_id = LaneId(node1.mempool_ctx.validator_pubkey().clone());
     node1
         .mempool_ctx
         .process_new_data_proposal(dp.clone())
@@ -591,10 +593,42 @@ async fn mempool_podaupdate_too_early() {
         }
     };
 
+    let poda2 = broadcast! {
+        description: "Disseminate Tx",
+        from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx],
+        message_matches: MempoolNetMessage::PoDAUpdate(hash, signatures) => {
+            assert_eq!(hash, &dp.hashed());
+            assert_eq!(3, signatures.len());
+        }
+    };
+
+    let assert_nb_signatures = |node: &AutobahnTestCtx, n: usize| {
+        assert_eq!(node.mempool_ctx.last_lane_entry(&lane_id).1, dp.hashed());
+        assert_eq!(
+            node.mempool_ctx
+                .last_lane_entry(&lane_id)
+                .0
+                .signatures
+                .len(),
+            n
+        );
+    };
+
+    assert_nb_signatures(&node2, 3);
+    assert_nb_signatures(&node3, 3);
+
+    assert_eq!(node4.mempool_ctx.current_hash(&lane_id), None);
+
+    // Handle Poda before data proposal (simulate a data proposal still being processed, not recorded yet)
+
     node4.mempool_ctx.handle_msg(&poda, "Poda handling");
+    node4.mempool_ctx.handle_msg(&poda2, "Poda handling 2");
     node4.mempool_ctx.handle_msg(&dp_msg, "Data Proposal");
 
     node4.mempool_ctx.handle_processed_data_proposals().await;
+
+    // 4 because the 3 signatures are the ones of the other nodes, so + the node 4 signature it makes 4 signatures
+    assert_nb_signatures(&node4, 4);
 
     send! {
         description: "Disseminated Tx Vote",
@@ -607,9 +641,13 @@ async fn mempool_podaupdate_too_early() {
         from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
         message_matches: MempoolNetMessage::PoDAUpdate(hash, signatures) => {
             assert_eq!(hash, &dp.hashed());
-            assert_eq!(3, signatures.len());
+            assert_eq!(4, signatures.len());
         }
     };
+
+    assert_nb_signatures(&node2, 4);
+    assert_nb_signatures(&node3, 4);
+    assert_nb_signatures(&node4, 4);
 }
 
 #[test_log::test(tokio::test)]
@@ -661,8 +699,9 @@ async fn mempool_fail_to_vote_on_fork() {
         message_matches: MempoolNetMessage::DataVote(..)
     };
 
-    node1.mempool_ctx.assert_broadcast("poda update");
-    node1.mempool_ctx.assert_broadcast("poda update");
+    node1.mempool_ctx.assert_broadcast("poda update f+1");
+    node1.mempool_ctx.assert_broadcast("poda update 2f+1");
+    node1.mempool_ctx.assert_broadcast("poda update 3f+1");
 
     // Second data proposal
 
