@@ -90,33 +90,3 @@ impl ContractAction for ShaBlob {
         }
     }
 }
-
-/// Format of the BlobData for native secp256k1 contract
-#[derive(Debug, borsh::BorshSerialize, borsh::BorshDeserialize)]
-pub struct Secp256k1Blob {
-    pub identity: Identity,
-    pub data: [u8; 32],
-    pub public_key: [u8; 33],
-    pub signature: [u8; 64],
-}
-
-impl Secp256k1Blob {
-    pub fn as_blob(&self) -> Blob {
-        <Self as ContractAction>::as_blob(self, "secp256k1".into(), None, None)
-    }
-}
-
-impl ContractAction for Secp256k1Blob {
-    fn as_blob(
-        &self,
-        contract_name: ContractName,
-        _caller: Option<BlobIndex>,
-        _callees: Option<Vec<BlobIndex>>,
-    ) -> Blob {
-        #[allow(clippy::expect_used)]
-        Blob {
-            contract_name,
-            data: BlobData(borsh::to_vec(self).expect("failed to encode Secp256k1Blob")),
-        }
-    }
-}
