@@ -25,9 +25,9 @@ pub struct CheckSecp256k1<'a> {
 }
 
 impl<'a> CheckSecp256k1<'a> {
-    pub fn new(contract_input: &'a Calldata, expected_data: &'a [u8]) -> Self {
+    pub fn new(calldata: &'a Calldata, expected_data: &'a [u8]) -> Self {
         Self {
-            contract_input,
+            calldata,
             expected_data,
             blob_index: None,
         }
