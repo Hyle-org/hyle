@@ -124,7 +124,7 @@ paste = { version = "1.0.15" }
 prometheus = { version = "0.13.4" }
 quote = { version = "1.0.39" }
 rand = { version = "0.8.5" }
-sqlx = { version = "0.8.3", features = [
+sqlx = { version = "0.8.4", features = [
   "runtime-tokio",
   "postgres",
   "migrate",
