@@ -117,7 +117,8 @@ impl Hashed<HyleOutputHash> for HyleOutput {
         hasher.update(self.index.0.to_le_bytes());
         for blob in &self.blobs {
             hasher.update(blob.0 .0.to_le_bytes());
-            hasher.update(blob.1.as_slice());
+            hasher.update(blob.1.contract_name.0.as_bytes());
+            hasher.update(blob.1.data.0.as_slice());
         }
         hasher.update([self.success as u8]);
         hasher.update(self.onchain_effects.len().to_le_bytes());
