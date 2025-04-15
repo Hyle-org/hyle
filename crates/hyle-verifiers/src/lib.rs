@@ -203,7 +203,7 @@ mod tests {
             next_state_len = 4
             next_state = [0, 0, 0, 0]
             identity_len = 56
-            identity = "3f368bf90c71946fc7b0cde9161ace42985d235f.ecdsa_secp256r1"
+            identity = "3f368bf90c71946fc7b0cde9161ace42985d235f@ecdsa_secp256r1"
             tx_hash_len = 0
             tx_hash = []
             blobs_len = 9
