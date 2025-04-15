@@ -249,9 +249,6 @@ impl Mempool {
         let mut interval = tokio::time::interval(tick_interval);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
-        // Notify once on start.
-        self.notify_new_tx_to_process.notify_one();
-
         // TODO: Recompute optimistic node_state for contract registrations.
         module_handle_messages! {
             on_bus self.bus,
