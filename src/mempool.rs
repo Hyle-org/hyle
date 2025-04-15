@@ -97,6 +97,8 @@ pub struct MempoolStore {
     // on cancellation
     #[borsh(skip)]
     processing_txs: VecDeque<JoinHandle<Result<Transaction>>>,
+    #[borsh(skip)]
+    notify_new_tx_to_process: tokio::sync::Notify,
     waiting_dissemination_txs: Vec<Transaction>,
     buffered_proposals: BTreeMap<LaneId, Vec<DataProposal>>,
 
@@ -247,6 +249,9 @@ impl Mempool {
         let mut interval = tokio::time::interval(tick_interval);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
+        // Notify once on start.
+        self.notify_new_tx_to_process.notify_one();
+
         // TODO: Recompute optimistic node_state for contract registrations.
         module_handle_messages! {
             on_bus self.bus,
@@ -289,18 +294,37 @@ impl Mempool {
                 }
             }
             // own_lane.rs code below
-            _ = async {
+            // This is inlined to avoid double-self mutable borrow.
+            // Essentially we just wait for a tx to appear in processing_txs.
+            tx = async {
                 loop {
-                    if let Some(task) = self.inner.processing_txs.front_mut() {
-                        if task.is_finished() {
-                            break;
+                    if self
+                        .inner.processing_txs
+                        .front()
+                        .is_some_and(|jh| jh.is_finished())
+                    {
+                        #[allow(clippy::unwrap_used, reason = "checked above")]
+                        let processing_tx = self.inner.processing_txs.pop_front().unwrap();
+                        match processing_tx.await {
+                            Err(e) => {
+                                tracing::error!("Error joining task: {:?}", e);
+                                continue;
+                            }
+                            Ok(els) => return els,
                         }
+                    } else {
+                        self.inner.notify_new_tx_to_process.notified().await;
                     }
-                    // Else sleep a while
-                    tokio::time::sleep(Duration::from_millis(100)).await;
                 }
             } => {
-                let _ = log_error!(self.handle_processing_txs().await, "Processing txs");
+                match tx {
+                    Ok(tx) => {
+                        let _ = log_error!(self.on_new_tx(tx), "Handling tx in Mempool");
+                    }
+                    Err(e) => {
+                        warn!("Error processing tx: {:?}", e);
+                    }
+                }
             }
             _ = interval.tick() => {
                 let _ = log_error!(self.handle_data_proposal_management(), "Creating Data Proposal on tick");

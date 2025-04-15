@@ -210,23 +210,7 @@ impl super::Mempool {
                 tx.hashed();
                 Ok(tx)
             }));
-        Ok(())
-    }
-
-    pub(super) async fn handle_processing_txs(&mut self) -> Result<()> {
-        loop {
-            if self
-                .processing_txs
-                .front()
-                .is_some_and(|jh| jh.is_finished())
-            {
-                #[allow(clippy::unwrap_used, reason = "checked above")]
-                let processing_tx = self.processing_txs.pop_front().unwrap();
-                self.on_new_tx(processing_tx.await??)?;
-            } else {
-                break;
-            }
-        }
+        self.notify_new_tx_to_process.notify_one();
         Ok(())
     }
 
@@ -256,6 +240,7 @@ impl super::Mempool {
                             .context("Processing proof tx in blocker")?;
                         Ok(tx)
                     }));
+                self.notify_new_tx_to_process.notify_one();
 
                 return Ok(());
             }
