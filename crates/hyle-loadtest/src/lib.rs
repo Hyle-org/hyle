@@ -123,7 +123,7 @@ pub async fn setup_hyllar(users: u32) -> Result<Hyllar> {
 
     // Create an entry for each users
     for n in 0..users {
-        let ident = &format!("{n}.hyllar_test");
+        let ident = &format!("{n}@hyllar_test");
         hyllar
             .transfer(FAUCET_ID, ident, 0)
             .map_err(|e| anyhow::anyhow!(e))?;
