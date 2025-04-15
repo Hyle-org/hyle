@@ -816,7 +816,7 @@ pub mod test {
     };
     use assertables::assert_contains;
     use tokio::sync::broadcast::Receiver;
-    use tracing::error;
+    use tracing::{error, Instrument};
     use utils::TimestampMs;
 
     pub struct ConsensusTestCtx {
@@ -1295,33 +1295,78 @@ pub mod test {
 
         node1.start_round().await;
 
+        let cp = ConsensusProposal {
+            slot: 2,
+            timestamp: TimestampMs(123),
+            cut: vec![(
+                LaneId(node2.pubkey()),
+                DataProposalHash("test".to_string()),
+                LaneBytesSize::default(),
+                AggregateSignature::default(),
+            )],
+            staking_actions: vec![],
+            parent_hash: ConsensusProposalHash("hash".into()),
+        };
+
         // Create wrong prepare
         let prepare_msg = node1
             .consensus
-            .sign_net_message(ConsensusNetMessage::Prepare(
-                ConsensusProposal {
-                    slot: 2,
-                    timestamp: TimestampMs(123),
-                    cut: vec![(
-                        LaneId(node2.pubkey()),
-                        DataProposalHash("test".to_string()),
-                        LaneBytesSize::default(),
-                        AggregateSignature::default(),
-                    )],
-                    staking_actions: vec![],
-                    parent_hash: ConsensusProposalHash("hash".into()),
-                },
-                Ticket::Genesis,
-                0,
-            ))
+            .sign_net_message(ConsensusNetMessage::Prepare(cp.clone(), Ticket::Genesis, 0))
             .expect("Error while signing");
 
         // Slot 1 - leader = node1
         // Ensuring one slot commits correctly before a timeout
 
-        assert_contains!(node2.handle_msg_err(&prepare_msg).to_string(), "wrong slot");
-        assert_contains!(node3.handle_msg_err(&prepare_msg).to_string(), "wrong slot");
-        assert_contains!(node4.handle_msg_err(&prepare_msg).to_string(), "wrong slot");
+        // Check that wrong prepares are buffered in each node consuming it
+
+        node2.handle_msg(&prepare_msg, "message");
+
+        assert_eq!(
+            node2
+                .consensus
+                .bft_round_state
+                .follower
+                .buffered_prepares
+                .get(&cp.hashed()),
+            Some(&(
+                node1.validator_pubkey().clone(),
+                cp.clone(),
+                Ticket::Genesis,
+                0
+            ))
+        );
+        node3.handle_msg(&prepare_msg, "message");
+
+        assert_eq!(
+            node3
+                .consensus
+                .bft_round_state
+                .follower
+                .buffered_prepares
+                .get(&cp.hashed()),
+            Some(&(
+                node1.validator_pubkey().clone(),
+                cp.clone(),
+                Ticket::Genesis,
+                0
+            ))
+        );
+        node4.handle_msg(&prepare_msg, "message");
+
+        assert_eq!(
+            node4
+                .consensus
+                .bft_round_state
+                .follower
+                .buffered_prepares
+                .get(&cp.hashed()),
+            Some(&(
+                node1.validator_pubkey().clone(),
+                cp.clone(),
+                Ticket::Genesis,
+                0
+            ))
+        );
     }
 
     #[test_log::test(tokio::test)]
