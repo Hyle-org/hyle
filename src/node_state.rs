@@ -624,25 +624,6 @@ impl NodeState {
             };
         }
 
-        let Some(known_contract_state) = contract_changes
-            .get(contract_name)
-            .and_then(|c| match c {
-                SideEffect::Register(c) => Some(c),
-                SideEffect::UpdateState(c) => Some(c),
-                _ => None,
-            })
-            .or(contracts.get(contract_name))
-        else {
-            // Contract not found (presumably no longer exists), we can't settle this TX.
-            let msg = format!(
-                "Cannot settle blob, contract '{}' no longer exists",
-                contract_name
-            );
-            debug!("{msg}");
-            events.push(TransactionStateEvent::SettleEvent(msg));
-            return Some(Err(()));
-        };
-
         // Regular case: go through each proof for this blob. If they settle, carry on recursively.
         for (i, proof_metadata) in current_blob.possible_proofs.iter().enumerate() {
             #[allow(clippy::unwrap_used, reason = "pushed above so last must exist")]
@@ -651,9 +632,12 @@ impl NodeState {
 
             // TODO: ideally make this CoW
             let mut current_contracts = contract_changes.clone();
-            if let Err(msg) =
-                Self::process_proof(&mut current_contracts, proof_metadata, known_contract_state)
-            {
+            if let Err(msg) = Self::process_proof(
+                contracts,
+                &mut current_contracts,
+                contract_name,
+                proof_metadata,
+            ) {
                 // Not a valid proof, log it and try the next one.
                 let msg = format!(
                     "Could not settle blob proof output #{} for contract '{}': {}",
@@ -880,7 +864,7 @@ impl NodeState {
         }
 
         // blob_hash verification
-        let extracted_blobs_hash = BlobsHashes::from_concatenated(&hyle_output.blobs);
+        let extracted_blobs_hash = (&hyle_output.blobs).into();
         if !unsettled_tx.blobs_hash.includes_all(&extracted_blobs_hash) {
             bail!(
                 "Proof blobs hash '{}' do not correspond to BlobTx blobs hash '{}'.",
@@ -950,14 +934,41 @@ impl NodeState {
         Ok(())
     }
 
+    // Helper for process_proof
+    fn get_contract<'a>(
+        contracts: &'a HashMap<ContractName, Contract>,
+        contract_changes: &'a BTreeMap<ContractName, SideEffect>,
+        contract_name: &ContractName,
+    ) -> Result<&'a Contract, Error> {
+        let Some(contract) = contract_changes
+            .get(contract_name)
+            .and_then(|c| match c {
+                SideEffect::Register(c) => Some(c),
+                SideEffect::UpdateState(c) => Some(c),
+                _ => None,
+            })
+            .or(contracts.get(contract_name))
+        else {
+            // Contract not found (presumably no longer exists), we can't settle this TX.
+            bail!(
+                "Cannot settle blob, contract '{}' no longer exists",
+                contract_name
+            );
+        };
+        Ok(contract)
+    }
+
     // Called when trying to actually settle a blob TX - processes a proof for settlement.
     // verify_hyle_output has already been called at this point.
     fn process_proof(
+        contracts: &HashMap<ContractName, Contract>,
         contract_changes: &mut BTreeMap<ContractName, SideEffect>,
+        contract_name: &ContractName,
         proof_metadata: &(ProgramId, HyleOutput),
-        contract: &Contract,
     ) -> Result<()> {
         validate_state_commitment_size(&proof_metadata.1.next_state)?;
+
+        let contract = Self::get_contract(contracts, contract_changes, contract_name)?.clone();
 
         tracing::trace!(
             "Processing proof for contract {} with state {:?}",
@@ -978,6 +989,17 @@ impl NodeState {
                 proof_metadata.0,
                 contract.program_id
             )
+        }
+
+        for state_read in &proof_metadata.1.state_reads {
+            let other_contract = Self::get_contract(contracts, contract_changes, &state_read.0)?;
+            if state_read.1 != other_contract.state {
+                bail!(
+                    "State read {:?} does not match other contract state {:?}",
+                    state_read,
+                    other_contract.state
+                )
+            }
         }
 
         for effect in &proof_metadata.1.onchain_effects {
@@ -1009,12 +1031,13 @@ impl NodeState {
         }
 
         // Apply the generic state updates
+        let contract_name = contract.name.clone();
         let update = SideEffect::UpdateState(Contract {
             state: proof_metadata.1.next_state.clone(),
-            ..contract.clone()
+            ..contract
         });
         contract_changes
-            .entry(contract.name.clone())
+            .entry(contract_name)
             .and_modify(|c| c.apply(update.clone()))
             .or_insert(update);
 
@@ -1153,13 +1176,14 @@ pub mod test {
             version: 1,
             identity: blob_tx.identity.clone(),
             index: blob_index,
-            blobs: flatten_blobs_vec(&blob_tx.blobs),
+            blobs: blob_tx.blobs.clone().into(),
             tx_blob_count: blob_tx.blobs.len(),
             initial_state: StateCommitment(vec![0, 1, 2, 3]),
             next_state: StateCommitment(vec![4, 5, 6]),
             success: true,
             tx_hash: blob_tx.hashed(),
             tx_ctx: None,
+            state_reads: vec![],
             onchain_effects: vec![],
             program_outputs: vec![],
         }
@@ -1175,13 +1199,14 @@ pub mod test {
             version: 1,
             identity: blob_tx.identity.clone(),
             index: blob_index,
-            blobs: flatten_blobs_vec(&blob_tx.blobs),
+            blobs: blob_tx.blobs.clone().into(),
             tx_blob_count: blob_tx.blobs.len(),
             initial_state: StateCommitment(initial_state.to_vec()),
             next_state: StateCommitment(next_state.to_vec()),
             success: true,
             tx_hash: blob_tx.hashed(),
             tx_ctx: None,
+            state_reads: vec![],
             onchain_effects: vec![],
             program_outputs: vec![],
         }
@@ -1426,6 +1451,64 @@ pub mod test {
         assert_eq!(block.failed_txs.len(), 0);
         // We only store one of the two.
         assert_eq!(block.blob_proof_outputs.len(), 1);
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn settle_with_multiple_state_reads() {
+        let mut state = new_node_state().await;
+        let c1 = ContractName::new("c1");
+        let c2 = ContractName::new("c2");
+
+        state.handle_signed_block(&craft_signed_block(
+            10,
+            vec![
+                make_register_contract_tx(c1.clone()).into(),
+                make_register_contract_tx(c2.clone()).into(),
+            ],
+        ));
+
+        let blob_tx = BlobTransaction::new(Identity::new("test.c1"), vec![new_blob(&c1.0)]);
+        let mut ho = make_hyle_output(blob_tx.clone(), BlobIndex(0));
+        // Add an incorrect state read
+        ho.state_reads
+            .push((c2.clone(), StateCommitment(vec![9, 8, 7])));
+
+        let effects = state.handle_signed_block(&craft_signed_block(
+            11,
+            vec![
+                blob_tx.clone().into(),
+                new_proof_tx(&c1, &ho, &blob_tx.hashed()).into(),
+            ],
+        ));
+
+        assert!(effects
+            .transactions_events
+            .get(&blob_tx.hashed())
+            .unwrap()
+            .iter()
+            .any(|e| {
+                let TransactionStateEvent::SettleEvent(errmsg) = e else {
+                    return false;
+                };
+                errmsg.contains("does not match other contract state")
+            }));
+
+        let mut ho = make_hyle_output(blob_tx.clone(), BlobIndex(0));
+        // Now correct state reads (some redundant ones to validate that this works)
+        ho.state_reads
+            .push((c2.clone(), state.contracts.get(&c2).unwrap().state.clone()));
+        ho.state_reads
+            .push((c2.clone(), state.contracts.get(&c2).unwrap().state.clone()));
+        ho.state_reads
+            .push((c1.clone(), state.contracts.get(&c1).unwrap().state.clone()));
+
+        let effects = state.handle_signed_block(&craft_signed_block(
+            12,
+            vec![new_proof_tx(&c1, &ho, &blob_tx.hashed()).into()],
+        ));
+        assert_eq!(effects.blob_proof_outputs.len(), 1);
+        assert_eq!(effects.successful_txs.len(), 1);
+        assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
     }
 
     #[test_log::test(tokio::test)]
