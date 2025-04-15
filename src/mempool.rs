@@ -35,7 +35,7 @@ use std::{
     time::Duration,
 };
 use storage::{LaneEntry, Storage};
-use tokio::task::JoinSet;
+use tokio::task::{JoinHandle, JoinSet};
 use verify_tx::DataProposalVerdict;
 // Pick one of the two implementations
 // use storage_memory::LanesStorage;
@@ -92,6 +92,11 @@ struct MempoolBusClient {
 
 #[derive(Default, BorshSerialize, BorshDeserialize)]
 pub struct MempoolStore {
+    // own_lane.rs
+    // TODO: implement serialization, probably with a custom future that yields the unmodified Tx
+    // on cancellation
+    #[borsh(skip)]
+    processing_txs: VecDeque<JoinHandle<Result<Transaction>>>,
     waiting_dissemination_txs: Vec<Transaction>,
     buffered_proposals: BTreeMap<LaneId, Vec<DataProposal>>,
 
@@ -167,7 +172,6 @@ impl BusMessage for MempoolStatusEvent {}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum InternalMempoolEvent {
-    OnProcessedNewTx(Transaction),
     OnHashedDataProposal((LaneId, DataProposal)),
     OnProcessedDataProposal((LaneId, DataProposalVerdict, DataProposal)),
 }
@@ -244,7 +248,6 @@ impl Mempool {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
         // TODO: Recompute optimistic node_state for contract registrations.
-
         module_handle_messages! {
             on_bus self.bus,
             delay_shutdown_until {
@@ -284,6 +287,20 @@ impl Mempool {
                             "Handling InternalMempoolEvent in Mempool");
                     }
                 }
+            }
+            // own_lane.rs code below
+            _ = async {
+                loop {
+                    if let Some(task) = self.inner.processing_txs.front_mut() {
+                        if task.is_finished() {
+                            break;
+                        }
+                    }
+                    // Else sleep a while
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            } => {
+                let _ = log_error!(self.handle_processing_txs().await, "Processing txs");
             }
             _ = interval.tick() => {
                 let _ = log_error!(self.handle_data_proposal_management(), "Creating Data Proposal on tick");
@@ -361,9 +378,6 @@ impl Mempool {
 
     fn handle_internal_event(&mut self, event: InternalMempoolEvent) -> Result<()> {
         match event {
-            InternalMempoolEvent::OnProcessedNewTx(tx) => {
-                self.on_new_tx(tx).context("Processing new tx")
-            }
             InternalMempoolEvent::OnHashedDataProposal((lane_id, data_proposal)) => self
                 .on_hashed_data_proposal(&lane_id, data_proposal)
                 .context("Hashing data proposal"),
