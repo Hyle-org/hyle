@@ -6,7 +6,7 @@ use tracing::{debug, info, trace, warn};
 use super::Consensus;
 use crate::{
     bus::BusClientSender,
-    consensus::{role_timeout::TimeoutState, StateTag},
+    consensus::{role_timeout::TimeoutState, CommittedConsensusProposal, ConsensusEvent, StateTag},
     log_error,
     mempool::MempoolNetMessage,
     model::{Hashed, Signed, ValidatorPublicKey},
@@ -67,7 +67,10 @@ impl Consensus {
 
         // If received proposal for next slot, we continue processing and will try to fast forward
         // if received proposal is for an even further slot, we buffer it
-        if consensus_proposal.slot > self.bft_round_state.slot + 1 {
+        if consensus_proposal.slot > self.bft_round_state.slot + 1
+            || (consensus_proposal.slot == self.bft_round_state.slot + 1
+                && self.bft_round_state.slot > self.bft_round_state.current_proposal.slot)
+        {
             warn!(
                 proposal_hash = %consensus_proposal.hashed(),
                 sender = %sender,
@@ -162,11 +165,14 @@ impl Consensus {
             .buffered_prepares
             .next_prepare(cp_hash.clone())
         {
-            debug!("🏎️ Fast forwarding to next Prepare");
+            debug!(
+                "🏎️ Fast forwarding to next Prepare with prepare {:?}",
+                prepare
+            );
             // FIXME? In theory, we could have a stackoverflow if we need to catchup a lot of prepares
             // Note: If we want to vote on the passed proposal even if it's too late,
             // we can just remove the "return" here and continue.
-            return self.on_prepare(prepare.0, prepare.1, prepare.2, 0);
+            return self.on_prepare(prepare.0, prepare.1, prepare.2, prepare.3);
         }
 
         // Responds PrepareVote message to leader with validator's vote on this proposal
@@ -426,6 +432,13 @@ impl Consensus {
             }
         }
 
+        tracing::debug!(
+            "Slot info service: prepare slot {}, bft round state slot {}, current proposal slot {}",
+            prepare_slot,
+            self.bft_round_state.slot,
+            self.bft_round_state.current_proposal.slot
+        );
+
         // If ticket for next slot && correct parent hash, fast forward
         if prepare_slot == self.bft_round_state.slot + 1
             && consensus_proposal.parent_hash == self.bft_round_state.current_proposal.hashed()
@@ -434,14 +447,25 @@ impl Consensus {
 
             // Safety assumption: we can't actually verify a TC for the next slot, but since it matches our hash,
             // since we have no staking actions in the prepare we're good.
-            if !self
-                .bft_round_state
-                .current_proposal
-                .staking_actions
-                .is_empty()
-            {
-                bail!("Timeout Certificate slot {} view {} is for the next slot, but we have staking actions in our prepare", prepare_slot, prepare_view);
-            }
+            // if !self
+            //     .bft_round_state
+            //     .current_proposal
+            //     .staking_actions
+            //     .is_empty()
+            // {
+            //     bail!("Timeout Certificate slot {} view {} is for the next slot, but we have staking actions in our prepare", prepare_slot, prepare_view);
+            // }
+            //
+            _ = log_error!(
+                self.bus.send(ConsensusEvent::CommitConsensusProposal(
+                    CommittedConsensusProposal {
+                        staking: self.bft_round_state.staking.clone(),
+                        consensus_proposal: self.bft_round_state.current_proposal.clone(),
+                        certificate: timeout_qc.clone(),
+                    },
+                )),
+                "Failed to send ConsensusEvent::CommittedConsensusProposal on the bus"
+            );
 
             // We have received a timeout certificate for the next slot,
             // and it matches our know prepare for this slot, so try and commit that one then the TC.

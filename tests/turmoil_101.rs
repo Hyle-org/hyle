@@ -75,7 +75,7 @@ macro_rules! turmoil_simple {
 // turmoil_simple!(501..=520, simulation_slow_node, submit_10_contracts);
 // turmoil_simple!(501..=520, simulation_two_slow_nodes, submit_10_contracts);
 turmoil_simple!(501..=520, simulation_slow_network, submit_10_contracts);
-// turmoil_simple!(501..=520, simulation_hold, submit_10_contracts);
+turmoil_simple!(501..=520, simulation_hold, submit_10_contracts);
 // turmoil_simple!(601..=620, simulation_one_more_node, submit_10_contracts);
 
 /// **Simulation**
