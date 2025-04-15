@@ -227,7 +227,7 @@ mod tests {
                         initial_state: StateCommitment(vec![0, 0, 0, 0]),
                         next_state: StateCommitment(vec![0, 0, 0, 0]),
                         identity: Identity(
-                            "3f368bf90c71946fc7b0cde9161ace42985d235f.ecdsa_secp256r1".to_owned()
+                            "3f368bf90c71946fc7b0cde9161ace42985d235f@ecdsa_secp256r1".to_owned()
                         ),
                         index: BlobIndex(0),
                         blobs: IndexedBlobs(vec![(

@@ -570,7 +570,7 @@ impl Identity {
         s.into()
     }
 }
-impl<S: Into<String>> From<S> for Identity {
+impl<S: Into<String> + Clone> From<S> for Identity {
     fn from(s: S) -> Self {
         Identity(s.into())
     }

@@ -150,7 +150,7 @@ pub async fn register_contract(
     .map_err(|err| AppError(StatusCode::BAD_REQUEST, anyhow!(err)))?;
 
     let tx = BlobTransaction::new(
-        "hyle.hyle",
+        "hyle@hyle",
         vec![RegisterContractAction {
             verifier: payload.verifier,
             program_id: payload.program_id,

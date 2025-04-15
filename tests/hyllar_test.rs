@@ -48,7 +48,7 @@ mod e2e_hyllar {
 
         info!("➡️  Sending blob to register bob identity");
 
-        let mut tx = ProvableBlobTx::new("bob.hydentity".into());
+        let mut tx = ProvableBlobTx::new("bob@hydentity".into());
         register_identity(&mut tx, "hydentity".into(), "password".to_string())?;
         ctx.send_provable_blob_tx(&tx).await?;
 
@@ -74,7 +74,7 @@ mod e2e_hyllar {
             "password".to_string(),
         )?;
 
-        transfer(&mut tx, "hyllar".into(), "bob.hydentity".to_string(), 25)?;
+        transfer(&mut tx, "hyllar".into(), "bob@hydentity".to_string(), 25)?;
 
         ctx.send_provable_blob_tx(&tx).await?;
 
@@ -99,7 +99,7 @@ mod e2e_hyllar {
             .await?;
         assert_eq!(
             state
-                .balance_of("bob.hydentity")
+                .balance_of("bob@hydentity")
                 .expect("bob identity not found"),
             25
         );

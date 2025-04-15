@@ -261,7 +261,7 @@ impl Hashed<ProofDataHash> for ProofData {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, BorshSerialize, BorshDeserialize)]
+#[derive(Serialize, Deserialize, Default, BorshSerialize, BorshDeserialize)]
 #[readonly::make]
 pub struct BlobTransaction {
     pub identity: Identity,
@@ -283,6 +283,16 @@ impl BlobTransaction {
             hash_cache: RwLock::new(None),
             blobshash_cache: RwLock::new(None),
         }
+    }
+}
+
+// Custom implem to skip the cached fields
+impl std::fmt::Debug for BlobTransaction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BlobTransaction")
+            .field("identity", &self.identity)
+            .field("blobs", &self.blobs)
+            .finish()
     }
 }
 
@@ -355,13 +365,13 @@ impl BlobTransaction {
 
     pub fn validate_identity(&self) -> Result<(), anyhow::Error> {
         // Checks that there is a blob that proves the identity
-        let Some((identity, identity_contract_name)) = self.identity.0.split_once('.') else {
-            anyhow::bail!("Transaction identity {} is not correctly formed. It should be in the form <id>.<contract_id_name>", self.identity.0);
+        let Some((identity, identity_contract_name)) = self.identity.0.split_once("@") else {
+            anyhow::bail!("Transaction identity {} is not correctly formed. It should be in the form <id>@<contract_id_name>", self.identity.0);
         };
 
         if identity.is_empty() || identity_contract_name.is_empty() {
             anyhow::bail!(
-                "Transaction identity {}.{} must not have empty parts",
+                "Transaction identity {}@{} must not have empty parts",
                 identity,
                 identity_contract_name
             );

@@ -1096,7 +1096,7 @@ pub mod test {
 
     pub fn make_register_contract_tx(name: ContractName) -> Transaction {
         BlobTransaction::new(
-            "hyle.hyle",
+            "hyle@hyle",
             vec![RegisterContractAction {
                 verifier: "test".into(),
                 program_id: ProgramId(vec![]),

@@ -20,7 +20,7 @@ async fn test_recursion() {
     })
     .build();
 
-    let mut tx = ProvableBlobTx::new("bob.hydentity".into());
+    let mut tx = ProvableBlobTx::new("bob@hydentity".into());
     register_identity(&mut tx, "hydentity".into(), "password".into()).unwrap();
     let first_proof = executor
         .process(tx)
@@ -32,7 +32,7 @@ async fn test_recursion() {
         .unwrap()
         .proof;
 
-    let mut tx = ProvableBlobTx::new("alice.hydentity".into());
+    let mut tx = ProvableBlobTx::new("alice@hydentity".into());
     register_identity(&mut tx, "hydentity".into(), "password".into()).unwrap();
     let second_proof = executor
         .process(tx)
@@ -88,12 +88,12 @@ async fn test_recursion() {
     assert_eq!(outputs.first().unwrap().0, hyle_contracts::HYDENTITY_ID,);
     assert_eq!(
         String::from_utf8(outputs.first().unwrap().1.program_outputs.clone()).unwrap(),
-        "Successfully registered identity for account: bob.hydentity:f7b8be921888c7144023f86a6564ec282de0b18a2407d994f5d962b79afe25db"
+        "Successfully registered identity for account: bob@hydentity:f08bf16792a8efe265e37068568042c25aa6e2c3df0d0cb3c5eed7c78abc7348"
     );
     assert_eq!(outputs.last().unwrap().0, hyle_contracts::HYDENTITY_ID,);
     assert_eq!(
         String::from_utf8(outputs.last().unwrap().1.program_outputs.clone()).unwrap(),
-        "Successfully registered identity for account: alice.hydentity:a57d2f2aab5d16e86f7c6df0af27724798aa52517943b5f96aebd8b9e40a6d1b"
+        "Successfully registered identity for account: alice@hydentity:8333a333420eb181556e8e021a7b682dc1fa58a2560547938eb3c11bc74ecdbd"
     );
 
     assert_eq!(outputs.len(), 2);
