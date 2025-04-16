@@ -4,7 +4,7 @@ use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{CommittedConsensusProposal, ConsensusEvent},
     genesis::GenesisEvent,
-    log_error,
+    log_error, log_warn,
     model::*,
     module_handle_messages,
     node_state::module::NodeStateEvent,
@@ -35,7 +35,7 @@ use std::{
     time::Duration,
 };
 use storage::{LaneEntry, Storage};
-use tokio::task::JoinSet;
+use tokio::task::{JoinHandle, JoinSet};
 use verify_tx::DataProposalVerdict;
 // Pick one of the two implementations
 // use storage_memory::LanesStorage;
@@ -90,10 +90,20 @@ struct MempoolBusClient {
 }
 }
 
+type PodaSignatures = Vec<SignedByValidator<MempoolNetMessage>>;
+
 #[derive(Default, BorshSerialize, BorshDeserialize)]
 pub struct MempoolStore {
+    // own_lane.rs
+    // TODO: implement serialization, probably with a custom future that yields the unmodified Tx
+    // on cancellation
+    #[borsh(skip)]
+    processing_txs: VecDeque<JoinHandle<Result<Transaction>>>,
+    #[borsh(skip)]
+    notify_new_tx_to_process: tokio::sync::Notify,
     waiting_dissemination_txs: Vec<Transaction>,
     buffered_proposals: BTreeMap<LaneId, Vec<DataProposal>>,
+    buffered_podas: BTreeMap<LaneId, BTreeMap<DataProposalHash, Vec<PodaSignatures>>>,
 
     // block_construction.rs
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
@@ -167,7 +177,6 @@ impl BusMessage for MempoolStatusEvent {}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum InternalMempoolEvent {
-    OnProcessedNewTx(Transaction),
     OnHashedDataProposal((LaneId, DataProposal)),
     OnProcessedDataProposal((LaneId, DataProposalVerdict, DataProposal)),
 }
@@ -244,7 +253,6 @@ impl Mempool {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
         // TODO: Recompute optimistic node_state for contract registrations.
-
         module_handle_messages! {
             on_bus self.bus,
             delay_shutdown_until {
@@ -282,6 +290,39 @@ impl Mempool {
                     if let Ok(event) = log_error!(event, "Error in running task") {
                         let _ = log_error!(self.handle_internal_event(event),
                             "Handling InternalMempoolEvent in Mempool");
+                    }
+                }
+            }
+            // own_lane.rs code below
+            // This is inlined to avoid double-self mutable borrow.
+            // Essentially we just wait for a tx to appear in processing_txs.
+            tx = async {
+                loop {
+                    if self
+                        .inner.processing_txs
+                        .front()
+                        .is_some_and(|jh| jh.is_finished())
+                    {
+                        #[allow(clippy::unwrap_used, reason = "checked above")]
+                        let processing_tx = self.inner.processing_txs.pop_front().unwrap();
+                        match processing_tx.await {
+                            Err(e) => {
+                                tracing::error!("Error joining task: {:?}", e);
+                                continue;
+                            }
+                            Ok(els) => return els,
+                        }
+                    } else {
+                        self.inner.notify_new_tx_to_process.notified().await;
+                    }
+                }
+            } => {
+                match tx {
+                    Ok(tx) => {
+                        let _ = log_error!(self.on_new_tx(tx), "Handling tx in Mempool");
+                    }
+                    Err(e) => {
+                        warn!("Error processing tx: {:?}", e);
                     }
                 }
             }
@@ -361,9 +402,6 @@ impl Mempool {
 
     fn handle_internal_event(&mut self, event: InternalMempoolEvent) -> Result<()> {
         match event {
-            InternalMempoolEvent::OnProcessedNewTx(tx) => {
-                self.on_new_tx(tx).context("Processing new tx")
-            }
             InternalMempoolEvent::OnHashedDataProposal((lane_id, data_proposal)) => self
                 .on_hashed_data_proposal(&lane_id, data_proposal)
                 .context("Hashing data proposal"),
@@ -569,8 +607,31 @@ impl Mempool {
             data_proposal_hash,
             lane_id
         );
-        self.lanes
-            .add_signatures(lane_id, data_proposal_hash, signatures)?;
+
+        if log_warn!(
+            self.lanes
+                .add_signatures(lane_id, data_proposal_hash, signatures.clone()),
+            "PodaUpdate"
+        )
+        .is_err()
+        {
+            info!(
+                "Buffering poda of {} signatures for DP: {}",
+                signatures.len(),
+                data_proposal_hash
+            );
+
+            let lane = self
+                .inner
+                .buffered_podas
+                .entry(lane_id.clone())
+                .or_default()
+                .entry(data_proposal_hash.clone())
+                .or_default();
+
+            lane.push(signatures);
+        }
+
         Ok(())
     }
 
@@ -1096,7 +1157,7 @@ pub mod test {
 
     pub fn make_register_contract_tx(name: ContractName) -> Transaction {
         BlobTransaction::new(
-            "hyle.hyle",
+            "hyle@hyle",
             vec![RegisterContractAction {
                 verifier: "test".into(),
                 program_id: ProgramId(vec![]),

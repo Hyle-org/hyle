@@ -158,7 +158,10 @@ pub fn validate_sp1_program_id(program_id: &ProgramId) -> Result<(), Error> {
 mod tests {
     use std::{fs::File, io::Read};
 
-    use hyle_model::{BlobIndex, HyleOutput, Identity, ProgramId, StateCommitment, TxHash};
+    use hyle_model::{
+        Blob, BlobData, BlobIndex, HyleOutput, Identity, IndexedBlobs, ProgramId, StateCommitment,
+        TxHash,
+    };
 
     use crate::validate_risc0_program_id;
 
@@ -200,7 +203,7 @@ mod tests {
             next_state_len = 4
             next_state = [0, 0, 0, 0]
             identity_len = 56
-            identity = "3f368bf90c71946fc7b0cde9161ace42985d235f.ecdsa_secp256r1"
+            identity = "3f368bf90c71946fc7b0cde9161ace42985d235f@ecdsa_secp256r1"
             tx_hash_len = 0
             tx_hash = []
             blobs_len = 9
@@ -224,13 +227,20 @@ mod tests {
                         initial_state: StateCommitment(vec![0, 0, 0, 0]),
                         next_state: StateCommitment(vec![0, 0, 0, 0]),
                         identity: Identity(
-                            "3f368bf90c71946fc7b0cde9161ace42985d235f.ecdsa_secp256r1".to_owned()
+                            "3f368bf90c71946fc7b0cde9161ace42985d235f@ecdsa_secp256r1".to_owned()
                         ),
                         index: BlobIndex(0),
-                        blobs: vec![(BlobIndex(0), vec![1, 1, 1, 1, 1])],
+                        blobs: IndexedBlobs(vec![(
+                            BlobIndex(0),
+                            Blob {
+                                contract_name: "webauthn".into(),
+                                data: BlobData(vec![3, 1, 1, 2, 1, 1, 2, 1, 1, 0])
+                            }
+                        )]),
                         tx_blob_count: 1,
                         success: true,
                         tx_hash: TxHash::default(), // TODO
+                        state_reads: vec![],
                         tx_ctx: None,
                         onchain_effects: vec![],
                         program_outputs: vec![]

@@ -12,7 +12,7 @@ rust-version = { workspace = true }
 hyle-model = { workspace = true }
 
 serde_json = { version = "1.0.140", optional = true }
-anyhow = "1.0.96"
+anyhow = "1.0.98"
 borsh = "1.5.6"
 rand = { version = "0.9" }
 risc0-zkvm = { version = "2.0.0", default-features = false, features = ["std"] }

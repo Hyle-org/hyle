@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use hyle_model::{Identity, ProofData, Signed, ValidatorSignature};
+use hyle_model::{Identity, IndexedBlobs, ProofData, Signed, ValidatorSignature};
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
 use sha3::Digest;
 
@@ -114,7 +114,7 @@ pub fn verify_native(
 ) -> HyleOutput {
     #[allow(clippy::expect_used, reason = "Logic error in the code")]
     let blob = blobs.get(index.0).expect("Invalid blob index");
-    let blobs = hyle_contract_sdk::flatten_blobs_vec(blobs);
+    let blobs: IndexedBlobs = blobs.iter().cloned().into();
 
     let (identity, success) = match verify_native_impl(blob, verifier) {
         Ok((identity, success)) => (identity, success),
@@ -141,6 +141,7 @@ pub fn verify_native(
         success,
         tx_hash,
         tx_ctx: None,
+        state_reads: vec![],
         onchain_effects: vec![],
         program_outputs: vec![],
     }

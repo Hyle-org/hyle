@@ -157,7 +157,7 @@ mod tests {
             identity: Identity::new("toto"),
             hash: TxHash::new(hash),
             parent_dp_hash: DataProposalHash::default(),
-            blobs_hash: BlobsHashes::new("blobs_hash"),
+            blobs_hash: BlobsHashes::default(),
             blobs: vec![UnsettledBlobMetadata {
                 blob: Blob {
                     contract_name: ContractName(contract.to_string()),

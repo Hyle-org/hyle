@@ -123,7 +123,7 @@ pub async fn setup_hyllar(users: u32) -> Result<Hyllar> {
 
     // Create an entry for each users
     for n in 0..users {
-        let ident = &format!("{n}.hyllar_test");
+        let ident = &format!("{n}@hyllar_test");
         hyllar
             .transfer(FAUCET_ID, ident, 0)
             .map_err(|e| anyhow::anyhow!(e))?;
@@ -134,7 +134,7 @@ pub async fn setup_hyllar(users: u32) -> Result<Hyllar> {
 /// Create a new contract "hyllar_test" that already contains entries for each users
 pub async fn setup(hyllar: Hyllar, url: String, verifier: String) -> Result<()> {
     let tx = BlobTransaction::new(
-        Identity::new("hyle.hyle"),
+        Identity::new("hyle@hyle"),
         vec![RegisterContractAction {
             contract_name: "hyllar_test".into(),
             verifier: verifier.into(),
@@ -183,7 +183,7 @@ pub async fn generate_blobs_txs(users: u32) -> Result<Vec<Transaction>> {
                     "Building blob transaction for user: {n}/{:?}",
                     chunk.last().unwrap()
                 );
-                let ident = Identity(format!("{n}.hyllar_test").to_string());
+                let ident = Identity(format!("{n}@hyllar_test").to_string());
 
                 let mut transaction = ProvableBlobTx::new(ident.clone());
                 transfer(
@@ -239,7 +239,7 @@ pub async fn generate_proof_txs(users: u32, state: States) -> Result<Vec<Transac
                     "Building proof transaction for user: {n}/{:?}",
                     chunk.last().unwrap()
                 );
-                let ident = Identity(format!("{n}.hyllar_test").to_string());
+                let ident = Identity(format!("{n}@hyllar_test").to_string());
 
                 let mut transaction = ProvableBlobTx::new(ident.clone());
                 transfer(
@@ -422,7 +422,7 @@ pub async fn long_running_test(node_url: String) -> Result<()> {
         let random_hyllar_contract: ContractName = format!("hyllar_{}", rand).into();
         let random_hydentity_contract: ContractName = format!("hydentity_{}", rand).into();
         let tx = BlobTransaction::new(
-            Identity::new("hyle.hyle"),
+            Identity::new("hyle@hyle"),
             vec![RegisterContractAction {
                 contract_name: random_hyllar_contract.clone(),
                 verifier: hyle_contract_sdk::Verifier("risc0-1".to_string()),
@@ -436,7 +436,7 @@ pub async fn long_running_test(node_url: String) -> Result<()> {
         client.send_tx_blob(&tx).await?;
 
         let tx = BlobTransaction::new(
-            Identity::new("hyle.hyle"),
+            Identity::new("hyle@hyle"),
             vec![RegisterContractAction {
                 contract_name: random_hydentity_contract.clone(),
                 verifier: hyle_contract_sdk::Verifier("risc0-1".to_string()),
@@ -455,7 +455,7 @@ pub async fn long_running_test(node_url: String) -> Result<()> {
         let mut tx_ctx = TxExecutorBuilder::new(CanonicalStates {
             hydentity: Hydentity::default(),
             hydentity_name: random_hydentity_contract.clone(),
-            hyllar: Hyllar::custom(format!("faucet.{}", random_hydentity_contract)),
+            hyllar: Hyllar::custom(format!("faucet@{}", random_hydentity_contract)),
             hyllar_name: random_hyllar_contract.clone(),
         })
         // Replace prover binaries for non-reproducible mode.
@@ -466,7 +466,7 @@ pub async fn long_running_test(node_url: String) -> Result<()> {
         .with_prover(random_hyllar_contract.clone(), Risc0Prover::new(HYLLAR_ELF))
         .build();
 
-        let ident = Identity(format!("faucet.{}", random_hydentity_contract.0));
+        let ident = Identity(format!("faucet@{}", random_hydentity_contract.0));
 
         // Register faucet identity
         let mut transaction = ProvableBlobTx::new(ident.clone());
@@ -486,7 +486,7 @@ pub async fn long_running_test(node_url: String) -> Result<()> {
 
             // Create a new user
             if now % 5 == 0 || users.len() < 2 {
-                let ident = Identity(format!("{}.{}", now, random_hydentity_contract.0));
+                let ident = Identity(format!("{}@{}", now, random_hydentity_contract.0));
                 users.push(now);
 
                 tracing::info!("Creating identity with 100 tokens: {}", ident);
@@ -554,8 +554,8 @@ pub async fn long_running_test(node_url: String) -> Result<()> {
                 continue;
             }
 
-            let guy_1_id = format!("{}.{}", guy_1_id, random_hydentity_contract.0);
-            let guy_2_id = format!("{}.{}", guy_2_id, random_hydentity_contract.0);
+            let guy_1_id = format!("{}@{}", guy_1_id, random_hydentity_contract.0);
+            let guy_2_id = format!("{}@{}", guy_2_id, random_hydentity_contract.0);
 
             info!("Getting balances for {} and {}", guy_1_id, guy_2_id);
 
@@ -612,7 +612,7 @@ pub async fn long_running_test(node_url: String) -> Result<()> {
 }
 
 pub async fn send_massive_blob(users: u32, url: String) -> Result<()> {
-    let ident = Identity::new("test3.hydentity");
+    let ident = Identity::new("test3@hydentity");
 
     let mut data = vec![];
 

@@ -2,8 +2,8 @@ use std::pin::Pin;
 
 use anyhow::Result;
 use sdk::{
-    flatten_blobs, Calldata, ContractName, HyleOutput, ProgramId, ProofData,
-    RegisterContractAction, StateCommitment, Verifier,
+    Calldata, ContractName, HyleOutput, ProgramId, ProofData, RegisterContractAction,
+    StateCommitment, Verifier,
 };
 
 use crate::transaction_builder::ProvableBlobTx;
@@ -182,10 +182,11 @@ pub mod test {
             next_state: initial_state,
             identity: calldata.identity.clone(),
             index: calldata.index,
-            blobs: flatten_blobs(&calldata.blobs.0),
+            blobs: calldata.blobs.clone(),
             tx_blob_count: calldata.tx_blob_count,
             success: true,
             tx_hash: calldata.tx_hash.clone(),
+            state_reads: vec![],
             tx_ctx: None,
             onchain_effects: vec![],
             program_outputs: vec![],

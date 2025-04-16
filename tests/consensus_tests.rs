@@ -94,7 +94,7 @@ mod e2e_consensus {
             .with_prover("staking".into(), Risc0Prover::new(STAKING_ELF))
             .build();
 
-        let node_identity = Identity(format!("{}.hydentity", node_info.id));
+        let node_identity = Identity(format!("{}@hydentity", node_info.id));
         {
             let mut transaction = ProvableBlobTx::new(node_identity.clone());
 
@@ -174,7 +174,7 @@ mod e2e_consensus {
         id: String,
         amount: u128,
     ) -> Result<()> {
-        let identity = Identity(format!("{}.hydentity", id));
+        let identity = Identity(format!("{}@hydentity", id));
         {
             let mut transaction = ProvableBlobTx::new(identity.clone());
 
@@ -185,7 +185,7 @@ mod e2e_consensus {
         }
 
         {
-            let mut transaction = ProvableBlobTx::new("faucet.hydentity".into());
+            let mut transaction = ProvableBlobTx::new("faucet@hydentity".into());
 
             verify_identity(
                 &mut transaction,
@@ -309,8 +309,8 @@ mod e2e_consensus {
             .await?;
 
         for i in 0..10 {
-            let balance = state.balance_of(&format!("alex{}.hydentity", i));
-            info!("Checking alex{}.hydentity balance: {:?}", i, balance);
+            let balance = state.balance_of(&format!("alex{}@hydentity", i));
+            info!("Checking alex{}@hydentity balance: {:?}", i, balance);
             assert_eq!(balance.unwrap(), ((100 + i) as u128));
         }
 
@@ -366,8 +366,8 @@ mod e2e_consensus {
             .await?;
 
         for i in 0..4 {
-            let balance = state.balance_of(&format!("alex{}.hydentity", i));
-            info!("Checking alex{}.hydentity balance: {:?}", i, balance);
+            let balance = state.balance_of(&format!("alex{}@hydentity", i));
+            info!("Checking alex{}@hydentity balance: {:?}", i, balance);
             assert_eq!(balance.unwrap(), ((100 + i) as u128));
         }
 
