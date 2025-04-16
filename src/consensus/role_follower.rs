@@ -66,9 +66,10 @@ impl Consensus {
 
         // If received proposal for next slot, we continue processing and will try to fast forward
         // if received proposal is for an even further slot, we buffer it
+        // if received proposal is for next slot, and we missed the current slot prepare, we buffer it.
         if consensus_proposal.slot > self.bft_round_state.slot + 1
             || (consensus_proposal.slot == self.bft_round_state.slot + 1
-                && self.bft_round_state.slot > self.bft_round_state.current_proposal.slot)
+                && self.current_slot_prepare_is_missing())
         {
             warn!(
                 proposal_hash = %consensus_proposal.hashed(),
@@ -580,6 +581,7 @@ impl Consensus {
             .is_none()
     }
 
+    /// When a prepare is received with a too high slot, buffer it and fetch its parents before you can process it.
     fn buffer_prepare_message_and_fetch_missing_parent(
         &mut self,
         sender: ValidatorPublicKey,
