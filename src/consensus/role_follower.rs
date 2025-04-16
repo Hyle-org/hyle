@@ -396,8 +396,8 @@ impl Consensus {
                 monotonic_check()?;
 
                 let next_max_timestamp = previous_timestamp.clone()
-                    + (self.config.consensus.slot_duration * 2
-                        + TimeoutState::TIMEOUT_SECS * (self.bft_round_state.view as u32));
+                    + (self.config.consensus.slot_duration * 2 * 10
+                        + TimeoutState::TIMEOUT_SECS * (self.bft_round_state.view as u32) * 2);
 
                 if &next_max_timestamp < timestamp {
                     bail!(
