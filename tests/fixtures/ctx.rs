@@ -19,7 +19,7 @@ use tracing::info;
 use hyle::{
     model::*,
     rest::client::{IndexerApiHttpClient, NodeApiHttpClient},
-    utils::conf::{Conf, TimestampCheck},
+    utils::conf::{Conf, P2pMode, TimestampCheck},
 };
 use hyle_contract_sdk::{
     BlobIndex, ContractName, HyleOutput, Identity, ProgramId, StateCommitment, TxHash, Verifier,
@@ -79,9 +79,7 @@ impl E2ECtx {
 
         for node_conf in confs.iter_mut() {
             node_conf.genesis.stakers = genesis_stakers.clone();
-            let node = test_helpers::TestProcess::new("hyle", node_conf.clone())
-                //.log("hyle=info,tower_http=error")
-                .start();
+            let node = test_helpers::TestProcess::new("hyle", node_conf.clone()).start();
 
             // Request something on node1 to be sure it's alive and working
             let client = NodeApiHttpClient::new(format!(
@@ -105,9 +103,7 @@ impl E2ECtx {
             vec![("single-node".to_string(), 100)].into_iter().collect();
 
         let node_conf = conf_maker.build("single-node").await;
-        let node = test_helpers::TestProcess::new("hyle", node_conf)
-            //.log("hyle=info,tower_http=error")
-            .start();
+        let node = test_helpers::TestProcess::new("hyle", node_conf).start();
 
         // Request something on node1 to be sure it's alive and working
         let client =
@@ -145,9 +141,7 @@ impl E2ECtx {
         );
 
         let node_conf = conf_maker.build("single-node").await;
-        let node = test_helpers::TestProcess::new("hyle", node_conf.clone())
-            //.log("hyle=info,tower_http=error")
-            .start();
+        let node = test_helpers::TestProcess::new("hyle", node_conf.clone()).start();
 
         // Request something on node1 to be sure it's alive and working
         let client =
@@ -224,7 +218,16 @@ impl E2ECtx {
         node_conf.p2p.peers = self
             .nodes
             .iter()
-            .map(|node| format!("{}:{}", node.conf.hostname, node.conf.p2p.server_port))
+            .filter_map(|node| {
+                if node.conf.p2p.mode != P2pMode::None {
+                    Some(format!(
+                        "{}:{}",
+                        node.conf.hostname, node.conf.p2p.server_port
+                    ))
+                } else {
+                    None
+                }
+            })
             .collect();
         node_conf
     }
@@ -235,9 +238,7 @@ impl E2ECtx {
     }
 
     pub async fn add_node_with_conf(&mut self, node_conf: Conf) -> Result<&NodeApiHttpClient> {
-        let node = test_helpers::TestProcess::new("hyle", node_conf)
-            //.log("hyle=info,tower_http=error")
-            .start();
+        let node = test_helpers::TestProcess::new("hyle", node_conf).start();
         // Request something on node1 to be sure it's alive and working
         let client =
             NodeApiHttpClient::new(format!("http://localhost:{}/", &node.conf.rest_server_port))
