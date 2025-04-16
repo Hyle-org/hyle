@@ -810,7 +810,7 @@ pub mod test {
     };
     use assertables::assert_contains;
     use tokio::sync::broadcast::Receiver;
-    use tracing::{error, Instrument};
+    use tracing::error;
     use utils::TimestampMs;
 
     pub struct ConsensusTestCtx {

@@ -458,15 +458,18 @@ impl Consensus {
 
             // Safety assumption: we can't actually verify a TC for the next slot, but since it matches our hash,
             // since we have no staking actions in the prepare we're good.
-            // if !self
-            //     .bft_round_state
-            //     .current_proposal
-            //     .staking_actions
-            //     .is_empty()
-            // {
-            //     bail!("Timeout Certificate slot {} view {} is for the next slot, but we have staking actions in our prepare", prepare_slot, prepare_view);
-            // }
-            //
+            if self
+                .bft_round_state
+                .current_proposal
+                .staking_actions
+                .iter()
+                .filter(|sa| matches!(sa, ConsensusStakingAction::Bond { .. }))
+                .count()
+                > 0
+            {
+                bail!("Timeout Certificate slot {} view {} is for the next slot, but we have staking actions in our prepare", prepare_slot, prepare_view);
+            }
+
             self.emit_commit_event(&timeout_qc)
                 .context("Processing TC ticket")?;
 
