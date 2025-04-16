@@ -660,12 +660,6 @@ impl Consensus {
                 "🚚 Prepare message for slot {} while at slot {}. Buffering while processing Commit Ticket.",
                 consensus_proposal.slot, self.bft_round_state.slot
             );
-            // self.buffer_prepare_message_and_fetch_missing_parent(
-            //     sender.clone(),
-            //     consensus_proposal.clone(),
-            //     Ticket::CommitQC(commit_qc),
-            //     0,
-            // )?;
             return Ok(TicketVerifyAndProcess::NotProcessed);
         }
 
