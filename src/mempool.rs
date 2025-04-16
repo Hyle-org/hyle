@@ -4,7 +4,7 @@ use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{CommittedConsensusProposal, ConsensusEvent},
     genesis::GenesisEvent,
-    log_error,
+    log_error, log_warn,
     model::*,
     module_handle_messages,
     node_state::module::NodeStateEvent,
@@ -90,6 +90,8 @@ struct MempoolBusClient {
 }
 }
 
+type PodaSignatures = Vec<SignedByValidator<MempoolNetMessage>>;
+
 #[derive(Default, BorshSerialize, BorshDeserialize)]
 pub struct MempoolStore {
     // own_lane.rs
@@ -101,6 +103,7 @@ pub struct MempoolStore {
     notify_new_tx_to_process: tokio::sync::Notify,
     waiting_dissemination_txs: Vec<Transaction>,
     buffered_proposals: BTreeMap<LaneId, Vec<DataProposal>>,
+    buffered_podas: BTreeMap<LaneId, BTreeMap<DataProposalHash, Vec<PodaSignatures>>>,
 
     // block_construction.rs
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
@@ -604,8 +607,31 @@ impl Mempool {
             data_proposal_hash,
             lane_id
         );
-        self.lanes
-            .add_signatures(lane_id, data_proposal_hash, signatures)?;
+
+        if log_warn!(
+            self.lanes
+                .add_signatures(lane_id, data_proposal_hash, signatures.clone()),
+            "PodaUpdate"
+        )
+        .is_err()
+        {
+            info!(
+                "Buffering poda of {} signatures for DP: {}",
+                signatures.len(),
+                data_proposal_hash
+            );
+
+            let lane = self
+                .inner
+                .buffered_podas
+                .entry(lane_id.clone())
+                .or_default()
+                .entry(data_proposal_hash.clone())
+                .or_default();
+
+            lane.push(signatures);
+        }
+
         Ok(())
     }
 
