@@ -1112,14 +1112,18 @@ pub mod test {
                 if let NetMessage::ConsensusMessage(msg) = net_msg {
                     msg
                 } else {
-                    error!(
-                        "{description}: NetMessage::ConsensusMessage message is missing, found {}",
-                        net_msg
-                    );
+                    warn!("{description}: skipping {:?}", net_msg);
+                    self.assert_broadcast(description)
+                }
+            } else if let OutboundMessage::SendMessage { msg: net_msg, .. } = rec {
+                if let NetMessage::ConsensusMessage(msg) = net_msg {
+                    panic!("{description}: received a send instead of a broadcast");
+                } else {
+                    warn!("{description}: skipping {:?}", net_msg);
                     self.assert_broadcast(description)
                 }
             } else {
-                error!(
+                warn!(
                     "{description}: OutboundMessage::BroadcastMessage message is missing, found {:?}",
                     rec
                 );
@@ -1162,10 +1166,7 @@ pub mod test {
                 if let NetMessage::ConsensusMessage(msg) = net_msg {
                     msg
                 } else {
-                    error!(
-                        "{description}: NetMessage::ConsensusMessage message is missing, found {}",
-                        net_msg
-                    );
+                    warn!("{description}: skipping {:?}", net_msg);
                     self.assert_send(to, description)
                 }
             } else {
