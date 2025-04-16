@@ -861,7 +861,7 @@ mod test {
         state_commitment: StateCommitment,
     ) -> BlobTransaction {
         BlobTransaction::new(
-            "hyle.hyle",
+            "hyle@hyle",
             vec![RegisterContractAction {
                 verifier: "test".into(),
                 program_id: ProgramId(vec![3, 2, 1]),
@@ -988,14 +988,14 @@ mod test {
         let register_tx_2 = new_register_tx(second_contract_name.clone(), initial_state.clone());
 
         let blob_transaction = new_blob_tx(
-            Identity::new("test.c1"),
+            Identity::new("test@c1"),
             first_contract_name.clone(),
             second_contract_name.clone(),
         );
         let blob_transaction_hash = blob_transaction.hashed();
 
         let proof_tx_1 = new_proof_tx(
-            Identity::new("test.c1"),
+            Identity::new("test@c1"),
             first_contract_name.clone(),
             BlobIndex(0),
             &blob_transaction,
@@ -1004,7 +1004,7 @@ mod test {
         );
 
         let proof_tx_2 = new_proof_tx(
-            Identity::new("test.c1"),
+            Identity::new("test@c1"),
             second_contract_name.clone(),
             BlobIndex(1),
             &blob_transaction,
@@ -1013,14 +1013,14 @@ mod test {
         );
 
         let other_blob_transaction = new_blob_tx(
-            Identity::new("test.c1"),
+            Identity::new("test@c1"),
             second_contract_name.clone(),
             first_contract_name.clone(),
         );
         let other_blob_transaction_hash = other_blob_transaction.hashed();
         // Send two proofs for the same blob
         let proof_tx_3 = new_proof_tx(
-            Identity::new("test.c1"),
+            Identity::new("test@c1"),
             first_contract_name.clone(),
             BlobIndex(1),
             &other_blob_transaction,
@@ -1028,7 +1028,7 @@ mod test {
             StateCommitment(vec![9, 9, 9]),
         );
         let proof_tx_4 = new_proof_tx(
-            Identity::new("test.c1"),
+            Identity::new("test@c1"),
             first_contract_name.clone(),
             BlobIndex(1),
             &other_blob_transaction,
@@ -1082,13 +1082,13 @@ mod test {
             new_register_tx(second_contract_name_wd.clone(), initial_state_wd.clone());
 
         let blob_transaction_wd = new_blob_tx(
-            Identity::new("test.wd1"),
+            Identity::new("test@wd1"),
             first_contract_name_wd.clone(),
             second_contract_name_wd.clone(),
         );
 
         let proof_tx_1_wd = new_proof_tx(
-            Identity::new("test.wd1"),
+            Identity::new("test@wd1"),
             first_contract_name_wd.clone(),
             BlobIndex(0),
             &blob_transaction_wd,
@@ -1267,15 +1267,6 @@ mod test {
                     "blobs": [{
                         "contract_name": "c1",
                         "data": hex::encode([1,2,3]),
-                        "proof_outputs": [{}]
-                    }],
-                    "tx_hash": blob_transaction_hash.to_string(),
-                    "index": 2,
-                },
-                {
-                    "blobs": [{
-                        "contract_name": "c1",
-                        "data": hex::encode([1,2,3]),
                         "proof_outputs": [
                             {
                                 "initial_state": [7,7,7],
@@ -1288,10 +1279,18 @@ mod test {
                     "transaction_status": "Sequenced",
                     "tx_hash": other_blob_transaction_hash.to_string(),
                     "index": 5,
+                },
+                {
+                    "blobs": [{
+                        "contract_name": "c1",
+                        "data": hex::encode([1,2,3]),
+                        "proof_outputs": [{}]
+                    }],
+                    "tx_hash": blob_transaction_hash.to_string(),
+                    "index": 2,
                 }
             ])
         );
-
         let all_txs = server.get("/transactions/block/0").await;
         all_txs.assert_status_ok();
         assert_json_include!(
@@ -1313,17 +1312,17 @@ mod test {
                     "blobs": [{
                         "contract_name": "c2",
                         "data": hex::encode([1,2,3]),
-                        "proof_outputs": [{}]
+                        "proof_outputs": []
                     }],
-                    "tx_hash": blob_transaction_hash.to_string(),
+                    "tx_hash": other_blob_transaction_hash.to_string(),
                 },
                 {
                     "blobs": [{
                         "contract_name": "c2",
                         "data": hex::encode([1,2,3]),
-                        "proof_outputs": []
+                        "proof_outputs": [{}]
                     }],
-                    "tx_hash": other_blob_transaction_hash.to_string(),
+                    "tx_hash": blob_transaction_hash.to_string(),
                 }
             ])
         );

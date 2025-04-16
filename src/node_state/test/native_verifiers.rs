@@ -26,7 +26,7 @@ bus_client! {
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 2))]
 async fn test_blst_native_verifier() {
     let contract_name: ContractName = "blst".into();
-    let identity: Identity = format!("bob.{contract_name}").into();
+    let identity: Identity = format!("bob@{contract_name}").into();
 
     let crypto = BlstCrypto::new_random().expect("crypto");
 
@@ -50,7 +50,7 @@ async fn test_blst_native_verifier() {
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 2))]
 async fn test_sha3_256_native_verifier() {
     let contract_name: ContractName = "sha3_256".into();
-    let identity: Identity = format!("bob.{contract_name}").into();
+    let identity: Identity = format!("bob@{contract_name}").into();
 
     let data = vec![1, 2, 3, 4, 5, 6];
 
