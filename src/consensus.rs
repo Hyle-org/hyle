@@ -276,8 +276,8 @@ impl Consensus {
         Ok(())
     }
 
-    fn current_slot_prepare_is_missing(&self) -> bool {
-        self.bft_round_state.current_proposal.slot < self.bft_round_state.slot
+    fn current_slot_prepare_is_present(&self) -> bool {
+        self.bft_round_state.current_proposal.slot == self.bft_round_state.slot
     }
 
     /// Verify that quorum certificate includes only validators that are part of the consensus
