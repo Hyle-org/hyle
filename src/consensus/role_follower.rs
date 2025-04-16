@@ -104,7 +104,12 @@ impl Consensus {
 
         // Ticket is not processed, we must stop here (probably buffered)
         if matches!(ticket_was_processed, TicketVerifyAndProcess::NotProcessed) {
-            return Ok(());
+            return self.buffer_prepare_message_and_fetch_missing_parent(
+                sender,
+                consensus_proposal,
+                ticket,
+                view,
+            );
         }
 
         // TODO: check we haven't voted for a proposal this slot/view already.
@@ -435,12 +440,6 @@ impl Consensus {
                 "🚚 Prepare message for slot {} while at slot {}. Buffering while processing TC Ticket.",
                 consensus_proposal.slot, self.bft_round_state.slot
             );
-            self.buffer_prepare_message_and_fetch_missing_parent(
-                sender.clone(),
-                consensus_proposal.clone(),
-                Ticket::TimeoutQC(timeout_qc, tc_kind_data.clone()),
-                prepare_view,
-            )?;
             return Ok(TicketVerifyAndProcess::NotProcessed);
         }
 
@@ -661,12 +660,12 @@ impl Consensus {
                 "🚚 Prepare message for slot {} while at slot {}. Buffering while processing Commit Ticket.",
                 consensus_proposal.slot, self.bft_round_state.slot
             );
-            self.buffer_prepare_message_and_fetch_missing_parent(
-                sender.clone(),
-                consensus_proposal.clone(),
-                Ticket::CommitQC(commit_qc),
-                0,
-            )?;
+            // self.buffer_prepare_message_and_fetch_missing_parent(
+            //     sender.clone(),
+            //     consensus_proposal.clone(),
+            //     Ticket::CommitQC(commit_qc),
+            //     0,
+            // )?;
             return Ok(TicketVerifyAndProcess::NotProcessed);
         }
 

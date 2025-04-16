@@ -1113,6 +1113,14 @@ pub mod test {
             DataProposal::new(parent_hash, txs.to_vec())
         }
 
+        pub fn create_data_proposal_on_top(
+            &mut self,
+            lane_id: LaneId,
+            txs: &[Transaction],
+        ) -> DataProposal {
+            DataProposal::new(self.current_hash(&lane_id), txs.to_vec())
+        }
+
         pub fn process_new_data_proposal(&mut self, dp: DataProposal) -> Result<()> {
             self.mempool.lanes.store_data_proposal(
                 &self.mempool.crypto,
