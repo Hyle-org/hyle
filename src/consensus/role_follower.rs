@@ -6,8 +6,7 @@ use tracing::{debug, info, trace, warn};
 use super::Consensus;
 use crate::{
     bus::BusClientSender,
-    consensus::{role_timeout::TimeoutState, CommittedConsensusProposal, ConsensusEvent, StateTag},
-    log_error,
+    consensus::{role_timeout::TimeoutState, StateTag},
     mempool::MempoolNetMessage,
     model::{Hashed, Signed, ValidatorPublicKey},
     p2p::P2PCommand,
@@ -99,21 +98,20 @@ impl Consensus {
                 }
             }
             Ticket::CommitQC(commit_qc) => {
-                if !self.verify_commit_ticket_or_fast_forward(commit_qc.clone()) {
-                    bail!("Invalid commit ticket");
-                }
+                self.verify_and_process_commit_ticket(commit_qc.clone())
+                    .context("Processing Commit Ticket")?;
             }
             Ticket::TimeoutQC(timeout_qc, tc_kind_data) => {
-                self.try_process_timeout_qc(
+                self.verify_and_process_tc_ticket(
                     timeout_qc.clone(),
                     tc_kind_data,
                     &consensus_proposal,
                     view,
                 )
-                .context("Processing Timeout ticket")?;
+                .context("Processing TC ticket")?;
             }
             els => {
-                bail!("Invalid TimedOutCommit ticket here {:?}", els);
+                bail!("Cannot process invalid ticket here {:?}", els);
             }
         }
 
@@ -266,7 +264,20 @@ impl Consensus {
     ) -> Result<()> {
         match self.bft_round_state.state_tag {
             StateTag::Follower => {
-                self.try_commit_current_proposal(commit_quorum_certificate, proposal_hash_hint)
+                if self.bft_round_state.current_proposal.hashed() != proposal_hash_hint {
+                    warn!(
+                        "Received Commit for proposal {:?} but expected {:?}. Ignoring.",
+                        proposal_hash_hint,
+                        self.bft_round_state.current_proposal.hashed()
+                    );
+                    return Ok(());
+                }
+
+                self.verify_commit_quorum_certificate_againt_current_proposal(
+                    &commit_quorum_certificate,
+                )?;
+                self.emit_commit_event(&commit_quorum_certificate)?;
+                self.advance_round(Ticket::CommitQC(commit_quorum_certificate))
             }
             StateTag::Joining => {
                 self.on_commit_while_joining(commit_quorum_certificate, proposal_hash_hint)
@@ -408,7 +419,7 @@ impl Consensus {
         Ok(())
     }
 
-    fn try_process_timeout_qc(
+    fn verify_and_process_tc_ticket(
         &mut self,
         timeout_qc: QuorumCertificate,
         tc_kind_data: &TCKind,
@@ -456,20 +467,12 @@ impl Consensus {
             //     bail!("Timeout Certificate slot {} view {} is for the next slot, but we have staking actions in our prepare", prepare_slot, prepare_view);
             // }
             //
-            _ = log_error!(
-                self.bus.send(ConsensusEvent::CommitConsensusProposal(
-                    CommittedConsensusProposal {
-                        staking: self.bft_round_state.staking.clone(),
-                        consensus_proposal: self.bft_round_state.current_proposal.clone(),
-                        certificate: timeout_qc.clone(),
-                    },
-                )),
-                "Failed to send ConsensusEvent::CommittedConsensusProposal on the bus"
-            );
+            self.emit_commit_event(&timeout_qc)
+                .context("Processing TC ticket")?;
 
             // We have received a timeout certificate for the next slot,
             // and it matches our know prepare for this slot, so try and commit that one then the TC.
-            self.carry_on_with_ticket(Ticket::ForcedCommitQc(timeout_qc.clone()))?;
+            self.advance_round(Ticket::ForcedCommitQc(timeout_qc.clone()))?;
 
             info!(
                 "🔀 Fast forwarded to slot {} view 0",
@@ -496,7 +499,7 @@ impl Consensus {
                 "Timeout Certificate for next view {} received, processing it",
                 prepare_view
             );
-            self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc, tc_kind_data.clone()))?;
+            self.advance_round(Ticket::TimeoutQC(timeout_qc, tc_kind_data.clone()))?;
         }
         Ok(())
     }
@@ -544,25 +547,17 @@ impl Consensus {
         );
 
         // Try to commit the proposal
-        let old_slot = self.bft_round_state.slot;
-        let old_view = self.bft_round_state.view;
+        self.verify_commit_quorum_certificate_againt_current_proposal(&commit_quorum_certificate)
+            .context("On Commit when joining")?;
 
         self.bft_round_state.slot = self.bft_round_state.current_proposal.slot;
         self.bft_round_state.view = 0; // TODO
         self.bft_round_state.state_tag = StateTag::Follower;
-        if self
-            .try_commit_current_proposal(
-                commit_quorum_certificate,
-                self.bft_round_state.current_proposal.hashed(),
-            )
-            .is_err()
-        {
-            // Swap back
-            self.bft_round_state.state_tag = StateTag::Joining;
-            self.bft_round_state.slot = old_slot;
-            self.bft_round_state.view = old_view;
-            bail!("⛑️ Failed to synchronize, retrying soon.");
-        }
+
+        self.emit_commit_event(&commit_quorum_certificate)?;
+
+        self.advance_round(Ticket::CommitQC(commit_quorum_certificate))?;
+
         // We sucessfully joined the consensus
         info!("🏁 Synchronized to slot {}", self.bft_round_state.slot);
         Ok(())
@@ -626,14 +621,14 @@ impl Consensus {
         Ok(())
     }
 
-    fn verify_commit_ticket_or_fast_forward(&mut self, commit_qc: QuorumCertificate) -> bool {
+    fn verify_and_process_commit_ticket(&mut self, commit_qc: QuorumCertificate) -> Result<()> {
         // Three options:
         // - we have already received the commit message for this ticket, so we already processed the QC.
         // - we haven't, so we process it right away
         // - the CQC is invalid and we just ignore it.
         if let Some(qc) = &self.bft_round_state.follower.buffered_quorum_certificate {
             if qc == &commit_qc {
-                return true;
+                return Ok(());
             }
         }
 
@@ -644,26 +639,19 @@ impl Consensus {
                 self.bft_round_state.slot
             );
             // To still sorta make this work, verify the CQC with our current staking and hope for the best.
-            return self
-                .verify_quorum_certificate(
-                    ConsensusNetMessage::ConfirmAck(self.bft_round_state.parent_hash.clone()),
-                    &commit_qc,
-                )
-                .is_ok();
+            return self.verify_quorum_certificate(
+                ConsensusNetMessage::ConfirmAck(self.bft_round_state.parent_hash.clone()),
+                &commit_qc,
+            );
         }
 
-        let commited_current_proposal = log_error!(
-            self.try_commit_current_proposal(
-                commit_qc,
-                self.bft_round_state.current_proposal.hashed()
-            ),
-            "Processing Commit Ticket"
-        );
+        self.verify_commit_quorum_certificate_againt_current_proposal(&commit_qc)?;
+        self.emit_commit_event(&commit_qc)?;
+        self.advance_round(Ticket::CommitQC(commit_qc))?;
 
-        if commited_current_proposal.is_ok() {
-            info!("🔀 Fast forwarded to slot {}", &self.bft_round_state.slot);
-        }
-        commited_current_proposal.is_ok()
+        info!("🔀 Fast forwarded to slot {}", &self.bft_round_state.slot);
+
+        Ok(())
     }
 
     fn verify_staking_actions(&mut self, proposal: &ConsensusProposal) -> Result<()> {

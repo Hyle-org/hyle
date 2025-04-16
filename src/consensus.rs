@@ -186,8 +186,8 @@ impl Consensus {
         res
     }
 
-    /// Reset bft_round_state for the next round of consensus.
-    fn finish_round(&mut self, ticket: Option<Ticket>) -> Result<(), Error> {
+    /// Update bft_round_state for the next round of consensus.
+    fn apply_ticket(&mut self, ticket: Ticket) -> Result<(), Error> {
         match self.bft_round_state.state_tag {
             StateTag::Follower => {}
             StateTag::Leader => {}
@@ -200,7 +200,7 @@ impl Consensus {
 
         match ticket {
             // We finished the round with a committed proposal for the slot
-            Some(Ticket::CommitQC(_)) | Some(Ticket::ForcedCommitQc(_)) => {
+            Ticket::CommitQC(_) | Ticket::ForcedCommitQc(_) => {
                 self.bft_round_state.slot += 1;
                 self.bft_round_state.view = 0;
                 self.bft_round_state.parent_hash = self.bft_round_state.current_proposal.hashed();
@@ -209,8 +209,8 @@ impl Consensus {
 
                 // Store the last commited QC to avoid issues when parsing Commit messages before Prepare
                 self.bft_round_state.follower.buffered_quorum_certificate = match ticket {
-                    Some(Ticket::CommitQC(qc)) => Some(qc),
-                    Some(Ticket::ForcedCommitQc(_)) => None,
+                    Ticket::CommitQC(qc) => Some(qc),
+                    Ticket::ForcedCommitQc(_) => None,
                     _ => unreachable!(),
                 };
                 for action in
@@ -244,15 +244,15 @@ impl Consensus {
                     .map_err(|e| anyhow::anyhow!(e))?;
             }
             // We finished the round with a timeout
-            Some(Ticket::TimeoutQC(..)) => {
+            Ticket::TimeoutQC(..) => {
                 // FIXME: I think TimeoutQC should hold the view, in case we missed multiple views
                 // at once
                 self.bft_round_state.view += 1;
                 // TODO: buffer these?
                 self.bft_round_state.follower.buffered_quorum_certificate = None;
             }
-            els => {
-                bail!("Invalid ticket here {:?}", els);
+            Ticket::Genesis => {
+                bail!("Genesis Ticket not accepted.");
             }
         }
 
@@ -482,9 +482,11 @@ impl Consensus {
         }
     }
 
-    fn carry_on_with_ticket(&mut self, ticket: Ticket) -> Result<()> {
-        self.finish_round(Some(ticket.clone()))?;
+    /// Apply ticket locally, and start new round with it
+    fn advance_round(&mut self, ticket: Ticket) -> Result<()> {
+        self.apply_ticket(ticket.clone())?;
 
+        // Decide what to do at the beginning of the next round
         if self.is_round_leader() && self.has_no_buffered_children() {
             // Setup our ticket for the next round
             // Send Prepare message to all validators
@@ -508,44 +510,36 @@ impl Consensus {
         }
     }
 
-    fn try_commit_current_proposal(
-        &mut self,
-        commit_quorum_certificate: QuorumCertificate,
-        proposal_hash_hint: ConsensusProposalHash,
+    fn verify_commit_quorum_certificate_againt_current_proposal(
+        &self,
+        commit_quorum_certificate: &QuorumCertificate,
     ) -> Result<()> {
-        if self.bft_round_state.current_proposal.hashed() != proposal_hash_hint {
-            warn!(
-                "Received Commit for proposal {:?} but expected {:?}. Ignoring.",
-                proposal_hash_hint,
-                self.bft_round_state.current_proposal.hashed()
-            );
-            return Ok(());
-        }
-
         // Check that this is a QC for ConfirmAck for the expected proposal.
         // This also checks slot/view as those are part of the hash.
         // TODO: would probably be good to make that more explicit.
         self.verify_quorum_certificate(
-            ConsensusNetMessage::ConfirmAck(proposal_hash_hint.clone()),
-            &commit_quorum_certificate,
-        )?;
+            ConsensusNetMessage::ConfirmAck(self.bft_round_state.current_proposal.hashed()),
+            commit_quorum_certificate,
+        )
+    }
 
+    /// Emits an event that will make Mempool able to build a block
+    fn emit_commit_event(&mut self, commit_quorum_certificate: &QuorumCertificate) -> Result<()> {
         self.metrics.commit();
 
-        _ = log_error!(
-            self.bus.send(ConsensusEvent::CommitConsensusProposal(
+        self.bus
+            .send(ConsensusEvent::CommitConsensusProposal(
                 CommittedConsensusProposal {
                     staking: self.bft_round_state.staking.clone(),
                     consensus_proposal: self.bft_round_state.current_proposal.clone(),
                     certificate: commit_quorum_certificate.clone(),
                 },
-            )),
-            "Failed to send ConsensusEvent::CommittedConsensusProposal on the bus"
-        );
+            ))
+            .context("Failed to send ConsensusEvent::CommittedConsensusProposal on the bus")?;
 
         debug!("📈 Slot {} committed", &self.bft_round_state.slot);
 
-        self.carry_on_with_ticket(Ticket::CommitQC(commit_quorum_certificate))
+        Ok(())
     }
 
     /// Message received by leader & follower.
