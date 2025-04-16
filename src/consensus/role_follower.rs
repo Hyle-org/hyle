@@ -25,6 +25,11 @@ pub(super) struct FollowerState {
     pub(super) buffered_prepares: BufferedPrepares, // History of seen prepares & buffer of future prepares
 }
 
+enum TicketVerifyAndProcess {
+    NotProcessed,
+    Processed,
+}
+
 impl Consensus {
     pub(super) fn on_prepare(
         &mut self,
@@ -64,26 +69,7 @@ impl Consensus {
             }
         }
 
-        // If received proposal for next slot, we continue processing and will try to fast forward
-        // if received proposal is for an even further slot, we buffer it
-        // if received proposal is for next slot, and we missed the current slot prepare, we buffer it.
-        if consensus_proposal.slot > self.bft_round_state.slot + 1
-            || (consensus_proposal.slot == self.bft_round_state.slot + 1
-                && self.current_slot_prepare_is_missing())
-        {
-            warn!(
-                proposal_hash = %consensus_proposal.hashed(),
-                sender = %sender,
-                "🚚 Prepare message for slot {} while at slot {}. Buffering.",
-                consensus_proposal.slot, self.bft_round_state.slot
-            );
-            return self.buffer_prepare_message_and_fetch_missing_parent(
-                sender,
-                consensus_proposal,
-                ticket,
-                view,
-            );
-        } else if consensus_proposal.slot < self.bft_round_state.slot {
+        if consensus_proposal.slot < self.bft_round_state.slot {
             // Ignore outdated messages.
             info!(
                 "🌑 Outdated Prepare message (Slot {} / view {} while at {}) received. Ignoring.",
@@ -92,28 +78,33 @@ impl Consensus {
             return Ok(());
         }
         // Process the ticket
-        match &ticket {
+        let ticket_was_processed = match &ticket {
             Ticket::Genesis => {
                 if self.bft_round_state.slot != 1 {
                     bail!("Genesis ticket is only valid for the first slot.");
                 }
+                TicketVerifyAndProcess::Processed
             }
-            Ticket::CommitQC(commit_qc) => {
-                self.verify_and_process_commit_ticket(commit_qc.clone())
-                    .context("Processing Commit Ticket")?;
-            }
-            Ticket::TimeoutQC(timeout_qc, tc_kind_data) => {
-                self.verify_and_process_tc_ticket(
+            Ticket::CommitQC(commit_qc) => self
+                .verify_and_process_commit_ticket(&sender, &consensus_proposal, commit_qc.clone())
+                .context("Processing Commit Ticket")?,
+            Ticket::TimeoutQC(timeout_qc, tc_kind_data) => self
+                .verify_and_process_tc_ticket(
+                    &sender,
                     timeout_qc.clone(),
                     tc_kind_data,
                     &consensus_proposal,
                     view,
                 )
-                .context("Processing TC ticket")?;
-            }
+                .context("Processing TC ticket")?,
             els => {
                 bail!("Cannot process invalid ticket here {:?}", els);
             }
+        };
+
+        // Ticket is not processed, we must stop here (probably buffered)
+        if matches!(ticket_was_processed, TicketVerifyAndProcess::NotProcessed) {
+            return Ok(());
         }
 
         // TODO: check we haven't voted for a proposal this slot/view already.
@@ -420,14 +411,39 @@ impl Consensus {
         Ok(())
     }
 
+    /// Returns
     fn verify_and_process_tc_ticket(
         &mut self,
+        sender: &ValidatorPublicKey,
         timeout_qc: QuorumCertificate,
         tc_kind_data: &TCKind,
         consensus_proposal: &ConsensusProposal,
         prepare_view: View,
-    ) -> Result<()> {
+    ) -> Result<TicketVerifyAndProcess> {
         let prepare_slot = consensus_proposal.slot;
+
+        // If received proposal for next slot, we continue processing and will try to fast forward
+        // if received proposal is for an even further slot, we buffer it
+        // if received proposal is for next slot, and we missed the current slot prepare, we buffer it.
+        if consensus_proposal.slot > self.bft_round_state.slot + 1
+            || (consensus_proposal.slot == self.bft_round_state.slot + 1
+                && self.current_slot_prepare_is_missing())
+        {
+            warn!(
+                proposal_hash = %consensus_proposal.hashed(),
+                sender = %sender,
+                "🚚 Prepare message for slot {} while at slot {}. Buffering.",
+                consensus_proposal.slot, self.bft_round_state.slot
+            );
+            self.buffer_prepare_message_and_fetch_missing_parent(
+                sender.clone(),
+                consensus_proposal.clone(),
+                Ticket::TimeoutQC(timeout_qc, tc_kind_data.clone()),
+                prepare_view,
+            )?;
+            return Ok(TicketVerifyAndProcess::NotProcessed);
+        }
+
         debug!(
             "Trying to process timeout Certificate against consensus proposal slot: {}, view: {}",
             prepare_slot, prepare_view,
@@ -505,7 +521,7 @@ impl Consensus {
             );
             self.advance_round(Ticket::TimeoutQC(timeout_qc, tc_kind_data.clone()))?;
         }
-        Ok(())
+        Ok(TicketVerifyAndProcess::Processed)
     }
 
     fn on_commit_while_joining(
@@ -626,14 +642,41 @@ impl Consensus {
         Ok(())
     }
 
-    fn verify_and_process_commit_ticket(&mut self, commit_qc: QuorumCertificate) -> Result<()> {
+    fn verify_and_process_commit_ticket(
+        &mut self,
+        sender: &ValidatorPublicKey,
+        consensus_proposal: &ConsensusProposal,
+        commit_qc: QuorumCertificate,
+    ) -> Result<TicketVerifyAndProcess> {
+        // If received proposal for next slot, we continue processing and will try to fast forward
+        // if received proposal is for an even further slot, we buffer it
+        // if received proposal is for next slot, and we missed the current slot prepare, we buffer it.
+        if consensus_proposal.slot > self.bft_round_state.slot + 1
+            || (consensus_proposal.slot == self.bft_round_state.slot + 1
+                && self.current_slot_prepare_is_missing())
+        {
+            warn!(
+                proposal_hash = %consensus_proposal.hashed(),
+                 sender = %sender,
+                "🚚 Prepare message for slot {} while at slot {}. Buffering.",
+                consensus_proposal.slot, self.bft_round_state.slot
+            );
+            self.buffer_prepare_message_and_fetch_missing_parent(
+                sender.clone(),
+                consensus_proposal.clone(),
+                Ticket::CommitQC(commit_qc),
+                0,
+            )?;
+            return Ok(TicketVerifyAndProcess::NotProcessed);
+        }
+
         // Three options:
         // - we have already received the commit message for this ticket, so we already processed the QC.
         // - we haven't, so we process it right away
         // - the CQC is invalid and we just ignore it.
         if let Some(qc) = &self.bft_round_state.follower.buffered_quorum_certificate {
             if qc == &commit_qc {
-                return Ok(());
+                return Ok(TicketVerifyAndProcess::Processed);
             }
         }
 
@@ -644,10 +687,11 @@ impl Consensus {
                 self.bft_round_state.slot
             );
             // To still sorta make this work, verify the CQC with our current staking and hope for the best.
-            return self.verify_quorum_certificate(
+            self.verify_quorum_certificate(
                 ConsensusNetMessage::ConfirmAck(self.bft_round_state.parent_hash.clone()),
                 &commit_qc,
-            );
+            )?;
+            return Ok(TicketVerifyAndProcess::Processed);
         }
 
         self.verify_commit_quorum_certificate_againt_current_proposal(&commit_qc)?;
@@ -656,7 +700,7 @@ impl Consensus {
 
         info!("🔀 Fast forwarded to slot {}", &self.bft_round_state.slot);
 
-        Ok(())
+        Ok(TicketVerifyAndProcess::Processed)
     }
 
     fn verify_staking_actions(&mut self, proposal: &ConsensusProposal) -> Result<()> {
