@@ -43,6 +43,10 @@ timestamp_checks = "Full"
 # Whether to run the single-node or full consensus
 solo = true
 
+[node_state]
+# Timeout window for blob transactions
+timeout_window = 100
+
 [genesis]
 # Stakers and their inigial stake.
 # Default conf has to be empty as config is additive

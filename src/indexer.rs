@@ -826,7 +826,7 @@ mod test {
             Blob, BlobData, BlobProofOutput, ProofData, SignedBlock, Transaction, TransactionData,
             VerifiedProofTransaction,
         },
-        node_state::{metrics::NodeStateMetrics, NodeState, NodeStateStore},
+        node_state::NodeState,
     };
 
     use super::*;
@@ -1047,10 +1047,7 @@ mod test {
             proof_tx_4,
         ];
 
-        let mut node_state = NodeState {
-            store: NodeStateStore::default(),
-            metrics: NodeStateMetrics::global("test".to_string(), "test"),
-        };
+        let mut node_state = NodeState::create("test", "test");
 
         // Handling a block containing txs
 

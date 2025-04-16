@@ -12,14 +12,18 @@ pub struct Timeouts {
 
 impl Default for Timeouts {
     fn default() -> Self {
-        Timeouts {
-            timeout_window: BlockHeight(100),
-            by_block: HashMap::new(),
-        }
+        Self::new(BlockHeight(100))
     }
 }
 
 impl Timeouts {
+    pub fn new(timeout_window: BlockHeight) -> Self {
+        Timeouts {
+            timeout_window,
+            by_block: HashMap::new(),
+        }
+    }
+
     pub fn drop(&mut self, at: &BlockHeight) -> Vec<TxHash> {
         self.by_block.remove(at).unwrap_or_default()
     }
