@@ -1116,7 +1116,7 @@ pub mod test {
                     self.assert_broadcast(description)
                 }
             } else if let OutboundMessage::SendMessage { msg: net_msg, .. } = rec {
-                if let NetMessage::ConsensusMessage(msg) = net_msg {
+                if let NetMessage::ConsensusMessage(_) = net_msg {
                     panic!("{description}: received a send instead of a broadcast");
                 } else {
                     warn!("{description}: skipping {:?}", net_msg);

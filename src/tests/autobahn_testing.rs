@@ -221,7 +221,7 @@ macro_rules! disseminate {
             }
         };
 
-        (dp_msg, poda, poda2, poda3)
+        (dp, dp_msg, poda, poda2, poda3)
     }};
 }
 
@@ -1142,45 +1142,11 @@ async fn protocol_fees() {
     let register_tx = make_register_contract_tx(ContractName::new("test1"));
     let register_tx_2 = make_register_contract_tx(ContractName::new("test2"));
 
-    let dp = node1
-        .mempool_ctx
-        .create_data_proposal(None, &[register_tx, register_tx_2]);
-    node1
-        .mempool_ctx
-        .process_new_data_proposal(dp.clone())
-        .unwrap();
-    node1.mempool_ctx.timer_tick().unwrap();
-
-    let msg = broadcast! {
-        description: "Disseminate Tx",
-        from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
-        message_matches: MempoolNetMessage::DataProposal(_)
+    let (dp, _, _, _, _) = disseminate! {
+        txs: [register_tx, register_tx_2],
+        owner: node1.mempool_ctx,
+        voters: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx]
     };
-
-    let dp = match msg.msg {
-        MempoolNetMessage::DataProposal(dp) => dp,
-        _ => panic!("Should be a DataProposal"),
-    };
-
-    join_all(
-        [
-            &mut node2.mempool_ctx,
-            &mut node3.mempool_ctx,
-            &mut node4.mempool_ctx,
-        ]
-        .iter_mut()
-        .map(|ctx| ctx.handle_processed_data_proposals()),
-    )
-    .await;
-
-    send! {
-        description: "Disseminated Tx Vote",
-        from: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx], to: node1.mempool_ctx,
-        message_matches: MempoolNetMessage::DataVote(..)
-    };
-
-    node1.mempool_ctx.assert_broadcast("poda update");
-    node1.mempool_ctx.assert_broadcast("poda update");
 
     let dp_size_1 = LaneBytesSize(dp.estimate_size() as u64);
     assert_eq!(node1.mempool_ctx.current_size(), Some(dp_size_1));
@@ -1216,40 +1182,11 @@ async fn protocol_fees() {
     let register_tx = make_register_contract_tx(ContractName::new("test3"));
     let register_tx_2 = make_register_contract_tx(ContractName::new("test4"));
     let register_tx_3 = make_register_contract_tx(ContractName::new("test5"));
-    let dp = node2
-        .mempool_ctx
-        .create_data_proposal(None, &[register_tx, register_tx_2, register_tx_3]);
-    node2
-        .mempool_ctx
-        .process_new_data_proposal(dp.clone())
-        .unwrap();
-    node2.mempool_ctx.timer_tick().unwrap();
 
-    let msg = broadcast! {
-        description: "Disseminate Tx",
-        from: node2.mempool_ctx, to: [node1.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
-        message_matches: MempoolNetMessage::DataProposal(_)
-    };
-    let dp = match msg.msg {
-        MempoolNetMessage::DataProposal(dp) => dp,
-        _ => panic!("Should be a DataProposal"),
-    };
-
-    join_all(
-        [
-            &mut node1.mempool_ctx,
-            &mut node3.mempool_ctx,
-            &mut node4.mempool_ctx,
-        ]
-        .iter_mut()
-        .map(|ctx| ctx.handle_processed_data_proposals()),
-    )
-    .await;
-
-    send! {
-        description: "Disseminated Tx Vote",
-        from: [node1.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx], to: node2.mempool_ctx,
-        message_matches: MempoolNetMessage::DataVote(..)
+    let (dp, _, _, _, _) = disseminate! {
+        txs: [register_tx, register_tx_2, register_tx_3],
+        owner: node2.mempool_ctx,
+        voters: [node1.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx]
     };
 
     let dp_size_2 = LaneBytesSize(dp.estimate_size() as u64);
@@ -1282,40 +1219,33 @@ async fn protocol_fees() {
         Some(dp_size_2)
     );
 
-    // Process poda update coming from node2
-    let poda_update = node2.mempool_ctx.assert_broadcast("poda update");
-    node1.mempool_ctx.handle_poda_update(poda_update);
-
     // Let's do a consensus round
 
     node1
         .start_round_with_cut_from_mempool(TimestampMs(2000))
         .await;
-    let prepare = broadcast! {
+
+    broadcast! {
         description: "Prepare",
         from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
-        message_matches: ConsensusNetMessage::Prepare(..)
-    };
-    let cp = match prepare.msg {
-        ConsensusNetMessage::Prepare(cp, ..) => cp,
-        _ => panic!("Should be a Prepare"),
-    };
-
-    assert_eq!(cp.staking_actions.len(), 2);
-    assert_eq!(
-        cp.staking_actions[0],
-        ConsensusStakingAction::PayFeesForDaDi {
-            lane_id: node1.mempool_ctx.own_lane(),
-            cumul_size: dp_size_1
+        message_matches: ConsensusNetMessage::Prepare(cp, ..) => {
+            assert_eq!(cp.staking_actions.len(), 2);
+            assert_eq!(
+                cp.staking_actions[0],
+                ConsensusStakingAction::PayFeesForDaDi {
+                    lane_id: node1.mempool_ctx.own_lane(),
+                    cumul_size: dp_size_1
+                }
+            );
+            assert_eq!(
+                cp.staking_actions[1],
+                ConsensusStakingAction::PayFeesForDaDi {
+                    lane_id: node2.mempool_ctx.own_lane(),
+                    cumul_size: dp_size_2
+                }
+            );
         }
-    );
-    assert_eq!(
-        cp.staking_actions[1],
-        ConsensusStakingAction::PayFeesForDaDi {
-            lane_id: node2.mempool_ctx.own_lane(),
-            cumul_size: dp_size_2
-        }
-    );
+    };
 }
 
 /// P = Proposal
