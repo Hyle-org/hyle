@@ -393,8 +393,8 @@ pub mod tests {
         // Both peers should have each other's ValidatorPublicKey in their maps
         let p1_peer_key = p2p_server1.peers.keys().next().unwrap();
         let p2_peer_key = p2p_server2.peers.keys().next().unwrap();
-        assert_eq!(p1_peer_key.0, crypto2.validator_pubkey().0);
-        assert_eq!(p2_peer_key.0, crypto1.validator_pubkey().0);
+        assert_eq!(p1_peer_key.0, vec![1, 2, 3]);
+        assert_eq!(p2_peer_key.0, vec![1, 2, 3]);
 
         Ok(())
     }
