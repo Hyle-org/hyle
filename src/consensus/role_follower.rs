@@ -387,8 +387,8 @@ impl Consensus {
                 monotonic_check()?;
 
                 let next_max_timestamp = previous_timestamp.clone()
-                    + (self.config.consensus.slot_duration * 2 * 10
-                        + TimeoutState::TIMEOUT_SECS * (self.bft_round_state.view as u32) * 2);
+                    + (self.config.consensus.slot_duration * 2
+                        + TimeoutState::TIMEOUT_SECS * (self.bft_round_state.view as u32));
 
                 if &next_max_timestamp < timestamp {
                     bail!(
@@ -432,7 +432,7 @@ impl Consensus {
             warn!(
                 proposal_hash = %consensus_proposal.hashed(),
                 sender = %sender,
-                "🚚 Prepare message for slot {} while at slot {}. Buffering.",
+                "🚚 Prepare message for slot {} while at slot {}. Buffering while processing TC Ticket.",
                 consensus_proposal.slot, self.bft_round_state.slot
             );
             self.buffer_prepare_message_and_fetch_missing_parent(
@@ -658,7 +658,7 @@ impl Consensus {
             warn!(
                 proposal_hash = %consensus_proposal.hashed(),
                  sender = %sender,
-                "🚚 Prepare message for slot {} while at slot {}. Buffering.",
+                "🚚 Prepare message for slot {} while at slot {}. Buffering while processing Commit Ticket.",
                 consensus_proposal.slot, self.bft_round_state.slot
             );
             self.buffer_prepare_message_and_fetch_missing_parent(

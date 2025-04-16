@@ -1313,12 +1313,9 @@ pub mod test {
             .expect("Error while signing");
 
         // Slot 1 - leader = node1
-        // Ensuring one slot commits correctly before a timeout
+        // Ensuring one slot commits correctly before a
 
-        // Check that wrong prepares are buffered in each node consuming it
-
-        node2.handle_msg(&prepare_msg, "message");
-
+        assert_contains!(node2.handle_msg_err(&prepare_msg).to_string(), "wrong slot");
         assert_eq!(
             node2
                 .consensus
@@ -1326,15 +1323,10 @@ pub mod test {
                 .follower
                 .buffered_prepares
                 .get(&cp.hashed()),
-            Some(&(
-                node1.validator_pubkey().clone(),
-                cp.clone(),
-                Ticket::Genesis,
-                0
-            ))
+            None
         );
-        node3.handle_msg(&prepare_msg, "message");
 
+        assert_contains!(node3.handle_msg_err(&prepare_msg).to_string(), "wrong slot");
         assert_eq!(
             node3
                 .consensus
@@ -1342,15 +1334,10 @@ pub mod test {
                 .follower
                 .buffered_prepares
                 .get(&cp.hashed()),
-            Some(&(
-                node1.validator_pubkey().clone(),
-                cp.clone(),
-                Ticket::Genesis,
-                0
-            ))
+            None
         );
-        node4.handle_msg(&prepare_msg, "message");
 
+        assert_contains!(node4.handle_msg_err(&prepare_msg).to_string(), "wrong slot");
         assert_eq!(
             node4
                 .consensus
@@ -1358,12 +1345,7 @@ pub mod test {
                 .follower
                 .buffered_prepares
                 .get(&cp.hashed()),
-            Some(&(
-                node1.validator_pubkey().clone(),
-                cp.clone(),
-                Ticket::Genesis,
-                0
-            ))
+            None
         );
     }
 
