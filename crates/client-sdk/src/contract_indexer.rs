@@ -45,7 +45,7 @@ where
         store: ContractHandlerStore<Self>,
     ) -> impl std::future::Future<Output = (Router<()>, OpenApi)> + std::marker::Send;
 
-    fn handle_transaction(
+    fn handle_transaction_success(
         &mut self,
         tx: &BlobTransaction,
         index: BlobIndex,

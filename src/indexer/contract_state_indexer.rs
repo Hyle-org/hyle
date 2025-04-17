@@ -242,7 +242,7 @@ where
         self.handle_txs(
             &block.successful_txs,
             &block,
-            |state, tx, index, ctx| state.handle_transaction(tx, index, ctx),
+            |state, tx, index, ctx| state.handle_transaction_success(tx, index, ctx),
             true,
         )
         .await?;
@@ -324,7 +324,7 @@ mod tests {
     }
 
     impl ContractHandler for MockState {
-        fn handle_transaction(
+        fn handle_transaction_success(
             &mut self,
             tx: &BlobTransaction,
             index: BlobIndex,
@@ -430,7 +430,7 @@ mod tests {
                         .collect(),
                     ..Block::default()
                 },
-                |state, tx, index, ctx| state.handle_transaction(tx, index, ctx),
+                |state, tx, index, ctx| state.handle_transaction_success(tx, index, ctx),
                 true,
             )
             .await
