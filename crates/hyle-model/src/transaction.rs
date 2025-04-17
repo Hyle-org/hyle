@@ -202,7 +202,7 @@ impl Hashed<TxHash> for VerifiedProofTransaction {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, BorshSerialize, BorshDeserialize)]
+#[derive(Serialize, Deserialize, Default, BorshSerialize, BorshDeserialize)]
 #[readonly::make]
 pub struct BlobTransaction {
     pub identity: Identity,
@@ -224,6 +224,16 @@ impl BlobTransaction {
             hash_cache: RwLock::new(None),
             blobshash_cache: RwLock::new(None),
         }
+    }
+}
+
+// Custom implem to skip the cached fields
+impl std::fmt::Debug for BlobTransaction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BlobTransaction")
+            .field("identity", &self.identity)
+            .field("blobs", &self.blobs)
+            .finish()
     }
 }
 
@@ -289,20 +299,20 @@ impl BlobTransaction {
         if let Some(hash) = self.blobshash_cache.read().unwrap().clone() {
             return hash;
         }
-        let hash = BlobsHashes::from_vec(&self.blobs);
+        let hash: BlobsHashes = (&self.blobs).into();
         self.blobshash_cache.write().unwrap().replace(hash.clone());
         hash
     }
 
     pub fn validate_identity(&self) -> Result<(), anyhow::Error> {
         // Checks that there is a blob that proves the identity
-        let Some((identity, identity_contract_name)) = self.identity.0.split_once('.') else {
-            anyhow::bail!("Transaction identity {} is not correctly formed. It should be in the form <id>.<contract_id_name>", self.identity.0);
+        let Some((identity, identity_contract_name)) = self.identity.0.split_once("@") else {
+            anyhow::bail!("Transaction identity {} is not correctly formed. It should be in the form <id>@<contract_id_name>", self.identity.0);
         };
 
         if identity.is_empty() || identity_contract_name.is_empty() {
             anyhow::bail!(
-                "Transaction identity {}.{} must not have empty parts",
+                "Transaction identity {}@{} must not have empty parts",
                 identity,
                 identity_contract_name
             );
@@ -340,34 +350,30 @@ pub struct BlobsHashes {
     pub hashes: BTreeMap<BlobIndex, BlobHash>,
 }
 
-impl BlobsHashes {
-    pub fn new(s: &str) -> BlobsHashes {
+impl From<&Vec<Blob>> for BlobsHashes {
+    fn from(iter: &Vec<Blob>) -> Self {
         BlobsHashes {
-            hashes: vec![(BlobIndex(0), BlobHash(s.into()))]
-                .into_iter()
-                .collect(),
-        }
-    }
-
-    pub fn from_vec(vec: &[Blob]) -> BlobsHashes {
-        Self::from_concatenated(&flatten_blobs_vec(vec))
-    }
-
-    pub fn from_concatenated(vec: &[(BlobIndex, Vec<u8>)]) -> BlobsHashes {
-        BlobsHashes {
-            hashes: vec
+            hashes: iter
                 .iter()
-                .map(|(index, blob)| {
-                    let mut hasher = Sha3_256::new();
-                    hasher.update(blob);
-                    let hash_bytes = hasher.finalize();
-                    let hash = BlobHash(hex::encode(hash_bytes));
-                    (*index, hash)
-                })
+                .enumerate()
+                .map(|(index, blob)| (BlobIndex(index), blob.hashed()))
                 .collect(),
         }
     }
+}
 
+impl From<&IndexedBlobs> for BlobsHashes {
+    fn from(iter: &IndexedBlobs) -> Self {
+        BlobsHashes {
+            hashes: iter
+                .iter()
+                .map(|(index, blob)| (*index, blob.hashed()))
+                .collect(),
+        }
+    }
+}
+
+impl BlobsHashes {
     pub fn includes_all(&self, other: &BlobsHashes) -> bool {
         for (index, hash) in other.hashes.iter() {
             if !self

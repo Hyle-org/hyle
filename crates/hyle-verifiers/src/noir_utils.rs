@@ -1,5 +1,5 @@
 use anyhow::{Context, Error};
-use hyle_model::{flatten_blobs, Blob, BlobIndex, HyleOutput, StateCommitment, TxHash};
+use hyle_model::{Blob, BlobIndex, HyleOutput, IndexedBlobs, StateCommitment, TxHash};
 use tracing::debug;
 
 /// Extracts the public inputs from the output of `reconstruct_honk_proof`.
@@ -54,6 +54,7 @@ pub fn parse_noir_output(output: &[u8]) -> Result<HyleOutput, Error> {
         blobs,
         tx_blob_count,
         success,
+        state_reads: vec![],
         onchain_effects: vec![],
         program_outputs: vec![],
     })
@@ -98,9 +99,9 @@ fn parse_array(vector: &mut Vec<String>) -> Result<Vec<u8>, Error> {
     Ok(resp)
 }
 
-fn parse_blobs(blob_data: &mut Vec<String>) -> Result<Vec<(BlobIndex, Vec<u8>)>, Error> {
+fn parse_blobs(blob_data: &mut Vec<String>) -> Result<IndexedBlobs, Error> {
     let blob_number = usize::from_str_radix(&blob_data.remove(0), 16)?;
-    let mut blobs = Vec::new();
+    let mut blobs = IndexedBlobs::default();
 
     debug!("blob_number: {}", blob_number);
 
@@ -132,8 +133,6 @@ fn parse_blobs(blob_data: &mut Vec<String>) -> Result<Vec<(BlobIndex, Vec<u8>)>,
             },
         ));
     }
-
-    let blobs = flatten_blobs(&blobs);
 
     debug!("Parsed blobs: {:?}", blobs);
 

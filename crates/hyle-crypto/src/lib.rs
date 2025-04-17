@@ -150,7 +150,7 @@ impl BlstCrypto {
         ikm
     }
 
-    #[cfg(test)]
+    /// For testing purpose only
     pub fn new_random() -> Result<Self> {
         use rand::Rng;
 

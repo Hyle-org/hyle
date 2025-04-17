@@ -222,7 +222,7 @@ pub mod sp1_4 {
 pub mod native {
     use super::*;
     use hyle_model::{
-        flatten_blobs_vec, verifiers::NativeVerifiers, Blob, BlobIndex, Identity, StateCommitment,
+        verifiers::NativeVerifiers, Blob, BlobIndex, Identity, IndexedBlobs, StateCommitment,
         TxHash,
     };
 
@@ -234,7 +234,7 @@ pub mod native {
     ) -> HyleOutput {
         #[allow(clippy::expect_used, reason = "Logic error in the code")]
         let blob = blobs.get(index.0).expect("Invalid blob index");
-        let blobs = flatten_blobs_vec(blobs);
+        let blobs: IndexedBlobs = blobs.iter().cloned().into();
 
         let (identity, success) = match crate::native_impl::verify_native_impl(blob, verifier) {
             Ok((identity, success)) => (identity, success),
@@ -261,6 +261,7 @@ pub mod native {
             success,
             tx_hash,
             tx_ctx: None,
+            state_reads: vec![],
             onchain_effects: vec![],
             program_outputs: vec![],
         }
@@ -272,7 +273,8 @@ mod tests {
     use std::{fs::File, io::Read};
 
     use hyle_model::{
-        BlobIndex, HyleOutput, Identity, ProgramId, ProofData, StateCommitment, TxHash,
+        Blob, BlobData, BlobIndex, HyleOutput, Identity, IndexedBlobs, ProgramId, ProofData,
+        StateCommitment, TxHash,
     };
 
     use super::noir::verify as noir_proof_verifier;
@@ -314,7 +316,7 @@ mod tests {
             next_state_len = 4
             next_state = [0, 0, 0, 0]
             identity_len = 56
-            identity = "3f368bf90c71946fc7b0cde9161ace42985d235f.ecdsa_secp256r1"
+            identity = "3f368bf90c71946fc7b0cde9161ace42985d235f@ecdsa_secp256r1"
             tx_hash_len = 0
             tx_hash = []
             blobs_len = 9
@@ -338,13 +340,20 @@ mod tests {
                         initial_state: StateCommitment(vec![0, 0, 0, 0]),
                         next_state: StateCommitment(vec![0, 0, 0, 0]),
                         identity: Identity(
-                            "3f368bf90c71946fc7b0cde9161ace42985d235f.ecdsa_secp256r1".to_owned()
+                            "3f368bf90c71946fc7b0cde9161ace42985d235f@ecdsa_secp256r1".to_owned()
                         ),
                         index: BlobIndex(0),
-                        blobs: vec![(BlobIndex(0), vec![1, 1, 1, 1, 1])],
+                        blobs: IndexedBlobs(vec![(
+                            BlobIndex(0),
+                            Blob {
+                                contract_name: "webauthn".into(),
+                                data: BlobData(vec![3, 1, 1, 2, 1, 1, 2, 1, 1, 0])
+                            }
+                        )]),
                         tx_blob_count: 1,
                         success: true,
                         tx_hash: TxHash::default(), // TODO
+                        state_reads: vec![],
                         tx_ctx: None,
                         onchain_effects: vec![],
                         program_outputs: vec![]

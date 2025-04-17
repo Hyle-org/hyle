@@ -263,7 +263,7 @@ impl Genesis {
         for peer in peer_pubkey.values() {
             info!("🌱  Registering identity {peer}");
 
-            let identity = Identity(format!("{peer}.hydentity"));
+            let identity = Identity(format!("{peer}@hydentity"));
             let mut transaction = ProvableBlobTx::new(identity.clone());
 
             // Register
@@ -309,7 +309,7 @@ impl Genesis {
             transfer(
                 &mut transaction,
                 ContractName::new("hyllar"),
-                format!("{peer}.hydentity"),
+                format!("{peer}@hydentity"),
                 genesis_faucet + 1_000_000_000,
             )?;
 
@@ -333,7 +333,7 @@ impl Genesis {
 
             info!("🌱  Staking {genesis_stake} hyllar from {peer}");
 
-            let identity = Identity(format!("{peer}.hydentity").to_string());
+            let identity = Identity(format!("{peer}@hydentity").to_string());
             let mut transaction = ProvableBlobTx::new(identity.clone());
 
             // Verify identity
@@ -418,7 +418,7 @@ impl Genesis {
             ProgramId(hyle_contracts::RISC0_RECURSION_ID.to_vec()),
         );
 
-        let mut register_tx = ProvableBlobTx::new("hyle.hyle".into());
+        let mut register_tx = ProvableBlobTx::new("hyle@hyle".into());
 
         register_hyle_contract(
             &mut register_tx,

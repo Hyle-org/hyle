@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use hyle_model::{
     ContractName, DataProposalHash, DataSized, LaneBytesSize, LaneId, ProgramId,
     RegisterContractAction, StructuredBlobData, ValidatorPublicKey, Verifier,
@@ -134,7 +134,18 @@ impl super::Mempool {
                 let (hash, size) =
                     self.lanes
                         .store_data_proposal(&crypto, &lane_id, data_proposal)?;
-                self.send_vote(self.get_lane_operator(&lane_id), hash, size)?;
+                self.send_vote(self.get_lane_operator(&lane_id), hash.clone(), size)?;
+
+                while let Some(poda_signatures) = self
+                    .inner
+                    .buffered_podas
+                    .get_mut(&lane_id)
+                    .and_then(|lane| lane.get_mut(&hash))
+                    .and_then(|podas_list| podas_list.pop())
+                {
+                    self.on_poda_update(&lane_id, &hash, poda_signatures)
+                        .context("Processing buffered poda")?;
+                }
             }
             DataProposalVerdict::Refuse => {
                 debug!("Refuse vote for DataProposal");

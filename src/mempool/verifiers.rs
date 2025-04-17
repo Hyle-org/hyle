@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
-use hyle_model::{HyleOutput, ProgramId, ProofData, Verifier};
+use hyle_contract_sdk::{HyleOutput, ProgramId, Verifier};
+use hyle_model::ProofData;
 
 pub fn verify_proof(
     proof: &ProofData,
