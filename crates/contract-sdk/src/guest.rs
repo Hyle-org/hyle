@@ -11,7 +11,7 @@ The `fail` function is used to generate a failure output for a contract action.
 
 This is a code snippet of a Risc0 guest entrypoint (e.g. file `methods/guest/src/main.rs` in a risc0 template project).
 
-`Hydentity` struct has to implements [ZkProgram] and [BorshDeserialize] traits.
+`Hydentity` struct has to implements [ZkContract] and [BorshDeserialize] traits.
 
 ```rust,no_run,compile_fail
 #![no_main]
@@ -34,7 +34,7 @@ fn main() {
 This is a code snippet of a SP1 guest entrypoint (e.g. file `program/src/main.rs` in a sp1 template project).
 
 
-`IdentityContractState` struct has to implements [ZkProgram] and [BorshDeserialize] traits.
+`IdentityContractState` struct has to implements [ZkContract] and [BorshDeserialize] traits.
 
 ```rust,no_run,compile_fail
 #![no_main]
