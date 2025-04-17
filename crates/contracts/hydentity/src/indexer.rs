@@ -31,7 +31,7 @@ impl ContractHandler for Hydentity {
         (router.with_state(store), api)
     }
 
-    fn handle_transaction(
+    fn handle_transaction_success(
         &mut self,
         tx: &BlobTransaction,
         index: BlobIndex,
