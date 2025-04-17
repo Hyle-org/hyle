@@ -76,6 +76,33 @@ where
         );
         Ok(())
     }
+
+    fn handle_transaction_failed(
+        &mut self,
+        _tx: &BlobTransaction,
+        _index: BlobIndex,
+        _tx_context: TxContext,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    fn handle_transaction_timeout(
+        &mut self,
+        _tx: &BlobTransaction,
+        _index: BlobIndex,
+        _tx_context: TxContext,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    fn handle_transaction_sequenced(
+        &mut self,
+        _tx: &BlobTransaction,
+        _index: BlobIndex,
+        _tx_context: TxContext,
+    ) -> Result<()> {
+        Ok(())
+    }
 }
 
 // Make our own error that wraps `anyhow::Error`.
