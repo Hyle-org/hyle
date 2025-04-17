@@ -115,7 +115,7 @@ impl BlstCrypto {
                 .map_err(|e| anyhow!("Could not generate key from keyring secret: {:?}", e))?,
             Err(keyring::Error::NoEntry) => {
                 let mut ikm = [0u8; 32];
-                rand::thread_rng().fill(&mut ikm);
+                rand::rng().fill(&mut ikm);
                 entry.set_password(&hex::encode(ikm))?;
                 SecretKey::key_gen(&ikm, &[])
                     .map_err(|e| anyhow!("Could not generate new key: {:?}", e))?
