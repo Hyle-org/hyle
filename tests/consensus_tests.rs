@@ -292,6 +292,8 @@ mod e2e_consensus {
             _ = gen_txs(&mut ctx, &mut tx_ctx, format!("alex{}", i), 100 + i).await;
         }
 
+        ctx.wait_height(1).await?;
+
         ctx.stop_node(0).await?;
         ctx.restart_node(0)?;
 
@@ -301,7 +303,7 @@ mod e2e_consensus {
             _ = gen_txs(&mut ctx, &mut tx_ctx, format!("alex{}", i), 100 + i).await;
         }
 
-        ctx.wait_height(2).await?;
+        ctx.wait_indexer_height(2).await?;
 
         let state: Hyllar = ctx
             .indexer_client()
