@@ -24,15 +24,15 @@ pub enum P2PServerEvent {
     },
 }
 
-#[derive(Debug)]
-struct PeerInfo {
+#[derive(Clone, Debug)]
+pub struct PeerInfo {
     // Timestamp of the lastest handshake
     timestamp: u128,
     // This is the socket_addr used in the tcp_server for the current peer
     socket_addr: String,
     // The address that will be used to reconnect to that peer
     #[allow(dead_code)]
-    node_connection_data: NodeConnectionData,
+    pub node_connection_data: NodeConnectionData,
 }
 
 /// P2PServer is a wrapper around TcpServer that manages peer connections
@@ -51,7 +51,7 @@ where
     node_da_port: u16,
     node_p2p_port: u16,
     tcp_server: TcpServer<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>,
-    peers: HashMap<ValidatorPublicKey, PeerInfo>,
+    pub peers: HashMap<ValidatorPublicKey, PeerInfo>,
 }
 
 impl<Codec, Msg> P2PServer<Codec, Msg>
@@ -297,10 +297,11 @@ pub mod tests {
     use anyhow::Result;
     use borsh::{BorshDeserialize, BorshSerialize};
     use hyle_crypto::BlstCrypto;
-    use std::sync::Arc;
     use tokio::net::TcpListener;
 
     use crate::tcp::P2PTcpMessage;
+
+    use crate::p2p_server_mod;
 
     pub async fn find_available_port() -> u16 {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -325,28 +326,27 @@ pub mod tests {
         let port1 = find_available_port().await;
         let port2 = find_available_port().await;
 
-        // Create two TCP servers on different ports
-        let server1 = codec_test_p2p_tcp_message::start_server(port1).await?;
-        let server2 = codec_test_p2p_tcp_message::start_server(port2).await?;
+        p2p_server_mod! {
+            pub test,
+            message: crate::tcp::p2p_server::tests::TestMessage
+        };
 
-        // Create two P2P servers
-        let mut p2p_server1 = super::P2PServer::new(
-            Arc::new(crypto1.clone()),
+        let mut p2p_server1 = p2p_server_test::start_server(
+            crypto1,
             "node1".to_string(),
             "127.0.0.1".to_string(),
             0,
             port1,
-            server1,
-        );
-
-        let mut p2p_server2 = super::P2PServer::new(
-            Arc::new(crypto2.clone()),
+        )
+        .await?;
+        let mut p2p_server2 = p2p_server_test::start_server(
+            crypto2,
             "node2".to_string(),
             "127.0.0.1".to_string(),
             0,
             port2,
-            server2,
-        );
+        )
+        .await?;
 
         // Initiate handshake from p2p_server1 to p2p_server2
         p2p_server1

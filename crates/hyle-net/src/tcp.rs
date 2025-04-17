@@ -197,7 +197,7 @@ macro_rules! tcp_client_server {
             pub type Server = $crate::tcp::tcp_server::TcpServer<ServerCodec, $req, $res>;
 
             pub async fn start_server(port: u16) -> Result<Server> {
-                $crate::tcp::tcp_server::TcpServer::<ServerCodec, $req, $res>::start(port, stringify!($name)).await
+                $crate::tcp::tcp_server::TcpServer::<ServerCodec, $req, $res>::start(port, stringify!($name).to_string()).await
             }
             pub async fn connect<Id: std::fmt::Display, A: $crate::net::ToSocketAddrs + std::fmt::Display>(id: Id, addr: A) -> Result<Client> {
                 $crate::tcp::tcp_client::TcpClient::<ClientCodec, $req, $res>::connect(id, addr).await
@@ -208,3 +208,47 @@ macro_rules! tcp_client_server {
 }
 
 pub use tcp_client_server;
+
+#[macro_export]
+macro_rules! p2p_server_mod {
+    ($vis:vis $name:ident, message: $msg:ty) => {
+        paste::paste! {
+        $vis mod [< p2p_server_ $name:snake >] {
+
+            $crate::tcp_client_server!{
+                tcp,
+                request: $crate::tcp::P2PTcpMessage<$msg>,
+                response: $crate::tcp::P2PTcpMessage<$msg>
+            }
+
+            type P2PServerType = $crate::tcp::p2p_server::P2PServer<codec_tcp::ServerCodec, $msg>;
+
+            pub async fn start_server(
+
+                crypto: hyle_crypto::BlstCrypto,
+                node_id: String,
+                node_hostname: String,
+                node_da_port: u16,
+                node_p2p_port: u16,
+
+            ) -> anyhow::Result<P2PServerType> {
+                let server = codec_tcp::start_server(node_p2p_port).await?;
+
+                Ok(
+                    $crate::tcp::p2p_server::P2PServer::new(
+                        std::sync::Arc::new(crypto),
+                        node_id,
+                        node_hostname,
+                        node_da_port,
+                        node_p2p_port,
+                        server
+                    )
+                )
+
+            }
+        }
+        }
+    };
+}
+
+pub use p2p_server_mod;

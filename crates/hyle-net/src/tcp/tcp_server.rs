@@ -40,7 +40,7 @@ where
     Req: BorshDeserialize + Clone + Send + 'static + std::fmt::Debug,
     Res: BorshSerialize + Clone + Send + 'static + std::fmt::Debug,
 {
-    pub async fn start(port: u16, pool_name: &'static str) -> Result<Self> {
+    pub async fn start(port: u16, pool_name: String) -> Result<Self> {
         let tcp_listener = TcpListener::bind(&(Ipv4Addr::UNSPECIFIED, port)).await?;
         let (pool_sender, pool_receiver) = tokio::sync::mpsc::channel(100);
         let (ping_sender, ping_receiver) = tokio::sync::mpsc::channel(100);

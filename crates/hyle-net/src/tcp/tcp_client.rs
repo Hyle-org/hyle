@@ -46,7 +46,7 @@ where
         target: A,
     ) -> Result<TcpClient<ClientCodec, Req, Res>> {
         let timeout = std::time::Duration::from_secs(10);
-        let start = std::time::Instant::now();
+        let start = tokio::time::Instant::now();
         let tcp_stream = loop {
             debug!("TcpClient {} - Trying to connect to {}", id, &target);
             match TcpStream::connect(&target).await {
