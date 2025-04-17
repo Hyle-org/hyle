@@ -1,13 +1,11 @@
 //! State required for participation in consensus by the node.
 
+use crate::model::contract_registration::validate_contract_registration_metadata;
 use crate::model::contract_registration::{
     validate_contract_name_registration, validate_state_commitment_size,
 };
 use crate::model::verifiers::NativeVerifiers;
 use crate::model::*;
-use crate::{
-    mempool::verifiers, model::contract_registration::validate_contract_registration_metadata,
-};
 use anyhow::{bail, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_contract_sdk::{BlobIndex, HyleOutput, TxHash};
@@ -332,7 +330,7 @@ impl NodeState {
                     .get(&blob.contract_name)
                     .map(|b| TryInto::<NativeVerifiers>::try_into(&b.verifier))
                 {
-                    let hyle_output = verifiers::verify_native(
+                    let hyle_output = hyle_verifiers::native::verify(
                         blob_tx_hash.clone(),
                         BlobIndex(index),
                         &tx.blobs,
