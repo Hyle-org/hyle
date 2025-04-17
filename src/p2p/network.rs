@@ -4,7 +4,6 @@ use crate::model::ValidatorPublicKey;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_model::{ConsensusNetMessage, SignedByValidator};
-use hyle_net::tcp::P2PTcpMessage;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt::{self, Display};
@@ -90,12 +89,6 @@ hyle_net::tcp_client_server! {
     pub P2pTcpMessage,
     request: hyle_net::tcp::P2PTcpMessage<super::NetMessage>,
     response: hyle_net::tcp::P2PTcpMessage<super::NetMessage>
-}
-
-impl From<NetMessage> for P2PTcpMessage<NetMessage> {
-    fn from(message: NetMessage) -> Self {
-        P2PTcpMessage::Data(message)
-    }
 }
 
 impl From<SignedByValidator<MempoolNetMessage>> for NetMessage {

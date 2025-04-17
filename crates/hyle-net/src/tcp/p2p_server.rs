@@ -218,17 +218,17 @@ where
         Ok(())
     }
 
-    pub async fn send<Data: Clone + Into<P2PTcpMessage<Msg>>>(
+    pub async fn send(
         &mut self,
         validator_pub_key: ValidatorPublicKey,
-        msg: Data,
+        msg: Msg,
     ) -> anyhow::Result<()> {
         if let Some(peer_info) = self.peers.get(&validator_pub_key) {
             let validator_ip = peer_info.socket_addr.clone();
             // We found the peer, we can send the message
             if let Err(e) = self
                 .tcp_server
-                .send(validator_ip.clone(), msg.clone().into())
+                .send(validator_ip.clone(), P2PTcpMessage::Data(msg.clone()))
                 .await
             {
                 bail!(
@@ -251,11 +251,8 @@ where
         Ok(())
     }
 
-    pub async fn broadcast<Data: std::fmt::Debug + Clone + Into<P2PTcpMessage<Msg>>>(
-        &mut self,
-        msg: Data,
-    ) -> anyhow::Result<()> {
-        let failed_peers = self.tcp_server.broadcast(msg.clone().into()).await;
+    pub async fn broadcast(&mut self, msg: Msg) -> anyhow::Result<()> {
+        let failed_peers = self.tcp_server.broadcast(P2PTcpMessage::Data(msg)).await;
         if failed_peers.is_empty() {
             return Ok(());
         } else {
@@ -264,16 +261,19 @@ where
         Ok(())
     }
 
-    pub async fn broadcast_only_for<Data: Clone + Into<P2PTcpMessage<Msg>>>(
+    pub async fn broadcast_only_for(
         &mut self,
         only_for: &HashSet<ValidatorPublicKey>,
-        msg: Data,
+        msg: Msg,
     ) -> anyhow::Result<()> {
         for validator_pub_key in only_for {
             if let Some(peer_info) = self.peers.get(validator_pub_key) {
                 if let Err(e) = self
                     .tcp_server
-                    .send(peer_info.socket_addr.clone(), msg.clone().into())
+                    .send(
+                        peer_info.socket_addr.clone(),
+                        P2PTcpMessage::Data(msg.clone()),
+                    )
                     .await
                 {
                     warn!(
