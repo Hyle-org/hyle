@@ -53,7 +53,7 @@ impl Storage for LanesStorage {
         if let Some(lane) = self.by_hash.get(lane_id) {
             return Ok(lane.get(dp_hash).map(|(metadata, _)| metadata.clone()));
         }
-        bail!("Can't find validator {}", lane_id)
+        bail!("Can't find lane with ID {}", lane_id)
     }
     fn get_dp_by_hash(
         &self,
