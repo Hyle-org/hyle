@@ -120,7 +120,7 @@ futures = { version = "0.3.31" }
 indexmap = { version = "2.9.0", features = ["serde"] }
 # opentelemetry and axum-otel-metrics must be updated together (so that there is only one opentelemetry version)
 opentelemetry = { version = "0.28" }
-opentelemetry-prometheus = { version = "0.28.0" }
+opentelemetry-prometheus = { version = "0.29.1" }
 opentelemetry_sdk = "0.28.0"
 paste = { version = "1.0.15" }
 prometheus = { version = "0.13.4" }
