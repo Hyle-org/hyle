@@ -280,7 +280,7 @@ use crate::model::*;
 use crate::node_state::module::NodeStateEvent;
 use crate::p2p::network::OutboundMessage;
 use crate::p2p::P2PCommand;
-use crate::utils::crypto::{self, BlstCrypto};
+use hyle_crypto::BlstCrypto;
 use tracing::info;
 
 bus_client!(
@@ -330,7 +330,7 @@ impl AutobahnTestCtx {
     pub fn generate_cryptos(nb: usize) -> Vec<BlstCrypto> {
         let mut res: Vec<_> = (0..nb)
             .map(|i| {
-                let crypto = crypto::BlstCrypto::new(&format!("node-{i}")).unwrap();
+                let crypto = BlstCrypto::new(&format!("node-{i}")).unwrap();
                 info!("node {}: {}", i, crypto.validator_pubkey());
                 crypto
             })
@@ -376,21 +376,20 @@ fn create_poda(
     data_proposal_hash: DataProposalHash,
     line_size: LaneBytesSize,
     nodes: &[&AutobahnTestCtx],
-) -> crypto::Signed<MempoolNetMessage, crypto::AggregateSignature> {
+) -> hyle_crypto::Signed<MempoolNetMessage, AggregateSignature> {
     let msg = MempoolNetMessage::DataVote(data_proposal_hash, line_size);
-    let mut signed_messages: Vec<crypto::Signed<MempoolNetMessage, crypto::ValidatorSignature>> =
-        nodes
-            .iter()
-            .map(|node| {
-                node.mempool_ctx
-                    .mempool
-                    .sign_net_message(msg.clone())
-                    .unwrap()
-            })
-            .collect();
+    let mut signed_messages: Vec<Signed<MempoolNetMessage, ValidatorSignature>> = nodes
+        .iter()
+        .map(|node| {
+            node.mempool_ctx
+                .mempool
+                .sign_net_message(msg.clone())
+                .unwrap()
+        })
+        .collect();
     signed_messages.sort_by(|a, b| a.signature.cmp(&b.signature));
 
-    let aggregates: Vec<&crypto::Signed<MempoolNetMessage, crypto::ValidatorSignature>> =
+    let aggregates: Vec<&hyle_crypto::Signed<MempoolNetMessage, ValidatorSignature>> =
         signed_messages.iter().collect();
     BlstCrypto::aggregate(msg, &aggregates).unwrap()
 }
@@ -1002,7 +1001,7 @@ async fn autobahn_rejoin_flow() {
         0,
     );
 
-    let crypto = crypto::BlstCrypto::new("node-3").unwrap();
+    let crypto = BlstCrypto::new("node-3").unwrap();
     let mut joining_node = AutobahnTestCtx::new("node-3", crypto).await;
     joining_node
         .consensus_ctx

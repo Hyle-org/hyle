@@ -45,6 +45,26 @@ impl Block {
             .context(format!("No parent dp hash found for tx {}", tx_hash))?
             .clone())
     }
+
+    pub fn resolve_lane_id(&self, tx_hash: &TxHash) -> Result<LaneId> {
+        Ok(self
+            .lane_ids
+            .get(tx_hash)
+            .context(format!("No lane id found for tx {}", tx_hash))?
+            .clone())
+    }
+
+    pub fn build_tx_ctx(&self, tx_hash: &TxHash) -> Result<TxContext> {
+        let lane_id = self.resolve_lane_id(tx_hash)?;
+
+        Ok(TxContext {
+            lane_id,
+            block_hash: self.hash.clone(),
+            block_height: self.block_height,
+            timestamp: self.block_timestamp.clone(),
+            chain_id: HYLE_TESTNET_CHAIN_ID, // TODO: make it configurable
+        })
+    }
 }
 
 impl Ord for Block {

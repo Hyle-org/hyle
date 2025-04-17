@@ -1,13 +1,11 @@
 //! State required for participation in consensus by the node.
 
+use crate::model::contract_registration::validate_contract_registration_metadata;
 use crate::model::contract_registration::{
     validate_contract_name_registration, validate_state_commitment_size,
 };
 use crate::model::verifiers::NativeVerifiers;
 use crate::model::*;
-use crate::{
-    mempool::verifiers, model::contract_registration::validate_contract_registration_metadata,
-};
 use anyhow::{bail, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_contract_sdk::{BlobIndex, HyleOutput, TxHash};
@@ -332,7 +330,7 @@ impl NodeState {
                     .get(&blob.contract_name)
                     .map(|b| TryInto::<NativeVerifiers>::try_into(&b.verifier))
                 {
-                    let hyle_output = verifiers::verify_native(
+                    let hyle_output = hyle_verifiers::native::verify(
                         blob_tx_hash.clone(),
                         BlobIndex(index),
                         &tx.blobs,
@@ -1058,6 +1056,7 @@ impl NodeState {
                 self.metrics.add_triggered_timeouts();
                 let hash = tx.hash.clone();
                 let parent_hash = tx.parent_dp_hash.clone();
+                let lane_id = tx.tx_context.lane_id.clone();
                 block_under_construction
                     .transactions_events
                     .entry(hash.clone())
@@ -1065,7 +1064,10 @@ impl NodeState {
                     .push(TransactionStateEvent::TimedOut);
                 block_under_construction
                     .dp_parent_hashes
-                    .insert(hash, parent_hash);
+                    .insert(hash.clone(), parent_hash);
+                block_under_construction
+                    .lane_ids
+                    .insert(hash, lane_id);
 
                 // Attempt to settle following transactions
                 let mut blob_tx_to_try_and_settle = BTreeSet::new();

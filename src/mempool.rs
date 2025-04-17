@@ -11,7 +11,6 @@ use crate::{
     p2p::network::OutboundMessage,
     utils::{
         conf::{P2pMode, SharedConf},
-        crypto::{BlstCrypto, SharedBlstCrypto},
         modules::{module_bus_client, Module},
         serialize::arc_rwlock_borsh,
     },
@@ -23,6 +22,7 @@ use block_construction::BlockUnderConstruction;
 use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::tcp_client::TcpServerMessage;
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
+use hyle_crypto::{BlstCrypto, SharedBlstCrypto};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;

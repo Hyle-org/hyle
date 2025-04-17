@@ -5,7 +5,7 @@ use crate::{
     handle_messages,
     model::*,
     p2p::network::PeerEvent,
-    utils::{conf::SharedConf, crypto::SharedBlstCrypto, modules::Module},
+    utils::{conf::SharedConf, modules::Module},
 };
 use anyhow::{Error, Result};
 use client_sdk::{
@@ -22,6 +22,7 @@ use hydentity::{
 use hyle_contract_sdk::{
     Blob, Calldata, ContractName, Identity, ProgramId, StateCommitment, ZkContract,
 };
+use hyle_crypto::SharedBlstCrypto;
 use hyllar::{client::tx_executor_handler::transfer, Hyllar, FAUCET_ID};
 use serde::{Deserialize, Serialize};
 use staking::{
@@ -560,7 +561,7 @@ mod tests {
     use super::*;
     use crate::bus::{BusClientReceiver, SharedMessageBus};
     use crate::utils::conf::Conf;
-    use crate::utils::crypto::BlstCrypto;
+    use hyle_crypto::BlstCrypto;
     use std::sync::Arc;
 
     bus_client! {

@@ -3,8 +3,9 @@ use clap::Parser;
 use hyle::{
     entrypoint::RunPg,
     log_error,
-    utils::{conf, crypto::BlstCrypto, logger::setup_tracing},
+    utils::{conf, logger::setup_tracing},
 };
+use hyle_crypto::BlstCrypto;
 use std::sync::Arc;
 use tracing::info;
 
