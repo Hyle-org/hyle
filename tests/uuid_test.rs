@@ -46,7 +46,7 @@ async fn test_uuid_registration() {
     std::env::set_var("RISC0_DEV_MODE", "1");
 
     let ctx = E2ECtx::new_multi_with_indexer(2, 500).await.unwrap();
-    ctx.register_contract::<UuidContract>("hyle.hyle".into(), "uuid")
+    ctx.register_contract::<UuidContract>("hyle@hyle".into(), "uuid")
         .await
         .unwrap();
 
@@ -65,7 +65,7 @@ async fn test_uuid_registration() {
     .build();
 
     // First register identity
-    let mut tx = ProvableBlobTx::new("toto.hydentity".into());
+    let mut tx = ProvableBlobTx::new("toto@hydentity".into());
     register_identity(&mut tx, "hydentity".into(), "password".into()).unwrap();
 
     // Then claim a UUID
@@ -102,7 +102,7 @@ async fn test_uuid_registration() {
     tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
 
     // Now register the contract with the claimed UUID
-    let mut tx = ProvableBlobTx::new("toto.hydentity".into());
+    let mut tx = ProvableBlobTx::new("toto@hydentity".into());
     verify_identity(
         &mut tx,
         "hydentity".into(),

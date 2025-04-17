@@ -53,7 +53,7 @@ async fn faucet_and_delegate(
 
     let node_info = client.get_node_info().await?;
 
-    let node_identity = Identity(format!("{}.hydentity", node_info.id));
+    let node_identity = Identity(format!("{}@hydentity", node_info.id));
     {
         let mut transaction = ProvableBlobTx::new(node_identity.clone());
 

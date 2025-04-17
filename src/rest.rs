@@ -304,7 +304,7 @@ mod tests {
             let client = NodeApiHttpClient::new(format!("http://localhost:{}", rest_client))
                 .expect("Failed to create client");
             let dummy_tx = BlobTransaction::new(
-                "test.identity",
+                "test@identity",
                 vec![Blob {
                     contract_name: "identity".into(),
                     data: BlobData(vec![0, 1, 2, 3]),

@@ -54,7 +54,7 @@ mod e2e_smt_token {
 
         info!("➡️  Sending blob to register bob identity");
 
-        let mut tx = ProvableBlobTx::new("bob.hydentity".into());
+        let mut tx = ProvableBlobTx::new("bob@hydentity".into());
         register_identity(&mut tx, "hydentity".into(), "password".to_string())?;
         ctx.send_provable_blob_tx(&tx).await?;
 
@@ -84,7 +84,7 @@ mod e2e_smt_token {
             &mut tx,
             "smt_token".into(),
             FAUCET_ID.into(),
-            "bob.hydentity".into(),
+            "bob@hydentity".into(),
             25,
         )?;
 
@@ -112,7 +112,7 @@ mod e2e_smt_token {
         let state = executor.smt_token.get_state();
         assert_eq!(
             state
-                .get(&"bob.hydentity".into())
+                .get(&"bob@hydentity".into())
                 .expect("bob identity not found")
                 .balance,
             25

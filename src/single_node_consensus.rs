@@ -8,11 +8,11 @@ use crate::mempool::QueryNewCut;
 use crate::model::*;
 use crate::module_handle_messages;
 use crate::utils::conf::SharedConf;
-use crate::utils::crypto::SharedBlstCrypto;
 use crate::utils::modules::module_bus_client;
 use crate::{model::SharedRunContext, utils::modules::Module};
 use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
+use hyle_crypto::SharedBlstCrypto;
 use hyle_net::clock::TimestampMsClock;
 use staking::state::Staking;
 use tracing::{debug, warn};
@@ -213,8 +213,8 @@ mod tests {
     use crate::bus::{bus_client, SharedMessageBus};
     use crate::handle_messages;
     use crate::utils::conf::Conf;
-    use crate::utils::crypto::BlstCrypto;
     use anyhow::Result;
+    use hyle_crypto::BlstCrypto;
     use std::sync::Arc;
     use tokio::sync::broadcast::Receiver;
 

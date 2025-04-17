@@ -143,14 +143,14 @@ mod e2e_amm {
         ///////////////////// hyllar2 contract registration /////////////////
         info!("➡️  Registring hyllar2 contract");
         const HYLLAR2_CONTRACT_NAME: &str = "hyllar2";
-        ctx.register_contract::<HyllarTestContract>("hyle.hyle".into(), HYLLAR2_CONTRACT_NAME)
+        ctx.register_contract::<HyllarTestContract>("hyle@hyle".into(), HYLLAR2_CONTRACT_NAME)
             .await?;
         /////////////////////////////////////////////////////////////////////
 
         ///////////////////// bob identity registration /////////////////////
         info!("➡️  Sending blob to register bob identity");
 
-        let mut tx = ProvableBlobTx::new("bob.hydentity".into());
+        let mut tx = ProvableBlobTx::new("bob@hydentity".into());
         register_identity(&mut tx, "hydentity".into(), "password".to_string())?;
         ctx.send_provable_blob_tx(&tx).await?;
         let tx = executor.process(tx)?;
@@ -173,7 +173,7 @@ mod e2e_amm {
             &executor.hydentity,
             "password".into(),
         )?;
-        transfer(&mut tx, "hyllar".into(), "bob.hydentity".into(), 25)?;
+        transfer(&mut tx, "hyllar".into(), "bob@hydentity".into(), 25)?;
 
         ctx.send_provable_blob_tx(&tx).await?;
         let tx = executor.process(tx)?;
@@ -198,7 +198,7 @@ mod e2e_amm {
 
         assert_eq!(
             state
-                .balance_of("bob.hydentity")
+                .balance_of("bob@hydentity")
                 .expect("bob identity not found"),
             25
         );
@@ -206,7 +206,7 @@ mod e2e_amm {
             &ctx,
             "hyllar",
             &[
-                ("bob.hydentity", 25),
+                ("bob@hydentity", 25),
                 (FAUCET_ID, hyllar_initial_total_amount - 25),
             ],
         )
@@ -222,7 +222,7 @@ mod e2e_amm {
             &executor.hydentity,
             "password".into(),
         )?;
-        transfer(&mut tx, "hyllar2".into(), "bob.hydentity".into(), 50)?;
+        transfer(&mut tx, "hyllar2".into(), "bob@hydentity".into(), 50)?;
 
         ctx.send_provable_blob_tx(&tx).await?;
         let tx = executor.process(tx)?;
@@ -244,7 +244,7 @@ mod e2e_amm {
             &ctx,
             "hyllar2",
             &[
-                ("bob.hydentity", 50),
+                ("bob@hydentity", 50),
                 (FAUCET_ID, hyllar2_initial_total_amount - 50),
             ],
         )
@@ -254,13 +254,13 @@ mod e2e_amm {
         ///////////////////// amm contract registration /////////////////////
         info!("➡️  Registring amm contract");
         const AMM_CONTRACT_NAME: &str = "amm";
-        ctx.register_contract::<AmmTestContract>("hyle.hyle".into(), AMM_CONTRACT_NAME)
+        ctx.register_contract::<AmmTestContract>("hyle@hyle".into(), AMM_CONTRACT_NAME)
             .await?;
         /////////////////////////////////////////////////////////////////////
 
         //////////////////// Bob approves AMM on hyllar /////////////////////
         info!("➡️  Sending blob to approve amm on hyllar");
-        let mut tx = ProvableBlobTx::new("bob.hydentity".into());
+        let mut tx = ProvableBlobTx::new("bob@hydentity".into());
         verify_identity(
             &mut tx,
             "hydentity".into(),
@@ -285,13 +285,13 @@ mod e2e_amm {
         info!("➡️  Waiting for height 5 on indexer");
         ctx.wait_indexer_height(5).await?;
 
-        assert_account_allowance(&ctx, "hyllar", "bob.hydentity", AMM_CONTRACT_NAME, 100).await?;
+        assert_account_allowance(&ctx, "hyllar", "bob@hydentity", AMM_CONTRACT_NAME, 100).await?;
         /////////////////////////////////////////////////////////////////////
 
         //////////////////// Bob approves AMM on hyllar2 /////////////////////
         info!("➡️  Sending blob to approve amm on hyllar2");
 
-        let mut tx = ProvableBlobTx::new("bob.hydentity".into());
+        let mut tx = ProvableBlobTx::new("bob@hydentity".into());
         verify_identity(
             &mut tx,
             "hydentity".into(),
@@ -316,13 +316,13 @@ mod e2e_amm {
         info!("➡️  Waiting for height 5 on indexer");
         ctx.wait_indexer_height(5).await?;
 
-        assert_account_allowance(&ctx, "hyllar2", "bob.hydentity", AMM_CONTRACT_NAME, 100).await?;
+        assert_account_allowance(&ctx, "hyllar2", "bob@hydentity", AMM_CONTRACT_NAME, 100).await?;
         /////////////////////////////////////////////////////////////////////
 
         /////////////// Creating new pair hyllar/hyllar2 on amm ///////////////
         info!("➡️  Creating new pair hyllar/hyllar2 on amm");
 
-        let mut tx = ProvableBlobTx::new("bob.hydentity".into());
+        let mut tx = ProvableBlobTx::new("bob@hydentity".into());
         verify_identity(
             &mut tx,
             "hydentity".into(),
@@ -365,7 +365,7 @@ mod e2e_amm {
             &ctx,
             "hyllar",
             &[
-                ("bob.hydentity", 5),
+                ("bob@hydentity", 5),
                 (AMM_CONTRACT_NAME, 20),
                 (FAUCET_ID, hyllar_initial_total_amount - 25),
             ],
@@ -376,7 +376,7 @@ mod e2e_amm {
             &ctx,
             "hyllar2",
             &[
-                ("bob.hydentity", 0),
+                ("bob@hydentity", 0),
                 (AMM_CONTRACT_NAME, 50),
                 (FAUCET_ID, hyllar2_initial_total_amount - 50),
             ],
@@ -387,7 +387,7 @@ mod e2e_amm {
         /////////////////////// Bob actually swaps //////////////////////////
         info!("➡️ Bob actually swaps");
 
-        let mut tx = ProvableBlobTx::new("bob.hydentity".into());
+        let mut tx = ProvableBlobTx::new("bob@hydentity".into());
         verify_identity(
             &mut tx,
             "hydentity".into(),
@@ -447,7 +447,7 @@ mod e2e_amm {
             &ctx,
             "hyllar",
             &[
-                ("bob.hydentity", 0),
+                ("bob@hydentity", 0),
                 (AMM_CONTRACT_NAME, 25),
                 (FAUCET_ID, hyllar_initial_total_amount - 25),
             ],
@@ -458,7 +458,7 @@ mod e2e_amm {
             &ctx,
             "hyllar2",
             &[
-                ("bob.hydentity", 10),
+                ("bob@hydentity", 10),
                 (AMM_CONTRACT_NAME, 40),
                 (FAUCET_ID, hyllar2_initial_total_amount - 50),
             ],

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use hyle_model::{
     ContractName, DataProposalHash, DataSized, LaneBytesSize, LaneId, ProgramId,
     RegisterContractAction, StructuredBlobData, ValidatorPublicKey, Verifier,
@@ -134,7 +134,18 @@ impl super::Mempool {
                 let (hash, size) =
                     self.lanes
                         .store_data_proposal(&crypto, &lane_id, data_proposal)?;
-                self.send_vote(self.get_lane_operator(&lane_id), hash, size)?;
+                self.send_vote(self.get_lane_operator(&lane_id), hash.clone(), size)?;
+
+                while let Some(poda_signatures) = self
+                    .inner
+                    .buffered_podas
+                    .get_mut(&lane_id)
+                    .and_then(|lane| lane.get_mut(&hash))
+                    .and_then(|podas_list| podas_list.pop())
+                {
+                    self.on_poda_update(&lane_id, &hash, poda_signatures)
+                        .context("Processing buffered poda")?;
+                }
             }
             DataProposalVerdict::Refuse => {
                 debug!("Refuse vote for DataProposal");
@@ -362,19 +373,17 @@ impl super::Mempool {
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::{
-        mempool::{
-            test::{make_register_contract_tx, MempoolTestCtx},
-            MempoolNetMessage,
-        },
-        utils::crypto::{self, BlstCrypto},
+    use crate::mempool::{
+        test::{make_register_contract_tx, MempoolTestCtx},
+        MempoolNetMessage,
     };
+    use hyle_crypto::BlstCrypto;
     use hyle_model::{DataProposalHash, SignedByValidator};
 
     #[test_log::test(tokio::test)]
     async fn test_get_verdict() {
         let mut ctx = MempoolTestCtx::new("mempool").await;
-        let crypto2: BlstCrypto = crypto::BlstCrypto::new("2").unwrap();
+        let crypto2: BlstCrypto = BlstCrypto::new("2").unwrap();
         let lane_id2 = &LaneId(crypto2.validator_pubkey().clone());
 
         let dp = DataProposal::new(None, vec![]);
@@ -400,7 +409,7 @@ pub mod test {
     #[test_log::test(tokio::test)]
     async fn test_get_verdict_fork() {
         let mut ctx = MempoolTestCtx::new("mempool").await;
-        let crypto2: BlstCrypto = crypto::BlstCrypto::new("2").unwrap();
+        let crypto2: BlstCrypto = BlstCrypto::new("2").unwrap();
         let lane_id2 = &LaneId(crypto2.validator_pubkey().clone());
 
         let dp = DataProposal::new(None, vec![Transaction::default()]);

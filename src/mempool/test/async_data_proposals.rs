@@ -57,7 +57,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
             vec![DataProposal::new(
                 None,
                 vec![BlobTransaction::new(
-                    "test.hyle",
+                    "test@hyle",
                     vec![RegisterContractAction {
                         verifier: "test-slow".into(),
                         program_id: ProgramId(vec![]),
@@ -94,7 +94,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
 
     // Now send the slow proof TX. Channels are ordered so these will be handled in order.
     let blob_tx = BlobTransaction::new(
-        Identity(format!("toto.{}", contract_name.0)),
+        Identity(format!("toto@{}", contract_name.0)),
         vec![Blob {
             contract_name: contract_name.clone(),
             data: BlobData(vec![]),

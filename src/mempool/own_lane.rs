@@ -1,6 +1,6 @@
 //! Logic for processing the API inbound TXs in the mempool.
 
-use crate::{bus::BusClientSender, mempool::InternalMempoolEvent, model::*};
+use crate::{bus::BusClientSender, model::*};
 
 use anyhow::{bail, Context, Result};
 use client_sdk::tcp_client::TcpServerMessage;
@@ -13,20 +13,6 @@ use super::{api::RestApiMessage, storage::Storage};
 use super::{KnownContracts, MempoolNetMessage};
 
 impl super::Mempool {
-    pub(super) fn handle_api_message(&mut self, command: RestApiMessage) -> Result<()> {
-        match command {
-            RestApiMessage::NewTx(tx) => self.on_new_api_tx(tx)?,
-        }
-        Ok(())
-    }
-
-    pub(super) fn handle_tcp_server_message(&mut self, command: TcpServerMessage) -> Result<()> {
-        match command {
-            TcpServerMessage::NewTx(tx) => self.on_new_api_tx(tx)?,
-        }
-        Ok(())
-    }
-
     fn get_last_data_prop_hash_in_own_lane(&self) -> Option<DataProposalHash> {
         self.lanes.get_lane_hash_tip(&self.own_lane_id()).cloned()
     }
@@ -69,7 +55,7 @@ impl super::Mempool {
         // This garentees that the message is sent only once per threshold
         if old_voting_power < f && new_voting_power >= f
             || old_voting_power < 2 * f && new_voting_power >= 2 * f
-            || new_voting_power == 3 * f + 1
+            || new_voting_power > 3 * f
         {
             self.broadcast_net_message(MempoolNetMessage::PoDAUpdate(
                 data_proposal_hash,
@@ -200,15 +186,31 @@ impl super::Mempool {
         Ok(())
     }
 
+    pub(super) fn handle_api_message(&mut self, command: RestApiMessage) -> Result<()> {
+        match command {
+            RestApiMessage::NewTx(tx) => self.on_new_api_tx(tx)?,
+        }
+        Ok(())
+    }
+
+    pub(super) fn handle_tcp_server_message(&mut self, command: TcpServerMessage) -> Result<()> {
+        match command {
+            TcpServerMessage::NewTx(tx) => self.on_new_api_tx(tx)?,
+        }
+        Ok(())
+    }
+
     pub(super) fn on_new_api_tx(&mut self, tx: Transaction) -> Result<()> {
         // This is annoying to run in tests because we don't have the event loop setup, so go synchronous.
         #[cfg(test)]
         self.on_new_tx(tx.clone())?;
         #[cfg(not(test))]
-        self.running_tasks.spawn_blocking(move || {
-            tx.hashed();
-            Ok(InternalMempoolEvent::OnProcessedNewTx(tx))
-        });
+        self.processing_txs
+            .push_back(tokio::task::spawn_blocking(move || {
+                tx.hashed();
+                Ok(tx)
+            }));
+        self.notify_new_tx_to_process.notify_one();
         Ok(())
     }
 
@@ -232,11 +234,13 @@ impl super::Mempool {
                     proof_tx.contract_name
                 );
                 let kc = self.known_contracts.clone();
-                self.running_tasks.spawn_blocking(move || {
-                    let tx =
-                        Self::process_proof_tx(kc, tx).context("Processing proof tx in blocker")?;
-                    Ok(InternalMempoolEvent::OnProcessedNewTx(tx))
-                });
+                self.processing_txs
+                    .push_back(tokio::task::spawn_blocking(move || {
+                        let tx = Self::process_proof_tx(kc, tx)
+                            .context("Processing proof tx in blocker")?;
+                        Ok(tx)
+                    }));
+                self.notify_new_tx_to_process.notify_one();
 
                 return Ok(());
             }
@@ -344,11 +348,9 @@ pub mod test {
     use core::panic;
 
     use super::*;
-    use crate::{
-        mempool::storage::LaneEntry, tests::autobahn_testing::assert_chanmsg_matches,
-        utils::crypto::BlstCrypto,
-    };
+    use crate::{mempool::storage::LaneEntry, tests::autobahn_testing::assert_chanmsg_matches};
     use anyhow::Result;
+    use hyle_crypto::BlstCrypto;
 
     use crate::mempool::test::*;
 

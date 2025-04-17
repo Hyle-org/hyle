@@ -25,7 +25,7 @@ fn make_register_blob_action(
     state_commitment: StateCommitment,
 ) -> BlobTransaction {
     BlobTransaction::new(
-        "hyle.hyle",
+        "hyle@hyle",
         vec![RegisterContractAction {
             verifier: "test".into(),
             program_id: ProgramId(vec![1, 2, 3]),
@@ -76,7 +76,7 @@ async fn test_full_settlement_flow() -> Result<()> {
 
     info!("➡️  Sending blobs for c1 & c2.hyle");
     let tx = BlobTransaction::new(
-        "test.c2.hyle",
+        "test@c2.hyle",
         vec![
             Blob {
                 contract_name: "c1".into(),
@@ -198,7 +198,7 @@ async fn test_tx_settlement_duplicates() -> Result<()> {
     hyle_node.wait_for_n_blocks(1).await?;
 
     let tx = BlobTransaction::new(
-        "test.c2.hyle",
+        "test@c2.hyle",
         vec![
             Blob {
                 contract_name: "c1".into(),
@@ -369,7 +369,7 @@ async fn test_contract_upgrade() -> Result<()> {
 
     // Send contract update transaction
     let b2 = BlobTransaction::new(
-        "toto.c1.hyle",
+        "toto@c1.hyle",
         vec![RegisterContractAction {
             verifier: "test".into(),
             program_id: ProgramId(vec![7, 7, 7]),
