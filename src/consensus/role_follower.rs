@@ -424,7 +424,16 @@ impl Consensus {
         Ok(())
     }
 
-    /// Returns
+    fn current_proposal_changes_voting_power(&self) -> bool {
+        self.bft_round_state
+            .current_proposal
+            .staking_actions
+            .iter()
+            .filter(|sa| matches!(sa, ConsensusStakingAction::Bond { .. }))
+            .count()
+            > 0
+    }
+
     fn verify_and_process_tc_ticket(
         &mut self,
         timeout_qc: QuorumCertificate,
@@ -436,12 +445,11 @@ impl Consensus {
         // Two cases:
         // - the prepare is for next slot *and* we have the prepare for the current slot
         // - the prepare is for the current slot
-        let next_slot_and_current_proposal_is_present = consensus_proposal.slot
-            == self.bft_round_state.slot + 1
-            && self.current_slot_prepare_is_present();
+        let is_next_slot_and_current_proposal_is_present =
+            prepare_slot == self.bft_round_state.slot + 1 && self.current_slot_prepare_is_present();
 
         if (consensus_proposal.slot == self.bft_round_state.slot)
-            || next_slot_and_current_proposal_is_present
+            || is_next_slot_and_current_proposal_is_present
         {
             debug!(
             "Trying to process timeout Certificate against consensus proposal slot: {}, view: {}",
@@ -467,23 +475,15 @@ impl Consensus {
         );
 
             // If ticket for next slot && correct parent hash, fast forward
-            if prepare_slot == self.bft_round_state.slot + 1
+            if is_next_slot_and_current_proposal_is_present
                 && consensus_proposal.parent_hash == self.bft_round_state.current_proposal.hashed()
             {
                 // Try to commit our current prepare & fast-forward.
 
                 // Safety assumption: we can't actually verify a TC for the next slot, but since it matches our hash,
                 // since we have no staking actions in the prepare we're good.
-                if self
-                    .bft_round_state
-                    .current_proposal
-                    .staking_actions
-                    .iter()
-                    .filter(|sa| matches!(sa, ConsensusStakingAction::Bond { .. }))
-                    .count()
-                    > 0
-                {
-                    bail!("Timeout Certificate slot {} view {} is for the next slot, but we have staking actions in our prepare", prepare_slot, prepare_view);
+                if self.current_proposal_changes_voting_power() {
+                    bail!("Timeout Certificate slot {} view {} is for the next slot, and current proposal changes voting power", prepare_slot, prepare_view);
                 }
 
                 self.emit_commit_event(&timeout_qc)
