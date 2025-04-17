@@ -1,6 +1,10 @@
-use hyle_contract_sdk::{
+use crate::{
     Blob, BlobData, BlobIndex, ContractAction, ContractName, Identity, ProgramId, Verifier,
 };
+
+pub const RISC0_1: &str = "risc0-1";
+pub const NOIR: &str = "noir";
+pub const SP1_4: &str = "sp1-4";
 
 #[derive(Debug, Copy, Clone)]
 pub enum NativeVerifiers {

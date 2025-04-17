@@ -39,7 +39,7 @@ ping_interval = 10
 # Time between blocks (will change in the future)
 slot_duration = 1000
 # Whether to check timestamp consistency of produced blocks
-timestamp_checks = "Full"
+timestamp_checks = "Monotonic"
 # Whether to run the single-node or full consensus
 solo = true
 

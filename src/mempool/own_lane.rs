@@ -348,11 +348,9 @@ pub mod test {
     use core::panic;
 
     use super::*;
-    use crate::{
-        mempool::storage::LaneEntry, tests::autobahn_testing::assert_chanmsg_matches,
-        utils::crypto::BlstCrypto,
-    };
+    use crate::{mempool::storage::LaneEntry, tests::autobahn_testing::assert_chanmsg_matches};
     use anyhow::Result;
+    use hyle_crypto::BlstCrypto;
 
     use crate::mempool::test::*;
 

@@ -8,11 +8,9 @@ use client_sdk::{
 use hyle::{
     model::BlobTransaction,
     rest::client::NodeApiHttpClient,
-    utils::{
-        conf::{Conf, P2pConf},
-        crypto::BlstCrypto,
-    },
+    utils::conf::{Conf, P2pConf},
 };
+use hyle_crypto::BlstCrypto;
 use hyle_model::TxHash;
 use signal_child::signal;
 use std::time::Duration;

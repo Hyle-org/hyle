@@ -27,8 +27,8 @@ use crate::rest::{RestApi, RestApiRunContext};
 use crate::single_node_consensus::SingleNodeConsensus;
 use crate::tcp_server::TcpServer;
 use crate::utils::conf::Conf;
-use crate::utils::crypto::BlstCrypto;
 use crate::utils::modules::ModulesHandler;
+use hyle_crypto::BlstCrypto;
 
 use super::modules::{module_bus_client, Module};
 

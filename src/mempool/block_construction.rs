@@ -196,7 +196,7 @@ pub mod test {
     use crate::mempool::storage::LaneEntry;
     use crate::mempool::MempoolNetMessage;
     use crate::tests::autobahn_testing::assert_chanmsg_matches;
-    use crate::utils::crypto::BlstCrypto;
+    use hyle_crypto::BlstCrypto;
 
     use super::super::test::*;
     use super::*;

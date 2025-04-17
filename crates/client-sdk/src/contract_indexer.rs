@@ -45,7 +45,7 @@ where
         store: ContractHandlerStore<Self>,
     ) -> impl std::future::Future<Output = (Router<()>, OpenApi)> + std::marker::Send;
 
-    fn handle_transaction(
+    fn handle_transaction_success(
         &mut self,
         tx: &BlobTransaction,
         index: BlobIndex,
@@ -74,6 +74,33 @@ where
             handler = %contract_name,
             "hyle_output: {:?}", hyle_output
         );
+        Ok(())
+    }
+
+    fn handle_transaction_failed(
+        &mut self,
+        _tx: &BlobTransaction,
+        _index: BlobIndex,
+        _tx_context: TxContext,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    fn handle_transaction_timeout(
+        &mut self,
+        _tx: &BlobTransaction,
+        _index: BlobIndex,
+        _tx_context: TxContext,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    fn handle_transaction_sequenced(
+        &mut self,
+        _tx: &BlobTransaction,
+        _index: BlobIndex,
+        _tx_context: TxContext,
+    ) -> Result<()> {
         Ok(())
     }
 }
