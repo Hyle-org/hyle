@@ -6,11 +6,11 @@ use crate::{
     module_handle_messages,
     utils::{
         conf::SharedConf,
-        crypto::SharedBlstCrypto,
         modules::{module_bus_client, Module},
     },
 };
 use anyhow::{Context, Result};
+use hyle_crypto::SharedBlstCrypto;
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use tokio::time::sleep;
 use tracing::{error, info, trace, warn};

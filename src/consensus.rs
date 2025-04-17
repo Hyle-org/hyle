@@ -12,14 +12,12 @@ use crate::{
     mempool::QueryNewCut,
     model::{Cut, Hashed, ValidatorPublicKey},
     p2p::{network::OutboundMessage, P2PCommand},
-    utils::{
-        conf::SharedConf,
-        crypto::{BlstCrypto, SharedBlstCrypto},
-        modules::Module,
-    },
+    utils::{conf::SharedConf, modules::Module},
 };
 use anyhow::{anyhow, bail, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
+use hyle_crypto::BlstCrypto;
+use hyle_crypto::SharedBlstCrypto;
 use hyle_model::utils::TimestampMs;
 use hyle_net::clock::TimestampMsClock;
 use metrics::ConsensusMetrics;
@@ -812,7 +810,7 @@ pub mod test {
         tests::autobahn_testing::{
             broadcast, build_tuple, send, simple_commit_round, AutobahnBusClient, AutobahnTestCtx,
         },
-        utils::{conf::Conf, crypto},
+        utils::conf::Conf,
     };
     use assertables::assert_contains;
     use tokio::sync::broadcast::Receiver;
@@ -972,7 +970,7 @@ pub mod test {
         }
 
         async fn new_node(name: &str) -> Self {
-            let crypto = crypto::BlstCrypto::new(name).unwrap();
+            let crypto = BlstCrypto::new(name).unwrap();
             Self::new(name, crypto.clone()).await
         }
 

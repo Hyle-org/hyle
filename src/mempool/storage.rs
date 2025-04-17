@@ -1,16 +1,14 @@
 use anyhow::{bail, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
+use hyle_crypto::BlstCrypto;
 use hyle_model::{DataSized, LaneId, Signed, ValidatorSignature};
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
 use std::vec;
 use tracing::error;
 
-use crate::{
-    model::{
-        Cut, DataProposal, DataProposalHash, Hashed, PoDA, SignedByValidator, ValidatorPublicKey,
-    },
-    utils::crypto::BlstCrypto,
+use crate::model::{
+    Cut, DataProposal, DataProposalHash, Hashed, PoDA, SignedByValidator, ValidatorPublicKey,
 };
 
 use super::MempoolNetMessage;
@@ -286,10 +284,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
-    use crate::{
-        mempool::{storage_memory::LanesStorage, MempoolNetMessage},
-        utils::crypto::{self, BlstCrypto},
-    };
+    use crate::mempool::{storage_memory::LanesStorage, MempoolNetMessage};
     use hyle_model::{DataSized, Signature, Transaction};
     use staking::state::Staking;
 
@@ -300,7 +295,7 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_put_contains_get() {
-        let crypto = crypto::BlstCrypto::new("1").unwrap();
+        let crypto = BlstCrypto::new("1").unwrap();
         let lane_id = &LaneId(crypto.validator_pubkey().clone());
         let mut storage = setup_storage();
 
@@ -323,7 +318,7 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_update() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
+        let crypto: BlstCrypto = BlstCrypto::new("1").unwrap();
         let lane_id = &LaneId(crypto.validator_pubkey().clone());
         let mut storage = setup_storage();
         let data_proposal = DataProposal::new(None, vec![]);
@@ -351,11 +346,11 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_on_data_vote() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
+        let crypto: BlstCrypto = BlstCrypto::new("1").unwrap();
         let lane_id = &LaneId(crypto.validator_pubkey().clone());
         let mut storage = setup_storage();
 
-        let crypto2: BlstCrypto = crypto::BlstCrypto::new("2").unwrap();
+        let crypto2: BlstCrypto = BlstCrypto::new("2").unwrap();
 
         let data_proposal = DataProposal::new(None, vec![]);
         // 1 creates a DP
@@ -378,12 +373,12 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_on_poda_update() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
+        let crypto: BlstCrypto = BlstCrypto::new("1").unwrap();
         let mut storage = setup_storage();
 
-        let crypto2: BlstCrypto = crypto::BlstCrypto::new("2").unwrap();
+        let crypto2: BlstCrypto = BlstCrypto::new("2").unwrap();
         let lane_id2 = &LaneId(crypto2.validator_pubkey().clone());
-        let crypto3: BlstCrypto = crypto::BlstCrypto::new("3").unwrap();
+        let crypto3: BlstCrypto = BlstCrypto::new("3").unwrap();
 
         let dp = DataProposal::new(None, vec![]);
 
@@ -410,7 +405,7 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_get_lane_entries_between_hashes() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
+        let crypto: BlstCrypto = BlstCrypto::new("1").unwrap();
         let lane_id = &LaneId(crypto.validator_pubkey().clone());
         let mut storage = setup_storage();
         let dp1 = DataProposal::new(None, vec![]);
@@ -473,7 +468,7 @@ mod tests {
 
     #[test_log::test]
     fn test_lane_size() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
+        let crypto: BlstCrypto = BlstCrypto::new("1").unwrap();
         let lane_id = &LaneId(crypto.validator_pubkey().clone());
         let mut storage = setup_storage();
 
@@ -504,7 +499,7 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_get_lane_pending_entries() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
+        let crypto: BlstCrypto = BlstCrypto::new("1").unwrap();
         let lane_id = &LaneId(crypto.validator_pubkey().clone());
         let mut storage = setup_storage();
         let data_proposal = DataProposal::new(None, vec![]);
@@ -521,7 +516,7 @@ mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_get_latest_car() {
-        let crypto: BlstCrypto = crypto::BlstCrypto::new("1").unwrap();
+        let crypto: BlstCrypto = BlstCrypto::new("1").unwrap();
         let lane_id = &LaneId(crypto.validator_pubkey().clone());
         let mut storage = setup_storage();
         let staking = Staking::new();
