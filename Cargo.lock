@@ -2848,7 +2848,6 @@ dependencies = [
  "utoipa",
  "utoipa-axum",
  "utoipa-swagger-ui",
- "whoami",
  "zip",
 ]
 
@@ -2946,7 +2945,7 @@ dependencies = [
  "hyle-model",
  "keyring",
  "rand 0.9.0",
- "tracing",
+ "whoami",
 ]
 
 [[package]]
