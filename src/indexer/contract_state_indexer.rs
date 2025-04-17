@@ -150,9 +150,9 @@ where
         Ok(())
     }
 
-    async fn handle_txs<F>(
+    async fn handle_txs<'a, T: IntoIterator<Item = &'a TxHash>, F>(
         &mut self,
-        txs: &[TxHash],
+        txs: T,
         block: &Block,
         handler: F,
         remove_from_unsettled: bool,
@@ -194,6 +194,11 @@ where
         Ok(())
     }
 
+    // Used in lieu of a closure below to work around a weird lifetime check issue.
+    fn get_hash(tx: &(TxId, Transaction)) -> &TxHash {
+        &tx.0 .1
+    }
+
     async fn handle_processed_block(&mut self, block: Block) -> Result<()> {
         for (_, contract) in &block.registered_contracts {
             if self.contract_name == contract.contract_name {
@@ -212,11 +217,7 @@ where
         }
 
         self.handle_txs(
-            &block
-                .txs
-                .iter()
-                .map(|(tx, _)| tx.1.clone())
-                .collect::<Vec<_>>(),
+            block.txs.iter().map(Self::get_hash),
             &block,
             |state, tx, index, ctx| state.handle_transaction_sequenced(tx, index, ctx),
             false,
