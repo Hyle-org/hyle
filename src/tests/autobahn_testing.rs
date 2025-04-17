@@ -319,21 +319,20 @@ fn create_poda(
     data_proposal_hash: DataProposalHash,
     line_size: LaneBytesSize,
     nodes: &[&AutobahnTestCtx],
-) -> crypto::Signed<MempoolNetMessage, crypto::AggregateSignature> {
+) -> hyle_crypto::Signed<MempoolNetMessage, AggregateSignature> {
     let msg = MempoolNetMessage::DataVote(data_proposal_hash, line_size);
-    let mut signed_messages: Vec<crypto::Signed<MempoolNetMessage, crypto::ValidatorSignature>> =
-        nodes
-            .iter()
-            .map(|node| {
-                node.mempool_ctx
-                    .mempool
-                    .sign_net_message(msg.clone())
-                    .unwrap()
-            })
-            .collect();
+    let mut signed_messages: Vec<Signed<MempoolNetMessage, ValidatorSignature>> = nodes
+        .iter()
+        .map(|node| {
+            node.mempool_ctx
+                .mempool
+                .sign_net_message(msg.clone())
+                .unwrap()
+        })
+        .collect();
     signed_messages.sort_by(|a, b| a.signature.cmp(&b.signature));
 
-    let aggregates: Vec<&crypto::Signed<MempoolNetMessage, crypto::ValidatorSignature>> =
+    let aggregates: Vec<&hyle_crypto::Signed<MempoolNetMessage, ValidatorSignature>> =
         signed_messages.iter().collect();
     BlstCrypto::aggregate(msg, &aggregates).unwrap()
 }
