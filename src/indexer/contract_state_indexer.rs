@@ -1,8 +1,8 @@
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{anyhow, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::contract_indexer::{ContractHandler, ContractStateStore};
 use hyle_contract_sdk::{BlobIndex, ContractName, TxId};
-use hyle_model::{RegisterContractEffect, TxContext, TxHash, HYLE_TESTNET_CHAIN_ID};
+use hyle_model::{RegisterContractEffect, TxContext, TxHash};
 use serde::{Deserialize, Serialize};
 use std::{ops::Deref, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
@@ -150,7 +150,7 @@ where
         Ok(())
     }
 
-    async fn handle_tx_list<F>(
+    async fn handle_txs<F>(
         &mut self,
         txs: &[TxHash],
         block: &Block,
@@ -211,7 +211,7 @@ where
             }
         }
 
-        self.handle_tx_list(
+        self.handle_txs(
             &block
                 .txs
                 .iter()
@@ -223,7 +223,7 @@ where
         )
         .await?;
 
-        self.handle_tx_list(
+        self.handle_txs(
             &block.timed_out_txs,
             &block,
             |state, tx, index, ctx| state.handle_transaction_timeout(tx, index, ctx),
@@ -231,7 +231,7 @@ where
         )
         .await?;
 
-        self.handle_tx_list(
+        self.handle_txs(
             &block.failed_txs,
             &block,
             |state, tx, index, ctx| state.handle_transaction_failed(tx, index, ctx),
@@ -239,7 +239,7 @@ where
         )
         .await?;
 
-        self.handle_tx_list(
+        self.handle_txs(
             &block.successful_txs,
             &block,
             |state, tx, index, ctx| state.handle_transaction(tx, index, ctx),
@@ -419,7 +419,7 @@ mod tests {
         }
 
         indexer
-            .handle_tx_list(
+            .handle_txs(
                 &[tx_id.1.clone()],
                 &Block {
                     lane_ids: vec![(tx_id.1.clone(), LaneId::default())]
