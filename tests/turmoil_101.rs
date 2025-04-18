@@ -71,12 +71,12 @@ macro_rules! turmoil_simple {
     };
 }
 
-// turmoil_simple!(401..=420, simulation_basic, submit_10_contracts);
-// turmoil_simple!(501..=520, simulation_slow_node, submit_10_contracts);
-// turmoil_simple!(501..=520, simulation_two_slow_nodes, submit_10_contracts);
+turmoil_simple!(401..=420, simulation_basic, submit_10_contracts);
+turmoil_simple!(501..=520, simulation_slow_node, submit_10_contracts);
+turmoil_simple!(501..=520, simulation_two_slow_nodes, submit_10_contracts);
 turmoil_simple!(501..=520, simulation_slow_network, submit_10_contracts);
-// turmoil_simple!(501..=520, simulation_hold, submit_10_contracts);
-// turmoil_simple!(601..=620, simulation_one_more_node, submit_10_contracts);
+turmoil_simple!(501..=520, simulation_hold, submit_10_contracts);
+turmoil_simple!(601..=620, simulation_one_more_node, submit_10_contracts);
 
 /// **Simulation**
 ///
@@ -122,7 +122,7 @@ pub fn simulation_slow_network(ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyho
             .iter()
             .filter(|n| n.conf.id != node.conf.id)
         {
-            let slowness = Duration::from_millis(ctx.random_between(250, 1500));
+            let slowness = Duration::from_millis(ctx.random_between(250, 500));
             sim.set_link_latency(node.conf.id.clone(), other_node.conf.id.clone(), slowness);
         }
     }

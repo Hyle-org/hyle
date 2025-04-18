@@ -168,6 +168,63 @@ macro_rules! simple_commit_round {
     }};
 }
 
+macro_rules! disseminate {
+    (txs: [$($txs:expr),+], owner: $owner:expr, voters: [$($voter:expr),+]) => {{
+
+        let lane_id = LaneId($owner.validator_pubkey().clone());
+        let dp = $owner.create_data_proposal_on_top(lane_id, &[$($txs),+]);
+        $owner
+            .process_new_data_proposal(dp.clone())
+            .unwrap();
+        $owner.timer_tick().unwrap();
+
+        let dp_msg = broadcast! {
+            description: "Disseminate DataProposal",
+            from: $owner, to: [$($voter),+],
+            message_matches: MempoolNetMessage::DataProposal(_)
+        };
+
+        join_all(
+            [$(&mut $voter),+]
+                .iter_mut()
+                .map(|ctx| ctx.handle_processed_data_proposals()),
+        )
+        .await;
+
+        send! {
+            description: "Disseminated DataProposal Vote",
+            from: [$($voter),+], to: $owner,
+            message_matches: MempoolNetMessage::DataVote(..)
+        };
+
+        let poda = broadcast! {
+            description: "Disseminate Poda 1",
+            from: $owner, to: [$($voter),+],
+            message_matches: MempoolNetMessage::PoDAUpdate(hash, _signatures) => {
+                assert_eq!(hash, &dp.hashed());
+            }
+        };
+
+        let poda2 = broadcast! {
+            description: "Disseminate Poda 2",
+            from: $owner, to: [$($voter),+],
+            message_matches: MempoolNetMessage::PoDAUpdate(hash, _signatures) => {
+                assert_eq!(hash, &dp.hashed());
+            }
+        };
+
+        let poda3 = broadcast! {
+            description: "Disseminate Poda 3",
+            from: $owner, to: [$($voter),+],
+            message_matches: MempoolNetMessage::PoDAUpdate(hash, _signatures) => {
+                assert_eq!(hash, &dp.hashed());
+            }
+        };
+
+        (dp, dp_msg, poda, poda2, poda3)
+    }};
+}
+
 macro_rules! assert_chanmsg_matches {
     ($chan: expr, $pat:pat => $block:block) => {{
         let var = $chan.try_recv().unwrap();
@@ -650,6 +707,152 @@ async fn mempool_podaupdate_too_early() {
 }
 
 #[test_log::test(tokio::test)]
+async fn consensus_missed_prepare() {
+    let (mut node1, mut node2, mut node3, mut node4) = build_nodes!(4).await;
+
+    // First data proposal
+
+    let register_tx = make_register_contract_tx(ContractName::new("test1"));
+
+    disseminate! {
+        txs: [register_tx.clone()],
+        owner: node1.mempool_ctx,
+        voters: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx]
+    };
+
+    node1
+        .start_round_with_cut_from_mempool(TimestampMs(1000))
+        .await;
+
+    // Normal round from Genesis
+    simple_commit_round! {
+        leader: node1.consensus_ctx,
+        followers: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx]
+    };
+
+    disseminate! {
+        txs: [register_tx],
+        owner: node2.mempool_ctx,
+        voters: [node1.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx]
+    };
+
+    node2
+        .start_round_with_cut_from_mempool(TimestampMs(2000))
+        .await;
+
+    // Node 3 misses the prepare
+    simple_commit_round! {
+        leader: node2.consensus_ctx,
+        followers: [node1.consensus_ctx, node4.consensus_ctx]
+    };
+
+    ConsensusTestCtx::timeout(&mut [
+        &mut node1.consensus_ctx,
+        &mut node2.consensus_ctx,
+        &mut node4.consensus_ctx,
+    ])
+    .await;
+
+    broadcast! {
+        description: "Follower - Timeout",
+        from: node1.consensus_ctx, to: [node2.consensus_ctx, node4.consensus_ctx],
+        message_matches: ConsensusNetMessage::Timeout(..)
+    };
+    broadcast! {
+        description: "Follower - Timeout",
+        from: node2.consensus_ctx, to: [node1.consensus_ctx, node4.consensus_ctx],
+        message_matches: ConsensusNetMessage::Timeout(..)
+    };
+
+    // node 3 should join the mutiny
+    broadcast! {
+        description: "Follower - Timeout",
+        from: node4.consensus_ctx, to: [node1.consensus_ctx, node2.consensus_ctx],
+        message_matches: ConsensusNetMessage::Timeout(..)
+    };
+
+    node1
+        .consensus_ctx
+        .assert_broadcast("Timeout Certificate 1");
+    node2
+        .consensus_ctx
+        .assert_broadcast("Timeout Certificate 2");
+
+    // Node 4 is the next leader slot 3 view 1, has built the tc by joining the mutiny
+
+    node4
+        .start_round_with_cut_from_mempool(TimestampMs(4000))
+        .await;
+
+    broadcast! {
+        description: "Leader Prepare with TC ticket",
+        from: node4.consensus_ctx, to: [node1.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Prepare(..)
+    };
+
+    // Node 3 can't vote yet
+
+    send! {
+        description: "Voting",
+        from: [node1.consensus_ctx, node2.consensus_ctx], to: node4.consensus_ctx,
+        message_matches: ConsensusNetMessage::PrepareVote(..)
+    };
+
+    // Node 3 needs to sync
+
+    let sync_request = node3.consensus_ctx.assert_broadcast("Sync Request");
+
+    node2
+        .consensus_ctx
+        .handle_msg(&sync_request, "Handling Sync request");
+
+    let sync_reply = node2
+        .consensus_ctx
+        .assert_send(&node3.consensus_ctx.validator_pubkey(), "SyncReply");
+
+    node3
+        .consensus_ctx
+        .handle_msg(&sync_reply, "Handling Sync reply");
+
+    send! {
+        description: "Voting after sync",
+        from: [node3.consensus_ctx], to: node4.consensus_ctx,
+        message_matches: ConsensusNetMessage::PrepareVote(..)
+    };
+
+    broadcast! {
+        description: "Confirm",
+        from: node4.consensus_ctx, to: [node1.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Confirm(..)
+    };
+
+    send! {
+        description: "ConfirmAck",
+        from: [node1.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx], to: node4.consensus_ctx,
+        message_matches: ConsensusNetMessage::ConfirmAck(..)
+    };
+
+    broadcast! {
+        description: "Commit",
+        from: node4.consensus_ctx, to: [node1.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx],
+        message_matches: ConsensusNetMessage::Commit(..)
+    };
+
+    // Weirdly, next leader is node 4 too on slot: 4 view: 0
+
+    node4
+        .start_round_with_cut_from_mempool(TimestampMs(5000))
+        .await;
+
+    // Making sure Consensus goes on
+
+    simple_commit_round! {
+        leader: node4.consensus_ctx,
+        followers: [node1.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx]
+    };
+}
+
+#[test_log::test(tokio::test)]
 async fn mempool_fail_to_vote_on_fork() {
     let (mut node1, mut node2, mut node3, mut node4) = build_nodes!(4).await;
 
@@ -938,45 +1141,11 @@ async fn protocol_fees() {
     let register_tx = make_register_contract_tx(ContractName::new("test1"));
     let register_tx_2 = make_register_contract_tx(ContractName::new("test2"));
 
-    let dp = node1
-        .mempool_ctx
-        .create_data_proposal(None, &[register_tx, register_tx_2]);
-    node1
-        .mempool_ctx
-        .process_new_data_proposal(dp.clone())
-        .unwrap();
-    node1.mempool_ctx.timer_tick().unwrap();
-
-    let msg = broadcast! {
-        description: "Disseminate Tx",
-        from: node1.mempool_ctx, to: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
-        message_matches: MempoolNetMessage::DataProposal(_)
+    let (dp, _, _, _, _) = disseminate! {
+        txs: [register_tx, register_tx_2],
+        owner: node1.mempool_ctx,
+        voters: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx]
     };
-
-    let dp = match msg.msg {
-        MempoolNetMessage::DataProposal(dp) => dp,
-        _ => panic!("Should be a DataProposal"),
-    };
-
-    join_all(
-        [
-            &mut node2.mempool_ctx,
-            &mut node3.mempool_ctx,
-            &mut node4.mempool_ctx,
-        ]
-        .iter_mut()
-        .map(|ctx| ctx.handle_processed_data_proposals()),
-    )
-    .await;
-
-    send! {
-        description: "Disseminated Tx Vote",
-        from: [node2.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx], to: node1.mempool_ctx,
-        message_matches: MempoolNetMessage::DataVote(..)
-    };
-
-    node1.mempool_ctx.assert_broadcast("poda update");
-    node1.mempool_ctx.assert_broadcast("poda update");
 
     let dp_size_1 = LaneBytesSize(dp.estimate_size() as u64);
     assert_eq!(node1.mempool_ctx.current_size(), Some(dp_size_1));
@@ -1012,40 +1181,11 @@ async fn protocol_fees() {
     let register_tx = make_register_contract_tx(ContractName::new("test3"));
     let register_tx_2 = make_register_contract_tx(ContractName::new("test4"));
     let register_tx_3 = make_register_contract_tx(ContractName::new("test5"));
-    let dp = node2
-        .mempool_ctx
-        .create_data_proposal(None, &[register_tx, register_tx_2, register_tx_3]);
-    node2
-        .mempool_ctx
-        .process_new_data_proposal(dp.clone())
-        .unwrap();
-    node2.mempool_ctx.timer_tick().unwrap();
 
-    let msg = broadcast! {
-        description: "Disseminate Tx",
-        from: node2.mempool_ctx, to: [node1.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx],
-        message_matches: MempoolNetMessage::DataProposal(_)
-    };
-    let dp = match msg.msg {
-        MempoolNetMessage::DataProposal(dp) => dp,
-        _ => panic!("Should be a DataProposal"),
-    };
-
-    join_all(
-        [
-            &mut node1.mempool_ctx,
-            &mut node3.mempool_ctx,
-            &mut node4.mempool_ctx,
-        ]
-        .iter_mut()
-        .map(|ctx| ctx.handle_processed_data_proposals()),
-    )
-    .await;
-
-    send! {
-        description: "Disseminated Tx Vote",
-        from: [node1.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx], to: node2.mempool_ctx,
-        message_matches: MempoolNetMessage::DataVote(..)
+    let (dp, _, _, _, _) = disseminate! {
+        txs: [register_tx, register_tx_2, register_tx_3],
+        owner: node2.mempool_ctx,
+        voters: [node1.mempool_ctx, node3.mempool_ctx, node4.mempool_ctx]
     };
 
     let dp_size_2 = LaneBytesSize(dp.estimate_size() as u64);
@@ -1078,40 +1218,33 @@ async fn protocol_fees() {
         Some(dp_size_2)
     );
 
-    // Process poda update coming from node2
-    let poda_update = node2.mempool_ctx.assert_broadcast("poda update");
-    node1.mempool_ctx.handle_poda_update(poda_update);
-
     // Let's do a consensus round
 
     node1
         .start_round_with_cut_from_mempool(TimestampMs(2000))
         .await;
-    let prepare = broadcast! {
+
+    broadcast! {
         description: "Prepare",
         from: node1.consensus_ctx, to: [node2.consensus_ctx, node3.consensus_ctx, node4.consensus_ctx],
-        message_matches: ConsensusNetMessage::Prepare(..)
-    };
-    let cp = match prepare.msg {
-        ConsensusNetMessage::Prepare(cp, ..) => cp,
-        _ => panic!("Should be a Prepare"),
-    };
-
-    assert_eq!(cp.staking_actions.len(), 2);
-    assert_eq!(
-        cp.staking_actions[0],
-        ConsensusStakingAction::PayFeesForDaDi {
-            lane_id: node1.mempool_ctx.own_lane(),
-            cumul_size: dp_size_1
+        message_matches: ConsensusNetMessage::Prepare(cp, ..) => {
+            assert_eq!(cp.staking_actions.len(), 2);
+            assert_eq!(
+                cp.staking_actions[0],
+                ConsensusStakingAction::PayFeesForDaDi {
+                    lane_id: node1.mempool_ctx.own_lane(),
+                    cumul_size: dp_size_1
+                }
+            );
+            assert_eq!(
+                cp.staking_actions[1],
+                ConsensusStakingAction::PayFeesForDaDi {
+                    lane_id: node2.mempool_ctx.own_lane(),
+                    cumul_size: dp_size_2
+                }
+            );
         }
-    );
-    assert_eq!(
-        cp.staking_actions[1],
-        ConsensusStakingAction::PayFeesForDaDi {
-            lane_id: node2.mempool_ctx.own_lane(),
-            cumul_size: dp_size_2
-        }
-    );
+    };
 }
 
 /// P = Proposal

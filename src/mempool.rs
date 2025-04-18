@@ -954,29 +954,39 @@ pub mod test {
 
             match rec {
                 OutboundMessage::SendMessage { validator_id, msg } => {
-                    if &validator_id != to {
-                        panic!(
-                            "{description}: Send message was sent to {validator_id} instead of {}",
-                            to
-                        );
-                    }
                     if let NetMessage::MempoolMessage(msg) = msg {
-                        info!("received message: {:?}", msg);
+                        if &validator_id != to {
+                            panic!(
+                                "{description}: Send message was sent to {validator_id} instead of {}",
+                                to
+                            );
+                        }
+
                         msg
                     } else {
-                        tracing::error!(
-                            "{description}: Mempool OutboundMessage message is missing, found {}",
-                            msg
-                        );
+                        tracing::warn!("{description}: skipping {:?}", msg);
                         self.assert_send(to, description)
                     }
                 }
-                _ => {
-                    tracing::error!(
-                        "{description}: Broadcast OutboundMessage message is missing, found {}",
-                        to
-                    );
+                OutboundMessage::BroadcastMessage(NetMessage::ConsensusMessage(e)) => {
+                    tracing::warn!("{description}: skipping broadcast message {:?}", e);
                     self.assert_send(to, description)
+                }
+                OutboundMessage::BroadcastMessage(els) => {
+                    panic!(
+                        "{description}: received broadcast message instead of send {:?}",
+                        els
+                    );
+                }
+                OutboundMessage::BroadcastMessageOnlyFor(_, NetMessage::ConsensusMessage(e)) => {
+                    tracing::warn!("{description}: skipping broadcast message {:?}", e);
+                    self.assert_send(to, description)
+                }
+                OutboundMessage::BroadcastMessageOnlyFor(_, els) => {
+                    panic!(
+                        "{description}: received broadcast only for message instead of send {:?}",
+                        els
+                    );
                 }
             }
         }
@@ -1111,6 +1121,14 @@ pub mod test {
             txs: &[Transaction],
         ) -> DataProposal {
             DataProposal::new(parent_hash, txs.to_vec())
+        }
+
+        pub fn create_data_proposal_on_top(
+            &mut self,
+            lane_id: LaneId,
+            txs: &[Transaction],
+        ) -> DataProposal {
+            DataProposal::new(self.current_hash(&lane_id), txs.to_vec())
         }
 
         pub fn process_new_data_proposal(&mut self, dp: DataProposal) -> Result<()> {
