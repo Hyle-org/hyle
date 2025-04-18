@@ -4,7 +4,7 @@ use anyhow::Result;
 use borsh::BorshSerialize;
 use sdk::{
     Calldata, ContractName, HyleOutput, ProgramId, ProofData, RegisterContractAction,
-    StateCommitment, Verifier,
+    StateCommitment, TimeoutWindow, Verifier,
 };
 
 use crate::transaction_builder::ProvableBlobTx;
@@ -15,6 +15,7 @@ pub fn register_hyle_contract(
     verifier: Verifier,
     program_id: ProgramId,
     state_commitment: StateCommitment,
+    timeout_window: Option<TimeoutWindow>,
 ) -> anyhow::Result<()> {
     builder.add_action(
         "hyle".into(),
@@ -23,6 +24,7 @@ pub fn register_hyle_contract(
             verifier,
             program_id,
             state_commitment,
+            timeout_window,
         },
         None,
         None,

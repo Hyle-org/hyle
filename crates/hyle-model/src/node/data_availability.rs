@@ -1,5 +1,3 @@
-use std::hash::Hash;
-
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
@@ -15,6 +13,7 @@ pub struct Contract {
     pub program_id: ProgramId,
     pub state: StateCommitment,
     pub verifier: Verifier,
+    pub timeout_window: TimeoutWindow,
 }
 
 #[derive(
@@ -23,7 +22,6 @@ pub struct Contract {
     Clone,
     PartialEq,
     Eq,
-    Hash,
     BorshSerialize,
     BorshDeserialize,
     serde::Serialize,
@@ -45,7 +43,6 @@ pub struct UnsettledBlobTransaction {
     Clone,
     PartialEq,
     Eq,
-    Hash,
     BorshSerialize,
     BorshDeserialize,
     serde::Serialize,

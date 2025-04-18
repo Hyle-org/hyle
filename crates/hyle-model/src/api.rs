@@ -24,6 +24,7 @@ pub struct APIRegisterContract {
     pub program_id: ProgramId,
     pub state_commitment: StateCommitment,
     pub contract_name: ContractName,
+    pub timeout_window: Option<u64>,
 }
 
 /// Copy from Staking contract
