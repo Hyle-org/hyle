@@ -8,7 +8,7 @@ use client_sdk::{
 use hyle::{
     model::BlobTransaction,
     rest::client::NodeApiHttpClient,
-    utils::conf::{Conf, P2pConf},
+    utils::conf::{Conf, P2pConf, P2pMode},
 };
 use hyle_crypto::BlstCrypto;
 use hyle_model::TxHash;
@@ -42,6 +42,11 @@ impl ConfMaker {
             },
             p2p: P2pConf {
                 server_port: p2p_port,
+                mode: if prefix == "indexer" {
+                    P2pMode::None
+                } else {
+                    P2pMode::FullValidator
+                },
                 ..self.default.p2p.clone()
             },
             da_server_port: da_port,

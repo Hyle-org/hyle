@@ -10,6 +10,6 @@ pub struct TcpServerResponse;
 
 crate::tcp_client_server! {
     pub TcpServer,
-    request: TcpServerMessage,
-    response: TcpServerResponse
+    request: crate::api::tcp::TcpServerMessage,
+    response: crate::api::tcp::TcpServerResponse
 }

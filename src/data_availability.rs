@@ -52,7 +52,7 @@ struct DABusClient {
 }
 }
 
-type DaTcpServer = hyle_net::tcp::TcpServer<
+type DaTcpServer = hyle_net::tcp::tcp_server::TcpServer<
     codec_data_availability::ServerCodec,
     DataAvailabilityRequest,
     DataAvailabilityEvent,
@@ -120,7 +120,7 @@ impl DataAvailability {
             }
 
             listen<MempoolStatusEvent> evt => {
-                _ = log_error!(self.handle_mempool_status_event(evt, &mut server).await, "Handling Mempool Event");
+                self.handle_mempool_status_event(evt, &mut server).await;
             }
 
             listen<GenesisEvent> cmd => {
@@ -163,8 +163,6 @@ impl DataAvailability {
             }
 
             Some(request) = server.listen_next() => {
-                info!("Received message from the connection pool");
-
                 let TcpEvent{ dest, data } = request;
                 _ = self.start_streaming_to_peer(data.0, catchup_sender.clone(), &dest).await;
             }
@@ -228,12 +226,10 @@ impl DataAvailability {
         &mut self,
         evt: MempoolStatusEvent,
         tcp_server: &mut DaTcpServer,
-    ) -> Result<()> {
+    ) {
         tcp_server
             .broadcast(DataAvailabilityEvent::MempoolStatusEvent(evt))
-            .await?;
-
-        Ok(())
+            .await;
     }
 
     async fn handle_signed_block(
@@ -342,12 +338,9 @@ impl DataAvailability {
 
         // TODO: use retain once async closures are supported ?
         //
-        _ = log_error!(
-            tcp_server
-                .broadcast(DataAvailabilityEvent::SignedBlock(block.clone()),)
-                .await,
-            "Sending block to tcp connection pool"
-        );
+        tcp_server
+            .broadcast(DataAvailabilityEvent::SignedBlock(block.clone()))
+            .await;
 
         // Send the block to NodeState for processing
         _ = log_error!(

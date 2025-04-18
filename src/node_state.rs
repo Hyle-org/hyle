@@ -1065,9 +1065,7 @@ impl NodeState {
                 block_under_construction
                     .dp_parent_hashes
                     .insert(hash.clone(), parent_hash);
-                block_under_construction
-                    .lane_ids
-                    .insert(hash, lane_id);
+                block_under_construction.lane_ids.insert(hash, lane_id);
 
                 // Attempt to settle following transactions
                 let mut blob_tx_to_try_and_settle = BTreeSet::new();
