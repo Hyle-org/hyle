@@ -486,7 +486,12 @@ impl NodeState {
                 .entry(bth.clone())
                 .or_default();
 
-            match self.try_to_settle_blob_tx(&bth, events, dp_parent_hash) {
+            let lane_id = block_under_construction
+                .lane_ids
+                .entry(bth.clone())
+                .or_default();
+
+            match self.try_to_settle_blob_tx(&bth, events, dp_parent_hash, lane_id) {
                 Ok(SettledTxOutput {
                     tx: settled_tx,
                     result,
@@ -514,6 +519,7 @@ impl NodeState {
         unsettled_tx_hash: &TxHash,
         events: &mut Vec<TransactionStateEvent>,
         dp_parent_hash: &mut DataProposalHash,
+        lane_id: &mut LaneId,
     ) -> Result<SettledTxOutput, Error> {
         trace!("Trying to settle blob tx: {:?}", unsettled_tx_hash);
 
@@ -527,6 +533,7 @@ impl NodeState {
 
         // Insert dp hash of the tx, whether its a success or not
         *dp_parent_hash = unsettled_tx.parent_dp_hash.clone();
+        *lane_id = unsettled_tx.tx_context.lane_id.clone();
 
         // Sanity check: if some of the blob contracts are not registered, we can't proceed
         if !unsettled_tx.blobs.iter().all(|blob_metadata| {
@@ -1065,9 +1072,7 @@ impl NodeState {
                 block_under_construction
                     .dp_parent_hashes
                     .insert(hash.clone(), parent_hash);
-                block_under_construction
-                    .lane_ids
-                    .insert(hash, lane_id);
+                block_under_construction.lane_ids.insert(hash, lane_id);
 
                 // Attempt to settle following transactions
                 let mut blob_tx_to_try_and_settle = BTreeSet::new();
