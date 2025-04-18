@@ -170,6 +170,7 @@ impl MockWorkflowHandler {
                 program_id: ProgramId(vec![]),
                 state_commitment: StateCommitment(vec![]),
                 contract_name: ContractName::new("contract"),
+                timeout_window: None,
             }
             .as_blob("hyle".into(), None, None)],
         );

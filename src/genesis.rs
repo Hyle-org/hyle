@@ -426,6 +426,7 @@ impl Genesis {
             "blst".into(),
             NativeVerifiers::Blst.into(),
             StateCommitment::default(),
+            Some(TimeoutWindow::NoTimeout),
         )
         .expect("register blst");
 
@@ -435,6 +436,7 @@ impl Genesis {
             "sha3_256".into(),
             NativeVerifiers::Sha3_256.into(),
             StateCommitment::default(),
+            Some(TimeoutWindow::NoTimeout),
         )
         .expect("register sha3_256");
 
@@ -444,6 +446,7 @@ impl Genesis {
             "secp256k1".into(),
             NativeVerifiers::Secp256k1.into(),
             StateCommitment::default(),
+            Some(TimeoutWindow::NoTimeout),
         )
         .expect("register secp256k1");
 
@@ -453,6 +456,7 @@ impl Genesis {
             hyle_model::verifiers::RISC0_1.into(),
             staking_program_id.clone().into(),
             ctx.staking.commit(),
+            None,
         )
         .expect("register staking");
 
@@ -462,6 +466,7 @@ impl Genesis {
             hyle_model::verifiers::RISC0_1.into(),
             hyllar_program_id.clone().into(),
             ctx.hyllar.commit(),
+            None,
         )
         .expect("register hyllar");
 
@@ -471,6 +476,7 @@ impl Genesis {
             hyle_model::verifiers::RISC0_1.into(),
             smt_token_program_id.clone().into(),
             ctx.hyllar.commit(),
+            None,
         )
         .expect("register smt_token");
 
@@ -480,6 +486,7 @@ impl Genesis {
             hyle_model::verifiers::RISC0_1.into(),
             hydentity_program_id.clone().into(),
             ctx.hydentity.commit(),
+            None,
         )
         .expect("register hydentity");
 
@@ -489,6 +496,7 @@ impl Genesis {
             hyle_model::verifiers::RISC0_1.into(),
             hyle_contracts::RISC0_RECURSION_ID.to_vec().into(),
             StateCommitment::default(),
+            None,
         )
         .expect("register risc0-recursion");
 

@@ -301,6 +301,7 @@ mod tests {
                 contract_name: contract2.clone(),
                 program_id: ProgramId(vec![1, 2, 3]),
                 state_commitment: StateCommitment(vec![0, 1, 2, 3]),
+                ..Default::default()
             }
             .as_blob(contract1.clone(), None, None),
             possible_proofs: vec![],
