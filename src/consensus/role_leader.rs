@@ -356,10 +356,11 @@ impl Consensus {
             ))?;
 
             // Process the same locally.
-            self.try_commit_current_proposal(
-                commit_quorum_certificate,
-                self.bft_round_state.current_proposal.hashed(),
+            self.verify_commit_quorum_certificate_againt_current_proposal(
+                &commit_quorum_certificate,
             )?;
+            self.emit_commit_event(&commit_quorum_certificate)?;
+            self.advance_round(Ticket::CommitQC(commit_quorum_certificate))?;
         }
         // TODO(?): Update behaviour when having more ?
         Ok(())

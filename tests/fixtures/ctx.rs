@@ -335,7 +335,7 @@ impl E2ECtx {
     pub fn get_instructions_for(&mut self, index: usize) {
         // Print instructions to start the node manually outside the test context.
         tracing::warn!(
-            "🚀 Start node with the following command:\nhyle=$(pwd)/target/debug/hyle && (cd {} && \"$hyle\")",
+            "🚀 Start node with the following command:\nhyle=$(pwd)/target/release/hyle && (cd {} && RUST_LOG=info \"$hyle\")",
             self.nodes[index].dir.path().display()
         );
     }

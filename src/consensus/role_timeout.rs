@@ -197,7 +197,7 @@ impl Consensus {
             self.bft_round_state.state_tag = StateTag::Leader;
         }
 
-        self.carry_on_with_ticket(Ticket::TimeoutQC(
+        self.advance_round(Ticket::TimeoutQC(
             received_timeout_certificate.clone(),
             received_proposal_qc.clone(),
         ))
@@ -471,7 +471,7 @@ impl Consensus {
                 ))?;
                 self.bft_round_state.timeout.state.certificate_emitted();
             }
-            self.carry_on_with_ticket(Ticket::TimeoutQC(ticket.0, ticket.1))?;
+            self.advance_round(Ticket::TimeoutQC(ticket.0, ticket.1))?;
         }
 
         Ok(())

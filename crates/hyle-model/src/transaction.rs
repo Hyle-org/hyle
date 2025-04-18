@@ -306,7 +306,7 @@ impl BlobTransaction {
 
     pub fn validate_identity(&self) -> Result<(), anyhow::Error> {
         // Checks that there is a blob that proves the identity
-        let Some((identity, identity_contract_name)) = self.identity.0.split_once("@") else {
+        let Some((identity, identity_contract_name)) = self.identity.0.rsplit_once("@") else {
             anyhow::bail!("Transaction identity {} is not correctly formed. It should be in the form <id>@<contract_id_name>", self.identity.0);
         };
 
