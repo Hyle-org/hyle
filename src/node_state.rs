@@ -14,7 +14,7 @@ use metrics::NodeStateMetrics;
 use ordered_tx_map::OrderedTxMap;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use timeouts::Timeouts;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
 
 mod api;
 mod hyle_tld;
@@ -228,6 +228,12 @@ impl NodeState {
                     // First, store the proofs and check if we can settle the transaction
                     // NB: if some of the blob proof outputs are bad, we just ignore those
                     // but we don't actually fail the transaction.
+                    info!(
+                        "Handling verified proof transaction with {} proven blobs for {} (hash: {})",
+                        proof_tx.proven_blobs.len(),
+                        proof_tx.contract_name,
+                        &tx_id
+                    );
                     let blob_tx_to_try_and_settle = proof_tx
                         .proven_blobs
                         .iter()
@@ -281,6 +287,11 @@ impl NodeState {
             .record_unsettled_transactions(self.unsettled_transactions.len() as u64);
         self.metrics.add_processed_block();
         self.metrics.record_current_height(self.current_height.0);
+
+        warn!(
+            "{} settled txs",
+            block_under_construction.successful_txs.len()
+        );
 
         block_under_construction
     }

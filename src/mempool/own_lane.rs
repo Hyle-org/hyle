@@ -302,13 +302,16 @@ impl super::Mempool {
         } else {
             let hyle_outputs = verify_proof(&proof_transaction.proof, &verifier, &program_id)
                 .context("verify_proof")?;
-            (hyle_outputs, vec![program_id.clone()])
+            let len = hyle_outputs.len();
+            (hyle_outputs, vec![program_id.clone(); len])
         };
 
         let tx_hashes = hyle_outputs
             .iter()
             .map(|ho| ho.tx_hash.clone())
             .collect::<Vec<_>>();
+
+        debug!("Blob tx hashes: {:?}", tx_hashes);
 
         std::iter::zip(&tx_hashes, std::iter::zip(&hyle_outputs, &program_ids)).for_each(
             |(blob_tx_hash, (hyle_output, program_id))| {
