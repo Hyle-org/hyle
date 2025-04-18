@@ -3040,6 +3040,7 @@ dependencies = [
  "hyper-util",
  "paste",
  "rand 0.8.5",
+ "seq-macro",
  "serde",
  "serde_json",
  "test-log",
