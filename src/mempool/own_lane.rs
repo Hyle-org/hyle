@@ -324,7 +324,8 @@ impl super::Mempool {
         } else {
             let hyle_outputs = verify_proof(&proof_transaction.proof, &verifier, &program_id)
                 .context("verify_proof")?;
-            (hyle_outputs, vec![program_id.clone()])
+            let len = hyle_outputs.len();
+            (hyle_outputs, vec![program_id.clone(); len])
         };
 
         let tx_hashes = hyle_outputs
