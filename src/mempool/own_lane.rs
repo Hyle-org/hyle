@@ -78,28 +78,38 @@ impl super::Mempool {
         // Check for each pending DataProposal if it has enough signatures
         let entries = self
             .lanes
-            .get_lane_pending_entries(&self.own_lane_id(), last_cut)?;
+            .get_pending_entries_in_lane(&self.own_lane_id(), last_cut)?;
 
-        for lane_entry in entries {
+        for (entry_metadata, dp_hash) in entries {
+            let Some(data_proposal) = self.lanes.get_dp_by_hash(&self.own_lane_id(), &dp_hash)?
+            else {
+                bail!(
+                    "Can't find DataProposal {} in lane {}",
+                    dp_hash,
+                    self.own_lane_id()
+                );
+            };
+
             // If there's only 1 signature (=own signature), broadcast it to everyone
             let there_are_other_validators =
                 !self.staking.is_bonded(self.crypto.validator_pubkey())
                     || self.staking.bonded().len() >= 2;
-            if lane_entry.signatures.len() == 1 && there_are_other_validators {
+            if entry_metadata.signatures.len() == 1 && there_are_other_validators {
                 debug!(
                     "🚗 Broadcast DataProposal {} ({} validators, {} txs)",
-                    lane_entry.data_proposal.hashed(),
+                    data_proposal.hashed(),
                     self.staking.bonded().len(),
-                    lane_entry.data_proposal.txs.len()
+                    data_proposal.txs.len()
                 );
-                self.metrics.add_data_proposal(&lane_entry.data_proposal);
-                self.metrics.add_proposed_txs(&lane_entry.data_proposal);
-                self.broadcast_net_message(MempoolNetMessage::DataProposal(
-                    lane_entry.data_proposal.clone(),
-                ))?;
+                self.metrics.add_data_proposal(&data_proposal);
+                self.metrics.add_proposed_txs(&data_proposal);
+                self.broadcast_net_message(MempoolNetMessage::DataProposal(data_proposal.clone()))?;
+
+                // TODO: for performance reasons in the event loop, we'll only process the first item for now.
+                break;
             } else {
                 // If None, rebroadcast it to every validator that has not yet signed it
-                let validator_that_has_signed: HashSet<&ValidatorPublicKey> = lane_entry
+                let validator_that_has_signed: HashSet<&ValidatorPublicKey> = entry_metadata
                     .signatures
                     .iter()
                     .map(|s| &s.signature.validator)
@@ -118,18 +128,30 @@ impl super::Mempool {
                     continue;
                 }
 
-                self.metrics.add_data_proposal(&lane_entry.data_proposal);
-                self.metrics.add_proposed_txs(&lane_entry.data_proposal);
+                let Some(data_proposal) =
+                    self.lanes.get_dp_by_hash(&self.own_lane_id(), &dp_hash)?
+                else {
+                    bail!(
+                        "Can't find DataProposal {} in lane {}",
+                        dp_hash,
+                        self.own_lane_id()
+                    );
+                };
+
+                self.metrics.add_data_proposal(&data_proposal);
+                self.metrics.add_proposed_txs(&data_proposal);
                 debug!(
                     "🚗 Rebroadcast DataProposal {} (only for {} validators, {} txs)",
-                    &lane_entry.data_proposal.hashed(),
+                    &data_proposal.hashed(),
                     only_for.len(),
-                    &lane_entry.data_proposal.txs.len()
+                    &data_proposal.txs.len()
                 );
                 self.broadcast_only_for_net_message(
                     only_for,
-                    MempoolNetMessage::DataProposal(lane_entry.data_proposal.clone()),
+                    MempoolNetMessage::DataProposal(data_proposal.clone()),
                 )?;
+                // TODO: for performance reasons in the event loop, we'll only process the first item for now.
+                break;
             }
         }
 
@@ -348,7 +370,9 @@ pub mod test {
     use core::panic;
 
     use super::*;
-    use crate::{mempool::storage::LaneEntry, tests::autobahn_testing::assert_chanmsg_matches};
+    use crate::{
+        mempool::storage::LaneEntryMetadata, tests::autobahn_testing::assert_chanmsg_matches,
+    };
     use anyhow::Result;
     use hyle_crypto::BlstCrypto;
 
@@ -381,10 +405,9 @@ pub mod test {
         let dp = ctx
             .mempool
             .lanes
-            .get_by_hash(&ctx.own_lane(), dp_hash)
+            .get_dp_by_hash(&ctx.own_lane(), dp_hash)
             .unwrap()
-            .unwrap()
-            .data_proposal;
+            .unwrap();
 
         assert_eq!(dp.txs, vec![register_tx.clone()]);
 
@@ -505,14 +528,10 @@ pub mod test {
             .expect("should handle net message");
 
         // Assert that we added the vote to the signatures
-        let (
-            LaneEntry {
-                signatures: sig, ..
-            },
-            _,
-        ) = ctx.last_lane_entry(&LaneId(ctx.validator_pubkey().clone()));
+        let ((LaneEntryMetadata { signatures, .. }, _), _) =
+            ctx.last_lane_entry(&LaneId(ctx.validator_pubkey().clone()));
 
-        assert_eq!(sig.len(), 2);
+        assert_eq!(signatures.len(), 2);
         Ok(())
     }
 
