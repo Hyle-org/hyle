@@ -55,6 +55,7 @@ fn handle_register_blob(
             program_id: reg.program_id.clone(),
             state: reg.state_commitment.clone(),
             verifier: reg.verifier.clone(),
+            timeout_window: reg.timeout_window.clone().unwrap_or_default(),
         }),
     );
     Ok(())
