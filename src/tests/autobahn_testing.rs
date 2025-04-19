@@ -340,7 +340,7 @@ impl AutobahnTestCtx {
         res
     }
 
-    /// Spawn a coroutine to answer the command response call of start_round, with the current current of mempool
+    /// Spawn a coroutine to answer the command response call of start_round, with the current of mempool
     async fn start_round_with_cut_from_mempool(&mut self, ts: TimestampMs) {
         let staking = self.consensus_ctx.staking();
         let latest_cut: Cut = self.mempool_ctx.gen_cut(&staking);
