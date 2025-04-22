@@ -163,14 +163,14 @@ pub mod test {
 
     pub struct TestProver {}
 
-    impl ClientSdkProver<Calldata> for TestProver {
+    impl ClientSdkProver<Vec<Calldata>> for TestProver {
         fn prove(
             &self,
             commitment_metadata: Vec<u8>,
-            calldata: Calldata,
+            calldata: Vec<Calldata>,
         ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
             Box::pin(async move {
-                let hyle_output = test::execute(commitment_metadata, calldata)?;
+                let hyle_output = test::execute(commitment_metadata, calldata[0].clone())?;
                 Ok(ProofData(borsh::to_vec(&vec![hyle_output])?))
             })
         }
