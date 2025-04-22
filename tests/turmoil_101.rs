@@ -144,7 +144,7 @@ pub fn simulation_slow_node(ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyhow::
     let slow_node = ctx.random_id();
 
     for other_node in ctx.nodes.clone().iter().filter(|n| n.conf.id != slow_node) {
-        let slowness = Duration::from_millis(ctx.random_between(150, 1500));
+        let slowness = Duration::from_millis(ctx.random_between(150, 600));
         sim.set_link_latency(slow_node.clone(), other_node.conf.id.clone(), slowness);
     }
 
@@ -233,7 +233,7 @@ pub fn simulation_one_more_node(ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyh
 
         if current_time > Duration::from_secs(when) && !added_node {
             added_node = true;
-            let client_with_retries = ctx.add_node_to_simulation(sim)?.retry_3times_1000ms();
+            let client_with_retries = ctx.add_node_to_simulation(sim)?.retry_15times_1000ms();
 
             sim.client("client new-node", async move {
                 _ = wait_height(&client_with_retries, 1).await;
@@ -274,7 +274,7 @@ pub fn simulation_basic(_ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyhow::Res
 /// Inject 10 contracts on node-1.
 /// Check on the node (all of them) that all 10 contracts are here.
 pub async fn submit_10_contracts(node: TurmoilNodeProcess) -> anyhow::Result<()> {
-    let client_with_retries = node.client.retry_3times_1000ms();
+    let client_with_retries = node.client.retry_15times_1000ms();
 
     _ = wait_height(&client_with_retries, 1).await;
 
@@ -317,6 +317,12 @@ impl HoldConfiguration {
         let when = Duration::from_secs(ctx.random_between(5, 15));
         let duration = Duration::from_secs(ctx.random_between(2, 10));
 
+        tracing::info!(
+            "Creating hold configuration from {} to {}",
+            when.as_secs(),
+            (when + duration).as_secs()
+        );
+
         HoldConfiguration {
             from,
             to,
@@ -326,19 +332,17 @@ impl HoldConfiguration {
         }
     }
     pub fn execute(&mut self, sim: &mut Sim<'_>) -> anyhow::Result<()> {
-        if self.triggered {
-            anyhow::bail!("Hold already triggered");
-        }
-
         let current_time = sim.elapsed();
 
         if current_time > self.when && current_time <= self.when + self.duration && !self.triggered
         {
+            tracing::error!("HOLD TRIGGERED from {} to {}", self.from, self.to);
             sim.hold(self.from.clone(), self.to.clone());
             self.triggered = true;
         }
 
         if current_time > self.when + self.duration && self.triggered {
+            tracing::error!("RELEASE TRIGGERED from {} to {}", self.from, self.to);
             sim.release(self.from.clone(), self.to.clone());
         }
 

@@ -40,7 +40,9 @@ pub struct GenesisConf {
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct P2pConf {
     pub mode: P2pMode,
-    /// Server address for the P2P layer
+    /// Public IP address of the p2p server
+    pub public_address: String,
+    /// Port to listen for incoming connections
     pub server_port: u16,
     /// IPs of peers to connect to
     pub peers: Vec<String>,
@@ -66,8 +68,6 @@ pub struct Conf {
     /// Human-readable identifier for this node.
     pub id: String,
 
-    // Network host name
-    pub hostname: String,
     /// The log format to use - "json", "node" or "full" (default)
     pub log_format: String,
     /// Directory name to store node state.
@@ -83,12 +83,10 @@ pub struct Conf {
     pub genesis: GenesisConf,
 
     // Module options below
-    /// If full node: server address for the DA layer, which streams historical & new blocks. It might be used by indexers.
-    /// If "None", this is instead the address to connect to.
+    /// Public IP address of the DA port of the node.
+    pub da_public_address: String,
+    /// Server port for the DA API
     pub da_server_port: u16,
-
-    /// For a Da client
-    pub da_address: String,
 
     pub run_rest_server: bool,
     /// Server port for the REST API
@@ -104,6 +102,8 @@ pub struct Conf {
     pub run_indexer: bool,
     /// If running the indexer, the postgres address to connect to
     pub database_url: String,
+    /// When running only the indexer, the address of the DA server to connect to
+    pub da_read_from: String,
 }
 
 impl Conf {
@@ -130,34 +130,6 @@ impl Conf {
                     .try_parsing(true),
             )
             .set_override_option("data_directory", data_directory)?
-            .set_override_option(
-                "tcp_server_port",
-                std::env::var("HYLE_TCP__SERVER__PORT")
-                    .ok()
-                    .and_then(|port| port.parse::<u16>().ok()), // Convertir en u16 si possible
-            )?
-            .set_override_option(
-                "rest_server_port",
-                std::env::var("HYLE_REST__SERVER__PORT")
-                    .ok()
-                    .and_then(|port| port.parse::<u16>().ok()), // Convertir en u16 si possible
-            )?
-            .set_override_option(
-                "da_server_port",
-                std::env::var("HYLE_DA__SERVER__PORT")
-                    .ok()
-                    .and_then(|port| port.parse::<u16>().ok()), // Convertir en u16 si possible
-            )?
-            .set_override_option(
-                "da_server_port",
-                std::env::var("HYLE_DA__SERVER__PORT")
-                    .ok()
-                    .and_then(|port| port.parse::<u16>().ok()), // Convertir en u16 si possible
-            )?
-            .set_override(
-                "hostname",
-                std::env::var("HOSTNAME").unwrap_or("localhost".to_string()),
-            )?
             .set_override_option("run_indexer", run_indexer)?
             .build()?
             .try_deserialize()?;
@@ -187,36 +159,21 @@ mod tests {
     }
 
     #[test]
-    fn test_override_tcp_server_port() {
+    fn test_override_da_public_address() {
         let conf = Conf::new(None, None, None).unwrap();
-        assert_eq!(conf.tcp_server_port, 1414);
-
-        std::env::set_var("HYLE_TCP__SERVER__PORT", "9090");
+        assert_eq!(conf.da_public_address, "127.0.0.1:4141");
+        // All single underscores as there is no nesting.
+        std::env::set_var("HYLE_DA_PUBLIC_ADDRESS", "127.0.0.1:9090");
         let conf = Conf::new(None, None, None).unwrap();
-        assert_eq!(conf.tcp_server_port, 9090);
+        assert_eq!(conf.da_public_address, "127.0.0.1:9090");
     }
     #[test]
-    fn test_override_rest_server_port() {
+    fn test_override_p2p_public_address() {
         let conf = Conf::new(None, None, None).unwrap();
-        assert_eq!(conf.rest_server_port, 4321);
-        std::env::set_var("HYLE_REST__SERVER__PORT", "9090");
+        assert_eq!(conf.p2p.public_address, "127.0.0.1:1231");
+        // Note the double underscore
+        std::env::set_var("HYLE_P2P__PUBLIC_ADDRESS", "127.0.0.1:9090");
         let conf = Conf::new(None, None, None).unwrap();
-        assert_eq!(conf.rest_server_port, 9090);
-    }
-    #[test]
-    fn test_override_da_server_port() {
-        let conf = Conf::new(None, None, None).unwrap();
-        assert_eq!(conf.da_server_port, 4141);
-        std::env::set_var("HYLE_DA__SERVER__PORT", "9090");
-        let conf = Conf::new(None, None, None).unwrap();
-        assert_eq!(conf.da_server_port, 9090);
-    }
-    #[test]
-    fn test_override_hostname() {
-        let conf = Conf::new(None, None, None).unwrap();
-        assert_eq!(conf.hostname, "localhost");
-        std::env::set_var("HOSTNAME", "hyli-node");
-        let conf = Conf::new(None, None, None).unwrap();
-        assert_eq!(conf.hostname, "hyli-node");
+        assert_eq!(conf.p2p.public_address, "127.0.0.1:9090");
     }
 }

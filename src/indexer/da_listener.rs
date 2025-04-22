@@ -84,7 +84,7 @@ impl DAListener {
     ) -> Result<codec_data_availability::Client> {
         let mut client = codec_data_availability::connect(
             "raw_da_listener".to_string(),
-            self.config.da_address.clone(),
+            self.config.da_read_from.clone(),
         )
         .await?;
 
