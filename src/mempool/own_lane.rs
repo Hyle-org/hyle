@@ -169,6 +169,7 @@ impl super::Mempool {
         for (i, tx) in self.waiting_dissemination_txs.iter().enumerate() {
             collect_up_to = i;
             cumsize += tx.estimate_size();
+            // Keep this one in anyways, we have a per-TX limit.
             if cumsize > 40_000_000 {
                 break;
             }
@@ -179,8 +180,10 @@ impl super::Mempool {
             .collect::<Vec<_>>();
 
         debug!(
-            "🌝 Creating new data proposals with {} txs",
-            collected_txs.len()
+            "🌝 Creating new data proposals with {} txs (est. size {}). {} tx remain.",
+            collected_txs.len(),
+            cumsize,
+            self.waiting_dissemination_txs.len()
         );
 
         let validator_key = self.crypto.validator_pubkey().clone();
