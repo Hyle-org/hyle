@@ -318,9 +318,6 @@ where
                     self.send_hello_message(peer_connection_addr.clone())
                         .await
                         .context(format!("Failed to reconnect to peer {}", validator_pub_key))?;
-
-                    // Wait for handshake to finish
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 }
                 _ => {
                     bail!(
@@ -333,36 +330,6 @@ where
         }
 
         Ok(())
-    }
-
-    pub async fn send_with_retry(
-        &mut self,
-        validator_pub_key: ValidatorPublicKey,
-        msg: Msg,
-        max_retries: usize,
-    ) -> anyhow::Result<()> {
-        let mut attempts = 0;
-        loop {
-            match self.send(validator_pub_key.clone(), msg.clone()).await {
-                Ok(_) => return Ok(()),
-                Err(e) if attempts < max_retries => {
-                    attempts += 1;
-                    warn!(
-                        "Failed to send message to peer {}: {:?}. Retrying {}/{}...",
-                        validator_pub_key, e, attempts, max_retries
-                    );
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                }
-                Err(e) => {
-                    bail!(
-                        "Failed to send message to peer {} after {} attempts: {:?}",
-                        validator_pub_key,
-                        max_retries,
-                        e
-                    );
-                }
-            }
-        }
     }
 
     pub async fn broadcast(&mut self, msg: Msg) -> anyhow::Result<()> {

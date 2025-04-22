@@ -97,7 +97,7 @@ impl P2P {
                 match res {
                     OutboundMessage::SendMessage { validator_id, msg } => {
                         let warn_msg = format!("P2P Sending net message to {}", validator_id);
-                        _ = log_warn!(p2p_server.send_with_retry(validator_id, msg, 3).await, warn_msg);
+                        _ = log_warn!(p2p_server.send(validator_id, msg).await, warn_msg);
                     }
                     OutboundMessage::BroadcastMessage(message) => {
                         _ = log_warn!(
