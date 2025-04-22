@@ -8,7 +8,6 @@ use super::Consensus;
 use crate::{
     bus::BusClientSender,
     consensus::{role_timeout::TimeoutState, StateTag},
-    log_error,
     mempool::MempoolNetMessage,
     model::{Hashed, Signed, ValidatorPublicKey},
     p2p::P2PCommand,
@@ -25,6 +24,11 @@ use hyle_model::{
 pub(super) struct FollowerState {
     pub(super) buffered_quorum_certificate: Option<QuorumCertificate>, // if we receive a commit before the next prepare
     pub(super) buffered_prepares: BufferedPrepares, // History of seen prepares & buffer of future prepares
+}
+
+enum TicketVerifyAndProcess {
+    NotProcessed,
+    Processed,
 }
 
 impl Consensus {
@@ -66,22 +70,7 @@ impl Consensus {
             }
         }
 
-        // If received proposal for next slot, we continue processing and will try to fast forward
-        // if received proposal is for an even further slot, we buffer it
-        if consensus_proposal.slot > self.bft_round_state.slot + 1 {
-            warn!(
-                proposal_hash = %consensus_proposal.hashed(),
-                sender = %sender,
-                "🚚 Prepare message for slot {} while at slot {}. Buffering.",
-                consensus_proposal.slot, self.bft_round_state.slot
-            );
-            return self.buffer_prepare_message_and_fetch_missing_parent(
-                sender,
-                consensus_proposal,
-                ticket,
-                view,
-            );
-        } else if consensus_proposal.slot < self.bft_round_state.slot {
+        if consensus_proposal.slot < self.bft_round_state.slot {
             // Ignore outdated messages.
             info!(
                 "🌑 Outdated Prepare message (Slot {} / view {} while at {}) received. Ignoring.",
@@ -89,30 +78,47 @@ impl Consensus {
             );
             return Ok(());
         }
+
         // Process the ticket
-        match &ticket {
+        let ticket_was_processed = match &ticket {
             Ticket::Genesis => {
                 if self.bft_round_state.slot != 1 {
                     bail!("Genesis ticket is only valid for the first slot.");
                 }
+                TicketVerifyAndProcess::Processed
             }
-            Ticket::CommitQC(commit_qc) => {
-                if !self.verify_commit_ticket_or_fast_forward(commit_qc.clone()) {
-                    bail!("Invalid commit ticket");
-                }
-            }
-            Ticket::TimeoutQC(timeout_qc, tc_kind_data) => {
-                self.try_process_timeout_qc(
+            Ticket::CommitQC(commit_qc) => self
+                .verify_and_process_commit_ticket(&consensus_proposal, commit_qc.clone())
+                .context("Processing Commit Ticket")?,
+            Ticket::TimeoutQC(timeout_qc, tc_kind_data) => self
+                .verify_and_process_tc_ticket(
                     timeout_qc.clone(),
                     tc_kind_data,
                     &consensus_proposal,
                     view,
                 )
-                .context("Processing Timeout ticket")?;
-            }
+                .context("Processing TC ticket")?,
             els => {
-                bail!("Invalid TimedOutCommit ticket here {:?}", els);
+                bail!("Cannot process invalid ticket here {:?}", els);
             }
+        };
+
+        // Ticket is not processed, we must stop here (probably buffered)
+        if matches!(ticket_was_processed, TicketVerifyAndProcess::NotProcessed) {
+            let ticket_type: &'static str = (&ticket).into();
+            warn!(
+                proposal_hash = %consensus_proposal.hashed(),
+                sender = %sender,
+                "🚚 Prepare message for slot {} while at slot {}. Buffering after verifying ticket {}.",
+                consensus_proposal.slot, self.bft_round_state.slot, ticket_type
+            );
+
+            return self.buffer_prepare_message_and_fetch_missing_parent(
+                sender,
+                consensus_proposal,
+                ticket,
+                view,
+            );
         }
 
         // TODO: check we haven't voted for a proposal this slot/view already.
@@ -163,11 +169,14 @@ impl Consensus {
             .buffered_prepares
             .next_prepare(cp_hash.clone())
         {
-            debug!("🏎️ Fast forwarding to next Prepare");
+            debug!(
+                "🏎️ Fast forwarding to next Prepare with prepare {:?}",
+                prepare
+            );
             // FIXME? In theory, we could have a stackoverflow if we need to catchup a lot of prepares
             // Note: If we want to vote on the passed proposal even if it's too late,
             // we can just remove the "return" here and continue.
-            return self.on_prepare(prepare.0, prepare.1, prepare.2, 0);
+            return self.on_prepare(prepare.0, prepare.1, prepare.2, prepare.3);
         }
 
         // Responds PrepareVote message to leader with validator's vote on this proposal
@@ -259,9 +268,27 @@ impl Consensus {
         commit_quorum_certificate: QuorumCertificate,
         proposal_hash_hint: ConsensusProposalHash,
     ) -> Result<()> {
+        // Ignore commit messages for the wrong slot.
+        if self.bft_round_state.current_proposal.slot != self.bft_round_state.slot {
+            return Ok(());
+        }
+
         match self.bft_round_state.state_tag {
             StateTag::Follower => {
-                self.try_commit_current_proposal(commit_quorum_certificate, proposal_hash_hint)
+                if self.bft_round_state.current_proposal.hashed() != proposal_hash_hint {
+                    warn!(
+                        "Received Commit for proposal {:?} but expected {:?}. Ignoring.",
+                        proposal_hash_hint,
+                        self.bft_round_state.current_proposal.hashed()
+                    );
+                    return Ok(());
+                }
+
+                self.verify_commit_quorum_certificate_againt_current_proposal(
+                    &commit_quorum_certificate,
+                )?;
+                self.emit_commit_event(&commit_quorum_certificate)?;
+                self.advance_round(Ticket::CommitQC(commit_quorum_certificate))
             }
             StateTag::Joining => {
                 self.on_commit_while_joining(commit_quorum_certificate, proposal_hash_hint)
@@ -403,79 +430,105 @@ impl Consensus {
         Ok(())
     }
 
-    fn try_process_timeout_qc(
+    fn current_proposal_changes_voting_power(&self) -> bool {
+        self.bft_round_state
+            .current_proposal
+            .staking_actions
+            .iter()
+            .filter(|sa| matches!(sa, ConsensusStakingAction::Bond { .. }))
+            .count()
+            > 0
+    }
+
+    fn verify_and_process_tc_ticket(
         &mut self,
         timeout_qc: QuorumCertificate,
         tc_kind_data: &TCKind,
         consensus_proposal: &ConsensusProposal,
         prepare_view: View,
-    ) -> Result<()> {
+    ) -> Result<TicketVerifyAndProcess> {
         let prepare_slot = consensus_proposal.slot;
-        debug!(
+        // Two cases:
+        // - the prepare is for next slot *and* we have the prepare for the current slot
+        // - the prepare is for the current slot
+        let is_next_slot_and_current_proposal_is_present =
+            prepare_slot == self.bft_round_state.slot + 1 && self.current_slot_prepare_is_present();
+
+        if (consensus_proposal.slot == self.bft_round_state.slot)
+            || is_next_slot_and_current_proposal_is_present
+        {
+            debug!(
             "Trying to process timeout Certificate against consensus proposal slot: {}, view: {}",
             prepare_slot, prepare_view,
         );
 
-        // Check the ticket matches the CP
-        if let TCKind::PrepareQC((_, cp)) = tc_kind_data {
-            if cp != consensus_proposal {
-                bail!(
+            // Check the ticket matches the CP
+            if let TCKind::PrepareQC((_, cp)) = tc_kind_data {
+                if cp != consensus_proposal {
+                    bail!(
                     "Timeout Certificate does not match consensus proposal. Expected {}, got {}",
                     cp.hashed(),
                     consensus_proposal.hashed()
                 );
-            }
-        }
-
-        // If ticket for next slot && correct parent hash, fast forward
-        if prepare_slot == self.bft_round_state.slot + 1
-            && consensus_proposal.parent_hash == self.bft_round_state.current_proposal.hashed()
-        {
-            // Try to commit our current prepare & fast-forward.
-
-            // Safety assumption: we can't actually verify a TC for the next slot, but since it matches our hash,
-            // since we have no staking actions in the prepare we're good.
-            if !self
-                .bft_round_state
-                .current_proposal
-                .staking_actions
-                .is_empty()
-            {
-                bail!("Timeout Certificate slot {} view {} is for the next slot, but we have staking actions in our prepare", prepare_slot, prepare_view);
+                }
             }
 
-            // We have received a timeout certificate for the next slot,
-            // and it matches our know prepare for this slot, so try and commit that one then the TC.
-            self.carry_on_with_ticket(Ticket::ForcedCommitQc(timeout_qc.clone()))?;
-
-            info!(
-                "🔀 Fast forwarded to slot {} view 0",
-                &self.bft_round_state.slot
-            );
-        }
-        if prepare_slot != self.bft_round_state.slot {
-            bail!(
-                "Timeout Certificate slot {} view {} is not the current slot {}",
-                prepare_slot,
-                prepare_view,
-                self.bft_round_state.slot
-            );
-        }
-        self.verify_tc(
-            &timeout_qc,
-            tc_kind_data,
+            tracing::debug!(
+            "Slot info service: prepare slot {}, bft round state slot {}, current proposal slot {}",
+            prepare_slot,
             self.bft_round_state.slot,
-            prepare_view - 1,
-        )?;
-        if prepare_view == self.bft_round_state.view + 1 {
-            // Process it
-            debug!(
-                "Timeout Certificate for next view {} received, processing it",
-                prepare_view
-            );
-            self.carry_on_with_ticket(Ticket::TimeoutQC(timeout_qc, tc_kind_data.clone()))?;
+            self.bft_round_state.current_proposal.slot
+        );
+
+            // If ticket for next slot && correct parent hash, fast forward
+            if is_next_slot_and_current_proposal_is_present
+                && consensus_proposal.parent_hash == self.bft_round_state.current_proposal.hashed()
+            {
+                // Try to commit our current prepare & fast-forward.
+
+                // Safety assumption: we can't actually verify a TC for the next slot, but since it matches our hash,
+                // since we have no staking actions in the prepare we're good.
+                if self.current_proposal_changes_voting_power() {
+                    bail!("Timeout Certificate slot {} view {} is for the next slot, and current proposal changes voting power", prepare_slot, prepare_view);
+                }
+
+                self.emit_commit_event(&timeout_qc)
+                    .context("Processing TC ticket")?;
+
+                // We have received a timeout certificate for the next slot,
+                // and it matches our know prepare for this slot, so try and commit that one then the TC.
+                self.advance_round(Ticket::ForcedCommitQc(timeout_qc.clone()))?;
+
+                info!(
+                    "🔀 Fast forwarded to slot {} view 0",
+                    &self.bft_round_state.slot
+                );
+            }
+            if prepare_slot != self.bft_round_state.slot {
+                bail!(
+                    "Timeout Certificate slot {} view {} is not the current slot {}",
+                    prepare_slot,
+                    prepare_view,
+                    self.bft_round_state.slot
+                );
+            }
+            self.verify_tc(
+                &timeout_qc,
+                tc_kind_data,
+                self.bft_round_state.slot,
+                prepare_view - 1,
+            )?;
+            if prepare_view == self.bft_round_state.view + 1 {
+                // Process it
+                debug!(
+                    "Timeout Certificate for next view {} received, processing it",
+                    prepare_view
+                );
+                self.advance_round(Ticket::TimeoutQC(timeout_qc, tc_kind_data.clone()))?;
+            }
+            return Ok(TicketVerifyAndProcess::Processed);
         }
-        Ok(())
+        Ok(TicketVerifyAndProcess::NotProcessed)
     }
 
     fn on_commit_while_joining(
@@ -521,25 +574,17 @@ impl Consensus {
         );
 
         // Try to commit the proposal
-        let old_slot = self.bft_round_state.slot;
-        let old_view = self.bft_round_state.view;
+        self.verify_commit_quorum_certificate_againt_current_proposal(&commit_quorum_certificate)
+            .context("On Commit when joining")?;
 
         self.bft_round_state.slot = self.bft_round_state.current_proposal.slot;
         self.bft_round_state.view = 0; // TODO
         self.bft_round_state.state_tag = StateTag::Follower;
-        if self
-            .try_commit_current_proposal(
-                commit_quorum_certificate,
-                self.bft_round_state.current_proposal.hashed(),
-            )
-            .is_err()
-        {
-            // Swap back
-            self.bft_round_state.state_tag = StateTag::Joining;
-            self.bft_round_state.slot = old_slot;
-            self.bft_round_state.view = old_view;
-            bail!("⛑️ Failed to synchronize, retrying soon.");
-        }
+
+        self.emit_commit_event(&commit_quorum_certificate)?;
+
+        self.advance_round(Ticket::CommitQC(commit_quorum_certificate))?;
+
         // We sucessfully joined the consensus
         info!("🏁 Synchronized to slot {}", self.bft_round_state.slot);
         Ok(())
@@ -559,6 +604,7 @@ impl Consensus {
             .is_none()
     }
 
+    /// When a prepare is received with a too high slot, buffer it and fetch its parents before you can process it.
     fn buffer_prepare_message_and_fetch_missing_parent(
         &mut self,
         sender: ValidatorPublicKey,
@@ -603,44 +649,54 @@ impl Consensus {
         Ok(())
     }
 
-    fn verify_commit_ticket_or_fast_forward(&mut self, commit_qc: QuorumCertificate) -> bool {
-        // Three options:
-        // - we have already received the commit message for this ticket, so we already processed the QC.
-        // - we haven't, so we process it right away
-        // - the CQC is invalid and we just ignore it.
-        if let Some(qc) = &self.bft_round_state.follower.buffered_quorum_certificate {
-            if qc == &commit_qc {
-                return true;
-            }
-        }
+    fn verify_and_process_commit_ticket(
+        &mut self,
+        consensus_proposal: &ConsensusProposal,
+        commit_qc: QuorumCertificate,
+    ) -> Result<TicketVerifyAndProcess> {
+        // Two cases:
+        // - the prepare is for next slot *and* we have the prepare for the current slot
+        // - the prepare is for the current slot
+        let next_slot_and_current_proposal_is_present = consensus_proposal.slot
+            == self.bft_round_state.slot + 1
+            && self.current_slot_prepare_is_present();
 
-        // Edge case: we have already committed a different CQC. We are kinda stuck.
-        if self.bft_round_state.current_proposal.slot != self.bft_round_state.slot {
-            warn!(
+        if (consensus_proposal.slot == self.bft_round_state.slot)
+            || next_slot_and_current_proposal_is_present
+        {
+            // Three options:
+            // - we have already received the commit message for this ticket, so we already processed the QC.
+            // - we haven't, so we process it right away
+            // - the CQC is invalid and we just ignore it.
+            if let Some(qc) = &self.bft_round_state.follower.buffered_quorum_certificate {
+                if qc == &commit_qc {
+                    return Ok(TicketVerifyAndProcess::Processed);
+                }
+            }
+
+            // Edge case: we have already committed a different CQC. We are kinda stuck.
+            if !self.current_slot_prepare_is_present() {
+                warn!(
                 "Received an unknown commit QC for slot {}. This is unsafe to verify as we have updated staking. Proceeding with current staking anyways.",
                 self.bft_round_state.slot
             );
-            // To still sorta make this work, verify the CQC with our current staking and hope for the best.
-            return self
-                .verify_quorum_certificate(
+                // To still sorta make this work, verify the CQC with our current staking and hope for the best.
+                self.verify_quorum_certificate(
                     ConsensusNetMessage::ConfirmAck(self.bft_round_state.parent_hash.clone()),
                     &commit_qc,
-                )
-                .is_ok();
-        }
+                )?;
+                return Ok(TicketVerifyAndProcess::Processed);
+            }
 
-        let commited_current_proposal = log_error!(
-            self.try_commit_current_proposal(
-                commit_qc,
-                self.bft_round_state.current_proposal.hashed()
-            ),
-            "Processing Commit Ticket"
-        );
+            self.verify_commit_quorum_certificate_againt_current_proposal(&commit_qc)?;
+            self.emit_commit_event(&commit_qc)?;
+            self.advance_round(Ticket::CommitQC(commit_qc))?;
 
-        if commited_current_proposal.is_ok() {
             info!("🔀 Fast forwarded to slot {}", &self.bft_round_state.slot);
+            return Ok(TicketVerifyAndProcess::Processed);
         }
-        commited_current_proposal.is_ok()
+
+        Ok(TicketVerifyAndProcess::NotProcessed)
     }
 
     fn verify_staking_actions(&mut self, proposal: &ConsensusProposal) -> Result<()> {
