@@ -916,7 +916,8 @@ pub mod test {
             for other_node in nodes.iter() {
                 self.add_trusted_validator(other_node.consensus.crypto.validator_pubkey());
             }
-
+            // This triggered a failure at one point, might happen again (the bft slot is 0)
+            self.consensus.bft_round_state.current_proposal.slot = 1;
             self.consensus.bft_round_state.state_tag = StateTag::Joining;
         }
 
