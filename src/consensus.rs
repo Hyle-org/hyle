@@ -254,6 +254,8 @@ impl Consensus {
             }
         }
 
+        // TODO: 'poison' the current consensus proposal value as it's no longer current.
+
         debug!(
             "🥋 Ready for slot {}, view {}",
             self.bft_round_state.slot, self.bft_round_state.view
@@ -1550,6 +1552,7 @@ pub mod test {
 
         node2.start_round_at(TimestampMs(3000)).await;
 
+        // Other nodes still reflect the older value
         assert_eq!(
             node1.consensus.bft_round_state.current_proposal.timestamp,
             TimestampMs(1000)
