@@ -57,7 +57,9 @@ impl TurmoilCtx {
             id: format!("node-{}", i),
             ..ConfMaker::default().default
         };
-        node_conf.hostname = node_conf.id.clone();
+
+        node_conf.da_public_address = format!("{}:{}", node_conf.id, node_conf.da_server_port);
+        node_conf.p2p.public_address = format!("{}:{}", node_conf.id, node_conf.p2p.server_port);
         node_conf.data_directory.pop();
         node_conf
             .data_directory
@@ -120,7 +122,7 @@ impl TurmoilCtx {
         node_conf.p2p.peers = self
             .nodes
             .iter()
-            .map(|node| format!("{}:{}", node.conf.hostname, node.conf.p2p.server_port))
+            .map(|node| format!("{}:{}", node.conf.id, node.conf.p2p.server_port))
             .collect();
 
         let node = TurmoilNodeProcess::from(&node_conf);
