@@ -119,10 +119,10 @@ pub mod sp1 {
             Ok(sdk::ProgramId(serde_json::to_vec(&self.vk)?))
         }
 
-        pub async fn prove(
+        pub async fn prove<T: BorshSerialize>(
             &self,
             commitment_metadata: Vec<u8>,
-            calldata: Calldata,
+            calldata: T,
         ) -> Result<ProofData> {
             // Setup the inputs.
             let mut stdin = SP1Stdin::new();
@@ -147,11 +147,11 @@ pub mod sp1 {
         }
     }
 
-    impl ClientSdkProver for SP1Prover {
+    impl<T: BorshSerialize + Send + 'static> ClientSdkProver<T> for SP1Prover {
         fn prove(
             &self,
             commitment_metadata: Vec<u8>,
-            calldata: Calldata,
+            calldata: T,
         ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
             Box::pin(self.prove(commitment_metadata, calldata))
         }
