@@ -103,6 +103,7 @@ pub struct TimeoutCertificate(ConsensusProposalHash, QuorumCertificate);
     Hash,
     Ord,
     PartialOrd,
+    IntoStaticStr,
 )]
 pub enum Ticket {
     // Special value for the initial Cut, needed because we don't have a quorum certificate for the genesis block.

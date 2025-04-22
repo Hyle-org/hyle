@@ -487,9 +487,9 @@ dependencies = [
 
 [[package]]
 name = "assert_cmd"
-version = "2.0.16"
+version = "2.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc1835b7f27878de8525dc71410b5a31cdcc5f230aed5ba5df968e09c201b23d"
+checksum = "2bd389a4b2970a01282ee455294913c0a43724daedcd1a24c3eb0ec1c1320b66"
 dependencies = [
  "anstyle",
  "bstr",
@@ -503,9 +503,9 @@ dependencies = [
 
 [[package]]
 name = "assertables"
-version = "9.5.1"
+version = "9.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "052f3d9bc969124791aef91c0aa2b5f89ed4410a44e59858a0b10f76297e736c"
+checksum = "218459a1ca1459c9fbfedc0dc14febf22d0b809708d496b2368e407da91ff5a8"
 
 [[package]]
 name = "async-trait"
@@ -1230,9 +1230,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.36"
+version = "4.5.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2df961d8c8a0d08aa9945718ccf584145eee3f3aa06cddbeac12933781102e04"
+checksum = "eccb054f56cbd38340b380d4a8e69ef1f02f1af43db2f0cc817a4774d80ae071"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -1240,9 +1240,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.36"
+version = "4.5.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "132dbda40fb6753878316a489d5a1242a8ef2f0d9e47ba01c951ea8aa7d013a5"
+checksum = "efd9466fac8543255d3b1fcad4762c5e116ffe808c8a3043d4263cd4fd4862a2"
 dependencies = [
  "anstream",
  "anstyle",
@@ -2270,9 +2270,9 @@ dependencies = [
 
 [[package]]
 name = "fjall"
-version = "2.8.0"
+version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26b2ced3483989a62b3533c9f99054d73b527c6c0045cf22b00fe87956f1a46f"
+checksum = "958511f67d1f80e6bff9ffac05c626bb340d4602ca6ea5617d9901c218c894f0"
 dependencies = [
  "byteorder",
  "byteview",
@@ -2793,7 +2793,6 @@ dependencies = [
  "axum 0.8.3",
  "axum-otel-metrics",
  "axum-test",
- "blst",
  "borsh",
  "bytes",
  "chrono",
@@ -2807,6 +2806,7 @@ dependencies = [
  "hyle-client-sdk",
  "hyle-contract-sdk",
  "hyle-contracts",
+ "hyle-crypto",
  "hyle-hydentity",
  "hyle-hyllar",
  "hyle-model",
@@ -2817,7 +2817,6 @@ dependencies = [
  "hyle-uuid-tld",
  "hyle-verifiers",
  "indexmap 2.9.0",
- "keyring",
  "opentelemetry",
  "opentelemetry-prometheus",
  "opentelemetry_sdk",
@@ -2826,7 +2825,6 @@ dependencies = [
  "quote",
  "rand 0.8.5",
  "risc0-zkvm",
- "secp256k1",
  "seq-macro",
  "serde",
  "serde_json",
@@ -2850,7 +2848,6 @@ dependencies = [
  "utoipa",
  "utoipa-axum",
  "utoipa-swagger-ui",
- "whoami",
  "zip",
 ]
 
@@ -2935,6 +2932,20 @@ dependencies = [
  "hyle-staking",
  "hyle-uuid-tld",
  "risc0-build",
+]
+
+[[package]]
+name = "hyle-crypto"
+version = "0.13.0-rc.4"
+dependencies = [
+ "anyhow",
+ "blst",
+ "borsh",
+ "hex",
+ "hyle-model",
+ "keyring",
+ "rand 0.9.0",
+ "whoami",
 ]
 
 [[package]]
@@ -3116,10 +3127,13 @@ dependencies = [
  "bincode",
  "borsh",
  "hex",
+ "hyle-crypto",
  "hyle-model",
  "rand 0.9.0",
  "risc0-zkvm",
+ "secp256k1",
  "serde_json",
+ "sha3",
  "sp1-sdk",
  "test-log",
  "tracing",
@@ -3730,9 +3744,9 @@ dependencies = [
 
 [[package]]
 name = "lsm-tree"
-version = "2.8.0"
+version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0a63a5e98a38b51765274137d8aedfbd848da5f4d016867e186b673fcc06a8c"
+checksum = "87d58bdef2dcbf50fce9f343265bdbd7fb08a458d241eb837ce426be22d674b4"
 dependencies = [
  "byteorder",
  "crossbeam-skiplist",
@@ -8022,9 +8036,9 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "value-log"
-version = "1.8.0"
+version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd29b17c041f94e0885179637289815cd038f0c9fc19c4549d5a97017404fb7d"
+checksum = "62fc7c4ce161f049607ecea654dca3f2d727da5371ae85e2e4f14ce2b98ed67c"
 dependencies = [
  "byteorder",
  "byteview",

@@ -20,7 +20,6 @@ use crate::{
     tools::mock_workflow::MockWorkflowHandler,
     utils::{
         conf::{self, P2pMode},
-        crypto::SharedBlstCrypto,
         modules::ModulesHandler,
     },
 };
@@ -28,6 +27,7 @@ use anyhow::{bail, Context, Result};
 use axum::Router;
 use axum_otel_metrics::HttpMetricsLayerBuilder;
 use hydentity::Hydentity;
+use hyle_crypto::SharedBlstCrypto;
 use hyllar::Hyllar;
 use prometheus::Registry;
 use std::{

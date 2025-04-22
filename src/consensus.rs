@@ -12,14 +12,12 @@ use crate::{
     mempool::QueryNewCut,
     model::{Cut, Hashed, ValidatorPublicKey},
     p2p::{network::OutboundMessage, P2PCommand},
-    utils::{
-        conf::SharedConf,
-        crypto::{BlstCrypto, SharedBlstCrypto},
-        modules::Module,
-    },
+    utils::{conf::SharedConf, modules::Module},
 };
 use anyhow::{anyhow, bail, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
+use hyle_crypto::BlstCrypto;
+use hyle_crypto::SharedBlstCrypto;
 use hyle_model::utils::TimestampMs;
 use hyle_net::clock::TimestampMsClock;
 use metrics::ConsensusMetrics;
@@ -186,8 +184,8 @@ impl Consensus {
         res
     }
 
-    /// Reset bft_round_state for the next round of consensus.
-    fn finish_round(&mut self, ticket: Option<Ticket>) -> Result<(), Error> {
+    /// Update bft_round_state for the next round of consensus.
+    fn apply_ticket(&mut self, ticket: Ticket) -> Result<(), Error> {
         match self.bft_round_state.state_tag {
             StateTag::Follower => {}
             StateTag::Leader => {}
@@ -200,7 +198,7 @@ impl Consensus {
 
         match ticket {
             // We finished the round with a committed proposal for the slot
-            Some(Ticket::CommitQC(_)) | Some(Ticket::ForcedCommitQc(_)) => {
+            Ticket::CommitQC(_) | Ticket::ForcedCommitQc(_) => {
                 self.bft_round_state.slot += 1;
                 self.bft_round_state.view = 0;
                 self.bft_round_state.parent_hash = self.bft_round_state.current_proposal.hashed();
@@ -209,8 +207,8 @@ impl Consensus {
 
                 // Store the last commited QC to avoid issues when parsing Commit messages before Prepare
                 self.bft_round_state.follower.buffered_quorum_certificate = match ticket {
-                    Some(Ticket::CommitQC(qc)) => Some(qc),
-                    Some(Ticket::ForcedCommitQc(_)) => None,
+                    Ticket::CommitQC(qc) => Some(qc),
+                    Ticket::ForcedCommitQc(_) => None,
                     _ => unreachable!(),
                 };
                 for action in
@@ -244,17 +242,19 @@ impl Consensus {
                     .map_err(|e| anyhow::anyhow!(e))?;
             }
             // We finished the round with a timeout
-            Some(Ticket::TimeoutQC(..)) => {
+            Ticket::TimeoutQC(..) => {
                 // FIXME: I think TimeoutQC should hold the view, in case we missed multiple views
                 // at once
                 self.bft_round_state.view += 1;
                 // TODO: buffer these?
                 self.bft_round_state.follower.buffered_quorum_certificate = None;
             }
-            els => {
-                bail!("Invalid ticket here {:?}", els);
+            Ticket::Genesis => {
+                bail!("Genesis Ticket not accepted.");
             }
         }
+
+        // TODO: 'poison' the current consensus proposal value as it's no longer current.
 
         debug!(
             "🥋 Ready for slot {}, view {}",
@@ -274,6 +274,10 @@ impl Consensus {
         }
 
         Ok(())
+    }
+
+    fn current_slot_prepare_is_present(&self) -> bool {
+        self.bft_round_state.current_proposal.slot == self.bft_round_state.slot
     }
 
     /// Verify that quorum certificate includes only validators that are part of the consensus
@@ -482,9 +486,11 @@ impl Consensus {
         }
     }
 
-    fn carry_on_with_ticket(&mut self, ticket: Ticket) -> Result<()> {
-        self.finish_round(Some(ticket.clone()))?;
+    /// Apply ticket locally, and start new round with it
+    fn advance_round(&mut self, ticket: Ticket) -> Result<()> {
+        self.apply_ticket(ticket.clone())?;
 
+        // Decide what to do at the beginning of the next round
         if self.is_round_leader() && self.has_no_buffered_children() {
             // Setup our ticket for the next round
             // Send Prepare message to all validators
@@ -508,44 +514,36 @@ impl Consensus {
         }
     }
 
-    fn try_commit_current_proposal(
-        &mut self,
-        commit_quorum_certificate: QuorumCertificate,
-        proposal_hash_hint: ConsensusProposalHash,
+    fn verify_commit_quorum_certificate_againt_current_proposal(
+        &self,
+        commit_quorum_certificate: &QuorumCertificate,
     ) -> Result<()> {
-        if self.bft_round_state.current_proposal.hashed() != proposal_hash_hint {
-            warn!(
-                "Received Commit for proposal {:?} but expected {:?}. Ignoring.",
-                proposal_hash_hint,
-                self.bft_round_state.current_proposal.hashed()
-            );
-            return Ok(());
-        }
-
         // Check that this is a QC for ConfirmAck for the expected proposal.
         // This also checks slot/view as those are part of the hash.
         // TODO: would probably be good to make that more explicit.
         self.verify_quorum_certificate(
-            ConsensusNetMessage::ConfirmAck(proposal_hash_hint.clone()),
-            &commit_quorum_certificate,
-        )?;
+            ConsensusNetMessage::ConfirmAck(self.bft_round_state.current_proposal.hashed()),
+            commit_quorum_certificate,
+        )
+    }
 
+    /// Emits an event that will make Mempool able to build a block
+    fn emit_commit_event(&mut self, commit_quorum_certificate: &QuorumCertificate) -> Result<()> {
         self.metrics.commit();
 
-        _ = log_error!(
-            self.bus.send(ConsensusEvent::CommitConsensusProposal(
+        self.bus
+            .send(ConsensusEvent::CommitConsensusProposal(
                 CommittedConsensusProposal {
                     staking: self.bft_round_state.staking.clone(),
                     consensus_proposal: self.bft_round_state.current_proposal.clone(),
                     certificate: commit_quorum_certificate.clone(),
                 },
-            )),
-            "Failed to send ConsensusEvent::CommittedConsensusProposal on the bus"
-        );
+            ))
+            .context("Failed to send ConsensusEvent::CommittedConsensusProposal on the bus")?;
 
         debug!("📈 Slot {} committed", &self.bft_round_state.slot);
 
-        self.carry_on_with_ticket(Ticket::CommitQC(commit_quorum_certificate))
+        Ok(())
     }
 
     /// Message received by leader & follower.
@@ -812,7 +810,7 @@ pub mod test {
         tests::autobahn_testing::{
             broadcast, build_tuple, send, simple_commit_round, AutobahnBusClient, AutobahnTestCtx,
         },
-        utils::{conf::Conf, crypto},
+        utils::conf::Conf,
     };
     use assertables::assert_contains;
     use tokio::sync::broadcast::Receiver;
@@ -972,7 +970,7 @@ pub mod test {
         }
 
         async fn new_node(name: &str) -> Self {
-            let crypto = crypto::BlstCrypto::new(name).unwrap();
+            let crypto = BlstCrypto::new(name).unwrap();
             Self::new(name, crypto.clone()).await
         }
 
@@ -1114,14 +1112,18 @@ pub mod test {
                 if let NetMessage::ConsensusMessage(msg) = net_msg {
                     msg
                 } else {
-                    error!(
-                        "{description}: NetMessage::ConsensusMessage message is missing, found {}",
-                        net_msg
-                    );
+                    warn!("{description}: skipping {:?}", net_msg);
+                    self.assert_broadcast(description)
+                }
+            } else if let OutboundMessage::SendMessage { msg: net_msg, .. } = rec {
+                if let NetMessage::ConsensusMessage(_) = net_msg {
+                    panic!("{description}: received a send instead of a broadcast");
+                } else {
+                    warn!("{description}: skipping {:?}", net_msg);
                     self.assert_broadcast(description)
                 }
             } else {
-                error!(
+                warn!(
                     "{description}: OutboundMessage::BroadcastMessage message is missing, found {:?}",
                     rec
                 );
@@ -1164,10 +1166,7 @@ pub mod test {
                 if let NetMessage::ConsensusMessage(msg) = net_msg {
                     msg
                 } else {
-                    error!(
-                        "{description}: NetMessage::ConsensusMessage message is missing, found {}",
-                        net_msg
-                    );
+                    warn!("{description}: skipping {:?}", net_msg);
                     self.assert_send(to, description)
                 }
             } else {
@@ -1295,33 +1294,60 @@ pub mod test {
 
         node1.start_round().await;
 
+        let cp = ConsensusProposal {
+            slot: 2,
+            timestamp: TimestampMs(123),
+            cut: vec![(
+                LaneId(node2.pubkey()),
+                DataProposalHash("test".to_string()),
+                LaneBytesSize::default(),
+                AggregateSignature::default(),
+            )],
+            staking_actions: vec![],
+            parent_hash: ConsensusProposalHash("hash".into()),
+        };
+
         // Create wrong prepare
         let prepare_msg = node1
             .consensus
-            .sign_net_message(ConsensusNetMessage::Prepare(
-                ConsensusProposal {
-                    slot: 2,
-                    timestamp: TimestampMs(123),
-                    cut: vec![(
-                        LaneId(node2.pubkey()),
-                        DataProposalHash("test".to_string()),
-                        LaneBytesSize::default(),
-                        AggregateSignature::default(),
-                    )],
-                    staking_actions: vec![],
-                    parent_hash: ConsensusProposalHash("hash".into()),
-                },
-                Ticket::Genesis,
-                0,
-            ))
+            .sign_net_message(ConsensusNetMessage::Prepare(cp.clone(), Ticket::Genesis, 0))
             .expect("Error while signing");
 
         // Slot 1 - leader = node1
-        // Ensuring one slot commits correctly before a timeout
+        // Ensuring one slot commits correctly before a
 
         assert_contains!(node2.handle_msg_err(&prepare_msg).to_string(), "wrong slot");
+        assert_eq!(
+            node2
+                .consensus
+                .bft_round_state
+                .follower
+                .buffered_prepares
+                .get(&cp.hashed()),
+            None
+        );
+
         assert_contains!(node3.handle_msg_err(&prepare_msg).to_string(), "wrong slot");
+        assert_eq!(
+            node3
+                .consensus
+                .bft_round_state
+                .follower
+                .buffered_prepares
+                .get(&cp.hashed()),
+            None
+        );
+
         assert_contains!(node4.handle_msg_err(&prepare_msg).to_string(), "wrong slot");
+        assert_eq!(
+            node4
+                .consensus
+                .bft_round_state
+                .follower
+                .buffered_prepares
+                .get(&cp.hashed()),
+            None
+        );
     }
 
     #[test_log::test(tokio::test)]
@@ -1526,6 +1552,7 @@ pub mod test {
 
         node2.start_round_at(TimestampMs(3000)).await;
 
+        // Other nodes still reflect the older value
         assert_eq!(
             node1.consensus.bft_round_state.current_proposal.timestamp,
             TimestampMs(1000)

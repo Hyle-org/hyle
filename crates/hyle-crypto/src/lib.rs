@@ -7,7 +7,7 @@
 //! The function `new` is used to initialize a `BlstCrypto` instance. The behavior of this function depends on the environment:
 //!
 //! ```rust
-//! use hyle::utils::crypto::BlstCrypto;
+//! use hyle_crypto::BlstCrypto;
 //!
 //! let validator_name = String::from("validator_name");
 //! let crypto = BlstCrypto::new(&validator_name).expect("Failed to initialize BlstCrypto");
@@ -35,9 +35,9 @@ use blst::min_pk::{
     AggregatePublicKey, AggregateSignature as BlstAggregateSignature, PublicKey, SecretKey,
     Signature as BlstSignature,
 };
-pub use hyle_model::{AggregateSignature, Signed, SignedByValidator, ValidatorSignature};
-
-use crate::model::ValidatorPublicKey;
+pub use hyle_model::{
+    AggregateSignature, Signed, SignedByValidator, ValidatorPublicKey, ValidatorSignature,
+};
 
 #[derive(Clone)]
 pub struct BlstCrypto {
@@ -115,7 +115,7 @@ impl BlstCrypto {
                 .map_err(|e| anyhow!("Could not generate key from keyring secret: {:?}", e))?,
             Err(keyring::Error::NoEntry) => {
                 let mut ikm = [0u8; 32];
-                rand::thread_rng().fill(&mut ikm);
+                rand::rng().fill(&mut ikm);
                 entry.set_password(&hex::encode(ikm))?;
                 SecretKey::key_gen(&ikm, &[])
                     .map_err(|e| anyhow!("Could not generate new key: {:?}", e))?
@@ -150,13 +150,13 @@ impl BlstCrypto {
         ikm
     }
 
-    #[cfg(test)]
+    /// For testing purpose only
     pub fn new_random() -> Result<Self> {
         use rand::Rng;
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let id: String = (0..32)
-            .map(|_| rng.gen_range(33..127) as u8 as char) // Caractères imprimables ASCII
+            .map(|_| rng.random_range(33..127) as u8 as char) // Caractères imprimables ASCII
             .collect();
         Self::new(id.as_str())
     }
@@ -335,9 +335,9 @@ fn as_validator_pubkey(pk: PublicKey) -> ValidatorPublicKey {
 #[cfg(test)]
 mod tests {
 
-    use crate::p2p::network::HandshakeNetMessage;
-
     use super::*;
+    use hyle_model::{ConsensusNetMessage, ConsensusProposalHash};
+
     #[test]
     fn test_sign_bytes() {
         let crypto = BlstCrypto::new_random().unwrap();
@@ -351,7 +351,7 @@ mod tests {
     fn test_sign() {
         let crypto = BlstCrypto::new_random().unwrap();
         let pub_key = ValidatorPublicKey(crypto.sk.sk_to_pk().to_bytes().as_slice().to_vec());
-        let msg = HandshakeNetMessage::Ping;
+        let msg = ConsensusNetMessage::PrepareVote(ConsensusProposalHash::default());
         let signed = crypto.sign(&msg).unwrap();
         let valid = BlstCrypto::verify(&signed).unwrap();
         assert!(valid);
@@ -367,15 +367,26 @@ mod tests {
 
     #[test]
     fn test_sign_aggregate() {
-        let (s1, pk1) = new_signed(HandshakeNetMessage::Ping);
-        let (s2, pk2) = new_signed(HandshakeNetMessage::Ping);
-        let (s3, pk3) = new_signed(HandshakeNetMessage::Ping);
-        let (_, pk4) = new_signed(HandshakeNetMessage::Ping);
+        let (s1, pk1) = new_signed(ConsensusNetMessage::PrepareVote(
+            ConsensusProposalHash::default(),
+        ));
+        let (s2, pk2) = new_signed(ConsensusNetMessage::PrepareVote(
+            ConsensusProposalHash::default(),
+        ));
+        let (s3, pk3) = new_signed(ConsensusNetMessage::PrepareVote(
+            ConsensusProposalHash::default(),
+        ));
+        let (_, pk4) = new_signed(ConsensusNetMessage::PrepareVote(
+            ConsensusProposalHash::default(),
+        ));
 
         let crypto = BlstCrypto::new_random().unwrap();
         let aggregates = vec![&s1, &s2, &s3];
         let mut signed = crypto
-            .sign_aggregate(HandshakeNetMessage::Ping, aggregates.as_slice())
+            .sign_aggregate(
+                ConsensusNetMessage::PrepareVote(ConsensusProposalHash::default()),
+                aggregates.as_slice(),
+            )
             .unwrap();
 
         assert_eq!(
@@ -420,13 +431,22 @@ mod tests {
 
     #[test]
     fn test_sign_aggregate_wrong_message() {
-        let (s1, pk1) = new_signed(HandshakeNetMessage::Ping);
-        let (s2, pk2) = new_signed(HandshakeNetMessage::Ping);
-        let (s3, pk3) = new_signed(HandshakeNetMessage::Pong); // different message
+        let (s1, pk1) = new_signed(ConsensusNetMessage::PrepareVote(
+            ConsensusProposalHash::default(),
+        ));
+        let (s2, pk2) = new_signed(ConsensusNetMessage::PrepareVote(
+            ConsensusProposalHash::default(),
+        ));
+        let (s3, pk3) = new_signed(ConsensusNetMessage::PrepareVote(ConsensusProposalHash(
+            "azelkaze".to_string(),
+        ))); // different message
 
         let crypto = BlstCrypto::new_random().unwrap();
         let aggregates = vec![&s1, &s2, &s3];
-        let signed = crypto.sign_aggregate(HandshakeNetMessage::Ping, aggregates.as_slice());
+        let signed = crypto.sign_aggregate(
+            ConsensusNetMessage::PrepareVote(ConsensusProposalHash::default()),
+            aggregates.as_slice(),
+        );
 
         assert!(signed.is_err_and(|e| {
             e.to_string()
@@ -436,15 +456,26 @@ mod tests {
 
     #[test]
     fn test_sign_aggregate_overlap() {
-        let (s1, pk1) = new_signed(HandshakeNetMessage::Ping);
-        let (s2, pk2) = new_signed(HandshakeNetMessage::Ping);
-        let (s3, pk3) = new_signed(HandshakeNetMessage::Ping);
-        let (s4, pk4) = new_signed(HandshakeNetMessage::Ping);
+        let (s1, pk1) = new_signed(ConsensusNetMessage::PrepareVote(
+            ConsensusProposalHash::default(),
+        ));
+        let (s2, pk2) = new_signed(ConsensusNetMessage::PrepareVote(
+            ConsensusProposalHash::default(),
+        ));
+        let (s3, pk3) = new_signed(ConsensusNetMessage::PrepareVote(
+            ConsensusProposalHash::default(),
+        ));
+        let (s4, pk4) = new_signed(ConsensusNetMessage::PrepareVote(
+            ConsensusProposalHash::default(),
+        ));
 
         let crypto = BlstCrypto::new_random().unwrap();
         let aggregates = vec![&s1, &s2, &s3, &s2, &s3, &s4];
         let signed = crypto
-            .sign_aggregate(HandshakeNetMessage::Ping, aggregates.as_slice())
+            .sign_aggregate(
+                ConsensusNetMessage::PrepareVote(ConsensusProposalHash::default()),
+                aggregates.as_slice(),
+            )
             .unwrap();
         assert!(BlstCrypto::verify_aggregate(&signed).unwrap());
 
