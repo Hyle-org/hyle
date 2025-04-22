@@ -129,3 +129,46 @@ where
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::net::SocketAddr;
+
+    use crate::tcp_client_server;
+
+    tcp_client_server! {
+        pub test,
+        request: String,
+        response: String
+    }
+
+    #[tokio::test]
+    async fn test_peer_addr() -> anyhow::Result<()> {
+        let mut server = codec_test::start_server(1234).await?;
+
+        let socket: SocketAddr;
+        loop {
+            tokio::select! {
+                Some(_) = server.listen_next() => {
+                }
+
+                socket_addr = async move {
+                    let client = codec_test::connect("id", "127.0.0.1:1234").await.unwrap();
+                    client.socket_addr
+                } => {
+                    socket= socket_addr;
+                    break;
+                }
+            }
+        }
+
+        assert_eq!(socket.ip().to_string(), "127.0.0.1".to_string());
+        assert_eq!(socket.port(), 1234);
+
+        let clients = server.connected_clients()?;
+        assert_eq!(clients.len(), 1);
+        assert_ne!(clients, vec!["127.0.0.1:1234"]);
+
+        Ok(())
+    }
+}
