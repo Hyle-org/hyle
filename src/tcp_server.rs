@@ -61,7 +61,7 @@ impl TcpServer {
         module_handle_messages! {
             on_bus self.bus,
             Some(res) = server.listen_next() => {
-                _ = log_error!(self.bus.send(*res.data), "Sending message on TcpServerMessage topic from connection pool");
+                _ = log_error!(self.bus.send(res.data), "Sending message on TcpServerMessage topic from connection pool");
             }
         };
 
