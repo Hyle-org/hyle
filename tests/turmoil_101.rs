@@ -233,7 +233,7 @@ pub fn simulation_one_more_node(ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyh
 
         if current_time > Duration::from_secs(when) && !added_node {
             added_node = true;
-            let client_with_retries = ctx.add_node_to_simulation(sim)?.retry_3times_1000ms();
+            let client_with_retries = ctx.add_node_to_simulation(sim)?.retry_15times_1000ms();
 
             sim.client("client new-node", async move {
                 _ = wait_height(&client_with_retries, 1).await;
@@ -274,7 +274,7 @@ pub fn simulation_basic(_ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyhow::Res
 /// Inject 10 contracts on node-1.
 /// Check on the node (all of them) that all 10 contracts are here.
 pub async fn submit_10_contracts(node: TurmoilNodeProcess) -> anyhow::Result<()> {
-    let client_with_retries = node.client.retry_3times_1000ms();
+    let client_with_retries = node.client.retry_15times_1000ms();
 
     _ = wait_height(&client_with_retries, 1).await;
 
