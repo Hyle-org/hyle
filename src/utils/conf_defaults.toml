@@ -6,8 +6,9 @@ log_format = "full"
 data_directory = "data_node"
 
 # Data availability module, which streams historical & new blocks.
-# If full node: server address for the DA layer, which streams historical & new blocks. It might be used by indexers.
-# If "None", this is instead the address to connect to.
+# Public IP
+da_public_address = "127.0.0.1:4141"
+# Server port to listen on.
 da_server_port = 4141
 
 # Rest API
@@ -22,11 +23,13 @@ tcp_server_port = 1414
 # Indexer
 run_indexer = true
 database_url = "postgres://postgres:postgres@localhost:5432/postgres"
-da_address = "127.0.0.1:4141"
+da_read_from = "127.0.0.1:4141"
 
 [p2p]
 # "FullValidator" runs a full node, "LaneManager" skips consensus, or "None" to disable most modules.
 mode = "FullValidator"
+# Public IP
+public_address = "127.0.0.1:1231"
 # TCP server for the p2p incoming connections.
 server_port = 1231
 # Peer IPs to connect to

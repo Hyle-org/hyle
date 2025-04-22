@@ -41,6 +41,7 @@ impl ConfMaker {
                 format!("{}-{}", prefix, self.i)
             },
             p2p: P2pConf {
+                public_address: format!("127.0.0.1:{}", p2p_port),
                 server_port: p2p_port,
                 mode: if prefix == "indexer" {
                     P2pMode::None
@@ -50,6 +51,7 @@ impl ConfMaker {
                 ..self.default.p2p.clone()
             },
             da_server_port: da_port,
+            da_public_address: format!("127.0.0.1:{}", da_port),
             tcp_server_port: tcp_port,
             rest_server_port: rest_port,
             ..self.default.clone()

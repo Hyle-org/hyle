@@ -70,10 +70,7 @@ impl E2ECtx {
             let mut node_conf = conf_maker.build("node").await;
             node_conf.p2p.peers = peers.clone();
             genesis_stakers.insert(node_conf.id.clone(), 100);
-            peers.push(format!(
-                "{}:{}",
-                node_conf.hostname, node_conf.p2p.server_port
-            ));
+            peers.push(node_conf.p2p.public_address.clone());
             confs.push(node_conf);
         }
 
@@ -150,7 +147,7 @@ impl E2ECtx {
 
         // Start indexer
         let mut indexer_conf = conf_maker.build("indexer").await;
-        indexer_conf.da_address = format!("localhost:{}", node_conf.da_server_port);
+        indexer_conf.da_read_from = node_conf.da_public_address.clone();
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
         let url = format!("http://localhost:{}/", &indexer_conf.rest_server_port);
@@ -220,10 +217,7 @@ impl E2ECtx {
             .iter()
             .filter_map(|node| {
                 if node.conf.p2p.mode != P2pMode::None {
-                    Some(format!(
-                        "{}:{}",
-                        node.conf.hostname, node.conf.p2p.server_port
-                    ))
+                    Some(node.conf.p2p.public_address.clone())
                 } else {
                     None
                 }
@@ -280,8 +274,7 @@ impl E2ECtx {
         // Start indexer
         let mut indexer_conf = conf_maker.build("indexer").await;
         indexer_conf.run_indexer = true;
-        indexer_conf.da_address =
-            format!("localhost:{}", nodes.last().unwrap().conf.da_server_port);
+        indexer_conf.da_read_from = nodes.last().unwrap().conf.da_public_address.clone();
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
         nodes.push(indexer);
