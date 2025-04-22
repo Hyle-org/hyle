@@ -57,6 +57,9 @@ impl TurmoilCtx {
             id: format!("node-{}", i),
             ..ConfMaker::default().default
         };
+
+        node_conf.da_public_address = format!("{}:{}", node_conf.id, node_conf.da_server_port);
+        node_conf.p2p.public_address = format!("{}:{}", node_conf.id, node_conf.p2p.server_port);
         node_conf.data_directory.pop();
         node_conf
             .data_directory
