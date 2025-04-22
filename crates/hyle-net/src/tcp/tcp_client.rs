@@ -68,7 +68,7 @@ where
                 }
             }
         };
-        let addr = tcp_stream.local_addr()?;
+        let addr = tcp_stream.peer_addr()?;
         info!("TcpClient {} - Connected to data stream on {}.", id, addr);
 
         let (sender, receiver) =
