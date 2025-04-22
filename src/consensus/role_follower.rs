@@ -268,11 +268,12 @@ impl Consensus {
         commit_quorum_certificate: QuorumCertificate,
         proposal_hash_hint: ConsensusProposalHash,
     ) -> Result<()> {
-        // Ignore commit messages for the wrong slot.
-        if self.bft_round_state.current_proposal.slot != self.bft_round_state.slot {
+        // Unless joining, ignore commit messages for the wrong slot.
+        if !matches!(self.bft_round_state.state_tag, StateTag::Joining)
+            && self.bft_round_state.current_proposal.slot != self.bft_round_state.slot
+        {
             return Ok(());
         }
-
         match self.bft_round_state.state_tag {
             StateTag::Follower => {
                 if self.bft_round_state.current_proposal.hashed() != proposal_hash_hint {
