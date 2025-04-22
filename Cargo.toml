@@ -110,7 +110,7 @@ strum_macros = "0.27.1"
 tracing = "0.1"
 
 anymap = { version = "0.12.1" }
-assertables = { version = "9.5.1" }
+assertables = { version = "9.5.2" }
 axum = { version = "0.8.3", features = ["ws", "macros"] }
 axum-otel-metrics = { version = "0.10.0" }
 bytes = { version = "1.10.0" }
