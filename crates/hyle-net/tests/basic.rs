@@ -36,7 +36,8 @@ macro_rules! turmoil_simple {
                 let mut sim = hyle_net::turmoil::Builder::new()
                     .simulation_duration(Duration::from_secs(100))
                     .tick_duration(Duration::from_millis(50))
-                    .enable_tokio_io()
+                .enable_tokio_io()
+                 // .fail_rate(0.5)
                     .build_with_rng(Box::new(rng));
 
                 let mut peers = vec![];
@@ -87,6 +88,8 @@ async fn setup_host(peer: String, peers: Vec<String>) -> Result<(), Box<dyn Erro
 
     loop {
         tokio::select! {
+            // Try re handshake with peers on a regular basis
+            // We should stop once all handshakes have been done once
             _ = interval_handshake.tick() => {
                 let peer = initial_handshakes.pop().unwrap();
                 initial_handshakes.insert(0, peer.clone());
@@ -148,7 +151,8 @@ pub fn simulation_realistic_network(peers: Vec<String>, sim: &mut Sim<'_>) -> an
         })
     }
 
-    _ = sim.run();
+    sim.run()
+        .map_err(|e| anyhow::anyhow!("Simulation error {}", e.to_string()))?;
 
     Ok(())
 }
