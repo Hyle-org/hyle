@@ -164,18 +164,30 @@ impl super::Mempool {
             return Ok(());
         }
 
+        let mut collect_up_to = 0;
+        let mut cumsize = 0;
+        for (i, tx) in self.waiting_dissemination_txs.iter().enumerate() {
+            collect_up_to = i;
+            cumsize += tx.estimate_size();
+            if cumsize > 40_000_000 {
+                break;
+            }
+        }
+        let collected_txs = self
+            .waiting_dissemination_txs
+            .drain(0..=collect_up_to)
+            .collect::<Vec<_>>();
+
         debug!(
             "🌝 Creating new data proposals with {} txs",
-            self.waiting_dissemination_txs.len()
+            collected_txs.len()
         );
 
         let validator_key = self.crypto.validator_pubkey().clone();
 
         // Create new data proposal
-        let data_proposal = DataProposal::new(
-            self.get_last_data_prop_hash_in_own_lane(),
-            std::mem::take(&mut self.waiting_dissemination_txs),
-        );
+        let data_proposal =
+            DataProposal::new(self.get_last_data_prop_hash_in_own_lane(), collected_txs);
 
         debug!(
             "Creating new DataProposal in local lane ({}) with {} transactions (parent: {:?})",
