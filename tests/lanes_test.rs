@@ -129,8 +129,6 @@ async fn faucet_and_delegate(
 async fn scenario_lane_manager_outside_consensus(mut ctx: E2ECtx, delegate: bool) -> Result<()> {
     let mut conf = ctx.make_conf("lane_mgr").await;
     conf.p2p.mode = hyle::utils::conf::P2pMode::LaneManager;
-    // Remove indexer
-    conf.p2p.peers.pop();
 
     ctx.add_node_with_conf(conf).await?;
     let lane_mgr_client = ctx.client_by_id("lane_mgr-1");

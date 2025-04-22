@@ -34,7 +34,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use storage::{LaneEntry, Storage};
+use storage::{LaneEntryMetadata, Storage};
 use tokio::task::{JoinHandle, JoinSet};
 use verify_tx::DataProposalVerdict;
 // Pick one of the two implementations
@@ -161,7 +161,7 @@ pub enum MempoolNetMessage {
     DataVote(DataProposalHash, LaneBytesSize), // New lane size with this DP
     PoDAUpdate(DataProposalHash, Vec<SignedByValidator<MempoolNetMessage>>),
     SyncRequest(Option<DataProposalHash>, Option<DataProposalHash>),
-    SyncReply(Vec<LaneEntry>),
+    SyncReply(Vec<(LaneEntryMetadata, DataProposal)>),
 }
 
 impl Display for MempoolNetMessage {
@@ -449,7 +449,7 @@ impl Mempool {
         }
 
         let validator = &msg.signature.validator;
-        // TODO: adapt can_rejoin test to emit a stake tx before turning on the joining node
+        // TODO: adapt can_rejoin test to emit a stake tx before turning on the joining node
         // if !self.validators.contains(validator) {
         //     bail!(
         //         "Received {} message from unknown validator {validator}. Only accepting {:?}",
@@ -477,8 +477,8 @@ impl Mempool {
                     to_data_proposal_hash.as_ref(),
                 )?;
             }
-            MempoolNetMessage::SyncReply(lane_entries) => {
-                self.on_sync_reply(validator, lane_entries)?;
+            MempoolNetMessage::SyncReply(missing_entries) => {
+                self.on_sync_reply(validator, missing_entries)?;
             }
         }
         Ok(())
@@ -487,7 +487,7 @@ impl Mempool {
     fn on_sync_reply(
         &mut self,
         sender_validator: &ValidatorPublicKey,
-        missing_lane_entries: Vec<LaneEntry>,
+        missing_entries: Vec<(LaneEntryMetadata, DataProposal)>,
     ) -> Result<()> {
         trace!("SyncReply from validator {sender_validator}");
 
@@ -496,13 +496,11 @@ impl Mempool {
         let lane_operator = self.get_lane_operator(lane_id);
 
         // Ensure all lane entries are signed by the validator.
-        if missing_lane_entries.iter().any(|lane_entry| {
-            let expected_message = MempoolNetMessage::DataVote(
-                lane_entry.data_proposal.hashed(),
-                lane_entry.cumul_size,
-            );
+        if missing_entries.iter().any(|(metadata, data_proposal)| {
+            let expected_message =
+                MempoolNetMessage::DataVote(data_proposal.hashed(), metadata.cumul_size);
 
-            !lane_entry
+            !metadata
                 .signatures
                 .iter()
                 .any(|s| &s.signature.validator == lane_operator && s.msg == expected_message)
@@ -514,29 +512,29 @@ impl Mempool {
         }
 
         // If we end up with an empty list, return an error (for testing/logic)
-        if missing_lane_entries.is_empty() {
+        if missing_entries.is_empty() {
             bail!("Empty lane entries after filtering out missing signatures");
         }
 
         // Add missing lanes to the validator's lane
         debug!(
             "Filling hole with {} entries for {lane_id}",
-            missing_lane_entries.len()
+            missing_entries.len()
         );
 
         // Assert that missing lane entries are in the right order
-        for window in missing_lane_entries.windows(2) {
-            let first_hash = window.first().map(|le| le.data_proposal.hashed());
+        for window in missing_entries.windows(2) {
+            let first_hash = window.first().map(|(_, dp)| dp.hashed());
             let second_parent_hash = window
                 .get(1)
-                .and_then(|le| le.data_proposal.parent_data_proposal_hash.as_ref());
+                .and_then(|(_, dp)| dp.parent_data_proposal_hash.as_ref());
             if first_hash.as_ref() != second_parent_hash {
                 bail!("Lane entries are not in the right order");
             }
         }
 
         // SyncReply only comes for missing data proposals. We should NEVER update the lane tip
-        for lane_entry in missing_lane_entries {
+        for lane_entry in missing_entries {
             self.lanes
                 .put_no_verification(lane_id.clone(), lane_entry)?;
         }
@@ -573,7 +571,7 @@ impl Mempool {
             to_data_proposal_hash
         );
 
-        let missing_lane_entries = self.lanes.get_lane_entries_between_hashes(
+        let missing_lane_entries = self.lanes.get_entries_between_hashes(
             &self.own_lane_id(),
             from_data_proposal_hash,
             to_data_proposal_hash,
@@ -670,7 +668,7 @@ impl Mempool {
     fn send_sync_reply(
         &mut self,
         validator: &ValidatorPublicKey,
-        lane_entries: Vec<LaneEntry>,
+        lane_entries: Vec<(LaneEntryMetadata, DataProposal)>,
     ) -> Result<()> {
         // cleanup previously tracked sent sync request
         self.metrics.add_sync_reply(
@@ -1018,65 +1016,30 @@ pub mod test {
                 .map(|(_, s)| s)
         }
 
-        pub fn last_lane_entry(&self, lane_id: &LaneId) -> (LaneEntry, DataProposalHash) {
+        pub fn last_lane_entry(
+            &self,
+            lane_id: &LaneId,
+        ) -> ((LaneEntryMetadata, DataProposal), DataProposalHash) {
             let last_dp_hash = self.current_hash(lane_id).unwrap();
+            let last_metadata = self
+                .mempool
+                .lanes
+                .get_metadata_by_hash(lane_id, &last_dp_hash)
+                .unwrap()
+                .unwrap();
             let last_dp = self
                 .mempool
                 .lanes
-                .get_by_hash(lane_id, &last_dp_hash)
+                .get_dp_by_hash(lane_id, &last_dp_hash)
                 .unwrap()
                 .unwrap();
 
-            (last_dp, last_dp_hash.clone())
+            ((last_metadata, last_dp), last_dp_hash.clone())
         }
 
         pub fn current_size(&self) -> Option<LaneBytesSize> {
             let lane_id = LaneId(self.validator_pubkey().clone());
             self.current_size_of(&lane_id)
-        }
-
-        pub fn pop_data_proposal(&mut self) -> (DataProposal, DataProposalHash, LaneBytesSize) {
-            let lane_id = LaneId(self.validator_pubkey().clone());
-            self.pop_lane_data_proposal(&lane_id)
-        }
-
-        pub fn pop_lane_data_proposal(
-            &mut self,
-            lane_id: &LaneId,
-        ) -> (DataProposal, DataProposalHash, LaneBytesSize) {
-            // Get the latest lane entry
-            let latest_data_proposal_hash = self.current_hash(lane_id).unwrap();
-            let latest_lane_entry = self
-                .mempool
-                .lanes
-                .get_by_hash(lane_id, &latest_data_proposal_hash)
-                .unwrap()
-                .unwrap();
-
-            // update the tip
-            if let Some(parent_dp_hash) = latest_lane_entry
-                .data_proposal
-                .parent_data_proposal_hash
-                .as_ref()
-            {
-                self.mempool.lanes.lanes_tip.insert(
-                    lane_id.clone(),
-                    (parent_dp_hash.clone(), latest_lane_entry.cumul_size),
-                );
-            } else {
-                self.mempool.lanes.lanes_tip.remove(lane_id);
-            }
-
-            // Remove the lane entry from db
-            self.mempool
-                .lanes
-                .remove_lane_entry(lane_id, &latest_data_proposal_hash);
-
-            (
-                latest_lane_entry.data_proposal,
-                latest_data_proposal_hash,
-                latest_lane_entry.cumul_size,
-            )
         }
 
         pub fn push_data_proposal(&mut self, dp: DataProposal) {
@@ -1088,11 +1051,14 @@ pub mod test {
                 .lanes
                 .put_no_verification(
                     lane_id,
-                    LaneEntry {
-                        data_proposal: dp,
-                        cumul_size: size,
-                        signatures: vec![],
-                    },
+                    (
+                        LaneEntryMetadata {
+                            parent_data_proposal_hash: dp.parent_data_proposal_hash.clone(),
+                            cumul_size: size,
+                            signatures: vec![],
+                        },
+                        dp,
+                    ),
                 )
                 .unwrap();
         }
@@ -1224,9 +1190,7 @@ pub mod test {
         ctx.process_new_data_proposal(data_proposal.clone())?;
 
         // Since mempool is alone, no broadcast
-
-        let (LaneEntry { data_proposal, .. }, _) =
-            ctx.last_lane_entry(&LaneId(ctx.validator_pubkey().clone()));
+        let (..) = ctx.last_lane_entry(&LaneId(ctx.validator_pubkey().clone()));
 
         // Add new validator
         let crypto2 = BlstCrypto::new("2").unwrap();
@@ -1245,7 +1209,7 @@ pub mod test {
         match ctx.assert_send(crypto2.validator_pubkey(), "SyncReply").msg {
             MempoolNetMessage::SyncReply(lane_entries) => {
                 assert_eq!(lane_entries.len(), 1);
-                assert_eq!(lane_entries.first().unwrap().data_proposal, data_proposal);
+                assert_eq!(lane_entries.first().unwrap().1, data_proposal);
             }
             _ => panic!("Expected SyncReply message"),
         };
@@ -1268,16 +1232,19 @@ pub mod test {
         ctx.add_trusted_validator(crypto2.validator_pubkey());
 
         // First: the message is from crypto2, but the DP is not signed correctly
-        let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
-            data_proposal: data_proposal.clone(),
-            cumul_size,
-            signatures: vec![crypto3
-                .sign(MempoolNetMessage::DataVote(
-                    data_proposal.hashed(),
-                    cumul_size,
-                ))
-                .expect("should sign")],
-        }]))?;
+        let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![(
+            LaneEntryMetadata {
+                parent_data_proposal_hash: None,
+                cumul_size,
+                signatures: vec![crypto3
+                    .sign(MempoolNetMessage::DataVote(
+                        data_proposal.hashed(),
+                        cumul_size,
+                    ))
+                    .expect("should sign")],
+            },
+            data_proposal.clone(),
+        )]))?;
 
         let handle = ctx.mempool.handle_net_message(signed_msg.clone());
         assert_eq!(
@@ -1289,16 +1256,19 @@ pub mod test {
         );
 
         // Second: the message is NOT from crypto2, but the DP is signed by crypto2
-        let signed_msg = crypto3.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
-            data_proposal: data_proposal.clone(),
-            cumul_size,
-            signatures: vec![crypto2
-                .sign(MempoolNetMessage::DataVote(
-                    data_proposal.hashed(),
-                    cumul_size,
-                ))
-                .expect("should sign")],
-        }]))?;
+        let signed_msg = crypto3.sign(MempoolNetMessage::SyncReply(vec![(
+            LaneEntryMetadata {
+                parent_data_proposal_hash: None,
+                cumul_size,
+                signatures: vec![crypto2
+                    .sign(MempoolNetMessage::DataVote(
+                        data_proposal.hashed(),
+                        cumul_size,
+                    ))
+                    .expect("should sign")],
+            },
+            data_proposal.clone(),
+        )]))?;
 
         // This actually fails - we don't know how to handle it
         let handle = ctx.mempool.handle_net_message(signed_msg.clone());
@@ -1311,16 +1281,19 @@ pub mod test {
         );
 
         // Third: the message is from crypto2, the signature is from crypto2, but the message is wrong
-        let signed_msg = crypto3.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
-            data_proposal: data_proposal.clone(),
-            cumul_size,
-            signatures: vec![crypto2
-                .sign(MempoolNetMessage::DataVote(
-                    DataProposalHash("non_existent".to_owned()),
-                    cumul_size,
-                ))
-                .expect("should sign")],
-        }]))?;
+        let signed_msg = crypto3.sign(MempoolNetMessage::SyncReply(vec![(
+            LaneEntryMetadata {
+                parent_data_proposal_hash: None,
+                cumul_size,
+                signatures: vec![crypto2
+                    .sign(MempoolNetMessage::DataVote(
+                        DataProposalHash("non_existent".to_owned()),
+                        cumul_size,
+                    ))
+                    .expect("should sign")],
+            },
+            data_proposal.clone(),
+        )]))?;
 
         // This actually fails - we don't know how to handle it
         let handle = ctx.mempool.handle_net_message(signed_msg.clone());
@@ -1333,16 +1306,19 @@ pub mod test {
         );
 
         // Fourth: the message is from crypto2, the signature is from crypto2, but the size is wrong
-        let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
-            data_proposal: data_proposal.clone(),
-            cumul_size: LaneBytesSize(0),
-            signatures: vec![crypto2
-                .sign(MempoolNetMessage::DataVote(
-                    data_proposal.hashed(),
-                    cumul_size,
-                ))
-                .expect("should sign")],
-        }]))?;
+        let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![(
+            LaneEntryMetadata {
+                parent_data_proposal_hash: None,
+                cumul_size: LaneBytesSize(0),
+                signatures: vec![crypto2
+                    .sign(MempoolNetMessage::DataVote(
+                        data_proposal.hashed(),
+                        cumul_size,
+                    ))
+                    .expect("should sign")],
+            },
+            data_proposal.clone(),
+        )]))?;
 
         // This actually fails - we don't know how to handle it
         let handle = ctx.mempool.handle_net_message(signed_msg.clone());
@@ -1360,26 +1336,32 @@ pub mod test {
             vec![make_register_contract_tx(ContractName::new("test1"))],
         );
         let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![
-            LaneEntry {
-                data_proposal: data_proposal.clone(),
-                cumul_size,
-                signatures: vec![crypto2
-                    .sign(MempoolNetMessage::DataVote(
-                        data_proposal.hashed(),
-                        cumul_size,
-                    ))
-                    .expect("should sign")],
-            },
-            LaneEntry {
-                data_proposal: incorrect_parent.clone(),
-                cumul_size,
-                signatures: vec![crypto2
-                    .sign(MempoolNetMessage::DataVote(
-                        incorrect_parent.hashed(),
-                        cumul_size,
-                    ))
-                    .expect("should sign")],
-            },
+            (
+                LaneEntryMetadata {
+                    parent_data_proposal_hash: None,
+                    cumul_size,
+                    signatures: vec![crypto2
+                        .sign(MempoolNetMessage::DataVote(
+                            data_proposal.hashed(),
+                            cumul_size,
+                        ))
+                        .expect("should sign")],
+                },
+                data_proposal.clone(),
+            ),
+            (
+                LaneEntryMetadata {
+                    parent_data_proposal_hash: Some(DataProposalHash("incorrect".to_owned())),
+                    cumul_size,
+                    signatures: vec![crypto2
+                        .sign(MempoolNetMessage::DataVote(
+                            incorrect_parent.hashed(),
+                            cumul_size,
+                        ))
+                        .expect("should sign")],
+                },
+                incorrect_parent.clone(),
+            ),
         ]))?;
 
         // This actually fails - we don't know how to handle it
@@ -1388,17 +1370,21 @@ pub mod test {
             handle.expect_err("should fail").to_string(),
             "Lane entries are not in the right order"
         );
+
         // Final case: message is correct
-        let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![LaneEntry {
-            data_proposal: data_proposal.clone(),
-            cumul_size,
-            signatures: vec![crypto2
-                .sign(MempoolNetMessage::DataVote(
-                    data_proposal.hashed(),
-                    cumul_size,
-                ))
-                .expect("should sign")],
-        }]))?;
+        let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![(
+            LaneEntryMetadata {
+                parent_data_proposal_hash: None,
+                cumul_size,
+                signatures: vec![crypto2
+                    .sign(MempoolNetMessage::DataVote(
+                        data_proposal.hashed(),
+                        cumul_size,
+                    ))
+                    .expect("should sign")],
+            },
+            data_proposal.clone(),
+        )]))?;
 
         let handle = ctx.mempool.handle_net_message(signed_msg.clone());
         assert_ok!(handle, "Should handle net message");

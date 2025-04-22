@@ -664,6 +664,7 @@ async fn mempool_podaupdate_too_early() {
             node.mempool_ctx
                 .last_lane_entry(&lane_id)
                 .0
+                 .0
                 .signatures
                 .len(),
             n
