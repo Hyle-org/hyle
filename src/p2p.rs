@@ -14,10 +14,7 @@ use crate::{
 use anyhow::{Context, Error, Result};
 use hyle_crypto::SharedBlstCrypto;
 use hyle_model::{ConsensusNetMessage, SignedByValidator};
-use hyle_net::tcp::{
-    p2p_server::{P2PServer, P2PServerEvent},
-    P2PTcpMessage, TcpEvent,
-};
+use hyle_net::tcp::p2p_server::{P2PServer, P2PServerEvent};
 use network::{codec_p2p_tcp_message, NetMessage, OutboundMessage, PeerEvent};
 use tracing::{info, trace};
 
@@ -100,7 +97,7 @@ impl P2P {
                 match res {
                     OutboundMessage::SendMessage { validator_id, msg } => {
                         let warn_msg = format!("P2P Sending net message to {}", validator_id);
-                        _ = log_warn!(p2p_server.send(validator_id, msg).await, warn_msg);
+                        _ = log_warn!(p2p_server.send_with_retry(validator_id, msg, 3).await, warn_msg);
                     }
                     OutboundMessage::BroadcastMessage(message) => {
                         _ = log_warn!(
@@ -118,29 +115,19 @@ impl P2P {
             }
 
             Some(tcp_event) = p2p_server.listen_next() => {
-                let TcpEvent { dest, data: p2p_tcp_message } = tcp_event;
-                match p2p_tcp_message {
-                    // When p2p server receives a handshake message; we process it in order to extract information of new peer
-                    P2PTcpMessage::Handshake(handshake) => {
-                        if let Ok(Some(p2p_server_event)) = log_error!(p2p_server.handle_handshake(dest, handshake).await, "Handling handshake") {
-                            match p2p_server_event {
-                                P2PServerEvent::NewPeer {
-                                    name,
-                                    pubkey,
-                                    da_address,
-                                } => {
-                                    let _ = log_warn!(self.bus.send(PeerEvent::NewPeer {
-                                        name,
-                                        pubkey,
-                                        da_address,
-                                    }), "Sending new peer event");
-                                }
-                            }
-                        }
-                    },
-                    P2PTcpMessage::Data(net_message) => {
-                        let _ = log_warn!(self.handle_net_message(net_message).await, "Handling P2P net message");
-                    },
+                if let Ok(Some(p2p_tcp_event)) = log_warn!(p2p_server.handle_tcp_event(tcp_event).await, "Handling TCP event") {
+                    match p2p_tcp_event {
+                        P2PServerEvent::NewPeer { name, pubkey, da_address } => {
+                            let _ = log_warn!(self.bus.send(PeerEvent::NewPeer {
+                                name,
+                                pubkey,
+                                da_address,
+                            }), "Sending new peer event");
+                        },
+                        P2PServerEvent::P2PMessage { msg: net_message } => {
+                            let _ = log_warn!(self.handle_net_message(net_message).await, "Handling P2P net message");
+                        },
+                    }
                 }
             }
         };
