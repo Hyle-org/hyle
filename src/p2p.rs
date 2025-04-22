@@ -70,15 +70,14 @@ impl P2P {
         let mut p2p_server = P2PServer::new(
             self.crypto.clone(),
             self.config.id.clone(),
-            self.config.hostname.clone(),
-            self.config.da_server_port,
-            self.config.p2p.server_port,
+            self.config.p2p.public_address.clone(),
+            self.config.da_public_address.clone(),
             network_tcp_server,
         );
 
         info!(
-            "📡  Starting P2P module, listening on {}:{}",
-            self.config.hostname, self.config.p2p.server_port
+            "📡  Starting P2P module, listening on {}",
+            self.config.p2p.public_address
         );
 
         for peer_ip in self.config.p2p.peers.clone() {

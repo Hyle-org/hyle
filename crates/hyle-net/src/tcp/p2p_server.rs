@@ -47,9 +47,8 @@ where
 {
     crypto: Arc<BlstCrypto>,
     node_id: String,
-    node_hostname: String,
-    node_da_port: u16,
-    node_p2p_port: u16,
+    node_p2p_public_adress: String,
+    node_da_public_adress: String,
     tcp_server: TcpServer<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>,
     pub peers: HashMap<ValidatorPublicKey, PeerInfo>,
 }
@@ -67,17 +66,15 @@ where
     pub fn new(
         crypto: Arc<BlstCrypto>,
         node_id: String,
-        node_hostname: String,
-        node_da_port: u16,
-        node_p2p_port: u16,
+        node_p2p_public_adress: String,
+        node_da_public_adress: String,
         tcp_server: TcpServer<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>,
     ) -> Self {
         Self {
             crypto,
             node_id,
-            node_hostname,
-            node_da_port,
-            node_p2p_port,
+            node_p2p_public_adress,
+            node_da_public_adress,
             tcp_server,
             peers: HashMap::new(),
         }
@@ -158,7 +155,7 @@ where
             Some(P2PServerEvent::NewPeer {
                 name: v.msg.name.to_string(),
                 pubkey: v.signature.validator.clone(),
-                da_address: format!("{}:{}", v.msg.hostname, v.msg.da_port),
+                da_address: v.msg.da_public_adress.clone(),
             })
         }
     }
@@ -169,26 +166,20 @@ where
         let node_connection_data = NodeConnectionData {
             version: 1,
             name: self.node_id.clone(),
-            p2p_port: self.node_p2p_port,
-            da_port: self.node_da_port,
-            hostname: self.node_hostname.clone(),
+            p2p_public_adress: self.node_p2p_public_adress.clone(),
+            da_public_adress: self.node_da_public_adress.clone(),
         };
         self.crypto.sign(node_connection_data)
     }
 
     pub async fn start_handshake(&mut self, peer_ip: String) -> anyhow::Result<()> {
-        if peer_ip == format!("{}:{}", self.node_hostname, self.node_p2p_port) {
+        if peer_ip == self.node_p2p_public_adress {
             trace!("Trying to connect to self");
             return Ok(());
         }
 
         for peer in self.peers.values() {
-            if peer_ip
-                == format!(
-                    "{}:{}",
-                    peer.node_connection_data.hostname, peer.node_connection_data.p2p_port
-                )
-            {
+            if peer_ip == peer.node_connection_data.p2p_public_adress {
                 warn!("Peer {} already connected", peer_ip);
                 return Ok(());
             }
@@ -334,17 +325,17 @@ pub mod tests {
         let mut p2p_server1 = p2p_server_test::start_server(
             crypto1,
             "node1".to_string(),
-            "127.0.0.1".to_string(),
-            0,
             port1,
+            format!("127.0.0.1:{port1}"),
+            "127.0.0.1:4321".into(), // send some dummy address for DA
         )
         .await?;
         let mut p2p_server2 = p2p_server_test::start_server(
             crypto2,
             "node2".to_string(),
-            "127.0.0.1".to_string(),
-            0,
             port2,
+            format!("127.0.0.1:{port2}"),
+            "127.0.0.1:4321".into(), // send some dummy address for DA
         )
         .await?;
 

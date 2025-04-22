@@ -42,9 +42,8 @@ pub enum Handshake {
 pub struct NodeConnectionData {
     pub version: u16,
     pub name: String,
-    pub hostname: String,
-    pub p2p_port: u16,
-    pub da_port: u16,
+    pub p2p_public_adress: String,
+    pub da_public_adress: String,
     // TODO: add known peers
     // pub peers: Vec<String>, // List of known peers
 }
@@ -224,23 +223,20 @@ macro_rules! p2p_server_mod {
             type P2PServerType = $crate::tcp::p2p_server::P2PServer<codec_tcp::ServerCodec, $msg>;
 
             pub async fn start_server(
-
                 crypto: hyle_crypto::BlstCrypto,
                 node_id: String,
-                node_hostname: String,
-                node_da_port: u16,
-                node_p2p_port: u16,
-
+                server_port: u16,
+                node_p2p_public_adress: String,
+                node_da_public_adress: String,
             ) -> anyhow::Result<P2PServerType> {
-                let server = codec_tcp::start_server(node_p2p_port).await?;
+                let server = codec_tcp::start_server(server_port).await?;
 
                 Ok(
                     $crate::tcp::p2p_server::P2PServer::new(
                         std::sync::Arc::new(crypto),
                         node_id,
-                        node_hostname,
-                        node_da_port,
-                        node_p2p_port,
+                        node_p2p_public_adress,
+                        node_da_public_adress,
                         server
                     )
                 )
