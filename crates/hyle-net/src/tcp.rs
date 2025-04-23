@@ -7,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytes::BytesMut;
 use futures::stream::SplitSink;
+use tcp_client::TcpClient;
 use tokio::task::JoinHandle;
 use tokio_util::codec::{Decoder, Encoder, Framed, LengthDelimitedCodec};
 
@@ -42,8 +43,8 @@ pub enum Handshake {
 pub struct NodeConnectionData {
     pub version: u16,
     pub name: String,
-    pub p2p_public_adress: String,
-    pub da_public_adress: String,
+    pub p2p_public_address: String,
+    pub da_public_address: String,
     // TODO: add known peers
     // pub peers: Vec<String>, // List of known peers
 }
@@ -53,6 +54,18 @@ pub enum TcpEvent<Data: Clone> {
     Message { dest: String, data: Data },
     Error { dest: String, error: String },
     Closed { dest: String },
+}
+
+pub enum P2PTcpEvent<Codec, Msg>
+where
+    Msg: Clone + std::fmt::Debug,
+    Codec:
+        Decoder<Item = P2PTcpMessage<Msg>> + Encoder<P2PTcpMessage<Msg>> + Default + Send + 'static,
+    <Codec as Decoder>::Error: std::fmt::Debug + Send,
+    <Codec as Encoder<P2PTcpMessage<Msg>>>::Error: std::fmt::Debug + Send,
+{
+    TcpEvent(TcpEvent<P2PTcpMessage<Msg>>),
+    HandShakeTcpClient(TcpClient<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>),
 }
 
 // A Generic Codec to unwrap/wrap with TcpMessage<T>
