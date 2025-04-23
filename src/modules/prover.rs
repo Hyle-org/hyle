@@ -45,7 +45,7 @@ pub struct AutoProverStore<Contract> {
 module_bus_client! {
 #[derive(Debug)]
 pub struct AutoProverBusClient {
-    sender(ProverEvent),
+    sender(AutoProverEvent),
     receiver(NodeStateEvent),
 }
 }
@@ -59,7 +59,7 @@ pub struct AutoProverCtx {
 }
 
 #[derive(Debug, Clone)]
-pub enum ProverEvent {
+pub enum AutoProverEvent {
     /// Event sent when a blob is executed as failed
     /// proof will be generated & sent to the node
     FailedTx(TxHash, String),
@@ -68,7 +68,7 @@ pub enum ProverEvent {
     SuccessTx(TxHash),
 }
 
-impl BusMessage for ProverEvent {}
+impl BusMessage for AutoProverEvent {}
 
 impl<Contract> Module for AutoProver<Contract>
 where
@@ -294,7 +294,7 @@ where
                     info!("{} Error while executing contract: {e}", tx.hashed());
                     if !old_tx {
                         self.bus
-                            .send(ProverEvent::FailedTx(tx_hash.clone(), e.to_string()))?;
+                            .send(AutoProverEvent::FailedTx(tx_hash.clone(), e.to_string()))?;
                     }
                 }
                 Ok(msg) => {
@@ -304,7 +304,7 @@ where
                         String::from_utf8_lossy(&msg.program_outputs)
                     );
                     if !old_tx {
-                        self.bus.send(ProverEvent::SuccessTx(tx_hash.clone()))?;
+                        self.bus.send(AutoProverEvent::SuccessTx(tx_hash.clone()))?;
                     }
                 }
             }
