@@ -13,10 +13,14 @@ use crate::{
 };
 use anyhow::{Context, Error, Result};
 use hyle_crypto::SharedBlstCrypto;
-use hyle_model::{ConsensusNetMessage, SignedByValidator};
-use hyle_net::tcp::p2p_server::P2PServerEvent;
+use hyle_model::{ConsensusNetMessage, SignedByValidator, ValidatorPublicKey};
+use hyle_net::tcp::{
+    p2p_server::{P2PServer, P2PServerEvent},
+    tcp_client::TcpClient,
+};
 use network::{p2p_server_consensus_mempool, NetMessage, OutboundMessage, PeerEvent};
-use tracing::{info, trace};
+use tokio::task::JoinSet;
+use tracing::{info, trace, warn};
 
 pub mod network;
 
@@ -59,6 +63,16 @@ impl Module for P2P {
     }
 }
 
+type HandShakeJoinSet = JoinSet<
+    Result<
+        TcpClient<
+            p2p_server_consensus_mempool::codec_tcp::ServerCodec,
+            hyle_net::tcp::P2PTcpMessage<NetMessage>,
+            hyle_net::tcp::P2PTcpMessage<NetMessage>,
+        >,
+    >,
+>;
+
 impl P2P {
     pub async fn p2p_server(&mut self) -> Result<()> {
         let mut p2p_server = p2p_server_consensus_mempool::start_server(
@@ -77,11 +91,12 @@ impl P2P {
             self.config.p2p.public_address
         );
 
+        let mut handshake_clients_tasks = JoinSet::new();
+
         for peer_ip in self.config.p2p.peers.clone() {
-            let _ = log_error!(
-                p2p_server.start_handshake(peer_ip).await,
-                "Error while starting Handshake at startup"
-            );
+            handshake_clients_tasks.spawn(async move {
+                TcpClient::connect("p2p_server_handshake", peer_ip.clone()).await
+            });
         }
 
         module_handle_messages! {
@@ -89,29 +104,56 @@ impl P2P {
             listen<P2PCommand> cmd => {
                 match cmd {
                     P2PCommand::ConnectTo { peer } => {
-                        let _ = log_error!(p2p_server.start_handshake(peer).await, "Error while starting Handshake with new peer");
+                        handshake_clients_tasks.spawn(async move {
+                                TcpClient::connect("p2p_server_new_peer", peer.clone()).await
+                        });
                     }
                 }
             }
             listen<OutboundMessage> res => {
                 match res {
                     OutboundMessage::SendMessage { validator_id, msg } => {
-                        let warn_msg = format!("P2P Sending net message to {}", validator_id);
-                        _ = log_warn!(p2p_server.send(validator_id, msg).await, warn_msg);
+                        if let Err(e) = p2p_server.send(validator_id.clone(), msg.clone()).await {
+                            warn!("P2P Sending net message to {validator_id}: {e}");
+                            self.handle_failed_send(
+                                &mut p2p_server,
+                                &mut handshake_clients_tasks,
+                                validator_id,
+                                msg,
+                            ).await;
+                        }
                     }
                     OutboundMessage::BroadcastMessage(message) => {
-                        _ = log_warn!(
-                            p2p_server.broadcast(message.clone()).await,
-                            "P2P Broadcasting net message"
-                        );
+                        for failed_peer in p2p_server.broadcast(message.clone()).await {
+                            self.handle_failed_send(
+                                &mut p2p_server,
+                                &mut handshake_clients_tasks,
+                                failed_peer,
+                                message.clone(),
+                            ).await;
+                        }
                     }
                     OutboundMessage::BroadcastMessageOnlyFor(only_for, message) => {
-                        _ = log_warn!(
-                            p2p_server.broadcast_only_for(&only_for, message.clone()).await,
-                            "P2P Broadcasting net message"
-                        );
+                        for failed_peer in p2p_server.broadcast_only_for(&only_for, message.clone()).await {
+                            self.handle_failed_send(
+                                &mut p2p_server,
+                                &mut handshake_clients_tasks,
+                                failed_peer,
+                                message.clone(),
+                            ).await;
+                        }
                     }
                 };
+            }
+
+            Some(task_result) = handshake_clients_tasks.join_next() => {
+                if let Ok(tcp_client) = log_error!(task_result, "Processing Handshake Joinset") {
+                    if let Ok(tcp_client) = log_error!(tcp_client, "Error while connecting TcpClient") {
+                        let _ = log_error!(
+                            p2p_server.start_handshake(tcp_client).await,
+                            "Sending handshake's Hello message");
+                    }
+                }
             }
 
             Some(tcp_event) = p2p_server.listen_next() => {
@@ -126,6 +168,11 @@ impl P2P {
                         },
                         P2PServerEvent::P2PMessage { msg: net_message } => {
                             let _ = log_warn!(self.handle_net_message(net_message).await, "Handling P2P net message");
+                        },
+                        P2PServerEvent::DisconnectedPeer { peer_ip } => {
+                            handshake_clients_tasks.spawn(async move {
+                                TcpClient::connect("p2p_server_disconnected_peer", peer_ip.clone()).await
+                            });
                         },
                     }
                 }
@@ -151,5 +198,28 @@ impl P2P {
             }
         }
         Ok(())
+    }
+
+    async fn handle_failed_send(
+        &self,
+        p2p_server: &mut P2PServer<
+            p2p_server_consensus_mempool::codec_tcp::ServerCodec,
+            NetMessage,
+        >,
+        handshake_clients_tasks: &mut HandShakeJoinSet,
+        validator_id: ValidatorPublicKey,
+        _msg: NetMessage,
+    ) {
+        // TODO: add waiting list for failed messages
+
+        if let Some(validator_ip) = p2p_server
+            .peers
+            .get(&validator_id)
+            .map(|peer| peer.node_connection_data.p2p_public_adress.clone())
+        {
+            handshake_clients_tasks.spawn(async move {
+                TcpClient::connect("p2p_server_reconnect_peer", validator_ip).await
+            });
+        }
     }
 }

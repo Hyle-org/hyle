@@ -8,9 +8,10 @@ use hyle_crypto::BlstCrypto;
 use hyle_net::{
     net::Sim,
     p2p_server_mod,
-    tcp::{p2p_server::P2PServerEvent, P2PTcpMessage},
+    tcp::{p2p_server::P2PServerEvent, tcp_client::TcpClient, P2PTcpMessage},
 };
 use rand::{rngs::StdRng, SeedableRng};
+use tokio::task::JoinSet;
 
 #[derive(Clone, Debug, borsh::BorshDeserialize, borsh::BorshSerialize)]
 pub struct Msg(usize);
@@ -59,7 +60,7 @@ macro_rules! turmoil_simple {
     };
 }
 
-turmoil_simple!(501..=520, 4, simulation_realistic_network);
+turmoil_simple!(501..=520, 10, simulation_realistic_network);
 
 async fn setup_host(peer: String, peers: Vec<String>) -> Result<(), Box<dyn Error>> {
     let crypto = BlstCrypto::new(peer.clone().as_str())?;
@@ -72,30 +73,23 @@ async fn setup_host(peer: String, peers: Vec<String>) -> Result<(), Box<dyn Erro
     )
     .await?;
 
-    let mut initial_handshakes = peers.clone();
-    let all_other_peers: HashSet<String> = HashSet::from_iter(
-        initial_handshakes
-            .clone()
-            .into_iter()
-            .filter(|p| p != &peer),
-    );
+    let mut handshake_clients_tasks = JoinSet::new();
+
+    let all_other_peers: HashSet<String> =
+        HashSet::from_iter(peers.clone().into_iter().filter(|p| p != &peer));
 
     tracing::info!("All other peers {:?}", all_other_peers);
 
+    for peer in all_other_peers.clone() {
+        handshake_clients_tasks.spawn(async move {
+            TcpClient::connect("turmoil_handshake", format!("{}:{}", peer.clone(), 9090)).await
+        });
+    }
+
     let mut interval = tokio::time::interval(Duration::from_millis(100));
-    let mut interval_handshake = tokio::time::interval(Duration::from_millis(500));
 
     loop {
         tokio::select! {
-            // Try re handshake with peers on a regular basis
-            // We should stop once all handshakes have been done once
-            _ = interval_handshake.tick() => {
-                let peer = initial_handshakes.pop().unwrap();
-                initial_handshakes.insert(0, peer.clone());
-                if let Err(e) = p2p.start_handshake(format!("{}:{}", peer, 9090)).await {
-                    tracing::error!("Error during handshake {:?}", e);
-                }
-            }
             _ = interval.tick() => {
                 let peer_names = HashSet::from_iter(p2p.peers.iter().map(|(_, v)| v.node_connection_data.name.clone()));
 
@@ -116,6 +110,21 @@ async fn setup_host(peer: String, peers: Vec<String>) -> Result<(), Box<dyn Erro
                             tracing::info!("New peer {} (all: {:?})", name, peer_names);
                         },
                         P2PServerEvent::P2PMessage { msg: _ } => {},
+                        P2PServerEvent::DisconnectedPeer { peer_ip } => {
+                            handshake_clients_tasks.spawn(async move {
+                                TcpClient::connect("turmoil_disconnected_peer", peer_ip.clone()).await
+                            });
+                        },
+                    }
+                }
+            }
+
+            Some(task_result) = handshake_clients_tasks.join_next() => {
+                if let Ok(tcp_client) = task_result {
+                    if let Ok(tcp_client) = tcp_client {
+                        if let Err(e) = p2p.start_handshake(tcp_client).await {
+                            tracing::error!("Error during handshake {:?}", e);
+                        }
                     }
                 }
             }
