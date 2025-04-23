@@ -102,7 +102,7 @@ impl super::Mempool {
 
     pub(super) fn try_create_block_under_construction(&mut self, ccp: CommittedConsensusProposal) {
         if let Some(last_buc) = self.last_ccp.take() {
-            // CCP slot too old old compared with the last we processed, weird, CCP should come in the right order
+            // CCP slot too old compared with the last we processed, weird, CCP should come in the right order
             if last_buc.consensus_proposal.slot >= ccp.consensus_proposal.slot {
                 let last_buc_slot = last_buc.consensus_proposal.slot;
                 self.last_ccp = Some(last_buc);
