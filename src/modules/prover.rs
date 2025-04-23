@@ -142,15 +142,15 @@ where
         self.prove_supported_blob(blobs)?;
 
         for tx in block.successful_txs {
-            self.settle_tx_success(tx)?;
+            self.settle_tx_success(&tx)?;
         }
 
         for tx in block.timed_out_txs {
-            self.settle_tx_failed(tx)?;
+            self.settle_tx_failed(&tx)?;
         }
 
         for tx in block.failed_txs {
-            self.settle_tx_failed(tx)?;
+            self.settle_tx_failed(&tx)?;
         }
 
         Ok(())
@@ -171,45 +171,43 @@ where
         blobs
     }
 
-    fn settle_tx_success(&mut self, tx: TxHash) -> Result<()> {
-        let pos = self.store.state_history.iter().position(|(h, _)| h == &tx);
+    fn settle_tx_success(&mut self, tx: &TxHash) -> Result<()> {
+        let pos = self.store.state_history.iter().position(|(h, _)| h == tx);
         if let Some(pos) = pos {
             self.store.state_history = self.store.state_history.split_off(pos);
         }
-        self.settle_tx(tx)?;
+        self.settle_tx(tx);
         Ok(())
     }
 
-    fn settle_tx_failed(&mut self, tx: TxHash) -> Result<()> {
-        self.handle_all_next_blobs(tx.clone())?;
-        self.store.state_history.retain(|(h, _)| h != &tx);
-        self.settle_tx(tx)
+    fn settle_tx_failed(&mut self, tx: &TxHash) -> Result<()> {
+        if let Some(pos) = self.settle_tx(tx) {
+            self.handle_all_next_blobs(pos, tx)?;
+            self.store.state_history.retain(|(h, _)| h != tx);
+        }
+        Ok(())
     }
 
-    fn settle_tx(&mut self, hash: TxHash) -> Result<()> {
+    fn settle_tx(&mut self, hash: &TxHash) -> Option<usize> {
         let tx = self
             .store
             .unsettled_txs
             .iter()
-            .position(|(t, _)| t.hashed() == hash);
+            .position(|(t, _)| t.hashed() == *hash);
         if let Some(pos) = tx {
             self.store.unsettled_txs.remove(pos);
+            return Some(pos);
         }
-        Ok(())
+        None
     }
 
-    fn handle_all_next_blobs(&mut self, failed_tx: TxHash) -> Result<()> {
-        let idx = self
-            .store
-            .unsettled_txs
-            .iter()
-            .position(|(t, _)| t.hashed() == failed_tx);
+    fn handle_all_next_blobs(&mut self, idx: usize, failed_tx: &TxHash) -> Result<()> {
         let prev_state = self
             .store
             .state_history
             .iter()
             .enumerate()
-            .find(|(_, (h, _))| h == &failed_tx)
+            .find(|(_, (h, _))| h == failed_tx)
             .and_then(|(i, _)| {
                 if i > 0 {
                     self.store.state_history.get(i - 1)
@@ -225,13 +223,7 @@ where
             self.store.contract = Contract::default();
         }
         let mut blobs = vec![];
-        for (tx, ctx) in self
-            .store
-            .unsettled_txs
-            .clone()
-            .iter()
-            .skip(idx.unwrap_or(0) + 1)
-        {
+        for (tx, ctx) in self.store.unsettled_txs.clone().iter().skip(idx) {
             for (index, blob) in tx.blobs.iter().enumerate() {
                 if blob.contract_name == self.ctx.contract_name {
                     debug!(
