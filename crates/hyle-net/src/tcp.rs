@@ -259,6 +259,7 @@ macro_rules! p2p_server_mod {
                 crypto: std::sync::Arc<hyle_crypto::BlstCrypto>,
                 node_id: String,
                 server_port: u16,
+                max_frame_length: Option<usize>,
                 node_p2p_public_adress: String,
                 node_da_public_adress: String,
             ) -> anyhow::Result<P2PServerType> {
@@ -268,6 +269,7 @@ macro_rules! p2p_server_mod {
                     $crate::tcp::p2p_server::P2PServer::new(
                         crypto,
                         node_id,
+                        max_frame_length,
                         node_p2p_public_adress,
                         node_da_public_adress,
                         server

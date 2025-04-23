@@ -45,10 +45,26 @@ where
         id: Id,
         target: A,
     ) -> Result<TcpClient<ClientCodec, Req, Res>> {
+        Self::connect_with_opts(id, None, target).await
+    }
+
+    pub async fn connect_with_opts<
+        Id: std::fmt::Display,
+        A: crate::net::ToSocketAddrs + std::fmt::Display,
+    >(
+        id: Id,
+        max_frame_length: Option<usize>,
+        target: A,
+    ) -> Result<TcpClient<ClientCodec, Req, Res>> {
         let timeout = std::time::Duration::from_secs(10);
         let start = tokio::time::Instant::now();
         let tcp_stream = loop {
-            debug!("TcpClient {} - Trying to connect to {}", id, &target);
+            debug!(
+                "TcpClient {} - Trying to connect to {} with max_frame_len: {:?} MB",
+                id,
+                &target,
+                max_frame_length.map(|l| l / 1024 / 1024)
+            );
             match TcpStream::connect(&target).await {
                 Ok(stream) => break stream,
                 Err(e) => {
@@ -71,8 +87,12 @@ where
         let addr = tcp_stream.peer_addr()?;
         info!("TcpClient {} - Connected to data stream on {}.", id, addr);
 
-        let (sender, receiver) =
-            Framed::new(tcp_stream, TcpMessageCodec::<ClientCodec>::default()).split();
+        let codec = match max_frame_length {
+            Some(v) => TcpMessageCodec::<ClientCodec>::new(v),
+            None => TcpMessageCodec::<ClientCodec>::default(),
+        };
+
+        let (sender, receiver) = Framed::new(tcp_stream, codec).split();
 
         Ok(TcpClient {
             id: id.to_string(),

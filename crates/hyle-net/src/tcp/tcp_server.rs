@@ -43,26 +43,30 @@ where
     Res: BorshSerialize + Clone + Send + 'static + std::fmt::Debug,
 {
     pub async fn start(port: u16, pool_name: String) -> anyhow::Result<Self> {
+        Self::start_with_opts(port, None, pool_name).await
+    }
+
+    pub async fn start_with_opts(
+        port: u16,
+        max_frame_length: Option<usize>,
+        pool_name: String,
+    ) -> anyhow::Result<Self> {
         let tcp_listener = TcpListener::bind(&(Ipv4Addr::UNSPECIFIED, port)).await?;
         let (pool_sender, pool_receiver) = tokio::sync::mpsc::channel(100);
         let (ping_sender, ping_receiver) = tokio::sync::mpsc::channel(100);
         debug!(
-            "Starting TcpConnectionPool {}, listening for stream requests on {}",
-            &pool_name, port
+            "Starting TcpConnectionPool {}, listening for stream requests on {} with max_frame_len: {:?}",
+            &pool_name, port, max_frame_length
         );
         Ok(TcpServer::<Codec, Req, Res> {
             sockets: HashMap::new(),
-            max_frame_length: None,
+            max_frame_length,
             tcp_listener,
             pool_sender,
             pool_receiver,
             ping_sender,
             ping_receiver,
         })
-    }
-
-    pub fn set_max_frame_length(&mut self, l: usize) {
-        self.max_frame_length = Some(l);
     }
 
     pub async fn listen_next(&mut self) -> Option<TcpEvent<Req>> {
@@ -132,6 +136,7 @@ where
         }
     }
 
+    /// Setup stream in the managed list for a new client
     fn setup_stream(
         &mut self,
         sender: SplitSink<Framed<TcpStream, TcpMessageCodec<Codec>>, TcpMessage<Res>>,
