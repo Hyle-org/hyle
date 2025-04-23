@@ -56,6 +56,7 @@ where
     node_id: String,
     node_p2p_public_address: String,
     node_da_public_address: String,
+    max_frame_length: Option<usize>,
     tcp_server: TcpServer<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>,
     pub peers: HashMap<ValidatorPublicKey, PeerInfo>,
     handshake_clients_tasks: HandShakeJoinSet<Codec, Msg>,
@@ -74,6 +75,7 @@ where
     pub fn new(
         crypto: Arc<BlstCrypto>,
         node_id: String,
+        max_frame_length: Option<usize>,
         node_p2p_public_address: String,
         node_da_public_address: String,
         tcp_server: TcpServer<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>,
@@ -81,6 +83,7 @@ where
         Self {
             crypto,
             node_id,
+            max_frame_length,
             node_p2p_public_address,
             node_da_public_address,
             tcp_server,
@@ -110,10 +113,6 @@ where
                 }
             },
         }
-    }
-
-    pub fn set_max_frame_length(&mut self, len: usize) {
-        self.tcp_server.set_max_frame_length(len);
     }
 
     /// Handle a P2PTCPEvent. This is done as separate function to easily handle async tasks
@@ -294,7 +293,11 @@ where
     }
 
     pub fn start_handshake_task(&mut self, peer_ip: String) {
-        let handshake_task = TcpClient::connect("p2p_server_handshake", peer_ip.clone());
+        let handshake_task = TcpClient::connect_with_opts(
+            "p2p_server_handshake",
+            self.max_frame_length,
+            peer_ip.clone(),
+        );
         self.handshake_clients_tasks.spawn(handshake_task);
     }
 
@@ -422,6 +425,7 @@ pub mod tests {
             crypto1.into(),
             "node1".to_string(),
             port1,
+            None,
             format!("127.0.0.1:{port1}"),
             "127.0.0.1:4321".into(), // send some dummy address for DA
         )
@@ -430,6 +434,7 @@ pub mod tests {
             crypto2.into(),
             "node2".to_string(),
             port2,
+            None,
             format!("127.0.0.1:{port2}"),
             "127.0.0.1:4321".into(), // send some dummy address for DA
         )
