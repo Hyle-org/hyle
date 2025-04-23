@@ -1,7 +1,9 @@
 //! Networking layer
 
 use crate::{
-    bus::{BusMessage, SharedMessageBus},
+    bus::{BusClientSender, BusMessage},
+    log_error, log_warn,
+    mempool::MempoolNetMessage,
     model::SharedRunContext,
     module_handle_messages,
     utils::{
@@ -9,16 +11,17 @@ use crate::{
         modules::{module_bus_client, Module},
     },
 };
-use anyhow::{Context, Result};
+use anyhow::{Context, Error, Result};
 use hyle_crypto::SharedBlstCrypto;
-use std::{collections::HashSet, sync::Arc, time::Duration};
-use tokio::time::sleep;
-use tracing::{error, info, trace, warn};
+use hyle_model::{ConsensusNetMessage, SignedByValidator};
+use hyle_net::tcp::{
+    p2p_server::{P2PServer, P2PServerEvent},
+    P2PTcpMessage, TcpEvent,
+};
+use network::{codec_p2p_tcp_message, NetMessage, OutboundMessage, PeerEvent};
+use tracing::{info, trace};
 
-mod fifo_filter;
 pub mod network;
-mod peer;
-pub mod stream;
 
 #[derive(Debug, Clone)]
 pub enum P2PCommand {
@@ -28,17 +31,18 @@ impl BusMessage for P2PCommand {}
 
 module_bus_client! {
 struct P2PBusClient {
+    sender(SignedByValidator<MempoolNetMessage>),
+    sender(SignedByValidator<ConsensusNetMessage>),
+    sender(PeerEvent),
     receiver(P2PCommand),
+    receiver(OutboundMessage),
 }
 }
 
 pub struct P2P {
     config: SharedConf,
-    bus: SharedMessageBus,
-    bus_client: P2PBusClient,
+    bus: P2PBusClient,
     crypto: SharedBlstCrypto,
-    peer_id: u64,
-    connected_peers: HashSet<String>,
 }
 
 impl Module for P2P {
@@ -48,11 +52,8 @@ impl Module for P2P {
         let bus_client = P2PBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
         Ok(P2P {
             config: ctx.common.config.clone(),
-            bus: ctx.common.bus.new_handle(),
-            bus_client,
+            bus: bus_client,
             crypto: ctx.node.crypto.clone(),
-            peer_id: 1u64,
-            connected_peers: HashSet::default(),
         })
     }
 
@@ -62,117 +63,106 @@ impl Module for P2P {
 }
 
 impl P2P {
-    fn spawn_peer(&mut self, peer_address: String) {
-        if self.connected_peers.contains(&peer_address)
-            || peer_address == format!("{}:{}", self.config.hostname, self.config.p2p.server_port)
-        {
-            return;
-        }
-
-        let config = self.config.clone();
-        let bus = self.bus.new_handle();
-        let crypto = self.crypto.clone();
-        let id = self.peer_id;
-        self.peer_id += 1;
-        self.connected_peers.insert(peer_address.clone());
-
-        tokio::spawn(async move {
-            let mut retry_count = 20;
-            while retry_count > 0 {
-                info!("Connecting to peer #{}: {}", id, peer_address);
-                match peer::Peer::connect(peer_address.as_str()).await {
-                    Ok(stream) => {
-                        let mut peer = peer::Peer::new(
-                            id,
-                            stream,
-                            bus.new_handle(),
-                            crypto.clone(),
-                            config.clone(),
-                        )
-                        .await;
-
-                        if let Err(e) = peer.handshake().await {
-                            warn!("Error in handshake: {}", e);
-                        }
-                        trace!("Handshake done !");
-                        match peer.start().await {
-                            Ok(_) => warn!("Peer #{} thread ended with success.", id),
-                            Err(_) => warn!(
-                                "Peer #{}: {} disconnected ! Retry connection",
-                                id, peer_address
-                            ),
-                        };
-                    }
-                    Err(e) => {
-                        warn!("Error while connecting to peer #{}: {}", id, e);
-                    }
-                }
-
-                retry_count -= 1;
-                sleep(Duration::from_secs(2)).await;
-            }
-            error!("Can't reach peer #{}: {}.", id, peer_address);
-        });
-    }
-
-    fn handle_command(&mut self, cmd: P2PCommand) {
-        match cmd {
-            P2PCommand::ConnectTo { peer } => self.spawn_peer(peer),
-        }
-    }
-
     pub async fn p2p_server(&mut self) -> Result<()> {
-        // Wait all other threads to start correctly
-        sleep(Duration::from_secs(1)).await;
+        let network_tcp_server =
+            codec_p2p_tcp_message::start_server(self.config.p2p.server_port).await?;
 
-        let listener = hyle_net::net::bind_tcp_listener(self.config.p2p.server_port).await?;
-        info!(
-            "📡  Starting P2P module, listening on {}",
-            listener.local_addr()?
+        let mut p2p_server = P2PServer::new(
+            self.crypto.clone(),
+            self.config.id.clone(),
+            self.config.p2p.public_address.clone(),
+            self.config.da_public_address.clone(),
+            network_tcp_server,
         );
 
-        // Wait some more so all peers (in tests) are listening.
-        #[cfg(test)]
-        sleep(Duration::from_secs(1)).await;
+        info!(
+            "📡  Starting P2P module, listening on {}",
+            self.config.p2p.public_address
+        );
 
-        for peer in self.config.p2p.peers.clone() {
-            self.spawn_peer(peer);
+        for peer_ip in self.config.p2p.peers.clone() {
+            let _ = log_error!(
+                p2p_server.start_handshake(peer_ip).await,
+                "Error while starting Handshake at startup"
+            );
         }
 
         module_handle_messages! {
-            on_bus self.bus_client,
+            on_bus self.bus,
             listen<P2PCommand> cmd => {
-                 self.handle_command(cmd)
+                match cmd {
+                    P2PCommand::ConnectTo { peer } => {
+                        let _ = log_error!(p2p_server.start_handshake(peer).await, "Error while starting Handshake with new peer");
+                    }
+                }
+            }
+            listen<OutboundMessage> res => {
+                match res {
+                    OutboundMessage::SendMessage { validator_id, msg } => {
+                        let warn_msg = format!("P2P Sending net message to {}", validator_id);
+                        _ = log_warn!(p2p_server.send(validator_id, msg).await, warn_msg);
+                    }
+                    OutboundMessage::BroadcastMessage(message) => {
+                        _ = log_warn!(
+                            p2p_server.broadcast(message.clone()).await,
+                            "P2P Broadcasting net message"
+                        );
+                    }
+                    OutboundMessage::BroadcastMessageOnlyFor(only_for, message) => {
+                        _ = log_warn!(
+                            p2p_server.broadcast_only_for(&only_for, message.clone()).await,
+                            "P2P Broadcasting net message"
+                        );
+                    }
+                };
             }
 
-            res = listener.accept() => {
-                let (socket, _) = res.context("Accepting connection in P2P server")?;
-
-                let conf = Arc::clone(&self.config);
-                let bus = self.bus.new_handle();
-                let crypto = self.crypto.clone();
-                let id = self.peer_id;
-                self.peer_id += 1;
-                tokio::spawn(async move {
-                        info!(
-                            "New peer #{}: {}",
-                            id,
-                            socket
-                                .peer_addr()
-                                .map(|a| a.to_string())
-                                .unwrap_or("no address".to_string())
-                            );
-                        let mut peer_server = peer::Peer::new(id, socket, bus, crypto, conf).await;
-                        _ = peer_server.handshake().await;
-                        trace!("Handshake done !");
-                        match peer_server.start().await {
-                            Ok(_) => info!("Peer thread exited"),
-                            Err(e) => info!("Peer thread exited: {}", e),
+            Some(tcp_event) = p2p_server.listen_next() => {
+                let TcpEvent { dest, data: p2p_tcp_message } = tcp_event;
+                match p2p_tcp_message {
+                    // When p2p server receives a handshake message; we process it in order to extract information of new peer
+                    P2PTcpMessage::Handshake(handshake) => {
+                        if let Ok(Some(p2p_server_event)) = log_error!(p2p_server.handle_handshake(dest, handshake).await, "Handling handshake") {
+                            match p2p_server_event {
+                                P2PServerEvent::NewPeer {
+                                    name,
+                                    pubkey,
+                                    da_address,
+                                } => {
+                                    let _ = log_warn!(self.bus.send(PeerEvent::NewPeer {
+                                        name,
+                                        pubkey,
+                                        da_address,
+                                    }), "Sending new peer event");
+                                }
+                            }
                         }
-                        anyhow::Ok(())
-                    });
+                    },
+                    P2PTcpMessage::Data(net_message) => {
+                        let _ = log_warn!(self.handle_net_message(net_message).await, "Handling P2P net message");
+                    },
+                }
             }
         };
+        Ok(())
+    }
+
+    async fn handle_net_message(&mut self, msg: NetMessage) -> Result<(), Error> {
+        trace!("RECV: {:?}", msg);
+        match msg {
+            NetMessage::MempoolMessage(mempool_msg) => {
+                trace!("Received new mempool net message {}", mempool_msg);
+                self.bus
+                    .send(mempool_msg)
+                    .context("Receiving mempool net message")?;
+            }
+            NetMessage::ConsensusMessage(consensus_msg) => {
+                trace!("Received new consensus net message {}", consensus_msg);
+                self.bus
+                    .send(consensus_msg)
+                    .context("Receiving consensus net message")?;
+            }
+        }
         Ok(())
     }
 }

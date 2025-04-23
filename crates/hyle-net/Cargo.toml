@@ -10,13 +10,14 @@ rust-version = { workspace = true }
 
 [dependencies]
 sdk = { workspace = true, default-features = false, features = ["full-model"] }
+hyle-crypto = { workspace = true }
 
 anyhow = "1.0.96"
 borsh = "1.5.5"
 tracing = "0.1"
 
 # Tcp feature
-tokio = { version = "1.42.0", features = ["full", "tracing"]}
+tokio = { version = "1.42.0", features = ["full", "tracing"] }
 tokio-util = { version = "0.7.14", features = ["codec"] }
 futures = { version = "0.3.31" }
 
@@ -31,5 +32,14 @@ hyper-util = "0.1.10"
 serde = "1.0.219"
 axum = "0.8.3"
 
+[dev-dependencies]
+rand = { version = "0.8.5", features = ["std"] }
+seq-macro = "0.3.6"
+test-log = { version = "0.2.17", features = [
+    "color",
+    "trace",
+], default-features = false }
+
 [features]
+# default = ["turmoil"]
 turmoil = ["dep:turmoil"]
