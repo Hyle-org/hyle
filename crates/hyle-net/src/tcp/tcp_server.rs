@@ -1,9 +1,10 @@
 use std::{
     collections::HashMap,
     io::{Error, ErrorKind},
-    net::Ipv4Addr,
+    net::{Ipv4Addr, SocketAddr},
 };
 
+use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use futures::{
     stream::{SplitSink, SplitStream},
@@ -79,6 +80,15 @@ where
             }
         }
     }
+
+    /// Local_addr of the underlying tcp_listener
+    pub fn local_addr(&self) -> anyhow::Result<SocketAddr> {
+        self.tcp_listener
+            .local_addr()
+            .context("Getting local_addr from TcpListener in TcpServer")
+    }
+
+    /// Adresses of currently connected clients (no health check)
     pub fn connected_clients(&self) -> anyhow::Result<Vec<String>> {
         Ok(self.sockets.keys().cloned().collect::<Vec<String>>())
     }

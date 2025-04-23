@@ -36,8 +36,7 @@ macro_rules! turmoil_simple {
                 let mut sim = hyle_net::turmoil::Builder::new()
                     .simulation_duration(Duration::from_secs(100))
                     .tick_duration(Duration::from_millis(50))
-                .enable_tokio_io()
-                 // .fail_rate(0.5)
+                    .enable_tokio_io()
                     .build_with_rng(Box::new(rng));
 
                 let mut peers = vec![];
