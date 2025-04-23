@@ -26,6 +26,8 @@ mod e2e_consensus {
     use staking::state::Staking;
     use tracing::{info, warn};
 
+    use crate::fixtures::test_helpers::wait_height;
+
     use super::*;
 
     #[test_log::test(tokio::test)]
@@ -51,6 +53,7 @@ mod e2e_consensus {
         let joining_client = ctx.add_node().await?;
 
         let node_info = joining_client.get_node_info().await?;
+        wait_height(joining_client, 2).await?;
 
         assert!(node_info.pubkey.is_some());
 
