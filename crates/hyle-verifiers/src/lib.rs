@@ -37,21 +37,25 @@ pub mod risc0_1 {
     pub fn verify(proof: &ProofData, program_id: &ProgramId) -> Result<Vec<HyleOutput>, Error> {
         let journal = risc0_proof_verifier(&proof.0, &program_id.0)?;
         // First try to decode it as a single HyleOutput
-        Ok(match journal.decode::<HyleOutput>() {
-            Ok(ho) => vec![ho],
-            Err(_) => {
-                let hyle_output = journal
-                    .decode::<Vec<Vec<u8>>>()
-                    .context("Failed to extract HyleOuput from Risc0's journal")?;
+        Ok(
+            match std::panic::catch_unwind(|| journal.decode::<HyleOutput>()).unwrap_or(Err(
+                risc0_zkvm::serde::Error::Custom("Failed to decode single HyleOutput".into()),
+            )) {
+                Ok(ho) => vec![ho],
+                Err(_) => {
+                    debug!(
+                        "Failed to decode single HyleOutput, trying to decode as Vec<HyleOutput>"
+                    );
+                    let hyle_output = journal
+                        .decode::<Vec<HyleOutput>>()
+                        .context("Failed to extract HyleOuput from Risc0's journal")?;
 
-                // Doesn't actually work to just deserialize in one go.
-                hyle_output
-                    .iter()
-                    .map(|o| risc0_zkvm::serde::from_slice::<HyleOutput, _>(o))
-                    .collect::<Result<Vec<_>, _>>()
-                    .context("Failed to decode HyleOutput")?
-            }
-        })
+                    debug!("Found {} HyleOutputs", hyle_output.len());
+
+                    hyle_output
+                }
+            },
+        )
     }
 
     pub fn verify_recursive(
