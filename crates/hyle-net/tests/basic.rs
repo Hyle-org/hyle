@@ -105,9 +105,6 @@ async fn setup_host(peer: String, peers: Vec<String>) -> Result<(), Box<dyn Erro
                             tracing::info!("New peer {} (all: {:?})", name, peer_names);
                         },
                         P2PServerEvent::P2PMessage { msg: _ } => {},
-                        P2PServerEvent::DisconnectedPeer { peer_ip } => {
-                            p2p.start_handshake(format!("{}:{}", peer_ip, 9090));
-                        },
                     }
                 }
             }
