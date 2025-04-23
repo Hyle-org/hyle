@@ -136,6 +136,7 @@ where
         }
     }
 
+    /// Setup stream in the managed list for a new client
     fn setup_stream(
         &mut self,
         sender: SplitSink<Framed<TcpStream, TcpMessageCodec<Codec>>, TcpMessage<Res>>,
