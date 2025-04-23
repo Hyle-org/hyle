@@ -67,6 +67,7 @@ async fn setup_host(peer: String, peers: Vec<String>) -> Result<(), Box<dyn Erro
         std::sync::Arc::new(crypto),
         peer.clone(),
         9090,
+        None,
         format!("{}:{}", peer, 9090),
         format!("{}:{}", peer, 4141),
     )
