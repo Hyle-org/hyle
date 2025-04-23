@@ -410,7 +410,6 @@ pub async fn send_transaction<S: StateUpdater>(
 
 pub async fn long_running_test(node_url: String) -> Result<()> {
     loop {
-        tracing::warn!("{}", node_url.clone());
         let mut client = NodeApiHttpClient::new(node_url.clone())?;
         client.api_key = Some("KEY_LOADTEST".to_string());
         // let indexer = IndexerApiHttpClient::new(indexer_url)?;
@@ -423,27 +422,26 @@ pub async fn long_running_test(node_url: String) -> Result<()> {
         let random_hydentity_contract: ContractName = format!("hydentity_{}", rand).into();
         let tx = BlobTransaction::new(
             Identity::new("hyle@hyle"),
-            vec![RegisterContractAction {
-                contract_name: random_hyllar_contract.clone(),
-                verifier: hyle_contract_sdk::Verifier("risc0-1".to_string()),
-                program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
-                state_commitment: Hyllar::custom(format!("faucet.{}", random_hydentity_contract))
+            vec![
+                RegisterContractAction {
+                    contract_name: random_hyllar_contract.clone(),
+                    verifier: hyle_contract_sdk::Verifier("risc0-1".to_string()),
+                    program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
+                    state_commitment: Hyllar::custom(format!(
+                        "faucet@{}",
+                        random_hydentity_contract
+                    ))
                     .commit(),
-            }
-            .as_blob("hyle".into(), None, None)],
-        );
-
-        client.send_tx_blob(&tx).await?;
-
-        let tx = BlobTransaction::new(
-            Identity::new("hyle@hyle"),
-            vec![RegisterContractAction {
-                contract_name: random_hydentity_contract.clone(),
-                verifier: hyle_contract_sdk::Verifier("risc0-1".to_string()),
-                program_id: hyle_contracts::HYDENTITY_ID.to_vec().into(),
-                state_commitment: Hydentity::default().commit(),
-            }
-            .as_blob("hyle".into(), None, None)],
+                }
+                .as_blob("hyle".into(), None, None),
+                RegisterContractAction {
+                    contract_name: random_hydentity_contract.clone(),
+                    verifier: hyle_contract_sdk::Verifier("risc0-1".to_string()),
+                    program_id: hyle_contracts::HYDENTITY_ID.to_vec().into(),
+                    state_commitment: Hydentity::default().commit(),
+                }
+                .as_blob("hyle".into(), None, None),
+            ],
         );
 
         client.send_tx_blob(&tx).await?;
@@ -507,7 +505,7 @@ pub async fn long_running_test(node_url: String) -> Result<()> {
                 tracing::info!("Feeding identity {} with tokens", ident);
 
                 let mut transaction =
-                    ProvableBlobTx::new(format!("faucet.{}", random_hydentity_contract.0).into());
+                    ProvableBlobTx::new(format!("faucet@{}", random_hydentity_contract.0).into());
 
                 verify_identity(
                     &mut transaction,

@@ -66,7 +66,7 @@ impl Hydentity {
     pub fn get_nonce(&self, username: &str) -> Result<u32, &'static str> {
         let info = self.get_identity_info(username)?;
         let state: AccountInfo =
-            serde_json::from_str(&info).map_err(|_| "Failed to parse accounf info")?;
+            serde_json::from_str(&info).map_err(|_| "Failed to parse account info")?;
         Ok(state.nonce)
     }
 
