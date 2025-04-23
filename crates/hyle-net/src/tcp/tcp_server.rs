@@ -1,8 +1,10 @@
 use std::{
-    collections::{HashMap, HashSet},
-    net::Ipv4Addr,
+    collections::HashMap,
+    io::{Error, ErrorKind},
+    net::{Ipv4Addr, SocketAddr},
 };
 
+use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use futures::{
     stream::{SplitSink, SplitStream},
@@ -15,16 +17,16 @@ use crate::{
     net::{TcpListener, TcpStream},
     tcp::{get_current_timestamp, TcpMessage, TcpMessageCodec},
 };
-use anyhow::{Context, Result};
-use tracing::{debug, error, info};
+use tracing::{debug, error, trace, warn};
 
-use super::{tcp_client::TcpClient, SocketStream, TcpCommand, TcpEvent};
+use super::{tcp_client::TcpClient, SocketStream, TcpEvent};
 
 pub struct TcpServer<Codec, Req: Clone + std::fmt::Debug, Res: Clone + std::fmt::Debug>
 where
     Codec: Decoder<Item = Req> + Encoder<Res> + Default,
 {
     tcp_listener: TcpListener,
+    max_frame_length: Option<usize>,
     pool_sender: Sender<TcpEvent<Req>>,
     pool_receiver: Receiver<TcpEvent<Req>>,
     ping_sender: Sender<String>,
@@ -40,7 +42,7 @@ where
     Req: BorshDeserialize + Clone + Send + 'static + std::fmt::Debug,
     Res: BorshSerialize + Clone + Send + 'static + std::fmt::Debug,
 {
-    pub async fn start(port: u16, pool_name: String) -> Result<Self> {
+    pub async fn start(port: u16, pool_name: String) -> anyhow::Result<Self> {
         let tcp_listener = TcpListener::bind(&(Ipv4Addr::UNSPECIFIED, port)).await?;
         let (pool_sender, pool_receiver) = tokio::sync::mpsc::channel(100);
         let (ping_sender, ping_receiver) = tokio::sync::mpsc::channel(100);
@@ -50,6 +52,7 @@ where
         );
         Ok(TcpServer::<Codec, Req, Res> {
             sockets: HashMap::new(),
+            max_frame_length: None,
             tcp_listener,
             pool_sender,
             pool_receiver,
@@ -58,12 +61,20 @@ where
         })
     }
 
+    pub fn set_max_frame_length(&mut self, l: usize) {
+        self.max_frame_length = Some(l);
+    }
+
     pub async fn listen_next(&mut self) -> Option<TcpEvent<Req>> {
         loop {
             tokio::select! {
                 Ok((stream, socket_addr)) = self.tcp_listener.accept() => {
-                    let (sender, receiver) =
-                        Framed::new(stream, TcpMessageCodec::<Codec>::default()).split();
+                    let codec = match self.max_frame_length {
+                        Some(len) => TcpMessageCodec::<Codec>::new(len),
+                        None => TcpMessageCodec::<Codec>::default()
+                    };
+
+                    let (sender, receiver) = Framed::new(stream, codec).split();
 
                     _  = self.setup_stream(sender, receiver, &socket_addr.to_string());
                 }
@@ -80,61 +91,45 @@ where
         }
     }
 
-    pub async fn broadcast(&mut self, msg: Res) -> HashSet<String> {
-        // Broadcast can not fail
-        self.send_command(TcpCommand::Broadcast(msg)).await.unwrap()
+    /// Local_addr of the underlying tcp_listener
+    pub fn local_addr(&self) -> anyhow::Result<SocketAddr> {
+        self.tcp_listener
+            .local_addr()
+            .context("Getting local_addr from TcpListener in TcpServer")
     }
 
-    pub async fn send(&mut self, socket_addr: String, msg: Res) -> Result<HashSet<String>> {
-        self.send_command(TcpCommand::Send(socket_addr, msg)).await
+    /// Adresses of currently connected clients (no health check)
+    pub fn connected_clients(&self) -> anyhow::Result<Vec<String>> {
+        Ok(self.sockets.keys().cloned().collect::<Vec<String>>())
     }
 
-    pub async fn send_command(&mut self, msg: TcpCommand<Res>) -> Result<HashSet<String>> {
-        let mut failed_sockets = HashSet::new();
-        match msg {
-            TcpCommand::Broadcast(data) => {
-                debug!("Broadcasting data {:?} to all", data);
-                for (socket_addr, stream) in self.sockets.iter_mut() {
-                    let last_ping = stream.last_ping;
-                    if last_ping + 60 * 5 < get_current_timestamp() {
-                        info!("peer {} timed out", &socket_addr);
-                        stream.abort.abort();
-                        failed_sockets.insert(socket_addr.clone());
-                    } else {
-                        debug!("streaming event to peer {}", &socket_addr);
-                        match stream.sender.send(TcpMessage::Data(data.clone())).await {
-                            Ok(_) => {}
-                            Err(e) => {
-                                debug!(
-                                    "Couldn't send new block to peer {}, stopping streaming  : {:?}",
-                                    &socket_addr, e
-                                );
-                                stream.abort.abort();
-                                failed_sockets.insert(socket_addr.clone());
-                            }
-                        }
-                    }
-                }
+    pub async fn broadcast(&mut self, msg: Res) -> HashMap<String, Error> {
+        let mut failed_sockets = HashMap::new();
+        debug!("Broadcasting msg {:?} to all", msg);
+
+        // TODO: investigate if parallelizing this is better
+        for socket_addr in self.sockets.keys().cloned().collect::<Vec<_>>() {
+            if let Err(e) = self.send(socket_addr.clone(), msg.clone()).await {
+                failed_sockets.insert(socket_addr.clone(), e);
             }
-            TcpCommand::Send(socket_addr, data) => {
-                debug!("Sending data {:?} to {}", data, socket_addr);
-                let stream = self.sockets.get_mut(&socket_addr).context(format!(
-                    "Failed to retrieve peer {} for sending a message",
+        }
+
+        failed_sockets
+    }
+
+    pub async fn send(&mut self, socket_addr: String, msg: Res) -> Result<(), Error> {
+        debug!("Sending msg {:?} to {}", msg, socket_addr);
+        if let Some(stream) = self.sockets.get_mut(&socket_addr) {
+            stream.sender.send(TcpMessage::Data(msg)).await
+        } else {
+            Err(Error::new(
+                ErrorKind::NotFound,
+                format!(
+                    "Failed to retrieve socket address {} for sending a message",
                     &socket_addr
-                ))?;
-
-                if (stream.sender.send(TcpMessage::Data(data)).await).is_err() {
-                    stream.abort.abort();
-                    failed_sockets.insert(socket_addr.clone());
-                }
-            }
+                ),
+            ))
         }
-
-        for peer in failed_sockets.iter() {
-            self.sockets.remove(peer);
-        }
-
-        Ok(failed_sockets)
     }
 
     fn setup_stream(
@@ -142,30 +137,65 @@ where
         sender: SplitSink<Framed<TcpStream, TcpMessageCodec<Codec>>, TcpMessage<Res>>,
         mut receiver: SplitStream<Framed<TcpStream, TcpMessageCodec<Codec>>>,
         socket_addr: &String,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         // Start a task to process pings from the peer.
         // We do the processing in the main select! loop to keep things synchronous.
         // This makes it easier to store data in the same struct without mutexing.
         let ping_sender = self.ping_sender.clone();
         let pool_sender = self.pool_sender.clone();
         let cloned_socket_addr = socket_addr.clone();
+
+        // This task is responsible for reception of ping and message.
+        // If an error occurs and is not an InvalidData error, we assume the task is to be aborted.
+        // If the stream is closed, we also assume the task is to be aborted.
         let abort = tokio::spawn(async move {
-            while let Some(msg) = receiver.next().await {
-                debug!("Received message {:?}", &msg);
-                match msg {
-                    Ok(TcpMessage::Ping) => {
+            loop {
+                match receiver.next().await {
+                    Some(Ok(TcpMessage::Ping)) => {
                         _ = ping_sender.send(cloned_socket_addr.clone()).await;
                     }
-                    Ok(TcpMessage::Data(data)) => {
+                    Some(Ok(TcpMessage::Data(data))) => {
+                        debug!(
+                            "Received data from socket {}: {:?}",
+                            cloned_socket_addr, data
+                        );
                         _ = pool_sender
-                            .send(TcpEvent {
+                            .send(TcpEvent::Message {
                                 dest: cloned_socket_addr.clone(),
                                 data,
                             })
                             .await;
                     }
-                    Err(_) => {
-                        error!("Decoding message in peer event loop");
+                    Some(Err(err)) => {
+                        if err.kind() == ErrorKind::InvalidData {
+                            error!("Received invalid data in socket {cloned_socket_addr} event loop: {err}",);
+                        } else {
+                            // If the error is not invalid data, we can assume the socket is closed.
+                            warn!(
+                                "Closing socket {} after error: {:?}",
+                                cloned_socket_addr,
+                                err.kind()
+                            );
+                            // Send an event indicating the connection is closed due to an error
+                            _ = pool_sender
+                                .send(TcpEvent::Error {
+                                    dest: cloned_socket_addr.clone(),
+                                    error: err.to_string(),
+                                })
+                                .await;
+                            break;
+                        }
+                    }
+                    None => {
+                        // If we reach here, the stream has been closed.
+                        warn!("Socket {} closed", cloned_socket_addr);
+                        // Send an event indicating the connection is closed
+                        _ = pool_sender
+                            .send(TcpEvent::Closed {
+                                dest: cloned_socket_addr.clone(),
+                            })
+                            .await;
+                        break;
                     }
                 }
             }
@@ -184,7 +214,7 @@ where
         Ok(())
     }
 
-    pub fn setup_client(&mut self, tcp_client: TcpClient<Codec, Res, Req>) -> Result<()> {
+    pub fn setup_client(&mut self, tcp_client: TcpClient<Codec, Res, Req>) -> anyhow::Result<()> {
         let socket_addr = tcp_client.socket_addr.to_string();
         let (sender, receiver) = tcp_client.split();
         self.setup_stream(sender, receiver, &socket_addr)
@@ -193,7 +223,7 @@ where
     pub fn drop_peer_stream(&mut self, peer_ip: String) {
         if let Some(peer_stream) = self.sockets.remove(&peer_ip) {
             peer_stream.abort.abort();
-            info!("Peer {} dropped & disconnected", peer_ip);
+            trace!("Peer {} dropped & disconnected", peer_ip);
         }
     }
 }
@@ -202,7 +232,10 @@ where
 pub mod tests {
     use std::time::Duration;
 
-    use crate::{tcp::TcpMessage, tcp_client_server};
+    use crate::{
+        tcp::{TcpEvent, TcpMessage},
+        tcp_client_server,
+    };
 
     use anyhow::Result;
     use borsh::{BorshDeserialize, BorshSerialize};
@@ -236,7 +269,10 @@ pub mod tests {
 
         tokio::time::sleep(Duration::from_secs(1)).await;
 
-        let d = server.listen_next().await.unwrap().data;
+        let d = match server.listen_next().await.unwrap() {
+            TcpEvent::Message { data, .. } => data,
+            _ => panic!("Expected a Message event"),
+        };
 
         assert_eq!(DataAvailabilityRequest(2), d);
         assert!(server.pool_receiver.try_recv().is_err());

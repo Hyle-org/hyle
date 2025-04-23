@@ -68,7 +68,7 @@ where
                 }
             }
         };
-        let addr = tcp_stream.local_addr()?;
+        let addr = tcp_stream.peer_addr()?;
         info!("TcpClient {} - Connected to data stream on {}.", id, addr);
 
         let (sender, receiver) =
@@ -126,6 +126,44 @@ where
 
     pub async fn close(mut self) -> Result<()> {
         self.sender.close().await?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use crate::tcp_client_server;
+
+    tcp_client_server! {
+        pub test,
+        request: String,
+        response: String
+    }
+
+    #[tokio::test]
+    async fn test_peer_addr() -> anyhow::Result<()> {
+        let mut server = codec_test::start_server(0).await?;
+
+        let server_socket = server.local_addr()?;
+
+        let client_socket = tokio::spawn(async move {
+            let client = codec_test::connect("id", server_socket).await.unwrap();
+            client.socket_addr
+        });
+
+        while server.connected_clients()?.is_empty() {
+            _ = tokio::time::timeout(Duration::from_millis(100), server.listen_next()).await;
+        }
+
+        let client_socket = client_socket.await?;
+        assert_eq!(client_socket.port(), server_socket.port());
+
+        let clients = server.connected_clients()?;
+        assert_eq!(clients.len(), 1);
+        assert_ne!(clients, vec![server_socket.to_string()]);
+
         Ok(())
     }
 }

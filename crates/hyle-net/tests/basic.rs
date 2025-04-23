@@ -8,7 +8,7 @@ use hyle_crypto::BlstCrypto;
 use hyle_net::{
     net::Sim,
     p2p_server_mod,
-    tcp::{p2p_server::P2PServerEvent, P2PTcpMessage, TcpEvent},
+    tcp::{p2p_server::P2PServerEvent, P2PTcpMessage},
 };
 use rand::{rngs::StdRng, SeedableRng};
 
@@ -36,8 +36,7 @@ macro_rules! turmoil_simple {
                 let mut sim = hyle_net::turmoil::Builder::new()
                     .simulation_duration(Duration::from_secs(100))
                     .tick_duration(Duration::from_millis(50))
-                .enable_tokio_io()
-                 // .fail_rate(0.5)
+                    .enable_tokio_io()
                     .build_with_rng(Box::new(rng));
 
                 let mut peers = vec![];
@@ -60,12 +59,12 @@ macro_rules! turmoil_simple {
     };
 }
 
-turmoil_simple!(501..=520, 4, simulation_realistic_network);
+turmoil_simple!(501..=520, 10, simulation_realistic_network);
 
 async fn setup_host(peer: String, peers: Vec<String>) -> Result<(), Box<dyn Error>> {
     let crypto = BlstCrypto::new(peer.clone().as_str())?;
     let mut p2p = p2p_server_test::start_server(
-        crypto,
+        std::sync::Arc::new(crypto),
         peer.clone(),
         9090,
         format!("{}:{}", peer, 9090),
@@ -73,30 +72,19 @@ async fn setup_host(peer: String, peers: Vec<String>) -> Result<(), Box<dyn Erro
     )
     .await?;
 
-    let mut initial_handshakes = peers.clone();
-    let all_other_peers: HashSet<String> = HashSet::from_iter(
-        initial_handshakes
-            .clone()
-            .into_iter()
-            .filter(|p| p != &peer),
-    );
+    let all_other_peers: HashSet<String> =
+        HashSet::from_iter(peers.clone().into_iter().filter(|p| p != &peer));
 
     tracing::info!("All other peers {:?}", all_other_peers);
 
+    for peer in all_other_peers.clone() {
+        p2p.start_handshake(format!("{}:{}", peer.clone(), 9090));
+    }
+
     let mut interval = tokio::time::interval(Duration::from_millis(100));
-    let mut interval_handshake = tokio::time::interval(Duration::from_millis(500));
 
     loop {
         tokio::select! {
-            // Try re handshake with peers on a regular basis
-            // We should stop once all handshakes have been done once
-            _ = interval_handshake.tick() => {
-                let peer = initial_handshakes.pop().unwrap();
-                initial_handshakes.insert(0, peer.clone());
-                if let Err(e) = p2p.start_handshake(format!("{}:{}", peer, 9090)).await {
-                    tracing::error!("Error during handshake {:?}", e);
-                }
-            }
             _ = interval.tick() => {
                 let peer_names = HashSet::from_iter(p2p.peers.iter().map(|(_, v)| v.node_connection_data.name.clone()));
 
@@ -109,25 +97,14 @@ async fn setup_host(peer: String, peers: Vec<String>) -> Result<(), Box<dyn Erro
                 }
 
             }
-            Some(tcp_event) = p2p.listen_next() => {
-                let TcpEvent {
-                    dest,
-                    data: p2p_tcp_message,
-                } = tcp_event;
-                match p2p_tcp_message {
-                    // When p2p server receives a handshake message; we process it in order to extract information of new peer
-                    P2PTcpMessage::Handshake(handshake) => {
-                        if let Ok(Some(P2PServerEvent::NewPeer { name, pubkey: _ , da_address: _ })) = p2p.handle_handshake(dest, handshake).await {
-
+            Some(p2p_tcp_event) = p2p.listen_next() => {
+                if let Ok(Some(p2p_server_event)) = p2p.handle_p2p_tcp_event(p2p_tcp_event).await {
+                    match p2p_server_event {
+                        P2PServerEvent::NewPeer { name, pubkey: _, da_address: _ } => {
                             let peer_names = p2p.peers.iter().map(|(_, v)| v.node_connection_data.name.clone()).collect::<Vec<String>>();
                             tracing::info!("New peer {} (all: {:?})", name, peer_names);
-                        }
-                    }
-                    // We should expose a handler to consume data, with the peer identity
-                    P2PTcpMessage::Data(_net_message) => {
-                        // let _ =
-                        //     self.handle_net_message(net_message).await,
-                        // "Handling P2P net message"
+                        },
+                        P2PServerEvent::P2PMessage { msg: _ } => {},
                     }
                 }
             }

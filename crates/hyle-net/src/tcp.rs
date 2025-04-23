@@ -7,11 +7,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytes::BytesMut;
 use futures::stream::SplitSink;
+use tcp_client::TcpClient;
 use tokio::task::JoinHandle;
 use tokio_util::codec::{Decoder, Encoder, Framed, LengthDelimitedCodec};
 
 use crate::net::TcpStream;
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 pub fn get_current_timestamp() -> u64 {
     SystemTime::now()
@@ -42,22 +43,29 @@ pub enum Handshake {
 pub struct NodeConnectionData {
     pub version: u16,
     pub name: String,
-    pub p2p_public_adress: String,
-    pub da_public_adress: String,
+    pub p2p_public_address: String,
+    pub da_public_address: String,
     // TODO: add known peers
     // pub peers: Vec<String>, // List of known peers
 }
 
 #[derive(Debug, Clone, BorshDeserialize, BorshSerialize)]
-pub enum TcpCommand<Data: Clone> {
-    Broadcast(Data),
-    Send(String, Data),
+pub enum TcpEvent<Data: Clone> {
+    Message { dest: String, data: Data },
+    Error { dest: String, error: String },
+    Closed { dest: String },
 }
 
-#[derive(Debug, Clone, BorshDeserialize, BorshSerialize)]
-pub struct TcpEvent<Data: Clone> {
-    pub dest: String,
-    pub data: Data,
+pub enum P2PTcpEvent<Codec, Msg>
+where
+    Msg: Clone + std::fmt::Debug,
+    Codec:
+        Decoder<Item = P2PTcpMessage<Msg>> + Encoder<P2PTcpMessage<Msg>> + Default + Send + 'static,
+    <Codec as Decoder>::Error: std::fmt::Debug + Send,
+    <Codec as Encoder<P2PTcpMessage<Msg>>>::Error: std::fmt::Debug + Send,
+{
+    TcpEvent(TcpEvent<P2PTcpMessage<Msg>>),
+    HandShakeTcpClient(TcpClient<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>),
 }
 
 // A Generic Codec to unwrap/wrap with TcpMessage<T>
@@ -69,9 +77,21 @@ pub struct TcpMessageCodec<T> {
 
 impl<T> Default for TcpMessageCodec<T> {
     fn default() -> Self {
+        let ldc = LengthDelimitedCodec::default();
         Self {
             _marker: std::marker::PhantomData,
-            ldc: LengthDelimitedCodec::default(),
+            ldc,
+        }
+    }
+}
+
+impl<Codec> TcpMessageCodec<Codec> {
+    fn new(max_frame_length: usize) -> TcpMessageCodec<Codec> {
+        let mut ldc = LengthDelimitedCodec::default();
+        ldc.set_max_frame_length(max_frame_length);
+        Self {
+            _marker: std::marker::PhantomData,
+            ldc,
         }
     }
 }
@@ -82,7 +102,7 @@ where
     Decodable: BorshDeserialize + Clone,
 {
     type Item = TcpMessage<Decodable>;
-    type Error = anyhow::Error;
+    type Error = std::io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         if src.is_empty() {
@@ -93,8 +113,12 @@ where
             return Ok(None);
         };
 
-        let msg: TcpMessage<Decodable> =
-            borsh::from_slice(&src_ldc[..]).context("Decode TcpServerMessage wrapper type")?;
+        let msg: TcpMessage<Decodable> = borsh::from_slice(&src_ldc[..]).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to decode TcpMessage: {}", e),
+            )
+        })?;
 
         Ok(Some(msg))
     }
@@ -105,16 +129,25 @@ where
     Codec: Encoder<Encodable> + Send,
     Encodable: BorshSerialize + Clone,
 {
-    type Error = anyhow::Error;
+    type Error = std::io::Error;
 
     fn encode(
         &mut self,
         item: TcpMessage<Encodable>,
         dst: &mut BytesMut,
     ) -> Result<(), Self::Error> {
-        let serialized = borsh::to_vec(&item).context("Encoding to vec")?;
-
-        self.ldc.encode(serialized.into(), dst)?;
+        let serialized = borsh::to_vec(&item).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Failed to encode TcpMessage: {}", e),
+            )
+        })?;
+        self.ldc.encode(serialized.into(), dst).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to encode with LengthDelimitedCodec: {}", e),
+            )
+        })?;
 
         Ok(())
     }
@@ -215,7 +248,7 @@ macro_rules! p2p_server_mod {
         $vis mod [< p2p_server_ $name:snake >] {
 
             $crate::tcp_client_server!{
-                tcp,
+                $vis tcp,
                 request: $crate::tcp::P2PTcpMessage<$msg>,
                 response: $crate::tcp::P2PTcpMessage<$msg>
             }
@@ -223,7 +256,7 @@ macro_rules! p2p_server_mod {
             type P2PServerType = $crate::tcp::p2p_server::P2PServer<codec_tcp::ServerCodec, $msg>;
 
             pub async fn start_server(
-                crypto: hyle_crypto::BlstCrypto,
+                crypto: std::sync::Arc<hyle_crypto::BlstCrypto>,
                 node_id: String,
                 server_port: u16,
                 node_p2p_public_adress: String,
@@ -233,7 +266,7 @@ macro_rules! p2p_server_mod {
 
                 Ok(
                     $crate::tcp::p2p_server::P2PServer::new(
-                        std::sync::Arc::new(crypto),
+                        crypto,
                         node_id,
                         node_p2p_public_adress,
                         node_da_public_adress,
