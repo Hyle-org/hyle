@@ -228,6 +228,12 @@ impl NodeState {
                     // First, store the proofs and check if we can settle the transaction
                     // NB: if some of the blob proof outputs are bad, we just ignore those
                     // but we don't actually fail the transaction.
+                    debug!(
+                        "Handling verified proof transaction with {} proven blobs for {} (hash: {})",
+                        proof_tx.proven_blobs.len(),
+                        proof_tx.contract_name,
+                        &tx_id
+                    );
                     let blob_tx_to_try_and_settle = proof_tx
                         .proven_blobs
                         .iter()
