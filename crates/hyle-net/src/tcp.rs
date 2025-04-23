@@ -2,10 +2,7 @@ pub mod p2p_server;
 pub mod tcp_client;
 pub mod tcp_server;
 
-use std::{
-    time::{SystemTime, UNIX_EPOCH},
-    usize,
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytes::BytesMut;
