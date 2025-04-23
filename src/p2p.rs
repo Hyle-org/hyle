@@ -94,29 +94,31 @@ impl P2P {
                 match res {
                     OutboundMessage::SendMessage { validator_id, msg } => {
                         if let Err(e) = p2p_server.send(validator_id.clone(), msg.clone()).await {
-                            warn!("P2P Sending net message to {validator_id}: {e}");
                             self.handle_failed_send(
                                 &mut p2p_server,
                                 validator_id,
                                 msg,
+                                e
                             ).await;
                         }
                     }
                     OutboundMessage::BroadcastMessage(message) => {
-                        for failed_peer in p2p_server.broadcast(message.clone()).await {
+                        for (failed_peer, error) in p2p_server.broadcast(message.clone()).await {
                             self.handle_failed_send(
                                 &mut p2p_server,
                                 failed_peer,
                                 message.clone(),
+                                error,
                             ).await;
                         }
                     }
                     OutboundMessage::BroadcastMessageOnlyFor(only_for, message) => {
-                        for failed_peer in p2p_server.broadcast_only_for(&only_for, message.clone()).await {
+                        for (failed_peer, error) in p2p_server.broadcast_only_for(&only_for, message.clone()).await {
                             self.handle_failed_send(
                                 &mut p2p_server,
                                 failed_peer,
                                 message.clone(),
+                                error,
                             ).await;
                         }
                     }
@@ -170,15 +172,17 @@ impl P2P {
         >,
         validator_id: ValidatorPublicKey,
         _msg: NetMessage,
+        error: Error,
     ) {
         // TODO: add waiting list for failed messages
 
+        warn!("{error}. Reconnecting to peer...");
         if let Some(validator_ip) = p2p_server
             .peers
             .get(&validator_id)
             .map(|peer| peer.node_connection_data.p2p_public_address.clone())
         {
-            p2p_server.start_handshake(validator_ip);
+            p2p_server.start_handshake_task(validator_ip);
         }
     }
 }
