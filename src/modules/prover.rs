@@ -115,7 +115,6 @@ where
     }
 
     async fn handle_processed_block(&mut self, block: Block) -> Result<()> {
-        debug!("🔧 Processing block: {:?}", block.block_height);
         let mut blobs = vec![];
         for (_, tx) in block.txs {
             if let TransactionData::Blob(tx) = tx.transaction_data {
@@ -187,12 +186,12 @@ where
         self.settle_tx(tx)
     }
 
-    fn settle_tx(&mut self, tx: TxHash) -> Result<()> {
+    fn settle_tx(&mut self, hash: TxHash) -> Result<()> {
         let tx = self
             .store
             .unsettled_txs
             .iter()
-            .position(|(t, _)| t.hashed() == tx);
+            .position(|(t, _)| t.hashed() == hash);
         if let Some(pos) = tx {
             self.store.unsettled_txs.remove(pos);
         }
@@ -315,10 +314,14 @@ where
                 .push((tx_hash.clone(), self.store.contract.clone()));
 
             if old_tx {
-                return Ok(());
+                continue;
             }
 
             calldatas.push(calldata);
+        }
+
+        if calldatas.is_empty() {
+            return Ok(());
         }
 
         let Some(commitment_metadata) = initial_commitment_metadata else {
