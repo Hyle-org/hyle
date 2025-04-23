@@ -60,10 +60,8 @@ where
         let start = tokio::time::Instant::now();
         let tcp_stream = loop {
             debug!(
-                "TcpClient {} - Trying to connect to {} with max_frame_len: {:?} MB",
-                id,
-                &target,
-                max_frame_length.map(|l| l / 1024 / 1024)
+                "TcpClient {} - Trying to connect to {} with max_frame_len: {:?}",
+                id, &target, max_frame_length
             );
             match TcpStream::connect(&target).await {
                 Ok(stream) => break stream,
