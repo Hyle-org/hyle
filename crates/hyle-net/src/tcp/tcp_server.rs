@@ -79,6 +79,9 @@ where
             }
         }
     }
+    pub fn connected_clients(&self) -> anyhow::Result<Vec<String>> {
+        Ok(self.sockets.keys().cloned().collect::<Vec<String>>())
+    }
 
     pub async fn broadcast(&mut self, msg: Res) -> HashMap<String, Error> {
         let mut failed_sockets = HashMap::new();
