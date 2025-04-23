@@ -8,7 +8,7 @@ use hyle_crypto::BlstCrypto;
 use hyle_net::{
     net::Sim,
     p2p_server_mod,
-    tcp::{p2p_server::P2PServerEvent, P2PTcpMessage, TcpEvent},
+    tcp::{p2p_server::P2PServerEvent, P2PTcpMessage},
 };
 use rand::{rngs::StdRng, SeedableRng};
 
@@ -110,28 +110,16 @@ async fn setup_host(peer: String, peers: Vec<String>) -> Result<(), Box<dyn Erro
 
             }
             Some(tcp_event) = p2p.listen_next() => {
-                let TcpEvent {
-                    dest,
-                    data: p2p_tcp_message,
-                } = tcp_event;
-                match p2p_tcp_message {
-                    // When p2p server receives a handshake message; we process it in order to extract information of new peer
-                    P2PTcpMessage::Handshake(handshake) => {
-                        if let Ok(Some(P2PServerEvent::NewPeer { name, pubkey: _ , da_address: _ })) = p2p.handle_handshake(dest, handshake).await {
-
+                if let Ok(Some(p2p_tcp_event)) = p2p.handle_tcp_event(tcp_event).await {
+                    match p2p_tcp_event {
+                        P2PServerEvent::NewPeer { name, pubkey: _, da_address: _ } => {
                             let peer_names = p2p.peers.iter().map(|(_, v)| v.node_connection_data.name.clone()).collect::<Vec<String>>();
                             tracing::info!("New peer {} (all: {:?})", name, peer_names);
-                        }
-                    }
-                    // We should expose a handler to consume data, with the peer identity
-                    P2PTcpMessage::Data(_net_message) => {
-                        // let _ =
-                        //     self.handle_net_message(net_message).await,
-                        // "Handling P2P net message"
+                        },
+                        P2PServerEvent::P2PMessage { msg: _ } => {},
                     }
                 }
             }
-
         }
     }
 }

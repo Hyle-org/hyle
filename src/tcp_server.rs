@@ -13,6 +13,7 @@ use crate::{
 
 use anyhow::Result;
 use client_sdk::tcp_client::{codec_tcp_server, TcpServerMessage};
+use hyle_net::tcp::TcpEvent;
 use tracing::info;
 
 impl BusMessage for TcpServerMessage {}
@@ -60,8 +61,10 @@ impl TcpServer {
 
         module_handle_messages! {
             on_bus self.bus,
-            Some(res) = server.listen_next() => {
-                _ = log_error!(self.bus.send(res.data), "Sending message on TcpServerMessage topic from connection pool");
+            Some(tcp_event) = server.listen_next() => {
+                if let TcpEvent::Message { dest: _, data } = tcp_event {
+                    _ = log_error!(self.bus.send(data), "Sending message on TcpServerMessage topic from connection pool");
+                }
             }
         };
 

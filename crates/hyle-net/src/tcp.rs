@@ -11,7 +11,7 @@ use tokio::task::JoinHandle;
 use tokio_util::codec::{Decoder, Encoder, Framed, LengthDelimitedCodec};
 
 use crate::net::TcpStream;
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 pub fn get_current_timestamp() -> u64 {
     SystemTime::now()
@@ -49,15 +49,10 @@ pub struct NodeConnectionData {
 }
 
 #[derive(Debug, Clone, BorshDeserialize, BorshSerialize)]
-pub enum TcpCommand<Data: Clone> {
-    Broadcast(Data),
-    Send(String, Data),
-}
-
-#[derive(Debug, Clone, BorshDeserialize, BorshSerialize)]
-pub struct TcpEvent<Data: Clone> {
-    pub dest: String,
-    pub data: Data,
+pub enum TcpEvent<Data: Clone> {
+    Message { dest: String, data: Data },
+    Error { dest: String, error: String },
+    Closed { dest: String },
 }
 
 // A Generic Codec to unwrap/wrap with TcpMessage<T>
@@ -82,7 +77,7 @@ where
     Decodable: BorshDeserialize + Clone,
 {
     type Item = TcpMessage<Decodable>;
-    type Error = anyhow::Error;
+    type Error = std::io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
         if src.is_empty() {
@@ -93,8 +88,12 @@ where
             return Ok(None);
         };
 
-        let msg: TcpMessage<Decodable> =
-            borsh::from_slice(&src_ldc[..]).context("Decode TcpServerMessage wrapper type")?;
+        let msg: TcpMessage<Decodable> = borsh::from_slice(&src_ldc[..]).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to decode TcpMessage: {}", e),
+            )
+        })?;
 
         Ok(Some(msg))
     }
@@ -105,16 +104,25 @@ where
     Codec: Encoder<Encodable> + Send,
     Encodable: BorshSerialize + Clone,
 {
-    type Error = anyhow::Error;
+    type Error = std::io::Error;
 
     fn encode(
         &mut self,
         item: TcpMessage<Encodable>,
         dst: &mut BytesMut,
     ) -> Result<(), Self::Error> {
-        let serialized = borsh::to_vec(&item).context("Encoding to vec")?;
-
-        self.ldc.encode(serialized.into(), dst)?;
+        let serialized = borsh::to_vec(&item).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Failed to encode TcpMessage: {}", e),
+            )
+        })?;
+        self.ldc.encode(serialized.into(), dst).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to encode with LengthDelimitedCodec: {}", e),
+            )
+        })?;
 
         Ok(())
     }
@@ -215,7 +223,7 @@ macro_rules! p2p_server_mod {
         $vis mod [< p2p_server_ $name:snake >] {
 
             $crate::tcp_client_server!{
-                tcp,
+                $vis tcp,
                 request: $crate::tcp::P2PTcpMessage<$msg>,
                 response: $crate::tcp::P2PTcpMessage<$msg>
             }

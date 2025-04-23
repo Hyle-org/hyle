@@ -162,9 +162,10 @@ impl DataAvailability {
                 }
             }
 
-            Some(request) = server.listen_next() => {
-                let TcpEvent{ dest, data } = request;
-                _ = self.start_streaming_to_peer(data.0, catchup_sender.clone(), &dest).await;
+            Some(tcp_event) = server.listen_next() => {
+                if let TcpEvent::Message { dest, data } = tcp_event {
+                    _ = self.start_streaming_to_peer(data.0, catchup_sender.clone(), &dest).await;
+                }
             }
 
 
