@@ -8,10 +8,11 @@ use anyhow::{bail, Context};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_crypto::BlstCrypto;
 use sdk::{SignedByValidator, ValidatorPublicKey};
+use tokio::task::JoinSet;
 use tokio_util::codec::{Decoder, Encoder};
-use tracing::{debug, info, trace, warn};
+use tracing::{info, trace, warn};
 
-use crate::tcp::{tcp_client::TcpClient, Handshake};
+use crate::tcp::{tcp_client::TcpClient, Handshake, P2PTcpEvent};
 
 use super::{tcp_server::TcpServer, NodeConnectionData, P2PTcpMessage, TcpEvent};
 
@@ -41,6 +42,9 @@ pub struct PeerInfo {
     pub node_connection_data: NodeConnectionData,
 }
 
+type HandShakeJoinSet<Codec, Msg> =
+    JoinSet<anyhow::Result<TcpClient<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>>>;
+
 /// P2PServer is a wrapper around TcpServer that manages peer connections
 /// Its role is to process a full handshake with a peer, in order to get its public key.
 /// Once handshake is done, the peer is added to the list of peers.
@@ -53,10 +57,11 @@ where
 {
     crypto: Arc<BlstCrypto>,
     node_id: String,
-    node_p2p_public_adress: String,
-    node_da_public_adress: String,
+    node_p2p_public_address: String,
+    node_da_public_address: String,
     tcp_server: TcpServer<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>,
     pub peers: HashMap<ValidatorPublicKey, PeerInfo>,
+    handshake_clients_tasks: HandShakeJoinSet<Codec, Msg>,
 }
 
 impl<Codec, Msg> P2PServer<Codec, Msg>
@@ -72,49 +77,77 @@ where
     pub fn new(
         crypto: Arc<BlstCrypto>,
         node_id: String,
-        node_p2p_public_adress: String,
-        node_da_public_adress: String,
+        node_p2p_public_address: String,
+        node_da_public_address: String,
         tcp_server: TcpServer<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>,
     ) -> Self {
         Self {
             crypto,
             node_id,
-            node_p2p_public_adress,
-            node_da_public_adress,
+            node_p2p_public_address,
+            node_da_public_address,
             tcp_server,
             peers: HashMap::new(),
+            handshake_clients_tasks: JoinSet::new(),
         }
     }
 
-    pub async fn listen_next(&mut self) -> Option<TcpEvent<P2PTcpMessage<Msg>>> {
-        self.tcp_server.listen_next().await
+    pub async fn listen_next(&mut self) -> Option<P2PTcpEvent<Codec, Msg>> {
+        tokio::select! {
+            tcp_event = self.tcp_server.listen_next() => {
+                tcp_event.map(P2PTcpEvent::TcpEvent)
+            },
+            Some(joinset_result) = self.handshake_clients_tasks.join_next() => {
+                if let Ok(task_result) = joinset_result {
+                    if let Ok(tcp_client) = task_result {
+                        Some(P2PTcpEvent::HandShakeTcpClient(tcp_client))
+                    }
+                    else {
+                        warn!("Error during TcpClient connection for handshake");
+                        None
+                    }
+                }
+                else {
+                    warn!("Error during joinset execution of handshake task");
+                    None
+                }
+            },
+        }
     }
 
     pub fn set_max_frame_length(&mut self, len: usize) {
         self.tcp_server.set_max_frame_length(len);
     }
 
-    /// Handle a TCP event. This is done as separate function to easily handle async tasks
-    pub async fn handle_tcp_event(
+    /// Handle a P2PTCPEvent. This is done as separate function to easily handle async tasks
+    pub async fn handle_p2p_tcp_event(
         &mut self,
-        tcp_event: TcpEvent<P2PTcpMessage<Msg>>,
+        p2p_tcp_event: P2PTcpEvent<Codec, Msg>,
     ) -> anyhow::Result<Option<P2PServerEvent<Msg>>> {
-        debug!("Received TCP event: {:?}", tcp_event);
-        match tcp_event {
-            TcpEvent::Message {
-                dest,
-                data: P2PTcpMessage::Handshake(handshake),
-            } => self.handle_handshake(dest, handshake).await,
-            TcpEvent::Message {
-                dest: _,
-                data: P2PTcpMessage::Data(msg),
-            } => Ok(Some(P2PServerEvent::P2PMessage { msg })),
-            TcpEvent::Error { dest, error } => {
-                self.handle_error_event(dest, error).await;
-                Ok(None)
-            }
-            TcpEvent::Closed { dest } => {
-                self.handle_closed_event(dest);
+        match p2p_tcp_event {
+            P2PTcpEvent::TcpEvent(tcp_event) => match tcp_event {
+                TcpEvent::Message {
+                    dest,
+                    data: P2PTcpMessage::Handshake(handshake),
+                } => self.handle_handshake(dest, handshake).await,
+                TcpEvent::Message {
+                    dest: _,
+                    data: P2PTcpMessage::Data(msg),
+                } => Ok(Some(P2PServerEvent::P2PMessage { msg })),
+                TcpEvent::Error { dest, error } => {
+                    self.handle_error_event(dest, error).await;
+                    Ok(None)
+                }
+                TcpEvent::Closed { dest } => {
+                    self.handle_closed_event(dest);
+                    Ok(None)
+                }
+            },
+            P2PTcpEvent::HandShakeTcpClient(tcp_client) => {
+                if let Err(e) = self.do_handshake(tcp_client).await {
+                    warn!("Error during handshake: {:?}", e);
+                    // TODO: Retry ?
+                }
                 Ok(None)
             }
         }
@@ -132,7 +165,7 @@ where
         for peer_info in self.peers.values() {
             if peer_info.socket_addr == dest {
                 return Some(P2PServerEvent::DisconnectedPeer {
-                    peer_ip: peer_info.node_connection_data.p2p_public_adress.clone(),
+                    peer_ip: peer_info.node_connection_data.p2p_public_address.clone(),
                 });
             }
         }
@@ -222,7 +255,7 @@ where
             Some(P2PServerEvent::NewPeer {
                 name: v.msg.name.to_string(),
                 pubkey: v.signature.validator.clone(),
-                da_address: v.msg.da_public_adress.clone(),
+                da_address: v.msg.da_public_address.clone(),
             })
         }
     }
@@ -240,29 +273,34 @@ where
         let node_connection_data = NodeConnectionData {
             version: 1,
             name: self.node_id.clone(),
-            p2p_public_adress: self.node_p2p_public_adress.clone(),
-            da_public_adress: self.node_da_public_adress.clone(),
+            p2p_public_address: self.node_p2p_public_address.clone(),
+            da_public_address: self.node_da_public_address.clone(),
         };
         self.crypto.sign(node_connection_data)
     }
 
-    pub async fn start_handshake(
-        &mut self,
-        tcp_client: TcpClient<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>,
-    ) -> anyhow::Result<()> {
-        let peer_ip = tcp_client.socket_addr.to_string();
-        if peer_ip == self.node_p2p_public_adress {
+    pub fn start_handshake(&mut self, peer_ip: String) {
+        if peer_ip == self.node_p2p_public_address {
             trace!("Trying to connect to self");
-            return Ok(());
+            return;
         }
 
         for peer in self.peers.values() {
-            if peer_ip == peer.node_connection_data.p2p_public_adress {
+            if peer_ip == peer.node_connection_data.p2p_public_address {
                 warn!("Peer {} already connected", peer_ip);
-                return Ok(());
+                return;
             }
         }
 
+        self.handshake_clients_tasks.spawn(async move {
+            TcpClient::connect("p2p_server_handshake", peer_ip.clone()).await
+        });
+    }
+
+    async fn do_handshake(
+        &mut self,
+        tcp_client: TcpClient<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>,
+    ) -> anyhow::Result<()> {
         let signed_node_connection_data = self.create_signed_node_connection_data()?;
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -349,8 +387,6 @@ pub mod tests {
     use hyle_crypto::BlstCrypto;
     use tokio::net::TcpListener;
 
-    use crate::tcp::tcp_client::TcpClient;
-
     use crate::p2p_server_mod;
 
     pub async fn find_available_port() -> u16 {
@@ -412,7 +448,7 @@ pub mod tests {
             tokio::select! {
                 event = p2p_server.listen_next() => {
                     p2p_server
-                        .handle_tcp_event(event.unwrap())
+                        .handle_p2p_tcp_event(event.unwrap())
                         .await?;
                 }
                 _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {
@@ -428,18 +464,11 @@ pub mod tests {
     async fn p2p_server_concurrent_handshake_test() -> Result<()> {
         let ((port1, mut p2p_server1), (port2, mut p2p_server2)) = setup_p2p_server_pair().await?;
 
-        // Create TcpClient for p2p_server1
-        let tcp_client1 =
-            TcpClient::connect("p2p_server_test", format!("127.0.0.1:{port2}")).await?;
-
-        // Create TcpClient for p2p_server2
-        let tcp_client2 =
-            TcpClient::connect("p2p_server_test", format!("127.0.0.1:{port1}")).await?;
         // Initiate handshake from p2p_server1 to p2p_server2
-        p2p_server1.start_handshake(tcp_client1).await?;
+        p2p_server1.start_handshake(format!("127.0.0.1:{port2}"));
 
         // Initiate handshake from p2p_server2 to p2p_server1
-        p2p_server2.start_handshake(tcp_client2).await?;
+        p2p_server2.start_handshake(format!("127.0.0.1:{port1}"));
 
         process_messages(&mut p2p_server1, 1).await?;
         process_messages(&mut p2p_server2, 1).await?;
@@ -452,12 +481,8 @@ pub mod tests {
     async fn p2p_server_reconnection_test() -> Result<()> {
         let ((_, mut p2p_server1), (port2, mut p2p_server2)) = setup_p2p_server_pair().await?;
 
-        // Create TcpClient for p2p_server1
-        let tcp_client1 =
-            TcpClient::connect("p2p_server_test", format!("127.0.0.1:{port2}")).await?;
-
         // Initial connection
-        p2p_server1.start_handshake(tcp_client1).await?;
+        p2p_server1.start_handshake(format!("127.0.0.1:{port2}"));
 
         // Server2 receives Hello message
         process_messages(&mut p2p_server2, 1).await?;

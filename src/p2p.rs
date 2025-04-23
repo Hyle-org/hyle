@@ -2,7 +2,7 @@
 
 use crate::{
     bus::{BusClientSender, BusMessage},
-    log_error, log_warn,
+    log_warn,
     mempool::MempoolNetMessage,
     model::SharedRunContext,
     module_handle_messages,
@@ -14,12 +14,8 @@ use crate::{
 use anyhow::{Context, Error, Result};
 use hyle_crypto::SharedBlstCrypto;
 use hyle_model::{ConsensusNetMessage, SignedByValidator, ValidatorPublicKey};
-use hyle_net::tcp::{
-    p2p_server::{P2PServer, P2PServerEvent},
-    tcp_client::TcpClient,
-};
+use hyle_net::tcp::p2p_server::{P2PServer, P2PServerEvent};
 use network::{p2p_server_consensus_mempool, NetMessage, OutboundMessage, PeerEvent};
-use tokio::task::JoinSet;
 use tracing::{info, trace, warn};
 
 pub mod network;
@@ -63,16 +59,6 @@ impl Module for P2P {
     }
 }
 
-type HandShakeJoinSet = JoinSet<
-    Result<
-        TcpClient<
-            p2p_server_consensus_mempool::codec_tcp::ServerCodec,
-            hyle_net::tcp::P2PTcpMessage<NetMessage>,
-            hyle_net::tcp::P2PTcpMessage<NetMessage>,
-        >,
-    >,
->;
-
 impl P2P {
     pub async fn p2p_server(&mut self) -> Result<()> {
         let mut p2p_server = p2p_server_consensus_mempool::start_server(
@@ -91,12 +77,8 @@ impl P2P {
             self.config.p2p.public_address
         );
 
-        let mut handshake_clients_tasks = JoinSet::new();
-
         for peer_ip in self.config.p2p.peers.clone() {
-            handshake_clients_tasks.spawn(async move {
-                TcpClient::connect("p2p_server_handshake", peer_ip.clone()).await
-            });
+            p2p_server.start_handshake(peer_ip);
         }
 
         module_handle_messages! {
@@ -104,9 +86,7 @@ impl P2P {
             listen<P2PCommand> cmd => {
                 match cmd {
                     P2PCommand::ConnectTo { peer } => {
-                        handshake_clients_tasks.spawn(async move {
-                                TcpClient::connect("p2p_server_new_peer", peer.clone()).await
-                        });
+                        p2p_server.start_handshake(peer);
                     }
                 }
             }
@@ -117,7 +97,6 @@ impl P2P {
                             warn!("P2P Sending net message to {validator_id}: {e}");
                             self.handle_failed_send(
                                 &mut p2p_server,
-                                &mut handshake_clients_tasks,
                                 validator_id,
                                 msg,
                             ).await;
@@ -127,7 +106,6 @@ impl P2P {
                         for failed_peer in p2p_server.broadcast(message.clone()).await {
                             self.handle_failed_send(
                                 &mut p2p_server,
-                                &mut handshake_clients_tasks,
                                 failed_peer,
                                 message.clone(),
                             ).await;
@@ -137,7 +115,6 @@ impl P2P {
                         for failed_peer in p2p_server.broadcast_only_for(&only_for, message.clone()).await {
                             self.handle_failed_send(
                                 &mut p2p_server,
-                                &mut handshake_clients_tasks,
                                 failed_peer,
                                 message.clone(),
                             ).await;
@@ -146,19 +123,9 @@ impl P2P {
                 };
             }
 
-            Some(task_result) = handshake_clients_tasks.join_next() => {
-                if let Ok(tcp_client) = log_error!(task_result, "Processing Handshake Joinset") {
-                    if let Ok(tcp_client) = log_error!(tcp_client, "Error while connecting TcpClient") {
-                        let _ = log_error!(
-                            p2p_server.start_handshake(tcp_client).await,
-                            "Sending handshake's Hello message");
-                    }
-                }
-            }
-
-            Some(tcp_event) = p2p_server.listen_next() => {
-                if let Ok(Some(p2p_tcp_event)) = log_warn!(p2p_server.handle_tcp_event(tcp_event).await, "Handling TCP event") {
-                    match p2p_tcp_event {
+            Some(p2p_tcp_event) = p2p_server.listen_next() => {
+                if let Ok(Some(p2p_server_event)) = log_warn!(p2p_server.handle_p2p_tcp_event(p2p_tcp_event).await, "Handling P2PTcpEvent") {
+                    match p2p_server_event {
                         P2PServerEvent::NewPeer { name, pubkey, da_address } => {
                             let _ = log_warn!(self.bus.send(PeerEvent::NewPeer {
                                 name,
@@ -170,9 +137,7 @@ impl P2P {
                             let _ = log_warn!(self.handle_net_message(net_message).await, "Handling P2P net message");
                         },
                         P2PServerEvent::DisconnectedPeer { peer_ip } => {
-                            handshake_clients_tasks.spawn(async move {
-                                TcpClient::connect("p2p_server_disconnected_peer", peer_ip.clone()).await
-                            });
+                            p2p_server.start_handshake(peer_ip);
                         },
                     }
                 }
@@ -206,7 +171,6 @@ impl P2P {
             p2p_server_consensus_mempool::codec_tcp::ServerCodec,
             NetMessage,
         >,
-        handshake_clients_tasks: &mut HandShakeJoinSet,
         validator_id: ValidatorPublicKey,
         _msg: NetMessage,
     ) {
@@ -215,11 +179,9 @@ impl P2P {
         if let Some(validator_ip) = p2p_server
             .peers
             .get(&validator_id)
-            .map(|peer| peer.node_connection_data.p2p_public_adress.clone())
+            .map(|peer| peer.node_connection_data.p2p_public_address.clone())
         {
-            handshake_clients_tasks.spawn(async move {
-                TcpClient::connect("p2p_server_reconnect_peer", validator_ip).await
-            });
+            p2p_server.start_handshake(validator_ip);
         }
     }
 }
