@@ -419,7 +419,7 @@ impl Consensus {
     fn send_candidacy(&mut self) -> Result<()> {
         let candidacy = ValidatorCandidacy {
             pubkey: self.crypto.validator_pubkey().clone(),
-            peer_address: format!("{}:{}", self.config.hostname, self.config.p2p.server_port),
+            peer_address: self.config.p2p.public_address.clone(),
         };
         info!(
             "📝 Sending candidacy message to be part of consensus.  {}",
@@ -916,7 +916,8 @@ pub mod test {
             for other_node in nodes.iter() {
                 self.add_trusted_validator(other_node.consensus.crypto.validator_pubkey());
             }
-
+            // This triggered a failure at one point, might happen again (the bft slot is 0)
+            self.consensus.bft_round_state.current_proposal.slot = 1;
             self.consensus.bft_round_state.state_tag = StateTag::Joining;
         }
 

@@ -142,7 +142,7 @@ pub fn welcome_message(conf: &conf::Conf) {
         http_port = conf.rest_server_port,
         check_tcp = check_or_cross(conf.run_tcp_server),
         tcp_port = conf.tcp_server_port,
-        da_port = conf.da_server_port,
+        da_port = conf.da_public_address,
         check_indexer = check_or_cross(conf.run_indexer),
         database_url = if conf.run_indexer {
             format!("↯ {}", mask_postgres_uri(conf.database_url.as_str()))
@@ -319,7 +319,7 @@ async fn common_main(
                     NodeInfo {
                         id: config.id.clone(),
                         pubkey: crypto.as_ref().map(|c| c.validator_pubkey()).cloned(),
-                        da_address: format!("{}:{}", config.hostname, config.da_server_port),
+                        da_address: config.da_public_address.clone(),
                     },
                     common_run_ctx.bus.new_handle(),
                     router.clone(),
