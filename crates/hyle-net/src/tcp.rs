@@ -2,7 +2,10 @@ pub mod p2p_server;
 pub mod tcp_client;
 pub mod tcp_server;
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    time::{SystemTime, UNIX_EPOCH},
+    usize,
+};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytes::BytesMut;
@@ -64,9 +67,21 @@ pub struct TcpMessageCodec<T> {
 
 impl<T> Default for TcpMessageCodec<T> {
     fn default() -> Self {
+        let ldc = LengthDelimitedCodec::default();
         Self {
             _marker: std::marker::PhantomData,
-            ldc: LengthDelimitedCodec::default(),
+            ldc,
+        }
+    }
+}
+
+impl<Codec> TcpMessageCodec<Codec> {
+    fn new(max_frame_length: usize) -> TcpMessageCodec<Codec> {
+        let mut ldc = LengthDelimitedCodec::default();
+        ldc.set_max_frame_length(max_frame_length);
+        Self {
+            _marker: std::marker::PhantomData,
+            ldc,
         }
     }
 }
@@ -231,7 +246,7 @@ macro_rules! p2p_server_mod {
             type P2PServerType = $crate::tcp::p2p_server::P2PServer<codec_tcp::ServerCodec, $msg>;
 
             pub async fn start_server(
-                crypto: hyle_crypto::BlstCrypto,
+                crypto: std::sync::Arc<hyle_crypto::BlstCrypto>,
                 node_id: String,
                 server_port: u16,
                 node_p2p_public_adress: String,
@@ -241,7 +256,7 @@ macro_rules! p2p_server_mod {
 
                 Ok(
                     $crate::tcp::p2p_server::P2PServer::new(
-                        std::sync::Arc::new(crypto),
+                        crypto,
                         node_id,
                         node_p2p_public_adress,
                         node_da_public_adress,
