@@ -26,9 +26,6 @@ pub enum P2PServerEvent<Msg: Clone> {
     P2PMessage {
         msg: Msg,
     },
-    DisconnectedPeer {
-        peer_ip: String,
-    },
 }
 
 #[derive(Clone, Debug)]
@@ -162,11 +159,11 @@ where
 
         // TODO: An error can happen when a message was no *sent* correctly. Investigate how to handle that specific case
         // TODO: match the error type to decide what to do
-        for peer_info in self.peers.values() {
+        for peer_info in self.peers.clone().values() {
             if peer_info.socket_addr == dest {
-                return Some(P2PServerEvent::DisconnectedPeer {
-                    peer_ip: peer_info.node_connection_data.p2p_public_address.clone(),
-                });
+                self.start_handshake_task(
+                    peer_info.node_connection_data.p2p_public_address.clone(),
+                );
             }
         }
         None
@@ -292,9 +289,12 @@ where
             }
         }
 
-        self.handshake_clients_tasks.spawn(async move {
-            TcpClient::connect("p2p_server_handshake", peer_ip.clone()).await
-        });
+        self.start_handshake_task(peer_ip);
+    }
+
+    fn start_handshake_task(&mut self, peer_ip: String) {
+        let handshake_task = TcpClient::connect("p2p_server_handshake", peer_ip.clone());
+        self.handshake_clients_tasks.spawn(handshake_task);
     }
 
     async fn do_handshake(

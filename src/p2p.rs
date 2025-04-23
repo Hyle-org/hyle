@@ -136,9 +136,6 @@ impl P2P {
                         P2PServerEvent::P2PMessage { msg: net_message } => {
                             let _ = log_warn!(self.handle_net_message(net_message).await, "Handling P2P net message");
                         },
-                        P2PServerEvent::DisconnectedPeer { peer_ip } => {
-                            p2p_server.start_handshake(peer_ip);
-                        },
                     }
                 }
             }
