@@ -144,30 +144,31 @@ mod tests {
 
     #[tokio::test]
     async fn test_peer_addr() -> anyhow::Result<()> {
-        let mut server = codec_test::start_server(1234).await?;
+        let mut server = codec_test::start_server(0).await?;
 
-        let socket: SocketAddr;
+        let server_socket = server.local_addr()?;
+
+        let client_socket: SocketAddr;
         loop {
             tokio::select! {
                 Some(_) = server.listen_next() => {
                 }
 
                 socket_addr = async move {
-                    let client = codec_test::connect("id", "127.0.0.1:1234").await.unwrap();
+                    let client = codec_test::connect("id", server_socket).await.unwrap();
                     client.socket_addr
                 } => {
-                    socket= socket_addr;
+                    client_socket= socket_addr;
                     break;
                 }
             }
         }
 
-        assert_eq!(socket.ip().to_string(), "127.0.0.1".to_string());
-        assert_eq!(socket.port(), 1234);
+        assert_eq!(client_socket.port(), server_socket.port());
 
         let clients = server.connected_clients()?;
         assert_eq!(clients.len(), 1);
-        assert_ne!(clients, vec!["127.0.0.1:1234"]);
+        assert_ne!(clients, vec![server_socket.to_string()]);
 
         Ok(())
     }
