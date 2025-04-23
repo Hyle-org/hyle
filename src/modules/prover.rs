@@ -18,7 +18,7 @@ use hyle_model::{
     BlobIndex, BlobTransaction, Block, BlockHeight, Calldata, ContractName, Hashed,
     ProofTransaction, TransactionData, TxContext, TxHash, HYLE_TESTNET_CHAIN_ID,
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 /// `AutoProver` is a module that handles the proving of transactions
 /// It listens to the node state events and processes all blobs in the block's transactions
@@ -218,9 +218,10 @@ where
                 }
             });
         if let Some((_, contract)) = prev_state {
-            debug!("Reverting to previous state: {:?}", contract);
+            debug!(cn =% self.ctx.contract_name, tx_hash =% failed_tx, "Reverting to previous state: {:?}", contract);
             self.store.contract = contract.clone();
         } else {
+            warn!(cn =% self.ctx.contract_name, tx_hash =% failed_tx, "Reverting to default state");
             self.store.contract = Contract::default();
         }
         let mut blobs = vec![];
@@ -234,6 +235,7 @@ where
             for (index, blob) in tx.blobs.iter().enumerate() {
                 if blob.contract_name == self.ctx.contract_name {
                     debug!(
+                        cn =% self.ctx.contract_name,
                         "Re-execute blob for tx {} after a previous tx failure",
                         tx.hashed()
                     );
@@ -291,7 +293,11 @@ where
                 .map_err(|e| anyhow!(e))
             {
                 Err(e) => {
-                    info!("{} Error while executing contract: {e}", tx.hashed());
+                    info!(
+                        cn =% self.ctx.contract_name,
+                        tx_hash =% tx.hashed(),
+                        "Error while executing contract: {e}"
+                    );
                     if !old_tx {
                         self.bus
                             .send(AutoProverEvent::FailedTx(tx_hash.clone(), e.to_string()))?;
@@ -299,8 +305,9 @@ where
                 }
                 Ok(msg) => {
                     info!(
-                        "{} Executed contract: {}",
-                        tx.hashed(),
+                        cn =% self.ctx.contract_name,
+                        tx_hash =% tx.hashed(),
+                        "Executed contract: {}",
                         String::from_utf8_lossy(&msg.program_outputs)
                     );
                     if !old_tx {
