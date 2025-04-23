@@ -341,7 +341,7 @@ where
         if let Err(e) = self
             .tcp_server
             .send(
-                peer_info.socket_addr.clone().clone(),
+                peer_info.socket_addr.clone(),
                 P2PTcpMessage::Data(msg.clone()),
             )
             .await
@@ -419,6 +419,8 @@ pub mod tests {
         let port1 = find_available_port().await;
         let port2 = find_available_port().await;
 
+        tracing::info!("Starting P2P server1 on port {port1}");
+        tracing::info!("Starting P2P server2 on port {port2}");
         let p2p_server1 = p2p_server_test::start_server(
             crypto1.into(),
             "node1".to_string(),
@@ -470,13 +472,31 @@ pub mod tests {
         // Initiate handshake from p2p_server2 to p2p_server1
         p2p_server2.start_handshake(format!("127.0.0.1:{port1}"));
 
+        // For TcpClient to connect
         process_messages(&mut p2p_server1, 1).await?;
         process_messages(&mut p2p_server2, 1).await?;
+
+        // For handshake Hello message
+        process_messages(&mut p2p_server1, 1).await?;
+        process_messages(&mut p2p_server2, 1).await?;
+
+        // For handshake Verack message
+        process_messages(&mut p2p_server1, 1).await?;
+        process_messages(&mut p2p_server2, 1).await?;
+
+        // Verify that both servers have each other in their peers map
+        assert_eq!(p2p_server1.peers.len(), 1);
+        assert_eq!(p2p_server2.peers.len(), 1);
+
+        // Both peers should have each other's ValidatorPublicKey in their maps
+        let p1_peer_key = p2p_server1.peers.keys().next().unwrap();
+        let p2_peer_key = p2p_server2.peers.keys().next().unwrap();
+        assert_eq!(p1_peer_key.0, p2p_server2.crypto.validator_pubkey().0);
+        assert_eq!(p2_peer_key.0, p2p_server1.crypto.validator_pubkey().0);
 
         Ok(())
     }
 
-    #[ignore = "while reconnection is done in p2p module instead of p2p_server"]
     #[test_log::test(tokio::test)]
     async fn p2p_server_reconnection_test() -> Result<()> {
         let ((_, mut p2p_server1), (port2, mut p2p_server2)) = setup_p2p_server_pair().await?;
@@ -484,6 +504,8 @@ pub mod tests {
         // Initial connection
         p2p_server1.start_handshake(format!("127.0.0.1:{port2}"));
 
+        // Server1 waits for TcpClient to reconnect
+        process_messages(&mut p2p_server1, 1).await?;
         // Server2 receives Hello message
         process_messages(&mut p2p_server2, 1).await?;
         // Server1 receives Verack message
@@ -501,6 +523,9 @@ pub mod tests {
         p2p_server1.send(peer_key.clone(), test_msg).await?;
 
         // Verify that server1 received the error for the previous send
+        process_messages(&mut p2p_server1, 1).await?;
+
+        // Server1 waits for TcpClient to reconnect
         process_messages(&mut p2p_server1, 1).await?;
 
         // Verify that server2 receives new handshake after reconnection
