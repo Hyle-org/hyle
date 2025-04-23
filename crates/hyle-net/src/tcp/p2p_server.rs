@@ -155,6 +155,7 @@ where
         dest: String,
         _error: String,
     ) -> Option<P2PServerEvent<Msg>> {
+        warn!("Error with peer connection: {:?}", _error);
         // There was an error with the connection with the peer. We try to reconnect.
 
         // TODO: An error can happen when a message was no *sent* correctly. Investigate how to handle that specific case
@@ -292,7 +293,7 @@ where
         self.start_handshake_task(peer_ip);
     }
 
-    fn start_handshake_task(&mut self, peer_ip: String) {
+    pub fn start_handshake_task(&mut self, peer_ip: String) {
         let handshake_task = TcpClient::connect("p2p_server_handshake", peer_ip.clone());
         self.handshake_clients_tasks.spawn(handshake_task);
     }
@@ -355,7 +356,7 @@ where
         Ok(())
     }
 
-    pub async fn broadcast(&mut self, msg: Msg) -> HashSet<ValidatorPublicKey> {
+    pub async fn broadcast(&mut self, msg: Msg) -> HashMap<ValidatorPublicKey, anyhow::Error> {
         let peer_keys: HashSet<ValidatorPublicKey> = self.peers.keys().cloned().collect();
         self.broadcast_only_for(&peer_keys, msg).await
     }
@@ -364,16 +365,12 @@ where
         &mut self,
         only_for: &HashSet<ValidatorPublicKey>,
         msg: Msg,
-    ) -> HashSet<ValidatorPublicKey> {
-        let mut failed_sends = HashSet::new();
+    ) -> HashMap<ValidatorPublicKey, anyhow::Error> {
+        let mut failed_sends = HashMap::new();
         // TODO: investigate if parallelizing this is better
         for validator_pub_key in only_for {
-            if self
-                .send(validator_pub_key.clone(), msg.clone())
-                .await
-                .is_err()
-            {
-                failed_sends.insert(validator_pub_key.clone());
+            if let Err(e) = self.send(validator_pub_key.clone(), msg.clone()).await {
+                failed_sends.insert(validator_pub_key.clone(), e);
             }
         }
         failed_sends
