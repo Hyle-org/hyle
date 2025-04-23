@@ -115,10 +115,17 @@ where
     }
 
     async fn handle_processed_block(&mut self, block: Block) -> Result<()> {
-        info!("🔧 Processing block: {:?}", block.block_height);
+        debug!("🔧 Processing block: {:?}", block.block_height);
         let mut blobs = vec![];
         for (_, tx) in block.txs {
             if let TransactionData::Blob(tx) = tx.transaction_data {
+                if tx
+                    .blobs
+                    .iter()
+                    .all(|b| b.contract_name != self.ctx.contract_name)
+                {
+                    continue;
+                }
                 let tx_ctx = TxContext {
                     block_height: block.block_height,
                     block_hash: block.hash.clone(),
@@ -146,8 +153,6 @@ where
         for tx in block.failed_txs {
             self.settle_tx_failed(tx)?;
         }
-
-        info!("🔧 Finished processing block: {:?}", block.block_height);
 
         Ok(())
     }
