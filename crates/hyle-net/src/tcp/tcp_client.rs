@@ -132,7 +132,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::net::SocketAddr;
+    use std::time::Duration;
 
     use crate::tcp_client_server;
 
@@ -148,22 +148,16 @@ mod tests {
 
         let server_socket = server.local_addr()?;
 
-        let client_socket: SocketAddr;
-        loop {
-            tokio::select! {
-                Some(_) = server.listen_next() => {
-                }
+        let client_socket = tokio::spawn(async move {
+            let client = codec_test::connect("id", server_socket).await.unwrap();
+            client.socket_addr
+        });
 
-                socket_addr = async move {
-                    let client = codec_test::connect("id", server_socket).await.unwrap();
-                    client.socket_addr
-                } => {
-                    client_socket= socket_addr;
-                    break;
-                }
-            }
+        while server.connected_clients()?.is_empty() {
+            _ = tokio::time::timeout(Duration::from_millis(100), server.listen_next()).await;
         }
 
+        let client_socket = client_socket.await?;
         assert_eq!(client_socket.port(), server_socket.port());
 
         let clients = server.connected_clients()?;

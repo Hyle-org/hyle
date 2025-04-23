@@ -86,10 +86,9 @@ pub enum NetMessage {
     ConsensusMessage(SignedByValidator<ConsensusNetMessage>),
 }
 
-hyle_net::tcp_client_server! {
-    pub P2pTcpMessage,
-    request: hyle_net::tcp::P2PTcpMessage<super::NetMessage>,
-    response: hyle_net::tcp::P2PTcpMessage<super::NetMessage>
+hyle_net::p2p_server_mod! {
+    pub consensus_mempool,
+    message: super::super::NetMessage
 }
 
 impl From<NetMessage> for P2PTcpMessage<NetMessage> {

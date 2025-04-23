@@ -88,6 +88,10 @@ where
         self.tcp_server.listen_next().await
     }
 
+    pub fn set_max_frame_length(&mut self, len: usize) {
+        self.tcp_server.set_max_frame_length(len);
+    }
+
     /// Handle a TCP event. This is done as separate function to easily handle async tasks
     pub async fn handle_tcp_event(
         &mut self,
@@ -395,7 +399,7 @@ pub mod tests {
         let port2 = find_available_port().await;
 
         let p2p_server1 = p2p_server_test::start_server(
-            crypto1,
+            crypto1.into(),
             "node1".to_string(),
             port1,
             format!("127.0.0.1:{port1}"),
@@ -403,7 +407,7 @@ pub mod tests {
         )
         .await?;
         let p2p_server2 = p2p_server_test::start_server(
-            crypto2,
+            crypto2.into(),
             "node2".to_string(),
             port2,
             format!("127.0.0.1:{port2}"),

@@ -64,7 +64,7 @@ turmoil_simple!(501..=520, 4, simulation_realistic_network);
 async fn setup_host(peer: String, peers: Vec<String>) -> Result<(), Box<dyn Error>> {
     let crypto = BlstCrypto::new(peer.clone().as_str())?;
     let mut p2p = p2p_server_test::start_server(
-        crypto,
+        std::sync::Arc::new(crypto),
         peer.clone(),
         9090,
         format!("{}:{}", peer, 9090),

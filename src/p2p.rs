@@ -14,8 +14,8 @@ use crate::{
 use anyhow::{Context, Error, Result};
 use hyle_crypto::SharedBlstCrypto;
 use hyle_model::{ConsensusNetMessage, SignedByValidator};
-use hyle_net::tcp::p2p_server::{P2PServer, P2PServerEvent};
-use network::{codec_p2p_tcp_message, NetMessage, OutboundMessage, PeerEvent};
+use hyle_net::tcp::p2p_server::P2PServerEvent;
+use network::{p2p_server_consensus_mempool, NetMessage, OutboundMessage, PeerEvent};
 use tracing::{info, trace};
 
 pub mod network;
@@ -61,16 +61,16 @@ impl Module for P2P {
 
 impl P2P {
     pub async fn p2p_server(&mut self) -> Result<()> {
-        let network_tcp_server =
-            codec_p2p_tcp_message::start_server(self.config.p2p.server_port).await?;
-
-        let mut p2p_server = P2PServer::new(
+        let mut p2p_server = p2p_server_consensus_mempool::start_server(
             self.crypto.clone(),
             self.config.id.clone(),
+            self.config.p2p.server_port,
             self.config.p2p.public_address.clone(),
             self.config.da_public_address.clone(),
-            network_tcp_server,
-        );
+        )
+        .await?;
+
+        p2p_server.set_max_frame_length(256 * 1024 * 1024);
 
         info!(
             "📡  Starting P2P module, listening on {}",

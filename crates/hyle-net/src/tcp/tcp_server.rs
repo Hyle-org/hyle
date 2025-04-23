@@ -26,6 +26,7 @@ where
     Codec: Decoder<Item = Req> + Encoder<Res> + Default,
 {
     tcp_listener: TcpListener,
+    max_frame_length: Option<usize>,
     pool_sender: Sender<TcpEvent<Req>>,
     pool_receiver: Receiver<TcpEvent<Req>>,
     ping_sender: Sender<String>,
@@ -51,6 +52,7 @@ where
         );
         Ok(TcpServer::<Codec, Req, Res> {
             sockets: HashMap::new(),
+            max_frame_length: None,
             tcp_listener,
             pool_sender,
             pool_receiver,
@@ -59,12 +61,20 @@ where
         })
     }
 
+    pub fn set_max_frame_length(&mut self, l: usize) {
+        self.max_frame_length = Some(l);
+    }
+
     pub async fn listen_next(&mut self) -> Option<TcpEvent<Req>> {
         loop {
             tokio::select! {
                 Ok((stream, socket_addr)) = self.tcp_listener.accept() => {
-                    let (sender, receiver) =
-                        Framed::new(stream, TcpMessageCodec::<Codec>::default()).split();
+                    let codec = match self.max_frame_length {
+                        Some(len) => TcpMessageCodec::<Codec>::new(len),
+                        None => TcpMessageCodec::<Codec>::default()
+                    };
+
+                    let (sender, receiver) = Framed::new(stream, codec).split();
 
                     _  = self.setup_stream(sender, receiver, &socket_addr.to_string());
                 }
