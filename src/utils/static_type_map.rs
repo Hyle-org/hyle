@@ -19,7 +19,7 @@ macro_rules! static_type_map {
     // This just reformats to the recursive form
     (
         $(#[$meta:meta])*
-        $pub:vis struct $name:ident ($($t1:ty,)+);
+        $pub:vis struct $name:ident $(< $( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+ >)? ($($t1:ty,)+);
     ) => {
         $crate::utils::static_type_map::paste::paste! {
             // Wrap it in a module to make the member names private
@@ -29,7 +29,7 @@ macro_rules! static_type_map {
 
                 $crate::utils::static_type_map::static_type_map! {
                     $(#[$meta])*
-                    ha: $pub struct $name ($($t1,)+) {}
+                    ha: $pub struct $name $(< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? ($($t1,)+) {}
                 }
             }
             #[doc(inline)]
@@ -39,18 +39,18 @@ macro_rules! static_type_map {
     // Recursive case - we append to $index every time, processing one type.
     (
         $(#[$meta:meta])*
-        $index:ident: $pub:vis struct $name:ident ($t1:ty, $($t2:ty,)*) { $($idx:ident: $t3:ty,)* }
+        $index:ident: $pub:vis struct $name:ident $(< $( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+ >)? ($t1:ty, $($t2:ty,)*) { $($idx:ident: $t3:ty,)* }
     ) => {
         $crate::utils::static_type_map::paste::paste! {
             $crate::utils::static_type_map::static_type_map! {
                 $(#[$meta])*
-                [<ha $index>]: $pub struct $name ( $($t2,)* ) {
+                [<ha $index>]: $pub struct $name $(< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? ( $($t2,)* ) {
                     $($idx: $t3,)*
                     $index: $t1,
                 }
             }
         }
-        impl $crate::utils::static_type_map::Pick<$t1> for $name {
+        impl $(< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $crate::utils::static_type_map::Pick<$t1> for $name $(< $( $lt ),+ >)? {
             fn get(&self) -> &$t1 {
                 &self.$index
             }
@@ -65,13 +65,13 @@ macro_rules! static_type_map {
     // End state - just output the struct and the new function (which works like the named tuple constructor)
     (
         $(#[$meta:meta])*
-        $index:ident: $pub:vis struct $name:ident ( ) { $($idx:ident: $t3:ty,)+ }
+        $index:ident: $pub:vis struct $name:ident $(< $( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+ >)? ( ) { $($idx:ident: $t3:ty,)+ }
     ) => {
         $(#[$meta])*
-        pub struct $name {
+        pub struct $name $(< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? {
             $($idx: $t3,)+
         }
-        impl $name {
+        impl $(< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $name $(< $( $lt ),+ >)? {
             #[allow(clippy::too_many_arguments)]
             pub fn new($($idx: $t3,)*) -> Self {
                 Self {

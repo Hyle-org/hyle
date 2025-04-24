@@ -4,9 +4,9 @@ use crate::{
     bus::{BusClientSender, BusMessage},
     log_error,
     model::CommonRunContext,
-    module_handle_messages,
+    module_bus_client, module_handle_messages,
     node_state::module::NodeStateEvent,
-    utils::modules::{module_bus_client, Module},
+    utils::modules::Module,
 };
 use anyhow::{anyhow, Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -29,8 +29,8 @@ use tracing::{debug, error, info, warn};
 /// multiple blocks.
 /// This module requires the ELF to support multiproof. i.e. it requires the ELF to read
 /// a `Vec<Calldata>` as input.
-pub struct AutoProver<Contract> {
-    bus: AutoProverBusClient,
+pub struct AutoProver<Contract: Send + Sync + Clone + 'static> {
+    bus: AutoProverBusClient<Contract>,
     ctx: Arc<AutoProverCtx>,
     store: AutoProverStore<Contract>,
 }
@@ -44,8 +44,8 @@ pub struct AutoProverStore<Contract> {
 
 module_bus_client! {
 #[derive(Debug)]
-pub struct AutoProverBusClient {
-    sender(AutoProverEvent),
+pub struct AutoProverBusClient<Contract: Send + Sync + Clone + 'static> {
+    sender(AutoProverEvent<Contract>),
     receiver(NodeStateEvent),
 }
 }
@@ -59,25 +59,26 @@ pub struct AutoProverCtx {
 }
 
 #[derive(Debug, Clone)]
-pub enum AutoProverEvent {
+pub enum AutoProverEvent<Contract> {
     /// Event sent when a blob is executed as failed
     /// proof will be generated & sent to the node
     FailedTx(TxHash, String),
     /// Event sent when a blob is executed as success
     /// proof will be generated & sent to the node
-    SuccessTx(TxHash),
+    SuccessTx(TxHash, Contract),
 }
 
-impl BusMessage for AutoProverEvent {}
+impl<Contract> BusMessage for AutoProverEvent<Contract> {}
 
 impl<Contract> Module for AutoProver<Contract>
 where
-    Contract: TxExecutorHandler + BorshDeserialize + Default + Debug + Send + Clone + 'static,
+    Contract:
+        TxExecutorHandler + BorshDeserialize + Default + Debug + Send + Sync + Clone + 'static,
 {
     type Context = Arc<AutoProverCtx>;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus = AutoProverBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
+        let bus = AutoProverBusClient::<Contract>::new_from_bus(ctx.common.bus.new_handle()).await;
 
         let file = ctx
             .common
@@ -105,7 +106,7 @@ where
 
 impl<Contract> AutoProver<Contract>
 where
-    Contract: TxExecutorHandler + Default + Debug + Clone,
+    Contract: TxExecutorHandler + Default + Debug + Clone + Send + Sync + 'static,
 {
     async fn handle_node_state_event(&mut self, event: NodeStateEvent) -> Result<()> {
         let NodeStateEvent::NewBlock(block) = event;
@@ -303,7 +304,10 @@ where
                         String::from_utf8_lossy(&msg.program_outputs)
                     );
                     if !old_tx {
-                        self.bus.send(AutoProverEvent::SuccessTx(tx_hash.clone()))?;
+                        self.bus.send(AutoProverEvent::SuccessTx(
+                            tx_hash.clone(),
+                            self.store.contract.clone(),
+                        ))?;
                     }
                 }
             }
