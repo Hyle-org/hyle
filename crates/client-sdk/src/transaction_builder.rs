@@ -67,7 +67,7 @@ pub struct ProofTxBuilder {
     pub blobs: Vec<Blob>,
     runners: Vec<ContractRunner>,
     pub outputs: Vec<(ContractName, HyleOutput)>,
-    provers: BTreeMap<ContractName, Arc<dyn ClientSdkProver<Calldata> + Sync + Send>>,
+    provers: BTreeMap<ContractName, Arc<dyn ClientSdkProver<Vec<Calldata>> + Sync + Send>>,
 }
 
 impl ProofTxBuilder {
@@ -102,7 +102,7 @@ impl ProofTxBuilder {
                             .commitment_metadata
                             .take()
                             .expect("no commitment metadata for prover"),
-                        runner.calldata.take().expect("no calldata for prover"),
+                        vec![runner.calldata.take().expect("no calldata for prover")],
                     )
                     .await;
                 proof.map(|proof| ProofTransaction {
@@ -139,7 +139,7 @@ where
 
 pub struct TxExecutor<S: StateUpdater> {
     states: S,
-    provers: BTreeMap<ContractName, Arc<dyn ClientSdkProver<Calldata> + Sync + Send>>,
+    provers: BTreeMap<ContractName, Arc<dyn ClientSdkProver<Vec<Calldata>> + Sync + Send>>,
 }
 
 impl<S: StateUpdater> Deref for TxExecutor<S> {
@@ -157,7 +157,7 @@ impl<S: StateUpdater> DerefMut for TxExecutor<S> {
 
 pub struct TxExecutorBuilder<S> {
     full_states: Option<S>,
-    provers: BTreeMap<ContractName, Arc<dyn ClientSdkProver<Calldata> + Sync + Send>>,
+    provers: BTreeMap<ContractName, Arc<dyn ClientSdkProver<Vec<Calldata>> + Sync + Send>>,
 }
 
 impl<S: StateUpdater> TxExecutorBuilder<S> {
@@ -182,7 +182,7 @@ impl<S: StateUpdater> TxExecutorBuilder<S> {
     pub fn init_with(
         &mut self,
         contract_name: ContractName,
-        prover: impl ClientSdkProver<Calldata> + Sync + Send + 'static,
+        prover: impl ClientSdkProver<Vec<Calldata>> + Sync + Send + 'static,
     ) -> &mut Self {
         self.provers
             .entry(contract_name)
@@ -193,7 +193,7 @@ impl<S: StateUpdater> TxExecutorBuilder<S> {
     pub fn with_prover(
         mut self,
         contract_name: ContractName,
-        prover: impl ClientSdkProver<Calldata> + Sync + Send + 'static,
+        prover: impl ClientSdkProver<Vec<Calldata>> + Sync + Send + 'static,
     ) -> Self {
         self.provers.insert(contract_name, Arc::new(prover));
         self

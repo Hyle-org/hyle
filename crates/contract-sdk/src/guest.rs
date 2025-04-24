@@ -56,6 +56,7 @@ fn main() {
 
 */
 
+use alloc::vec::Vec;
 use borsh::BorshDeserialize;
 use hyle_model::Calldata;
 
@@ -64,7 +65,7 @@ use crate::{RunResult, ZkContract};
 
 pub trait GuestEnv {
     fn log(&self, message: &str);
-    fn commit(&self, output: &HyleOutput);
+    fn commit(&self, output: Vec<HyleOutput>);
     fn read<T: BorshDeserialize + 'static>(&self) -> T;
 }
 
@@ -78,8 +79,8 @@ impl GuestEnv for Risc0Env {
         risc0_zkvm::guest::env::log(message);
     }
 
-    fn commit(&self, output: &HyleOutput) {
-        risc0_zkvm::guest::env::commit(output);
+    fn commit(&self, output: Vec<HyleOutput>) {
+        risc0_zkvm::guest::env::commit(&output);
     }
 
     fn read<T: BorshDeserialize>(&self) -> T {
@@ -100,7 +101,7 @@ impl GuestEnv for SP1Env {
         sp1_zkvm::io::hint(&message);
     }
 
-    fn commit(&self, output: &HyleOutput) {
+    fn commit(&self, output: &[HyleOutput]) {
         let vec = borsh::to_vec(&output).unwrap();
         sp1_zkvm::io::commit_slice(&vec);
     }
@@ -130,22 +131,27 @@ impl GuestEnv for SP1Env {
 /// # Panics
 ///
 /// Panics if the contract initialization fails.
-pub fn execute<Z>(commitment_metadata: &[u8], calldata: &Calldata) -> HyleOutput
+pub fn execute<Z>(commitment_metadata: &[u8], calldata: &[Calldata]) -> Vec<HyleOutput>
 where
     Z: ZkContract + BorshDeserialize + 'static,
 {
     let mut contract: Z =
         borsh::from_slice(commitment_metadata).expect("Failed to decode commitment metadata");
-    let initial_state_commitment = contract.commit();
+    let mut initial_state_commitment = contract.commit();
 
-    let mut res: RunResult = contract.execute(calldata);
+    let mut outputs = Vec::with_capacity(calldata.len());
+    for calldata in calldata.iter() {
+        let mut res: RunResult = contract.execute(calldata);
 
-    let next_state_commitment = contract.commit();
+        let next_state_commitment = contract.commit();
 
-    as_hyle_output(
-        initial_state_commitment,
-        next_state_commitment,
-        calldata,
-        &mut res,
-    )
+        outputs.push(as_hyle_output(
+            initial_state_commitment,
+            next_state_commitment.clone(),
+            calldata,
+            &mut res,
+        ));
+        initial_state_commitment = next_state_commitment;
+    }
+    outputs
 }

@@ -163,15 +163,21 @@ pub mod test {
 
     pub struct TestProver {}
 
-    impl ClientSdkProver<Calldata> for TestProver {
+    impl ClientSdkProver<Vec<Calldata>> for TestProver {
         fn prove(
             &self,
             commitment_metadata: Vec<u8>,
-            calldata: Calldata,
+            calldatas: Vec<Calldata>,
         ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
             Box::pin(async move {
-                let hyle_output = test::execute(commitment_metadata, calldata)?;
-                Ok(ProofData(borsh::to_vec(&vec![hyle_output])?))
+                let mut hyle_outputs = Vec::with_capacity(calldatas.len());
+                for calldata in calldatas {
+                    let hyle_output = execute(commitment_metadata.clone(), calldata.clone())?;
+                    hyle_outputs.push(hyle_output);
+                }
+                Ok(ProofData(
+                    borsh::to_vec(&hyle_outputs).expect("Failed to encode proof"),
+                ))
             })
         }
     }
