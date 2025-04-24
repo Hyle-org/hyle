@@ -8,7 +8,7 @@ use anyhow::{bail, Context};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_crypto::BlstCrypto;
 use sdk::{SignedByValidator, ValidatorPublicKey};
-use tokio::task::JoinSet;
+use tokio::{task::JoinSet, time::Interval};
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::{info, trace, warn};
 
@@ -56,9 +56,11 @@ where
     node_id: String,
     node_p2p_public_address: String,
     node_da_public_address: String,
+    max_frame_length: Option<usize>,
     tcp_server: TcpServer<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>,
     pub peers: HashMap<ValidatorPublicKey, PeerInfo>,
     handshake_clients_tasks: HandShakeJoinSet<Codec, Msg>,
+    peers_ping_ticker: Interval,
 }
 
 impl<Codec, Msg> P2PServer<Codec, Msg>
@@ -74,6 +76,7 @@ where
     pub fn new(
         crypto: Arc<BlstCrypto>,
         node_id: String,
+        max_frame_length: Option<usize>,
         node_p2p_public_address: String,
         node_da_public_address: String,
         tcp_server: TcpServer<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>,
@@ -81,39 +84,42 @@ where
         Self {
             crypto,
             node_id,
+            max_frame_length,
             node_p2p_public_address,
             node_da_public_address,
             tcp_server,
             peers: HashMap::new(),
             handshake_clients_tasks: JoinSet::new(),
+            peers_ping_ticker: tokio::time::interval(std::time::Duration::from_secs(2)),
         }
     }
 
-    pub async fn listen_next(&mut self) -> Option<P2PTcpEvent<Codec, Msg>> {
-        tokio::select! {
-            tcp_event = self.tcp_server.listen_next() => {
-                tcp_event.map(P2PTcpEvent::TcpEvent)
-            },
-            Some(joinset_result) = self.handshake_clients_tasks.join_next() => {
-                if let Ok(task_result) = joinset_result {
-                    if let Ok(tcp_client) = task_result {
-                        Some(P2PTcpEvent::HandShakeTcpClient(tcp_client))
+    pub async fn listen_next(&mut self) -> P2PTcpEvent<Codec, Msg> {
+        loop {
+            tokio::select! {
+                    Some(tcp_event) = self.tcp_server.listen_next() => {
+                        return P2PTcpEvent::TcpEvent(tcp_event);
+                    },
+                    Some(joinset_result) = self.handshake_clients_tasks.join_next() => {
+                        if let Ok(task_result) = joinset_result {
+                            if let Ok(tcp_client) = task_result {
+                                return P2PTcpEvent::HandShakeTcpClient(tcp_client);
+                            }
+                            else {
+                                warn!("Error during TcpClient connection for handshake");
+                                continue
+                            }
+                        }
+                        else {
+                            warn!("Error during joinset execution of handshake task");
+                            continue
+                        }
+                    },
+                    _ = self.peers_ping_ticker.tick() => {
+                        return P2PTcpEvent::PingPeers;
                     }
-                    else {
-                        warn!("Error during TcpClient connection for handshake");
-                        None
-                    }
-                }
-                else {
-                    warn!("Error during joinset execution of handshake task");
-                    None
-                }
-            },
+            }
         }
-    }
-
-    pub fn set_max_frame_length(&mut self, len: usize) {
-        self.tcp_server.set_max_frame_length(len);
     }
 
     /// Handle a P2PTCPEvent. This is done as separate function to easily handle async tasks
@@ -144,6 +150,14 @@ where
                 if let Err(e) = self.do_handshake(tcp_client).await {
                     warn!("Error during handshake: {:?}", e);
                     // TODO: Retry ?
+                }
+                Ok(None)
+            }
+            P2PTcpEvent::PingPeers => {
+                for peer_info in self.peers.values() {
+                    if let Err(e) = self.tcp_server.ping(peer_info.socket_addr.clone()).await {
+                        warn!("Error pinging peer {}: {:?}", peer_info.socket_addr, e);
+                    }
                 }
                 Ok(None)
             }
@@ -294,7 +308,11 @@ where
     }
 
     pub fn start_handshake_task(&mut self, peer_ip: String) {
-        let handshake_task = TcpClient::connect("p2p_server_handshake", peer_ip.clone());
+        let handshake_task = TcpClient::connect_with_opts(
+            "p2p_server_handshake",
+            self.max_frame_length,
+            peer_ip.clone(),
+        );
         self.handshake_clients_tasks.spawn(handshake_task);
     }
 
@@ -309,7 +327,7 @@ where
             .as_millis();
 
         let socket_addr = tcp_client.socket_addr.to_string();
-        self.tcp_server.setup_client(tcp_client)?;
+        self.tcp_server.setup_client(tcp_client);
         self.tcp_server
             .send(
                 socket_addr,
@@ -422,6 +440,7 @@ pub mod tests {
             crypto1.into(),
             "node1".to_string(),
             port1,
+            None,
             format!("127.0.0.1:{port1}"),
             "127.0.0.1:4321".into(), // send some dummy address for DA
         )
@@ -430,6 +449,7 @@ pub mod tests {
             crypto2.into(),
             "node2".to_string(),
             port2,
+            None,
             format!("127.0.0.1:{port2}"),
             "127.0.0.1:4321".into(), // send some dummy address for DA
         )
@@ -447,7 +467,7 @@ pub mod tests {
             tokio::select! {
                 event = p2p_server.listen_next() => {
                     p2p_server
-                        .handle_p2p_tcp_event(event.unwrap())
+                        .handle_p2p_tcp_event(event)
                         .await?;
                 }
                 _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {
@@ -503,10 +523,10 @@ pub mod tests {
 
         // Server1 waits for TcpClient to reconnect
         process_messages(&mut p2p_server1, 1).await?;
-        // Server2 receives Hello message
-        process_messages(&mut p2p_server2, 1).await?;
-        // Server1 receives Verack message
-        process_messages(&mut p2p_server1, 1).await?;
+        // Server2 receives Ping & Hello message
+        process_messages(&mut p2p_server2, 2).await?;
+        // Server1 receives Ping & Verack message
+        process_messages(&mut p2p_server1, 2).await?;
 
         // Verify initial connection
         assert_eq!(p2p_server1.peers.len(), 1);

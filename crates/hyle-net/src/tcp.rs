@@ -66,6 +66,7 @@ where
 {
     TcpEvent(TcpEvent<P2PTcpMessage<Msg>>),
     HandShakeTcpClient(TcpClient<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>),
+    PingPeers,
 }
 
 // A Generic Codec to unwrap/wrap with TcpMessage<T>
@@ -227,12 +228,17 @@ macro_rules! tcp_client_server {
 
             pub type Client = $crate::tcp::tcp_client::TcpClient<ClientCodec, $req, $res>;
             pub type Server = $crate::tcp::tcp_server::TcpServer<ServerCodec, $req, $res>;
-
             pub async fn start_server(port: u16) -> Result<Server> {
-                $crate::tcp::tcp_server::TcpServer::<ServerCodec, $req, $res>::start(port, stringify!($name).to_string()).await
+                $crate::tcp::tcp_server::TcpServer::<ServerCodec, $req, $res>::start_with_opts(port, None, stringify!($name).to_string()).await
+            }
+            pub async fn start_server_with_opts(port: u16, max_frame_len: Option<usize>) -> Result<Server> {
+                $crate::tcp::tcp_server::TcpServer::<ServerCodec, $req, $res>::start_with_opts(port, max_frame_len, stringify!($name).to_string()).await
             }
             pub async fn connect<Id: std::fmt::Display, A: $crate::net::ToSocketAddrs + std::fmt::Display>(id: Id, addr: A) -> Result<Client> {
                 $crate::tcp::tcp_client::TcpClient::<ClientCodec, $req, $res>::connect(id, addr).await
+            }
+            pub async fn connect_with_opts<Id: std::fmt::Display, A: $crate::net::ToSocketAddrs + std::fmt::Display>(id: Id, max_frame_length: Option<usize>, addr: A) -> Result<Client> {
+                $crate::tcp::tcp_client::TcpClient::<ClientCodec, $req, $res>::connect_with_opts(id, max_frame_length, addr).await
             }
         }
         }
@@ -259,15 +265,17 @@ macro_rules! p2p_server_mod {
                 crypto: std::sync::Arc<hyle_crypto::BlstCrypto>,
                 node_id: String,
                 server_port: u16,
+                max_frame_length: Option<usize>,
                 node_p2p_public_adress: String,
                 node_da_public_adress: String,
             ) -> anyhow::Result<P2PServerType> {
-                let server = codec_tcp::start_server(server_port).await?;
+                let server = codec_tcp::start_server_with_opts(server_port, max_frame_length).await?;
 
                 Ok(
                     $crate::tcp::p2p_server::P2PServer::new(
                         crypto,
                         node_id,
+                        max_frame_length,
                         node_p2p_public_adress,
                         node_da_public_adress,
                         server

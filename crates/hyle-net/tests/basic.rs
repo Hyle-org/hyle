@@ -67,6 +67,7 @@ async fn setup_host(peer: String, peers: Vec<String>) -> Result<(), Box<dyn Erro
         std::sync::Arc::new(crypto),
         peer.clone(),
         9090,
+        None,
         format!("{}:{}", peer, 9090),
         format!("{}:{}", peer, 4141),
     )
@@ -97,7 +98,7 @@ async fn setup_host(peer: String, peers: Vec<String>) -> Result<(), Box<dyn Erro
                 }
 
             }
-            Some(p2p_tcp_event) = p2p.listen_next() => {
+            p2p_tcp_event = p2p.listen_next() => {
                 if let Ok(Some(p2p_server_event)) = p2p.handle_p2p_tcp_event(p2p_tcp_event).await {
                     match p2p_server_event {
                         P2PServerEvent::NewPeer { name, pubkey: _, da_address: _ } => {

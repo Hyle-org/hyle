@@ -65,12 +65,11 @@ impl P2P {
             self.crypto.clone(),
             self.config.id.clone(),
             self.config.p2p.server_port,
+            Some(256 * 1024 * 1024),
             self.config.p2p.public_address.clone(),
             self.config.da_public_address.clone(),
         )
         .await?;
-
-        p2p_server.set_max_frame_length(256 * 1024 * 1024);
 
         info!(
             "📡  Starting P2P module, listening on {}",
@@ -125,7 +124,7 @@ impl P2P {
                 };
             }
 
-            Some(p2p_tcp_event) = p2p_server.listen_next() => {
+            p2p_tcp_event = p2p_server.listen_next() => {
                 if let Ok(Some(p2p_server_event)) = log_warn!(p2p_server.handle_p2p_tcp_event(p2p_tcp_event).await, "Handling P2PTcpEvent") {
                     match p2p_server_event {
                         P2PServerEvent::NewPeer { name, pubkey, da_address } => {

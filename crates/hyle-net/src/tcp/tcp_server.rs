@@ -43,26 +43,30 @@ where
     Res: BorshSerialize + Clone + Send + 'static + std::fmt::Debug,
 {
     pub async fn start(port: u16, pool_name: String) -> anyhow::Result<Self> {
+        Self::start_with_opts(port, None, pool_name).await
+    }
+
+    pub async fn start_with_opts(
+        port: u16,
+        max_frame_length: Option<usize>,
+        pool_name: String,
+    ) -> anyhow::Result<Self> {
         let tcp_listener = TcpListener::bind(&(Ipv4Addr::UNSPECIFIED, port)).await?;
         let (pool_sender, pool_receiver) = tokio::sync::mpsc::channel(100);
         let (ping_sender, ping_receiver) = tokio::sync::mpsc::channel(100);
         debug!(
-            "Starting TcpConnectionPool {}, listening for stream requests on {}",
-            &pool_name, port
+            "Starting TcpConnectionPool {}, listening for stream requests on {} with max_frame_len: {:?}",
+            &pool_name, port, max_frame_length
         );
         Ok(TcpServer::<Codec, Req, Res> {
             sockets: HashMap::new(),
-            max_frame_length: None,
+            max_frame_length,
             tcp_listener,
             pool_sender,
             pool_receiver,
             ping_sender,
             ping_receiver,
         })
-    }
-
-    pub fn set_max_frame_length(&mut self, l: usize) {
-        self.max_frame_length = Some(l);
     }
 
     pub async fn listen_next(&mut self) -> Option<TcpEvent<Req>> {
@@ -75,11 +79,11 @@ where
                     };
 
                     let (sender, receiver) = Framed::new(stream, codec).split();
-
-                    _  = self.setup_stream(sender, receiver, &socket_addr.to_string());
+                    self.setup_stream(sender, receiver, &socket_addr.to_string());
                 }
 
                 Some(socket_addr) = self.ping_receiver.recv() => {
+                    trace!("Received ping from {}", socket_addr);
                     if let Some(socket) = self.sockets.get_mut(&socket_addr) {
                         socket.last_ping = get_current_timestamp();
                     }
@@ -132,12 +136,27 @@ where
         }
     }
 
+    pub async fn ping(&mut self, socket_addr: String) -> Result<(), Error> {
+        if let Some(stream) = self.sockets.get_mut(&socket_addr) {
+            stream.sender.send(TcpMessage::Ping).await
+        } else {
+            Err(Error::new(
+                ErrorKind::NotFound,
+                format!(
+                    "Failed to retrieve socket address {} for sending a Ping",
+                    &socket_addr
+                ),
+            ))
+        }
+    }
+
+    /// Setup stream in the managed list for a new client
     fn setup_stream(
         &mut self,
         sender: SplitSink<Framed<TcpStream, TcpMessageCodec<Codec>>, TcpMessage<Res>>,
         mut receiver: SplitStream<Framed<TcpStream, TcpMessageCodec<Codec>>>,
         socket_addr: &String,
-    ) -> anyhow::Result<()> {
+    ) {
         // Start a task to process pings from the peer.
         // We do the processing in the main select! loop to keep things synchronous.
         // This makes it easier to store data in the same struct without mutexing.
@@ -210,14 +229,12 @@ where
                 abort,
             },
         );
-
-        Ok(())
     }
 
-    pub fn setup_client(&mut self, tcp_client: TcpClient<Codec, Res, Req>) -> anyhow::Result<()> {
+    pub fn setup_client(&mut self, tcp_client: TcpClient<Codec, Res, Req>) {
         let socket_addr = tcp_client.socket_addr.to_string();
         let (sender, receiver) = tcp_client.split();
-        self.setup_stream(sender, receiver, &socket_addr)
+        self.setup_stream(sender, receiver, &socket_addr);
     }
 
     pub fn drop_peer_stream(&mut self, peer_ip: String) {
@@ -286,6 +303,74 @@ pub mod tests {
             client.receiver.try_next().await.unwrap().unwrap(),
             TcpMessage::Data(DataAvailabilityEvent::SignedBlock("blabla".to_string()))
         );
+
+        let client_socket_addr = server.connected_clients()?.first().unwrap().clone();
+
+        server.ping(client_socket_addr).await?;
+
+        assert_eq!(
+            client.receiver.try_next().await.unwrap().unwrap(),
+            TcpMessage::Ping
+        );
+
+        Ok(())
+    }
+
+    tcp_client_server! {
+        bytes,
+        request: Vec<u8>,
+        response: Vec<u8>
+    }
+
+    #[tokio::test]
+    async fn tcp_with_max_frame_length() -> Result<()> {
+        let mut server = codec_bytes::start_server_with_opts(0, Some(100)).await?;
+
+        let mut client = codec_bytes::connect_with_opts(
+            "me".to_string(),
+            Some(100),
+            format!("0.0.0.0:{}", server.local_addr().unwrap().port()),
+        )
+        .await?;
+
+        // Send data to server
+        // A vec will be prefixed with 4 bytes (u32) containing the size of the payload
+        // Here we reach 99 bytes < 100
+        client.send(vec![0b_0; 95]).await?;
+
+        let data = match server.listen_next().await.unwrap() {
+            TcpEvent::Message { data, .. } => data,
+            _ => panic!("Expected a Message event"),
+        };
+
+        assert_eq!(data.len(), 95);
+        assert!(server.pool_receiver.try_recv().is_err());
+
+        // Send data to server
+        // Here we reach 100 bytes, it should explode the limit
+        let sent = client.send(vec![0b_0; 96]).await;
+        assert!(sent.is_err_and(|e| e.to_string().contains("frame size too big")));
+
+        let mut client_relaxed = codec_bytes::connect(
+            "me".to_string(),
+            format!("0.0.0.0:{}", server.local_addr().unwrap().port()),
+        )
+        .await?;
+
+        // Should be ok server side
+        client_relaxed.send(vec![0b_0; 95]).await?;
+
+        let data = match server.listen_next().await.unwrap() {
+            TcpEvent::Message { data, .. } => data,
+            _ => panic!("Expected a Message event"),
+        };
+        assert_eq!(data.len(), 95);
+
+        // Should explode server side
+        client_relaxed.send(vec![0b_0; 96]).await?;
+
+        let received_data = server.listen_next().await;
+        assert!(received_data.is_some_and(|tcp_event| matches!(tcp_event, TcpEvent::Closed { .. })));
 
         Ok(())
     }
