@@ -468,10 +468,9 @@ mod e2e_amm {
         Ok(())
     }
 
-    #[ignore = "need new_single_with_indexer"]
     #[test_log::test(tokio::test)]
     async fn amm_single_node() -> Result<()> {
-        let ctx = E2ECtx::new_single(300).await?;
+        let ctx = E2ECtx::new_single_with_indexer(300).await?;
         scenario_amm(ctx).await
     }
 
