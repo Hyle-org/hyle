@@ -79,8 +79,7 @@ where
                     };
 
                     let (sender, receiver) = Framed::new(stream, codec).split();
-
-                    _  = self.setup_stream(sender, receiver, &socket_addr.to_string());
+                    self.setup_stream(sender, receiver, &socket_addr.to_string());
                 }
 
                 Some(socket_addr) = self.ping_receiver.recv() => {
@@ -142,7 +141,7 @@ where
         sender: SplitSink<Framed<TcpStream, TcpMessageCodec<Codec>>, TcpMessage<Res>>,
         mut receiver: SplitStream<Framed<TcpStream, TcpMessageCodec<Codec>>>,
         socket_addr: &String,
-    ) -> anyhow::Result<()> {
+    ) {
         // Start a task to process pings from the peer.
         // We do the processing in the main select! loop to keep things synchronous.
         // This makes it easier to store data in the same struct without mutexing.
@@ -215,14 +214,12 @@ where
                 abort,
             },
         );
-
-        Ok(())
     }
 
-    pub fn setup_client(&mut self, tcp_client: TcpClient<Codec, Res, Req>) -> anyhow::Result<()> {
+    pub fn setup_client(&mut self, tcp_client: TcpClient<Codec, Res, Req>) {
         let socket_addr = tcp_client.socket_addr.to_string();
         let (sender, receiver) = tcp_client.split();
-        self.setup_stream(sender, receiver, &socket_addr)
+        self.setup_stream(sender, receiver, &socket_addr);
     }
 
     pub fn drop_peer_stream(&mut self, peer_ip: String) {
