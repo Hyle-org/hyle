@@ -66,6 +66,7 @@ where
 {
     TcpEvent(TcpEvent<P2PTcpMessage<Msg>>),
     HandShakeTcpClient(TcpClient<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>),
+    PingPeers,
 }
 
 // A Generic Codec to unwrap/wrap with TcpMessage<T>

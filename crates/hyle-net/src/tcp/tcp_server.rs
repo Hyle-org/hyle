@@ -83,6 +83,7 @@ where
                 }
 
                 Some(socket_addr) = self.ping_receiver.recv() => {
+                    trace!("Received ping from {}", socket_addr);
                     if let Some(socket) = self.sockets.get_mut(&socket_addr) {
                         socket.last_ping = get_current_timestamp();
                     }
@@ -129,6 +130,20 @@ where
                 ErrorKind::NotFound,
                 format!(
                     "Failed to retrieve socket address {} for sending a message",
+                    &socket_addr
+                ),
+            ))
+        }
+    }
+
+    pub async fn ping(&mut self, socket_addr: String) -> Result<(), Error> {
+        if let Some(stream) = self.sockets.get_mut(&socket_addr) {
+            stream.sender.send(TcpMessage::Ping).await
+        } else {
+            Err(Error::new(
+                ErrorKind::NotFound,
+                format!(
+                    "Failed to retrieve socket address {} for sending a Ping",
                     &socket_addr
                 ),
             ))
@@ -287,6 +302,15 @@ pub mod tests {
         assert_eq!(
             client.receiver.try_next().await.unwrap().unwrap(),
             TcpMessage::Data(DataAvailabilityEvent::SignedBlock("blabla".to_string()))
+        );
+
+        let client_socket_addr = server.connected_clients()?.first().unwrap().clone();
+
+        server.ping(client_socket_addr).await?;
+
+        assert_eq!(
+            client.receiver.try_next().await.unwrap().unwrap(),
+            TcpMessage::Ping
         );
 
         Ok(())
