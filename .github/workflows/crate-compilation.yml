@@ -27,8 +27,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/install@cargo-docs-rs
 
       - name: Compile crate '${{ matrix.crate }}' with no default features
         run: cargo build -p ${{ matrix.crate }} --no-default-features
@@ -36,17 +36,12 @@ jobs:
       - name: Compile crate '${{ matrix.crate }}' with default features
         run: cargo build -p ${{ matrix.crate }}
 
-      - name: Build doc for crate '${{ matrix.crate }}'
-        if: matrix.features == ''
-        run: cargo doc -p ${{ matrix.crate }}
-
-      - name: Build doc for crate '${{ matrix.crate }}' with features
-        if: matrix.features != ''
-        run: cargo doc -p ${{ matrix.crate }} --features ${{ matrix.features }}
-
       - name: Compile crate '${{ matrix.crate }}' with specific features
         if: matrix.features != ''
         run: cargo build -p ${{ matrix.crate }} --features ${{ matrix.features }}
+      
+      - name: Build doc for crate '${{ matrix.crate }}'
+        run: cargo docs-rs -p ${{ matrix.crate }}
 
   list-crates:
     runs-on: ubuntu-latest
