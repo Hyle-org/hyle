@@ -67,7 +67,7 @@ where
     {
         // TODO/FIXME: Concurrent writes can happen, and an older state can override a newer one
         // Example:
-        // State 1 starts creating a tmp file data.state1.tmp
+        // State 1 starts creating a tmp file data.state1.tmp
         // State 2 starts creating a tmp file data.state2.tmp
         // rename data.state2.tmp into store (atomic override)
         // renemae data.state1.tmp into
@@ -182,14 +182,14 @@ macro_rules! module_handle_messages {
 macro_rules! module_bus_client {
     (
         $(#[$meta:meta])*
-        $pub:vis struct $name:ident {
+        $pub:vis struct $name:ident $(< $( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+ >)? {
             $(sender($sender:ty),)*
             $(receiver($receiver:ty),)*
         }
     ) => {
         $crate::bus::bus_client!{
             $(#[$meta])*
-            $pub struct $name {
+            $pub struct $name $(< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? {
                 $(sender($sender),)*
                 $(receiver($receiver),)*
                 receiver($crate::utils::modules::signal::ShutdownModule),

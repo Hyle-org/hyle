@@ -94,21 +94,21 @@ pub trait BusClientReceiver<T> {
 macro_rules! bus_client {
     (
         $(#[$meta:meta])*
-        $pub:vis struct $name:ident {
+        $pub:vis struct $name:ident $(< $( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+ >)? {
             $(sender($sender:ty),)*
             $(receiver($receiver:ty),)*
         }
     ) => {
         $crate::utils::static_type_map::static_type_map! {
             $(#[$meta])*
-            $pub struct $name (
+            $pub struct $name $(< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? (
                 $crate::bus::metrics::BusMetrics,
                 $(tokio::sync::broadcast::Sender<$sender>,)*
                 $(tokio::sync::broadcast::Receiver<$receiver>,)*
             );
         }
-        impl $name {
-            pub async fn new_from_bus(bus: $crate::bus::SharedMessageBus) -> $name {
+        impl $(< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? $name $(< $( $lt ),+ >)? {
+            pub async fn new_from_bus(bus: $crate::bus::SharedMessageBus) -> $name $(< $( $lt ),+ >)? {
                 $name::new(
                     bus.metrics.clone(),
                     $($crate::bus::dont_use_this::get_sender::<$sender>(&bus).await,)*
