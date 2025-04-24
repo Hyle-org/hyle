@@ -146,7 +146,7 @@ async fn setup_drop_host(peer: String, peers: Vec<String>) -> Result<(), Box<dyn
     let mut interval_broadcast = tokio::time::interval(Duration::from_millis(500));
     loop {
         tokio::select! {
-            Some(tcp_event) = p2p.listen_next() => {
+            tcp_event = p2p.listen_next() => {
                 _ = p2p.handle_p2p_tcp_event(tcp_event).await;
             }
             _ = interval_broadcast.tick() => {
@@ -197,7 +197,7 @@ async fn setup_drop_client(
                 }
             }
 
-            Some(tcp_event) = p2p.listen_next() => {
+            tcp_event = p2p.listen_next() => {
                 _ = p2p.handle_p2p_tcp_event(tcp_event).await;
             }
             _ = interval_broadcast.tick() => {
