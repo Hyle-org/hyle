@@ -242,11 +242,13 @@ impl super::Mempool {
         #[cfg(test)]
         self.on_new_tx(tx.clone())?;
         #[cfg(not(test))]
-        self.processing_txs
-            .push_back(tokio::task::spawn_blocking(move || {
+        {
+            let fut = self.long_tasks_runtime.spawn(async move {
                 tx.hashed();
                 Ok(tx)
-            }));
+            });
+            self.processing_txs.push_back(fut);
+        }
         self.notify_new_tx_to_process.notify_one();
         Ok(())
     }
@@ -271,12 +273,12 @@ impl super::Mempool {
                     proof_tx.contract_name
                 );
                 let kc = self.known_contracts.clone();
-                self.processing_txs
-                    .push_back(tokio::task::spawn_blocking(move || {
-                        let tx = Self::process_proof_tx(kc, tx)
-                            .context("Processing proof tx in blocker")?;
-                        Ok(tx)
-                    }));
+                let fut = self.long_tasks_runtime.spawn(async move {
+                    let tx =
+                        Self::process_proof_tx(kc, tx).context("Processing proof tx in blocker")?;
+                    Ok(tx)
+                });
+                self.processing_txs.push_back(fut);
                 self.notify_new_tx_to_process.notify_one();
 
                 return Ok(());
