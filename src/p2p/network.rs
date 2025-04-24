@@ -4,17 +4,11 @@ use crate::model::ValidatorPublicKey;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_model::{ConsensusNetMessage, SignedByValidator};
+use hyle_net::tcp::P2PTcpMessage;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt::{self, Display};
 use strum_macros::IntoStaticStr;
-
-#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
-pub struct Hello {
-    pub version: u16,
-    pub name: String,
-    pub da_address: String,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OutboundMessage {
@@ -60,9 +54,6 @@ impl Display for NetMessage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let enum_variant: &'static str = self.into();
         match self {
-            NetMessage::HandshakeMessage(_) => {
-                write!(f, "{}", enum_variant)
-            }
             NetMessage::MempoolMessage(msg) => {
                 _ = write!(f, "NetMessage::{} ", enum_variant);
                 write!(f, "{}", msg)
@@ -91,22 +82,18 @@ impl Display for NetMessage {
     reason = "TODO: consider if we should refactor this"
 )]
 pub enum NetMessage {
-    HandshakeMessage(HandshakeNetMessage),
     MempoolMessage(SignedByValidator<MempoolNetMessage>),
     ConsensusMessage(SignedByValidator<ConsensusNetMessage>),
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
-pub enum HandshakeNetMessage {
-    Hello(SignedByValidator<Hello>),
-    Verack,
-    Ping,
-    Pong,
+hyle_net::p2p_server_mod! {
+    pub consensus_mempool,
+    message: super::super::NetMessage
 }
 
-impl From<HandshakeNetMessage> for NetMessage {
-    fn from(msg: HandshakeNetMessage) -> Self {
-        NetMessage::HandshakeMessage(msg)
+impl From<NetMessage> for P2PTcpMessage<NetMessage> {
+    fn from(message: NetMessage) -> Self {
+        P2PTcpMessage::Data(message)
     }
 }
 

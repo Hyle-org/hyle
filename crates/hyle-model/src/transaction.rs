@@ -202,66 +202,7 @@ impl Hashed<TxHash> for VerifiedProofTransaction {
     }
 }
 
-#[derive(
-    Debug, Default, Serialize, ToSchema, PartialEq, Eq, Clone, BorshSerialize, BorshDeserialize,
-)]
-pub struct ProofData(#[serde(with = "base64_field")] pub Vec<u8>);
-
-impl<'de> Deserialize<'de> for ProofData {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        struct ProofDataVisitor;
-
-        impl<'de> serde::de::Visitor<'de> for ProofDataVisitor {
-            type Value = ProofData;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a Base64 string or a Vec<u8>")
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                use base64::prelude::*;
-                let decoded = BASE64_STANDARD
-                    .decode(value)
-                    .map_err(serde::de::Error::custom)?;
-                Ok(ProofData(decoded))
-            }
-
-            fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
-            where
-                A: serde::de::SeqAccess<'de>,
-            {
-                let vec_u8: Vec<u8> = serde::de::Deserialize::deserialize(
-                    serde::de::value::SeqAccessDeserializer::new(seq),
-                )?;
-                Ok(ProofData(vec_u8))
-            }
-        }
-
-        deserializer.deserialize_any(ProofDataVisitor)
-    }
-}
-
-#[derive(
-    Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize,
-)]
-pub struct ProofDataHash(pub String);
-
-impl Hashed<ProofDataHash> for ProofData {
-    fn hashed(&self) -> ProofDataHash {
-        let mut hasher = Sha3_256::new();
-        hasher.update(self.0.as_slice());
-        let hash_bytes = hasher.finalize();
-        ProofDataHash(hex::encode(hash_bytes))
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Default, BorshSerialize, BorshDeserialize)]
+#[derive(Serialize, Deserialize, Default, BorshSerialize, BorshDeserialize)]
 #[readonly::make]
 pub struct BlobTransaction {
     pub identity: Identity,
@@ -283,6 +224,16 @@ impl BlobTransaction {
             hash_cache: RwLock::new(None),
             blobshash_cache: RwLock::new(None),
         }
+    }
+}
+
+// Custom implem to skip the cached fields
+impl std::fmt::Debug for BlobTransaction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BlobTransaction")
+            .field("identity", &self.identity)
+            .field("blobs", &self.blobs)
+            .finish()
     }
 }
 
@@ -348,20 +299,20 @@ impl BlobTransaction {
         if let Some(hash) = self.blobshash_cache.read().unwrap().clone() {
             return hash;
         }
-        let hash = BlobsHashes::from_vec(&self.blobs);
+        let hash: BlobsHashes = (&self.blobs).into();
         self.blobshash_cache.write().unwrap().replace(hash.clone());
         hash
     }
 
     pub fn validate_identity(&self) -> Result<(), anyhow::Error> {
         // Checks that there is a blob that proves the identity
-        let Some((identity, identity_contract_name)) = self.identity.0.split_once('.') else {
-            anyhow::bail!("Transaction identity {} is not correctly formed. It should be in the form <id>.<contract_id_name>", self.identity.0);
+        let Some((identity, identity_contract_name)) = self.identity.0.rsplit_once("@") else {
+            anyhow::bail!("Transaction identity {} is not correctly formed. It should be in the form <id>@<contract_id_name>", self.identity.0);
         };
 
         if identity.is_empty() || identity_contract_name.is_empty() {
             anyhow::bail!(
-                "Transaction identity {}.{} must not have empty parts",
+                "Transaction identity {}@{} must not have empty parts",
                 identity,
                 identity_contract_name
             );
@@ -399,34 +350,30 @@ pub struct BlobsHashes {
     pub hashes: BTreeMap<BlobIndex, BlobHash>,
 }
 
-impl BlobsHashes {
-    pub fn new(s: &str) -> BlobsHashes {
+impl From<&Vec<Blob>> for BlobsHashes {
+    fn from(iter: &Vec<Blob>) -> Self {
         BlobsHashes {
-            hashes: vec![(BlobIndex(0), BlobHash(s.into()))]
-                .into_iter()
-                .collect(),
-        }
-    }
-
-    pub fn from_vec(vec: &[Blob]) -> BlobsHashes {
-        Self::from_concatenated(&flatten_blobs_vec(vec))
-    }
-
-    pub fn from_concatenated(vec: &[(BlobIndex, Vec<u8>)]) -> BlobsHashes {
-        BlobsHashes {
-            hashes: vec
+            hashes: iter
                 .iter()
-                .map(|(index, blob)| {
-                    let mut hasher = Sha3_256::new();
-                    hasher.update(blob);
-                    let hash_bytes = hasher.finalize();
-                    let hash = BlobHash(hex::encode(hash_bytes));
-                    (*index, hash)
-                })
+                .enumerate()
+                .map(|(index, blob)| (BlobIndex(index), blob.hashed()))
                 .collect(),
         }
     }
+}
 
+impl From<&IndexedBlobs> for BlobsHashes {
+    fn from(iter: &IndexedBlobs) -> Self {
+        BlobsHashes {
+            hashes: iter
+                .iter()
+                .map(|(index, blob)| (*index, blob.hashed()))
+                .collect(),
+        }
+    }
+}
+
+impl BlobsHashes {
     pub fn includes_all(&self, other: &BlobsHashes) -> bool {
         for (index, hash) in other.hashes.iter() {
             if !self
@@ -447,26 +394,5 @@ impl std::fmt::Display for BlobsHashes {
             write!(f, "[{}]: {}", index, hash)?;
         }
         Ok(())
-    }
-}
-
-pub mod base64_field {
-    use base64::prelude::*;
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let encoded = BASE64_STANDARD.encode(bytes);
-        serializer.serialize_str(&encoded)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        BASE64_STANDARD.decode(&s).map_err(serde::de::Error::custom)
     }
 }

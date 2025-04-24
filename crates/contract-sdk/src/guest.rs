@@ -11,7 +11,7 @@ The `fail` function is used to generate a failure output for a contract action.
 
 This is a code snippet of a Risc0 guest entrypoint (e.g. file `methods/guest/src/main.rs` in a risc0 template project).
 
-`Hydentity` struct has to implements [ZkProgram] and [BorshDeserialize] traits.
+`Hydentity` struct has to implements [ZkContract] and [BorshDeserialize] traits.
 
 ```rust,no_run,compile_fail
 #![no_main]
@@ -34,7 +34,7 @@ fn main() {
 This is a code snippet of a SP1 guest entrypoint (e.g. file `program/src/main.rs` in a sp1 template project).
 
 
-`IdentityContractState` struct has to implements [ZkProgram] and [BorshDeserialize] traits.
+`IdentityContractState` struct has to implements [ZkContract] and [BorshDeserialize] traits.
 
 ```rust,no_run,compile_fail
 #![no_main]
@@ -56,12 +56,10 @@ fn main() {
 
 */
 
-use alloc::string::ToString;
-use alloc::vec;
 use borsh::BorshDeserialize;
-use hyle_model::{Calldata, StateCommitment};
+use hyle_model::Calldata;
 
-use crate::{flatten_blobs, utils::as_hyle_output, HyleOutput};
+use crate::{utils::as_hyle_output, HyleOutput};
 use crate::{RunResult, ZkContract};
 
 pub trait GuestEnv {
@@ -72,6 +70,8 @@ pub trait GuestEnv {
 
 pub struct Risc0Env;
 
+#[cfg(feature = "risc0")]
+use alloc::vec;
 #[cfg(feature = "risc0")]
 impl GuestEnv for Risc0Env {
     fn log(&self, message: &str) {
@@ -108,27 +108,6 @@ impl GuestEnv for SP1Env {
     fn read<T: BorshDeserialize>(&self) -> T {
         let vec = sp1_zkvm::io::read_vec();
         borsh::from_slice(&vec).unwrap()
-    }
-}
-
-pub fn fail(
-    calldata: &Calldata,
-    initial_state_commitment: StateCommitment,
-    message: &str,
-) -> HyleOutput {
-    HyleOutput {
-        version: 1,
-        initial_state: initial_state_commitment.clone(),
-        next_state: initial_state_commitment,
-        identity: calldata.identity.clone(),
-        index: calldata.index,
-        blobs: flatten_blobs(calldata.blobs.iter()),
-        tx_blob_count: calldata.tx_blob_count,
-        success: false,
-        tx_hash: calldata.tx_hash.clone(),
-        tx_ctx: calldata.tx_ctx.clone(),
-        onchain_effects: vec![],
-        program_outputs: message.to_string().into_bytes(),
     }
 }
 

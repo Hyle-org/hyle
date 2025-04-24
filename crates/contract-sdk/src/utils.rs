@@ -1,7 +1,6 @@
 use crate::{
     alloc::string::{String, ToString},
     caller::ExecutionContext,
-    guest::fail,
     Identity, StructuredBlobData,
 };
 use alloc::{format, vec};
@@ -9,8 +8,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use core::result::Result;
 
 use hyle_model::{
-    flatten_blobs, Blob, BlobIndex, Calldata, DropEndOfReader, HyleOutput, IndexedBlobs,
-    StateCommitment, StructuredBlob,
+    Blob, BlobIndex, Calldata, DropEndOfReader, HyleOutput, IndexedBlobs, StateCommitment,
+    StructuredBlob,
 };
 
 /// This function is used to parse the contract input blob data into a given template `Action`
@@ -61,11 +60,11 @@ where
     let caller = check_caller_callees::<Action>(calldata, &parsed_blob)?;
 
     let mut callees_blobs = vec::Vec::new();
-    for (_, blob) in calldata.blobs.clone() {
+    for (_, blob) in &calldata.blobs {
         if let Ok(structured_blob) = blob.data.clone().try_into() {
             let structured_blob: StructuredBlobData<DropEndOfReader> = structured_blob; // for type inference
             if structured_blob.caller == Some(calldata.index) {
-                callees_blobs.push(blob);
+                callees_blobs.push(blob.clone());
             }
         };
     }
@@ -120,6 +119,28 @@ where
     Some(parsed_blob)
 }
 
+fn fail(
+    calldata: &Calldata,
+    initial_state_commitment: StateCommitment,
+    message: &str,
+) -> HyleOutput {
+    HyleOutput {
+        version: 1,
+        initial_state: initial_state_commitment.clone(),
+        next_state: initial_state_commitment,
+        identity: calldata.identity.clone(),
+        index: calldata.index,
+        blobs: calldata.blobs.clone(),
+        tx_blob_count: calldata.tx_blob_count,
+        success: false,
+        tx_hash: calldata.tx_hash.clone(),
+        state_reads: vec![],
+        tx_ctx: calldata.tx_ctx.clone(),
+        onchain_effects: vec![],
+        program_outputs: message.to_string().into_bytes(),
+    }
+}
+
 pub fn as_hyle_output(
     initial_state_commitment: StateCommitment,
     next_state_commitment: StateCommitment,
@@ -144,10 +165,11 @@ pub fn as_hyle_output(
                 next_state: next_state_commitment,
                 identity: calldata.identity.clone(),
                 index: calldata.index,
-                blobs: flatten_blobs(&calldata.blobs.0),
+                blobs: calldata.blobs.clone(),
                 tx_blob_count: calldata.tx_blob_count,
                 success: true,
                 tx_hash: calldata.tx_hash.clone(),
+                state_reads: vec![],
                 tx_ctx: calldata.tx_ctx.clone(),
                 onchain_effects: core::mem::take(onchain_effects),
                 program_outputs: core::mem::take(program_output).into_bytes(),

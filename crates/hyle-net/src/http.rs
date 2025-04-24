@@ -78,7 +78,8 @@ impl HttpClient {
             .context("Sending request")?;
 
         if !response.status().is_success() {
-            anyhow::bail!("Status error {}", response.status());
+            let body = Self::parse_response_text(response).await?;
+            anyhow::bail!(body);
         }
 
         Ok(response)

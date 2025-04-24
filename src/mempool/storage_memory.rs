@@ -8,15 +8,15 @@ use hyle_model::{LaneBytesSize, LaneId, Signed, SignedByValidator, ValidatorSign
 use tracing::info;
 
 use super::{
-    storage::{CanBePutOnTop, LaneEntry, Storage},
+    storage::{CanBePutOnTop, LaneEntryMetadata, Storage},
     MempoolNetMessage,
 };
-use crate::model::{DataProposalHash, Hashed};
+use crate::model::{DataProposal, DataProposalHash, Hashed};
 
 pub struct LanesStorage {
     pub lanes_tip: BTreeMap<LaneId, (DataProposalHash, LaneBytesSize)>,
-    // NB: do not iterate on this one as it's unordered
-    pub by_hash: HashMap<LaneId, HashMap<DataProposalHash, LaneEntry>>,
+    // NB: do not iterate on these as they're unordered
+    pub by_hash: HashMap<LaneId, HashMap<DataProposalHash, (LaneEntryMetadata, DataProposal)>>,
 }
 
 impl LanesStorage {
@@ -45,56 +45,61 @@ impl Storage for LanesStorage {
         false
     }
 
-    fn get_by_hash(
+    fn get_metadata_by_hash(
         &self,
         lane_id: &LaneId,
         dp_hash: &DataProposalHash,
-    ) -> Result<Option<LaneEntry>> {
+    ) -> Result<Option<LaneEntryMetadata>> {
         if let Some(lane) = self.by_hash.get(lane_id) {
-            return Ok(lane.get(dp_hash).cloned());
+            return Ok(lane.get(dp_hash).map(|(metadata, _)| metadata.clone()));
+        }
+        bail!("Can't find lane with ID {}", lane_id)
+    }
+    fn get_dp_by_hash(
+        &self,
+        lane_id: &LaneId,
+        dp_hash: &DataProposalHash,
+    ) -> Result<Option<DataProposal>> {
+        if let Some(lane) = self.by_hash.get(lane_id) {
+            return Ok(lane.get(dp_hash).map(|(_, data)| data.clone()));
         }
         bail!("Can't find validator {}", lane_id)
     }
 
-    fn pop(&mut self, validator: LaneId) -> Result<Option<(DataProposalHash, LaneEntry)>> {
+    fn pop(
+        &mut self,
+        validator: LaneId,
+    ) -> Result<Option<(DataProposalHash, (LaneEntryMetadata, DataProposal))>> {
         if let Some((lane_tip, _)) = self.lanes_tip.get(&validator).cloned() {
             if let Some(lane) = self.by_hash.get_mut(&validator) {
-                if let Some(lane_entry) = lane.remove(&lane_tip) {
-                    self.update_lane_tip(
-                        validator,
-                        lane_entry.data_proposal.hashed(),
-                        lane_entry.cumul_size,
-                    );
-                    return Ok(Some((lane_tip.clone(), lane_entry)));
+                if let Some(entry) = lane.remove(&lane_tip) {
+                    self.update_lane_tip(validator, lane_tip.clone(), entry.0.cumul_size);
+                    return Ok(Some((lane_tip.clone(), entry)));
                 }
             }
         }
         Ok(None)
     }
 
-    fn put(&mut self, lane_id: LaneId, lane_entry: LaneEntry) -> Result<()> {
-        let dp_hash = lane_entry.data_proposal.hashed();
+    fn put(&mut self, lane_id: LaneId, entry: (LaneEntryMetadata, DataProposal)) -> Result<()> {
+        let dp_hash = entry.1.hashed();
         if self.contains(&lane_id, &dp_hash) {
             bail!("DataProposal {} was already in lane", dp_hash);
         }
-        match self.can_be_put_on_top(
-            &lane_id,
-            lane_entry.data_proposal.parent_data_proposal_hash.as_ref(),
-        ) {
+        match self.can_be_put_on_top(&lane_id, entry.0.parent_data_proposal_hash.as_ref()) {
             CanBePutOnTop::No => bail!(
                 "Can't store DataProposal {}, as parent is unknown ",
-                lane_entry.data_proposal.hashed()
+                dp_hash
             ),
             CanBePutOnTop::Yes => {
-                // Add DataProposal to validator's lane
-                let size = lane_entry.cumul_size;
+                // Add both metadata and data to validator's lane
                 self.by_hash
                     .entry(lane_id.clone())
                     .or_default()
-                    .insert(dp_hash.clone(), lane_entry);
+                    .insert(dp_hash.clone(), entry.clone());
 
-                // Validatoupdate_lane_tipr's lane tip is only updated if DP-chain is respected
-                self.update_lane_tip(lane_id, dp_hash, size);
+                // Validator's lane tip is only updated if DP-chain is respected
+                self.update_lane_tip(lane_id, dp_hash, entry.0.cumul_size);
 
                 Ok(())
             }
@@ -103,18 +108,22 @@ impl Storage for LanesStorage {
                 bail!(
                     "DataProposal cannot be put in lane because it creates a fork: last dp hash {:?} while proposed parent_data_proposal_hash: {:?}",
                     last_known_hash,
-                    lane_entry.data_proposal.parent_data_proposal_hash
+                    entry.0.parent_data_proposal_hash
                 )
             }
         }
     }
 
-    fn put_no_verification(&mut self, lane_id: LaneId, lane_entry: LaneEntry) -> Result<()> {
-        let dp_hash = lane_entry.data_proposal.hashed();
+    fn put_no_verification(
+        &mut self,
+        lane_id: LaneId,
+        entry: (LaneEntryMetadata, DataProposal),
+    ) -> Result<()> {
+        let dp_hash = entry.1.hashed();
         self.by_hash
             .entry(lane_id)
             .or_default()
-            .insert(dp_hash, lane_entry);
+            .insert(dp_hash, entry);
         Ok(())
     }
 
@@ -124,12 +133,12 @@ impl Storage for LanesStorage {
         dp_hash: &DataProposalHash,
         vote_msgs: T,
     ) -> Result<Vec<Signed<MempoolNetMessage, ValidatorSignature>>> {
-        let Some(dp) = self
-            .by_hash
-            .get_mut(lane_id)
-            .and_then(|lane| lane.get_mut(dp_hash))
-        else {
-            bail!("DataProposal {} not found in lane {}", dp_hash, lane_id);
+        let Some(lane) = self.by_hash.get_mut(lane_id) else {
+            bail!("Can't find validator {}", lane_id);
+        };
+
+        let Some((mut metadata, data_proposal)) = lane.get(dp_hash).cloned() else {
+            bail!("Can't find DP {} for validator {}", dp_hash, lane_id);
         };
 
         for msg in vote_msgs {
@@ -140,7 +149,7 @@ impl Storage for LanesStorage {
                 );
                 continue;
             };
-            if &dp.cumul_size != cumul_size || dp_hash != dph {
+            if &metadata.cumul_size != cumul_size || dp_hash != dph {
                 tracing::warn!(
                     "Received a DataVote message with wrong hash or size: {:?}",
                     msg.msg
@@ -148,15 +157,17 @@ impl Storage for LanesStorage {
                 continue;
             }
             // Insert the new messages if they're not already in
-            match dp
+            match metadata
                 .signatures
                 .binary_search_by(|probe| probe.signature.cmp(&msg.signature))
             {
                 Ok(_) => {}
-                Err(pos) => dp.signatures.insert(pos, msg),
+                Err(pos) => metadata.signatures.insert(pos, msg),
             }
         }
-        Ok(dp.signatures.clone())
+        let signatures = metadata.signatures.clone();
+        lane.insert(dp_hash.clone(), (metadata, data_proposal));
+        Ok(signatures)
     }
 
     fn get_lane_ids(&self) -> impl Iterator<Item = &LaneId> {
@@ -178,6 +189,27 @@ impl Storage for LanesStorage {
         size: LaneBytesSize,
     ) -> Option<(DataProposalHash, LaneBytesSize)> {
         self.lanes_tip.insert(lane_id, (dp_hash, size))
+    }
+
+    fn get_entries_between_hashes(
+        &self,
+        lane_id: &LaneId,
+        from_data_proposal_hash: Option<&DataProposalHash>,
+        to_data_proposal_hash: Option<&DataProposalHash>,
+    ) -> Result<Vec<(LaneEntryMetadata, DataProposal)>> {
+        let metadata = self.get_entries_metadata_between_hashes(
+            lane_id,
+            from_data_proposal_hash,
+            to_data_proposal_hash,
+        )?;
+        let mut entries = Vec::with_capacity(metadata.len());
+        for (metadata, dp_hash) in metadata {
+            let Some(dp) = self.get_dp_by_hash(lane_id, &dp_hash)? else {
+                bail!("Can't find DP {} for validator {}", dp_hash, lane_id);
+            };
+            entries.push((metadata, dp));
+        }
+        Ok(entries)
     }
 
     #[cfg(test)]

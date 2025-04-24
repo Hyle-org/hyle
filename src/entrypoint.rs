@@ -20,7 +20,6 @@ use crate::{
     tools::mock_workflow::MockWorkflowHandler,
     utils::{
         conf::{self, P2pMode},
-        crypto::SharedBlstCrypto,
         modules::ModulesHandler,
     },
 };
@@ -28,6 +27,7 @@ use anyhow::{bail, Context, Result};
 use axum::Router;
 use axum_otel_metrics::HttpMetricsLayerBuilder;
 use hydentity::Hydentity;
+use hyle_crypto::SharedBlstCrypto;
 use hyllar::Hyllar;
 use prometheus::Registry;
 use std::{
@@ -142,7 +142,7 @@ pub fn welcome_message(conf: &conf::Conf) {
         http_port = conf.rest_server_port,
         check_tcp = check_or_cross(conf.run_tcp_server),
         tcp_port = conf.tcp_server_port,
-        da_port = conf.da_server_port,
+        da_port = conf.da_public_address,
         check_indexer = check_or_cross(conf.run_indexer),
         database_url = if conf.run_indexer {
             format!("↯ {}", mask_postgres_uri(conf.database_url.as_str()))
@@ -151,18 +151,22 @@ pub fn welcome_message(conf: &conf::Conf) {
         },
         data_directory = conf.data_directory.to_string_lossy(),
         validator_details = if matches!(conf.p2p.mode, P2pMode::FullValidator) {
+            let timestamp_checks: &'static str = (&conf.consensus.timestamp_checks).into();
             let c_mode = if conf.consensus.solo {
-                "↘ single"
+                "single"
             } else {
-                "↘ multi"
+                "multi"
             };
             let sd = conf.consensus.slot_duration.as_millis();
             let peers = if conf.consensus.solo {
                 "".to_string()
             } else {
-                conf.p2p.peers.join(" ")
+                format!("| peers: [{}]", conf.p2p.peers.join(" ")).to_string()
             };
-            format!("{} {}ms {}", c_mode, sd, peers)
+            format!(
+                "{} | {}ms | timestamps: {} {}",
+                c_mode, sd, timestamp_checks, peers
+            )
         } else {
             "".to_string()
         },
@@ -315,7 +319,7 @@ async fn common_main(
                     NodeInfo {
                         id: config.id.clone(),
                         pubkey: crypto.as_ref().map(|c| c.validator_pubkey()).cloned(),
-                        da_address: format!("{}:{}", config.hostname, config.da_server_port),
+                        da_address: config.da_public_address.clone(),
                     },
                     common_run_ctx.bus.new_handle(),
                     router.clone(),

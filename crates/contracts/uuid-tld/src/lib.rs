@@ -44,7 +44,7 @@ impl ZkContract for UuidTld {
     fn execute(&mut self, calldata: &Calldata) -> RunResult {
         // Not an identity provider
         if calldata.identity.0.ends_with(&format!(
-            ".{}",
+            "@{}",
             calldata.blobs.get(&calldata.index).unwrap().contract_name.0
         )) {
             return Err("Invalid identity".to_string());
@@ -187,7 +187,7 @@ mod test {
         let mut state = UuidTld::default();
 
         // First claim a UUID
-        let claim_calldata = make_calldata(UuidTldAction::Claim, "toto.test");
+        let claim_calldata = make_calldata(UuidTldAction::Claim, "toto@test");
         let (msg, _, _) = state.execute(&claim_calldata).unwrap();
         let uuid = msg.replace("claimed ", "");
 
@@ -199,7 +199,7 @@ mod test {
             state_commitment: StateCommitment(vec![0, 1, 2, 3]),
         };
 
-        let contract_input = make_calldata(register_action.clone(), "toto.test");
+        let contract_input = make_calldata(register_action.clone(), "toto@test");
         let (_, _, onchain_effects) = state.execute(&contract_input).unwrap();
 
         let OnchainEffect::RegisterContract(effect) = onchain_effects.first().unwrap() else {
@@ -211,7 +211,7 @@ mod test {
         assert_eq!(effect.state_commitment, StateCommitment(vec![0, 1, 2, 3]));
 
         // Try to register with a different identity
-        let contract_input = make_calldata(register_action.clone(), "other.test");
+        let contract_input = make_calldata(register_action.clone(), "other@test");
         assert!(state.execute(&contract_input).is_err());
 
         // Try to register with unclaimed UUID
@@ -223,7 +223,7 @@ mod test {
             state_commitment: StateCommitment(vec![0, 1, 2, 3]),
         };
 
-        let contract_input = make_calldata(register_action, "toto.test");
+        let contract_input = make_calldata(register_action, "toto@test");
         assert!(state.execute(&contract_input).is_err());
     }
 }

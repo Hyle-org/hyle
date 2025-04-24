@@ -8,11 +8,9 @@ use client_sdk::{
 use hyle::{
     model::BlobTransaction,
     rest::client::NodeApiHttpClient,
-    utils::{
-        conf::{Conf, P2pConf},
-        crypto::BlstCrypto,
-    },
+    utils::conf::{Conf, P2pConf, P2pMode},
 };
+use hyle_crypto::BlstCrypto;
 use hyle_model::TxHash;
 use signal_child::signal;
 use std::time::Duration;
@@ -43,10 +41,17 @@ impl ConfMaker {
                 format!("{}-{}", prefix, self.i)
             },
             p2p: P2pConf {
+                public_address: format!("127.0.0.1:{}", p2p_port),
                 server_port: p2p_port,
+                mode: if prefix == "indexer" {
+                    P2pMode::None
+                } else {
+                    P2pMode::FullValidator
+                },
                 ..self.default.p2p.clone()
             },
             da_server_port: da_port,
+            da_public_address: format!("127.0.0.1:{}", da_port),
             tcp_server_port: tcp_port,
             rest_server_port: rest_port,
             ..self.default.clone()

@@ -52,7 +52,7 @@ struct DABusClient {
 }
 }
 
-type DaTcpServer = hyle_net::tcp::TcpServer<
+type DaTcpServer = hyle_net::tcp::tcp_server::TcpServer<
     codec_data_availability::ServerCodec,
     DataAvailabilityRequest,
     DataAvailabilityEvent,
@@ -120,7 +120,7 @@ impl DataAvailability {
             }
 
             listen<MempoolStatusEvent> evt => {
-                _ = log_error!(self.handle_mempool_status_event(evt, &mut server).await, "Handling Mempool Event");
+                self.handle_mempool_status_event(evt, &mut server).await;
             }
 
             listen<GenesisEvent> cmd => {
@@ -162,11 +162,10 @@ impl DataAvailability {
                 }
             }
 
-            Some(request) = server.listen_next() => {
-                info!("Received message from the connection pool");
-
-                let TcpEvent{ dest, data } = request;
-                _ = self.start_streaming_to_peer(data.0, catchup_sender.clone(), &dest).await;
+            Some(tcp_event) = server.listen_next() => {
+                if let TcpEvent::Message { dest, data } = tcp_event {
+                    _ = self.start_streaming_to_peer(data.0, catchup_sender.clone(), &dest).await;
+                }
             }
 
 
@@ -228,12 +227,10 @@ impl DataAvailability {
         &mut self,
         evt: MempoolStatusEvent,
         tcp_server: &mut DaTcpServer,
-    ) -> Result<()> {
+    ) {
         tcp_server
             .broadcast(DataAvailabilityEvent::MempoolStatusEvent(evt))
-            .await?;
-
-        Ok(())
+            .await;
     }
 
     async fn handle_signed_block(
@@ -342,12 +339,9 @@ impl DataAvailability {
 
         // TODO: use retain once async closures are supported ?
         //
-        _ = log_error!(
-            tcp_server
-                .broadcast(DataAvailabilityEvent::SignedBlock(block.clone()),)
-                .await,
-            "Sending block to tcp connection pool"
-        );
+        tcp_server
+            .broadcast(DataAvailabilityEvent::SignedBlock(block.clone()))
+            .await;
 
         // Send the block to NodeState for processing
         _ = log_error!(
@@ -469,6 +463,7 @@ pub mod tests {
             let node_state = NodeState::create(config.id.clone(), "data_availability");
 
             config.da_server_port = find_available_port().await;
+            config.da_public_address = format!("127.0.0.1:{}", config.da_server_port);
             let da = super::DataAvailability {
                 config: config.into(),
                 bus,
@@ -570,6 +565,7 @@ pub mod tests {
 
         let mut config: Conf = Conf::new(None, None, None).unwrap();
         config.da_server_port = find_available_port().await;
+        config.da_public_address = format!("127.0.0.1:{}", config.da_server_port);
         let mut da = super::DataAvailability {
             config: config.clone().into(),
             bus,
@@ -596,7 +592,7 @@ pub mod tests {
 
         let mut client = codec_data_availability::connect(
             "client_id".to_string(),
-            format!("localhost:{}", config.da_server_port),
+            config.da_public_address.clone(),
         )
         .await
         .unwrap();
@@ -655,7 +651,7 @@ pub mod tests {
 
         let mut client = codec_data_availability::connect(
             "client_id".to_string(),
-            format!("localhost:{}", config.da_server_port),
+            config.da_public_address.clone(),
         )
         .await
         .unwrap();
@@ -704,7 +700,7 @@ pub mod tests {
             da_sender.handle_signed_block(block, &mut server).await;
         }
 
-        let da_sender_port = da_sender.da.config.da_server_port;
+        let da_sender_address = da_sender.da.config.da_public_address.clone();
 
         tokio::spawn(async move {
             da_sender.da.start().await.unwrap();
@@ -717,7 +713,7 @@ pub mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::channel(200);
         da_receiver
             .da
-            .ask_for_catchup_blocks(format!("localhost:{}", da_sender_port.clone()), tx.clone())
+            .ask_for_catchup_blocks(da_sender_address.clone(), tx.clone())
             .await
             .expect("Error while asking for catchup blocks");
 
@@ -793,7 +789,7 @@ pub mod tests {
         // Resubscribe - we should only receive the new ones.
         da_receiver
             .da
-            .ask_for_catchup_blocks(format!("localhost:{}", da_sender_port), tx)
+            .ask_for_catchup_blocks(da_sender_address.clone(), tx)
             .await
             .expect("Error while asking for catchup blocks");
 

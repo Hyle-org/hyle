@@ -42,7 +42,7 @@ impl super::Mempool {
         let mut result = vec![];
         // Try to return the asked data proposals between the last_processed_cut and the one being handled
         for (lane_id, to_hash, _, _) in buc.ccp.consensus_proposal.cut.iter() {
-            // FIXME: use from : &Cut instead of Option
+            // FIXME: use from : &Cut instead of Option
             let from_hash = buc
                 .from
                 .as_ref()
@@ -51,7 +51,7 @@ impl super::Mempool {
 
             let entries = self
                 .lanes
-                .get_lane_entries_between_hashes(
+                .get_entries_between_hashes(
                     lane_id, // get start hash for validator
                     from_hash,
                     Some(to_hash),
@@ -63,7 +63,7 @@ impl super::Mempool {
 
             result.push((
                 lane_id.clone(),
-                entries.into_iter().map(|e| e.data_proposal).collect(),
+                entries.into_iter().map(|(_, dp)| dp).collect(),
             ))
         }
 
@@ -102,7 +102,7 @@ impl super::Mempool {
 
     pub(super) fn try_create_block_under_construction(&mut self, ccp: CommittedConsensusProposal) {
         if let Some(last_buc) = self.last_ccp.take() {
-            // CCP slot too old old compared with the last we processed, weird, CCP should come in the right order
+            // CCP slot too old compared with the last we processed, weird, CCP should come in the right order
             if last_buc.consensus_proposal.slot >= ccp.consensus_proposal.slot {
                 let last_buc_slot = last_buc.consensus_proposal.slot;
                 self.last_ccp = Some(last_buc);
@@ -193,10 +193,10 @@ pub mod test {
     use utils::TimestampMs;
 
     use crate::consensus::ConsensusEvent;
-    use crate::mempool::storage::LaneEntry;
+    use crate::mempool::storage::LaneEntryMetadata;
     use crate::mempool::MempoolNetMessage;
     use crate::tests::autobahn_testing::assert_chanmsg_matches;
-    use crate::utils::crypto::BlstCrypto;
+    use hyle_crypto::BlstCrypto;
 
     use super::super::test::*;
     use super::*;
@@ -424,15 +424,18 @@ pub mod test {
 
         ctx.mempool.on_sync_reply(
             &ctx.validator_pubkey().clone(),
-            vec![LaneEntry {
-                data_proposal: dp1.clone(),
-                cumul_size: dp1_size,
-                signatures: vec![ctx
-                    .mempool
-                    .crypto
-                    .sign(MempoolNetMessage::DataVote(dp1_hash, dp1_size))
-                    .expect("should sign")],
-            }],
+            vec![(
+                LaneEntryMetadata {
+                    parent_data_proposal_hash: dp1.parent_data_proposal_hash.clone(),
+                    cumul_size: dp1_size,
+                    signatures: vec![ctx
+                        .mempool
+                        .crypto
+                        .sign(MempoolNetMessage::DataVote(dp1_hash, dp1_size))
+                        .expect("should sign")],
+                },
+                dp1.clone(),
+            )],
         )?;
 
         // We don't have the data so we still don't send anything.
@@ -442,13 +445,16 @@ pub mod test {
 
         ctx.mempool.on_sync_reply(
             &crypto2.validator_pubkey().clone(),
-            vec![LaneEntry {
-                data_proposal: dp1b.clone(),
-                cumul_size: dp1b_size,
-                signatures: vec![crypto2
-                    .sign(MempoolNetMessage::DataVote(dp1b_hash, dp1b_size))
-                    .expect("should sign")],
-            }],
+            vec![(
+                LaneEntryMetadata {
+                    parent_data_proposal_hash: dp1b.parent_data_proposal_hash.clone(),
+                    cumul_size: dp1b_size,
+                    signatures: vec![crypto2
+                        .sign(MempoolNetMessage::DataVote(dp1b_hash, dp1b_size))
+                        .expect("should sign")],
+                },
+                dp1b.clone(),
+            )],
         )?;
 
         assert_chanmsg_matches!(

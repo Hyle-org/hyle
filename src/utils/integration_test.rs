@@ -27,8 +27,8 @@ use crate::rest::{RestApi, RestApiRunContext};
 use crate::single_node_consensus::SingleNodeConsensus;
 use crate::tcp_server::TcpServer;
 use crate::utils::conf::Conf;
-use crate::utils::crypto::BlstCrypto;
 use crate::utils::modules::ModulesHandler;
+use hyle_crypto::BlstCrypto;
 
 use super::modules::{module_bus_client, Module};
 
@@ -104,6 +104,8 @@ impl NodeIntegrationCtxBuilder {
         conf.da_server_port = find_available_port().await;
         conf.tcp_server_port = find_available_port().await;
         conf.rest_server_port = find_available_port().await;
+        conf.p2p.public_address = format!("127.0.0.1:{}", conf.p2p.server_port);
+        conf.da_public_address = format!("127.0.0.1:{}", conf.da_server_port);
 
         Self {
             tmpdir,
@@ -303,7 +305,7 @@ impl NodeIntegrationCtx {
                     NodeInfo {
                         id: config.id.clone(),
                         pubkey: Some(pubkey),
-                        da_address: format!("{}:{}", config.hostname, config.da_server_port),
+                        da_address: config.da_public_address.clone(),
                     },
                     ctx.common.bus.new_handle(),
                     router.clone(),

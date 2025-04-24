@@ -1,6 +1,10 @@
-use hyle_contract_sdk::{
+use crate::{
     Blob, BlobData, BlobIndex, ContractAction, ContractName, Identity, ProgramId, Verifier,
 };
+
+pub const RISC0_1: &str = "risc0-1";
+pub const NOIR: &str = "noir";
+pub const SP1_4: &str = "sp1-4";
 
 #[derive(Debug, Copy, Clone)]
 pub enum NativeVerifiers {
@@ -101,6 +105,41 @@ pub struct Secp256k1Blob {
 }
 
 impl Secp256k1Blob {
+    #[cfg(all(feature = "full", not(target_arch = "wasm32")))]
+    /// Allow to create a Secp256k1Blob from the data, public_key and signature
+    pub fn new(
+        identity: Identity,
+        data: &[u8],
+        public_key: &str,
+        signature: &str,
+    ) -> anyhow::Result<Self> {
+        use anyhow::Context;
+        use sha2::Digest;
+
+        let public_key = secp256k1::PublicKey::from_slice(
+            &hex::decode(public_key).context("invalid public_key format")?,
+        )
+        .context("cannot parse public_key")?
+        .serialize();
+
+        let signature = secp256k1::ecdsa::Signature::from_der(
+            &hex::decode(signature).context("invalid signature format")?,
+        )
+        .context("cannot parse signature")?
+        .serialize_compact();
+
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(data);
+        let data: [u8; 32] = hasher.finalize().into();
+
+        Ok(Self {
+            identity,
+            data,
+            public_key,
+            signature,
+        })
+    }
+
     pub fn as_blob(&self) -> Blob {
         <Self as ContractAction>::as_blob(self, "secp256k1".into(), None, None)
     }

@@ -1,8 +1,8 @@
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{anyhow, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::contract_indexer::{ContractHandler, ContractStateStore};
 use hyle_contract_sdk::{BlobIndex, ContractName, TxId};
-use hyle_model::{RegisterContractEffect, TxContext, HYLE_TESTNET_CHAIN_ID};
+use hyle_model::{RegisterContractEffect, TxContext, TxHash};
 use serde::{Deserialize, Serialize};
 use std::{ops::Deref, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
@@ -11,7 +11,7 @@ use tracing::debug;
 use crate::{
     bus::BusMessage,
     log_error,
-    model::{Blob, BlobTransaction, Block, CommonRunContext, Hashed, Transaction, TransactionData},
+    model::{Blob, BlobTransaction, Block, CommonRunContext, Transaction, TransactionData},
     module_handle_messages,
     node_state::module::NodeStateEvent,
     utils::{conf::Conf, modules::Module},
@@ -150,10 +150,59 @@ where
         Ok(())
     }
 
+    async fn handle_txs<'a, T: IntoIterator<Item = &'a TxHash>, F>(
+        &mut self,
+        txs: T,
+        block: &Block,
+        handler: F,
+        remove_from_unsettled: bool,
+    ) -> Result<()>
+    where
+        F: Fn(&mut State, &BlobTransaction, BlobIndex, TxContext) -> Result<()>,
+    {
+        for tx in txs {
+            let dp_hash = block.resolve_parent_dp_hash(tx)?.clone();
+            let tx_id = TxId(dp_hash.clone(), tx.clone());
+            let tx_context = block.build_tx_ctx(tx)?;
+
+            let mut store = self.store.write().await;
+            let tx = match if remove_from_unsettled {
+                store.unsettled_blobs.remove(&tx_id)
+            } else {
+                store.unsettled_blobs.get(&tx_id).cloned()
+            } {
+                Some(tx) => tx,
+                None => {
+                    debug!(cn = %self.contract_name, "🔨 No supported blobs found in transaction: {}", tx);
+                    continue;
+                }
+            };
+
+            let state = store
+                .state
+                .as_mut()
+                .ok_or(anyhow!("No state found for {}", self.contract_name))?;
+
+            for (index, Blob { contract_name, .. }) in tx.blobs.iter().enumerate() {
+                if self.contract_name != *contract_name {
+                    continue;
+                }
+
+                handler(state, &tx, BlobIndex(index), tx_context.clone())?;
+            }
+        }
+        Ok(())
+    }
+
+    // Used in lieu of a closure below to work around a weird lifetime check issue.
+    fn get_hash(tx: &(TxId, Transaction)) -> &TxHash {
+        &tx.0 .1
+    }
+
     async fn handle_processed_block(&mut self, block: Block) -> Result<()> {
-        for (_, contract) in block.registered_contracts {
+        for (_, contract) in &block.registered_contracts {
             if self.contract_name == contract.contract_name {
-                self.handle_register_contract(contract).await?;
+                self.handle_register_contract(contract.clone()).await?;
             }
         }
 
@@ -161,38 +210,44 @@ where
             debug!(handler = %self.contract_name, "🔨 Processing block: {}", block.block_height);
         }
 
-        for (tx_id, tx) in block.txs {
-            if let TransactionData::Blob(tx) = tx.transaction_data {
-                self.handle_blob(tx_id, tx).await?;
+        for (tx_id, tx) in &block.txs {
+            if let TransactionData::Blob(tx) = &tx.transaction_data {
+                self.handle_blob(tx_id.clone(), tx.clone()).await?;
             }
         }
 
-        for s_tx in block.successful_txs {
-            let dp_hash = block
-                .dp_parent_hashes
-                .get(&s_tx)
-                .context(format!(
-                    "No parent data proposal hash present for successful tx {}",
-                    s_tx.0
-                ))?
-                .clone();
-            let lane_id = block
-                .lane_ids
-                .get(&s_tx)
-                .context(format!("No lane id found for TX hash {}", dp_hash.0))?
-                .clone();
-            self.settle_tx(
-                &TxId(dp_hash, s_tx),
-                TxContext {
-                    lane_id,
-                    block_hash: block.hash.clone(),
-                    block_height: block.block_height,
-                    timestamp: block.block_timestamp.clone(),
-                    chain_id: HYLE_TESTNET_CHAIN_ID, // TODO: make it configurable
-                },
-            )
-            .await?;
-        }
+        self.handle_txs(
+            block.txs.iter().map(Self::get_hash),
+            &block,
+            |state, tx, index, ctx| state.handle_transaction_sequenced(tx, index, ctx),
+            false,
+        )
+        .await?;
+
+        self.handle_txs(
+            &block.timed_out_txs,
+            &block,
+            |state, tx, index, ctx| state.handle_transaction_timeout(tx, index, ctx),
+            false,
+        )
+        .await?;
+
+        self.handle_txs(
+            &block.failed_txs,
+            &block,
+            |state, tx, index, ctx| state.handle_transaction_failed(tx, index, ctx),
+            false,
+        )
+        .await?;
+
+        self.handle_txs(
+            &block.successful_txs,
+            &block,
+            |state, tx, index, ctx| state.handle_transaction_success(tx, index, ctx),
+            true,
+        )
+        .await?;
+
         Ok(())
     }
 
@@ -220,39 +275,13 @@ where
         self.store.write().await.state = Some(state);
         Ok(())
     }
-
-    async fn settle_tx(&mut self, tx: &TxId, tx_context: TxContext) -> Result<()> {
-        let mut store = self.store.write().await;
-        let Some(tx) = store.unsettled_blobs.remove(tx) else {
-            debug!(cn = %self.contract_name, "🔨 No supported blobs found in transaction: {}", tx);
-            return Ok(());
-        };
-
-        debug!(cn = %self.contract_name, "🔨 Settling transaction: {}", tx.hashed());
-
-        let state = store
-            .state
-            .as_mut()
-            .ok_or(anyhow!("No state found for {}", self.contract_name))?;
-
-        for (index, Blob { contract_name, .. }) in tx.blobs.iter().enumerate() {
-            if self.contract_name != *contract_name {
-                continue;
-            }
-
-            state.handle_transaction(&tx, BlobIndex(index), tx_context.clone())?;
-
-            debug!(cn = %self.contract_name, "📈 Updated state for {contract_name}");
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use client_sdk::transaction_builder::TxExecutorHandler;
     use hyle_contract_sdk::{BlobData, ProgramId, StateCommitment, ZkContract};
-    use hyle_model::{DataProposalHash, HyleOutput};
+    use hyle_model::{DataProposalHash, Hashed, HyleOutput, LaneId};
     use utoipa::openapi::OpenApi;
 
     use super::*;
@@ -296,7 +325,7 @@ mod tests {
     }
 
     impl ContractHandler for MockState {
-        fn handle_transaction(
+        fn handle_transaction_success(
             &mut self,
             tx: &BlobTransaction,
             index: BlobIndex,
@@ -390,9 +419,23 @@ mod tests {
             store.unsettled_blobs.insert(tx_id.clone(), tx);
         }
 
-        let tx_context = TxContext::default();
-
-        indexer.settle_tx(&tx_id, tx_context).await.unwrap();
+        indexer
+            .handle_txs(
+                &[tx_id.1.clone()],
+                &Block {
+                    lane_ids: vec![(tx_id.1.clone(), LaneId::default())]
+                        .into_iter()
+                        .collect(),
+                    dp_parent_hashes: vec![(tx_id.1.clone(), DataProposalHash::default())]
+                        .into_iter()
+                        .collect(),
+                    ..Block::default()
+                },
+                |state, tx, index, ctx| state.handle_transaction_success(tx, index, ctx),
+                true,
+            )
+            .await
+            .unwrap();
 
         let store = indexer.store.read().await;
         assert!(!store.unsettled_blobs.contains_key(&tx_id));

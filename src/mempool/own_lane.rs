@@ -1,6 +1,6 @@
 //! Logic for processing the API inbound TXs in the mempool.
 
-use crate::{bus::BusClientSender, mempool::InternalMempoolEvent, model::*};
+use crate::{bus::BusClientSender, model::*};
 
 use anyhow::{bail, Context, Result};
 use client_sdk::tcp_client::TcpServerMessage;
@@ -13,20 +13,6 @@ use super::{api::RestApiMessage, storage::Storage};
 use super::{KnownContracts, MempoolNetMessage};
 
 impl super::Mempool {
-    pub(super) fn handle_api_message(&mut self, command: RestApiMessage) -> Result<()> {
-        match command {
-            RestApiMessage::NewTx(tx) => self.on_new_api_tx(tx)?,
-        }
-        Ok(())
-    }
-
-    pub(super) fn handle_tcp_server_message(&mut self, command: TcpServerMessage) -> Result<()> {
-        match command {
-            TcpServerMessage::NewTx(tx) => self.on_new_api_tx(tx)?,
-        }
-        Ok(())
-    }
-
     fn get_last_data_prop_hash_in_own_lane(&self) -> Option<DataProposalHash> {
         self.lanes.get_lane_hash_tip(&self.own_lane_id()).cloned()
     }
@@ -69,7 +55,7 @@ impl super::Mempool {
         // This garentees that the message is sent only once per threshold
         if old_voting_power < f && new_voting_power >= f
             || old_voting_power < 2 * f && new_voting_power >= 2 * f
-            || new_voting_power == 3 * f + 1
+            || new_voting_power > 3 * f
         {
             self.broadcast_net_message(MempoolNetMessage::PoDAUpdate(
                 data_proposal_hash,
@@ -92,28 +78,38 @@ impl super::Mempool {
         // Check for each pending DataProposal if it has enough signatures
         let entries = self
             .lanes
-            .get_lane_pending_entries(&self.own_lane_id(), last_cut)?;
+            .get_pending_entries_in_lane(&self.own_lane_id(), last_cut)?;
 
-        for lane_entry in entries {
+        for (entry_metadata, dp_hash) in entries {
+            let Some(data_proposal) = self.lanes.get_dp_by_hash(&self.own_lane_id(), &dp_hash)?
+            else {
+                bail!(
+                    "Can't find DataProposal {} in lane {}",
+                    dp_hash,
+                    self.own_lane_id()
+                );
+            };
+
             // If there's only 1 signature (=own signature), broadcast it to everyone
             let there_are_other_validators =
                 !self.staking.is_bonded(self.crypto.validator_pubkey())
                     || self.staking.bonded().len() >= 2;
-            if lane_entry.signatures.len() == 1 && there_are_other_validators {
+            if entry_metadata.signatures.len() == 1 && there_are_other_validators {
                 debug!(
                     "🚗 Broadcast DataProposal {} ({} validators, {} txs)",
-                    lane_entry.data_proposal.hashed(),
+                    data_proposal.hashed(),
                     self.staking.bonded().len(),
-                    lane_entry.data_proposal.txs.len()
+                    data_proposal.txs.len()
                 );
-                self.metrics.add_data_proposal(&lane_entry.data_proposal);
-                self.metrics.add_proposed_txs(&lane_entry.data_proposal);
-                self.broadcast_net_message(MempoolNetMessage::DataProposal(
-                    lane_entry.data_proposal.clone(),
-                ))?;
+                self.metrics.add_data_proposal(&data_proposal);
+                self.metrics.add_proposed_txs(&data_proposal);
+                self.broadcast_net_message(MempoolNetMessage::DataProposal(data_proposal.clone()))?;
+
+                // TODO: for performance reasons in the event loop, we'll only process the first item for now.
+                break;
             } else {
                 // If None, rebroadcast it to every validator that has not yet signed it
-                let validator_that_has_signed: HashSet<&ValidatorPublicKey> = lane_entry
+                let validator_that_has_signed: HashSet<&ValidatorPublicKey> = entry_metadata
                     .signatures
                     .iter()
                     .map(|s| &s.signature.validator)
@@ -132,18 +128,30 @@ impl super::Mempool {
                     continue;
                 }
 
-                self.metrics.add_data_proposal(&lane_entry.data_proposal);
-                self.metrics.add_proposed_txs(&lane_entry.data_proposal);
+                let Some(data_proposal) =
+                    self.lanes.get_dp_by_hash(&self.own_lane_id(), &dp_hash)?
+                else {
+                    bail!(
+                        "Can't find DataProposal {} in lane {}",
+                        dp_hash,
+                        self.own_lane_id()
+                    );
+                };
+
+                self.metrics.add_data_proposal(&data_proposal);
+                self.metrics.add_proposed_txs(&data_proposal);
                 debug!(
                     "🚗 Rebroadcast DataProposal {} (only for {} validators, {} txs)",
-                    &lane_entry.data_proposal.hashed(),
+                    &data_proposal.hashed(),
                     only_for.len(),
-                    &lane_entry.data_proposal.txs.len()
+                    &data_proposal.txs.len()
                 );
                 self.broadcast_only_for_net_message(
                     only_for,
-                    MempoolNetMessage::DataProposal(lane_entry.data_proposal.clone()),
+                    MempoolNetMessage::DataProposal(data_proposal.clone()),
                 )?;
+                // TODO: for performance reasons in the event loop, we'll only process the first item for now.
+                break;
             }
         }
 
@@ -156,18 +164,33 @@ impl super::Mempool {
             return Ok(());
         }
 
+        let mut collect_up_to = 0;
+        let mut cumsize = 0;
+        for (i, tx) in self.waiting_dissemination_txs.iter().enumerate() {
+            collect_up_to = i;
+            cumsize += tx.estimate_size();
+            // Keep this one in anyways, we have a per-TX limit.
+            if cumsize > 40_000_000 {
+                break;
+            }
+        }
+        let collected_txs = self
+            .waiting_dissemination_txs
+            .drain(0..=collect_up_to)
+            .collect::<Vec<_>>();
+
         debug!(
-            "🌝 Creating new data proposals with {} txs",
+            "🌝 Creating new data proposals with {} txs (est. size {}). {} tx remain.",
+            collected_txs.len(),
+            cumsize,
             self.waiting_dissemination_txs.len()
         );
 
         let validator_key = self.crypto.validator_pubkey().clone();
 
         // Create new data proposal
-        let data_proposal = DataProposal::new(
-            self.get_last_data_prop_hash_in_own_lane(),
-            std::mem::take(&mut self.waiting_dissemination_txs),
-        );
+        let data_proposal =
+            DataProposal::new(self.get_last_data_prop_hash_in_own_lane(), collected_txs);
 
         debug!(
             "Creating new DataProposal in local lane ({}) with {} transactions (parent: {:?})",
@@ -200,15 +223,31 @@ impl super::Mempool {
         Ok(())
     }
 
+    pub(super) fn handle_api_message(&mut self, command: RestApiMessage) -> Result<()> {
+        match command {
+            RestApiMessage::NewTx(tx) => self.on_new_api_tx(tx)?,
+        }
+        Ok(())
+    }
+
+    pub(super) fn handle_tcp_server_message(&mut self, command: TcpServerMessage) -> Result<()> {
+        match command {
+            TcpServerMessage::NewTx(tx) => self.on_new_api_tx(tx)?,
+        }
+        Ok(())
+    }
+
     pub(super) fn on_new_api_tx(&mut self, tx: Transaction) -> Result<()> {
         // This is annoying to run in tests because we don't have the event loop setup, so go synchronous.
         #[cfg(test)]
         self.on_new_tx(tx.clone())?;
         #[cfg(not(test))]
-        self.running_tasks.spawn_blocking(move || {
-            tx.hashed();
-            Ok(InternalMempoolEvent::OnProcessedNewTx(tx))
-        });
+        self.processing_txs
+            .push_back(tokio::task::spawn_blocking(move || {
+                tx.hashed();
+                Ok(tx)
+            }));
+        self.notify_new_tx_to_process.notify_one();
         Ok(())
     }
 
@@ -232,11 +271,13 @@ impl super::Mempool {
                     proof_tx.contract_name
                 );
                 let kc = self.known_contracts.clone();
-                self.running_tasks.spawn_blocking(move || {
-                    let tx =
-                        Self::process_proof_tx(kc, tx).context("Processing proof tx in blocker")?;
-                    Ok(InternalMempoolEvent::OnProcessedNewTx(tx))
-                });
+                self.processing_txs
+                    .push_back(tokio::task::spawn_blocking(move || {
+                        let tx = Self::process_proof_tx(kc, tx)
+                            .context("Processing proof tx in blocker")?;
+                        Ok(tx)
+                    }));
+                self.notify_new_tx_to_process.notify_one();
 
                 return Ok(());
             }
@@ -298,7 +339,8 @@ impl super::Mempool {
         } else {
             let hyle_outputs = verify_proof(&proof_transaction.proof, &verifier, &program_id)
                 .context("verify_proof")?;
-            (hyle_outputs, vec![program_id.clone()])
+            let len = hyle_outputs.len();
+            (hyle_outputs, vec![program_id.clone(); len])
         };
 
         let tx_hashes = hyle_outputs
@@ -345,10 +387,10 @@ pub mod test {
 
     use super::*;
     use crate::{
-        mempool::storage::LaneEntry, tests::autobahn_testing::assert_chanmsg_matches,
-        utils::crypto::BlstCrypto,
+        mempool::storage::LaneEntryMetadata, tests::autobahn_testing::assert_chanmsg_matches,
     };
     use anyhow::Result;
+    use hyle_crypto::BlstCrypto;
 
     use crate::mempool::test::*;
 
@@ -379,10 +421,9 @@ pub mod test {
         let dp = ctx
             .mempool
             .lanes
-            .get_by_hash(&ctx.own_lane(), dp_hash)
+            .get_dp_by_hash(&ctx.own_lane(), dp_hash)
             .unwrap()
-            .unwrap()
-            .data_proposal;
+            .unwrap();
 
         assert_eq!(dp.txs, vec![register_tx.clone()]);
 
@@ -503,14 +544,10 @@ pub mod test {
             .expect("should handle net message");
 
         // Assert that we added the vote to the signatures
-        let (
-            LaneEntry {
-                signatures: sig, ..
-            },
-            _,
-        ) = ctx.last_lane_entry(&LaneId(ctx.validator_pubkey().clone()));
+        let ((LaneEntryMetadata { signatures, .. }, _), _) =
+            ctx.last_lane_entry(&LaneId(ctx.validator_pubkey().clone()));
 
-        assert_eq!(sig.len(), 2);
+        assert_eq!(signatures.len(), 2);
         Ok(())
     }
 

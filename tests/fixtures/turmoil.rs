@@ -7,10 +7,8 @@ use std::time::Duration;
 
 use anyhow::Context;
 use client_sdk::rest_client::NodeApiHttpClient;
-use hyle::{
-    entrypoint::main_process,
-    utils::{conf::Conf, crypto::BlstCrypto},
-};
+use hyle::{entrypoint::main_process, utils::conf::Conf};
+use hyle_crypto::BlstCrypto;
 use hyle_net::net::Sim;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 use tokio::sync::Mutex;
@@ -59,7 +57,9 @@ impl TurmoilCtx {
             id: format!("node-{}", i),
             ..ConfMaker::default().default
         };
-        node_conf.hostname = node_conf.id.clone();
+
+        node_conf.da_public_address = format!("{}:{}", node_conf.id, node_conf.da_server_port);
+        node_conf.p2p.public_address = format!("{}:{}", node_conf.id, node_conf.p2p.server_port);
         node_conf.data_directory.pop();
         node_conf
             .data_directory
@@ -122,7 +122,7 @@ impl TurmoilCtx {
         node_conf.p2p.peers = self
             .nodes
             .iter()
-            .map(|node| format!("{}:{}", node.conf.hostname, node.conf.p2p.server_port))
+            .map(|node| format!("{}:{}", node.conf.id, node.conf.p2p.server_port))
             .collect();
 
         let node = TurmoilNodeProcess::from(&node_conf);

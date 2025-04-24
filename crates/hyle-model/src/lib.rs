@@ -6,6 +6,7 @@ mod node;
 mod transaction;
 
 pub mod utils;
+pub mod verifiers;
 
 #[cfg(feature = "full")]
 pub use block::*;

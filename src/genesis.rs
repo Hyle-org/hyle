@@ -5,7 +5,7 @@ use crate::{
     handle_messages,
     model::*,
     p2p::network::PeerEvent,
-    utils::{conf::SharedConf, crypto::SharedBlstCrypto, modules::Module},
+    utils::{conf::SharedConf, modules::Module},
 };
 use anyhow::{Error, Result};
 use client_sdk::{
@@ -22,6 +22,7 @@ use hydentity::{
 use hyle_contract_sdk::{
     Blob, Calldata, ContractName, Identity, ProgramId, StateCommitment, ZkContract,
 };
+use hyle_crypto::SharedBlstCrypto;
 use hyllar::{client::tx_executor_handler::transfer, Hyllar, FAUCET_ID};
 use serde::{Deserialize, Serialize};
 use staking::{
@@ -262,7 +263,7 @@ impl Genesis {
         for peer in peer_pubkey.values() {
             info!("🌱  Registering identity {peer}");
 
-            let identity = Identity(format!("{peer}.hydentity"));
+            let identity = Identity(format!("{peer}@hydentity"));
             let mut transaction = ProvableBlobTx::new(identity.clone());
 
             // Register
@@ -308,7 +309,7 @@ impl Genesis {
             transfer(
                 &mut transaction,
                 ContractName::new("hyllar"),
-                format!("{peer}.hydentity"),
+                format!("{peer}@hydentity"),
                 genesis_faucet + 1_000_000_000,
             )?;
 
@@ -332,7 +333,7 @@ impl Genesis {
 
             info!("🌱  Staking {genesis_stake} hyllar from {peer}");
 
-            let identity = Identity(format!("{peer}.hydentity").to_string());
+            let identity = Identity(format!("{peer}@hydentity").to_string());
             let mut transaction = ProvableBlobTx::new(identity.clone());
 
             // Verify identity
@@ -417,7 +418,7 @@ impl Genesis {
             ProgramId(hyle_contracts::RISC0_RECURSION_ID.to_vec()),
         );
 
-        let mut register_tx = ProvableBlobTx::new("hyle.hyle".into());
+        let mut register_tx = ProvableBlobTx::new("hyle@hyle".into());
 
         register_hyle_contract(
             &mut register_tx,
@@ -560,7 +561,7 @@ mod tests {
     use super::*;
     use crate::bus::{BusClientReceiver, SharedMessageBus};
     use crate::utils::conf::Conf;
-    use crate::utils::crypto::BlstCrypto;
+    use hyle_crypto::BlstCrypto;
     use std::sync::Arc;
 
     bus_client! {

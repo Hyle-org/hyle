@@ -26,6 +26,8 @@ mod e2e_consensus {
     use staking::state::Staking;
     use tracing::{info, warn};
 
+    use crate::fixtures::test_helpers::wait_height;
+
     use super::*;
 
     #[test_log::test(tokio::test)]
@@ -51,6 +53,7 @@ mod e2e_consensus {
         let joining_client = ctx.add_node().await?;
 
         let node_info = joining_client.get_node_info().await?;
+        wait_height(joining_client, 2).await?;
 
         assert!(node_info.pubkey.is_some());
 
@@ -94,7 +97,7 @@ mod e2e_consensus {
             .with_prover("staking".into(), Risc0Prover::new(STAKING_ELF))
             .build();
 
-        let node_identity = Identity(format!("{}.hydentity", node_info.id));
+        let node_identity = Identity(format!("{}@hydentity", node_info.id));
         {
             let mut transaction = ProvableBlobTx::new(node_identity.clone());
 
@@ -174,7 +177,7 @@ mod e2e_consensus {
         id: String,
         amount: u128,
     ) -> Result<()> {
-        let identity = Identity(format!("{}.hydentity", id));
+        let identity = Identity(format!("{}@hydentity", id));
         {
             let mut transaction = ProvableBlobTx::new(identity.clone());
 
@@ -185,7 +188,7 @@ mod e2e_consensus {
         }
 
         {
-            let mut transaction = ProvableBlobTx::new("faucet.hydentity".into());
+            let mut transaction = ProvableBlobTx::new("faucet@hydentity".into());
 
             verify_identity(
                 &mut transaction,
@@ -292,6 +295,8 @@ mod e2e_consensus {
             _ = gen_txs(&mut ctx, &mut tx_ctx, format!("alex{}", i), 100 + i).await;
         }
 
+        ctx.wait_height(1).await?;
+
         ctx.stop_node(0).await?;
         ctx.restart_node(0)?;
 
@@ -301,7 +306,7 @@ mod e2e_consensus {
             _ = gen_txs(&mut ctx, &mut tx_ctx, format!("alex{}", i), 100 + i).await;
         }
 
-        ctx.wait_height(2).await?;
+        ctx.wait_indexer_height(2).await?;
 
         let state: Hyllar = ctx
             .indexer_client()
@@ -309,8 +314,8 @@ mod e2e_consensus {
             .await?;
 
         for i in 0..10 {
-            let balance = state.balance_of(&format!("alex{}.hydentity", i));
-            info!("Checking alex{}.hydentity balance: {:?}", i, balance);
+            let balance = state.balance_of(&format!("alex{}@hydentity", i));
+            info!("Checking alex{}@hydentity balance: {:?}", i, balance);
             assert_eq!(balance.unwrap(), ((100 + i) as u128));
         }
 
@@ -319,7 +324,12 @@ mod e2e_consensus {
 
     #[test_log::test(tokio::test)]
     async fn can_restart_multi_node_after_txs() -> Result<()> {
-        let mut ctx = E2ECtx::new_multi_with_indexer(4, 500).await?;
+        let mut ctx = E2ECtx::new_multi_with_indexer_and_timestamp_checks(
+            4,
+            500,
+            hyle::utils::conf::TimestampCheck::Monotonic,
+        )
+        .await?;
 
         _ = ctx.wait_height(1).await;
 
@@ -361,8 +371,8 @@ mod e2e_consensus {
             .await?;
 
         for i in 0..4 {
-            let balance = state.balance_of(&format!("alex{}.hydentity", i));
-            info!("Checking alex{}.hydentity balance: {:?}", i, balance);
+            let balance = state.balance_of(&format!("alex{}@hydentity", i));
+            info!("Checking alex{}@hydentity balance: {:?}", i, balance);
             assert_eq!(balance.unwrap(), ((100 + i) as u128));
         }
 

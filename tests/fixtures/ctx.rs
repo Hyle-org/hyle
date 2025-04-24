@@ -19,11 +19,10 @@ use tracing::info;
 use hyle::{
     model::*,
     rest::client::{IndexerApiHttpClient, NodeApiHttpClient},
-    utils::conf::Conf,
+    utils::conf::{Conf, P2pMode, TimestampCheck},
 };
 use hyle_contract_sdk::{
-    flatten_blobs, BlobIndex, ContractName, HyleOutput, Identity, ProgramId, StateCommitment,
-    TxHash, Verifier,
+    BlobIndex, ContractName, HyleOutput, Identity, ProgramId, StateCommitment, TxHash, Verifier,
 };
 use hyle_net::net::bind_tcp_listener;
 
@@ -71,18 +70,13 @@ impl E2ECtx {
             let mut node_conf = conf_maker.build("node").await;
             node_conf.p2p.peers = peers.clone();
             genesis_stakers.insert(node_conf.id.clone(), 100);
-            peers.push(format!(
-                "{}:{}",
-                node_conf.hostname, node_conf.p2p.server_port
-            ));
+            peers.push(node_conf.p2p.public_address.clone());
             confs.push(node_conf);
         }
 
         for node_conf in confs.iter_mut() {
             node_conf.genesis.stakers = genesis_stakers.clone();
-            let node = test_helpers::TestProcess::new("hyle", node_conf.clone())
-                //.log("hyle=info,tower_http=error")
-                .start();
+            let node = test_helpers::TestProcess::new("hyle", node_conf.clone()).start();
 
             // Request something on node1 to be sure it's alive and working
             let client = NodeApiHttpClient::new(format!(
@@ -106,9 +100,7 @@ impl E2ECtx {
             vec![("single-node".to_string(), 100)].into_iter().collect();
 
         let node_conf = conf_maker.build("single-node").await;
-        let node = test_helpers::TestProcess::new("hyle", node_conf)
-            //.log("hyle=info,tower_http=error")
-            .start();
+        let node = test_helpers::TestProcess::new("hyle", node_conf).start();
 
         // Request something on node1 to be sure it's alive and working
         let client =
@@ -146,9 +138,7 @@ impl E2ECtx {
         );
 
         let node_conf = conf_maker.build("single-node").await;
-        let node = test_helpers::TestProcess::new("hyle", node_conf.clone())
-            //.log("hyle=info,tower_http=error")
-            .start();
+        let node = test_helpers::TestProcess::new("hyle", node_conf.clone()).start();
 
         // Request something on node1 to be sure it's alive and working
         let client =
@@ -157,7 +147,7 @@ impl E2ECtx {
 
         // Start indexer
         let mut indexer_conf = conf_maker.build("indexer").await;
-        indexer_conf.da_address = format!("localhost:{}", node_conf.da_server_port);
+        indexer_conf.da_read_from = node_conf.da_public_address.clone();
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
         let url = format!("http://localhost:{}/", &indexer_conf.rest_server_port);
@@ -225,7 +215,13 @@ impl E2ECtx {
         node_conf.p2p.peers = self
             .nodes
             .iter()
-            .map(|node| format!("{}:{}", node.conf.hostname, node.conf.p2p.server_port))
+            .filter_map(|node| {
+                if node.conf.p2p.mode != P2pMode::None {
+                    Some(node.conf.p2p.public_address.clone())
+                } else {
+                    None
+                }
+            })
             .collect();
         node_conf
     }
@@ -236,9 +232,7 @@ impl E2ECtx {
     }
 
     pub async fn add_node_with_conf(&mut self, node_conf: Conf) -> Result<&NodeApiHttpClient> {
-        let node = test_helpers::TestProcess::new("hyle", node_conf)
-            //.log("hyle=info,tower_http=error")
-            .start();
+        let node = test_helpers::TestProcess::new("hyle", node_conf).start();
         // Request something on node1 to be sure it's alive and working
         let client =
             NodeApiHttpClient::new(format!("http://localhost:{}/", &node.conf.rest_server_port))
@@ -249,8 +243,20 @@ impl E2ECtx {
         self.clients.push(client);
         Ok(self.clients.last().unwrap())
     }
-
     pub async fn new_multi_with_indexer(count: usize, slot_duration_ms: u64) -> Result<E2ECtx> {
+        Self::new_multi_with_indexer_and_timestamp_checks(
+            count,
+            slot_duration_ms,
+            TimestampCheck::Full,
+        )
+        .await
+    }
+
+    pub async fn new_multi_with_indexer_and_timestamp_checks(
+        count: usize,
+        slot_duration_ms: u64,
+        timestamp_checks: TimestampCheck,
+    ) -> Result<E2ECtx> {
         std::env::set_var("RISC0_DEV_MODE", "1");
 
         let pg = Self::init().await;
@@ -261,14 +267,14 @@ impl E2ECtx {
             "postgres://postgres:postgres@localhost:{}/postgres",
             pg.get_host_port_ipv4(5432).await.unwrap()
         );
+        conf_maker.default.consensus.timestamp_checks = timestamp_checks;
 
         let (mut nodes, mut clients) = Self::build_nodes(count, &mut conf_maker).await;
 
         // Start indexer
         let mut indexer_conf = conf_maker.build("indexer").await;
         indexer_conf.run_indexer = true;
-        indexer_conf.da_address =
-            format!("localhost:{}", nodes.last().unwrap().conf.da_server_port);
+        indexer_conf.da_read_from = nodes.last().unwrap().conf.da_public_address.clone();
         let indexer = test_helpers::TestProcess::new("indexer", indexer_conf.clone()).start();
 
         nodes.push(indexer);
@@ -323,7 +329,7 @@ impl E2ECtx {
     pub fn get_instructions_for(&mut self, index: usize) {
         // Print instructions to start the node manually outside the test context.
         tracing::warn!(
-            "🚀 Start node with the following command:\nhyle=$(pwd)/target/debug/hyle && (cd {} && \"$hyle\")",
+            "🚀 Start node with the following command:\nhyle=$(pwd)/target/release/hyle && (cd {} && RUST_LOG=info \"$hyle\")",
             self.nodes[index].dir.path().display()
         );
     }

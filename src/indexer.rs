@@ -140,9 +140,7 @@ impl Indexer {
                     .or_default()
                     .push(tx);
 
-                tokio::task::Builder::new()
-                    .name("indexer-recv")
-                    .spawn(async move {
+                tokio::spawn(async move {
                         let (mut ws_tx, mut ws_rx) = socket.split();
 
                         loop {
@@ -179,7 +177,7 @@ impl Indexer {
                                 }
                             }
                         }
-                    })?;
+                    });
             }
         };
         Ok(())
@@ -863,7 +861,7 @@ mod test {
         state_commitment: StateCommitment,
     ) -> BlobTransaction {
         BlobTransaction::new(
-            "hyle.hyle",
+            "hyle@hyle",
             vec![RegisterContractAction {
                 verifier: "test".into(),
                 program_id: ProgramId(vec![3, 2, 1]),
@@ -901,11 +899,13 @@ mod test {
         identity: Identity,
         contract_name: ContractName,
         blob_index: BlobIndex,
-        blob_tx_hash: TxHash,
+        blob_transaction: &Transaction,
         initial_state: StateCommitment,
         next_state: StateCommitment,
-        blobs: Vec<(BlobIndex, Vec<u8>)>,
     ) -> Transaction {
+        let TransactionData::Blob(blob_tx) = &blob_transaction.transaction_data else {
+            panic!("Expected BlobTransaction");
+        };
         let proof = ProofData(initial_state.0.clone());
         Transaction {
             version: 1,
@@ -916,18 +916,19 @@ mod test {
                 proven_blobs: vec![BlobProofOutput {
                     original_proof_hash: proof.hashed(),
                     program_id: ProgramId(vec![3, 2, 1]),
-                    blob_tx_hash: blob_tx_hash.clone(),
+                    blob_tx_hash: blob_transaction.hashed(),
                     hyle_output: HyleOutput {
                         version: 1,
                         initial_state,
                         next_state,
                         identity,
-                        tx_hash: blob_tx_hash,
+                        tx_hash: blob_transaction.hashed(),
                         tx_ctx: None,
                         index: blob_index,
-                        tx_blob_count: blobs.len(),
-                        blobs,
+                        tx_blob_count: blob_tx.blobs.len(),
+                        blobs: blob_tx.blobs.clone().into(),
                         success: true,
+                        state_reads: vec![],
                         onchain_effects: vec![],
                         program_outputs: vec![],
                     },
@@ -987,68 +988,52 @@ mod test {
         let register_tx_2 = new_register_tx(second_contract_name.clone(), initial_state.clone());
 
         let blob_transaction = new_blob_tx(
-            Identity::new("test.c1"),
+            Identity::new("test@c1"),
             first_contract_name.clone(),
             second_contract_name.clone(),
         );
         let blob_transaction_hash = blob_transaction.hashed();
 
         let proof_tx_1 = new_proof_tx(
-            Identity::new("test.c1"),
+            Identity::new("test@c1"),
             first_contract_name.clone(),
             BlobIndex(0),
-            blob_transaction_hash.clone(),
+            &blob_transaction,
             initial_state.clone(),
             next_state.clone(),
-            vec![
-                (BlobIndex(0), vec![99, 49, 1, 2, 3]),
-                (BlobIndex(1), vec![99, 50, 1, 2, 3]),
-            ],
         );
 
         let proof_tx_2 = new_proof_tx(
-            Identity::new("test.c1"),
+            Identity::new("test@c1"),
             second_contract_name.clone(),
             BlobIndex(1),
-            blob_transaction_hash.clone(),
+            &blob_transaction,
             initial_state.clone(),
             next_state.clone(),
-            vec![
-                (BlobIndex(0), vec![99, 49, 1, 2, 3]),
-                (BlobIndex(1), vec![99, 50, 1, 2, 3]),
-            ],
         );
 
         let other_blob_transaction = new_blob_tx(
-            Identity::new("test.c1"),
+            Identity::new("test@c1"),
             second_contract_name.clone(),
             first_contract_name.clone(),
         );
         let other_blob_transaction_hash = other_blob_transaction.hashed();
         // Send two proofs for the same blob
         let proof_tx_3 = new_proof_tx(
-            Identity::new("test.c1"),
+            Identity::new("test@c1"),
             first_contract_name.clone(),
             BlobIndex(1),
-            other_blob_transaction_hash.clone(),
+            &other_blob_transaction,
             StateCommitment(vec![7, 7, 7]),
             StateCommitment(vec![9, 9, 9]),
-            vec![
-                (BlobIndex(0), vec![99, 50, 1, 2, 3]),
-                (BlobIndex(1), vec![99, 49, 1, 2, 3]),
-            ],
         );
         let proof_tx_4 = new_proof_tx(
-            Identity::new("test.c1"),
+            Identity::new("test@c1"),
             first_contract_name.clone(),
             BlobIndex(1),
-            other_blob_transaction_hash.clone(),
+            &other_blob_transaction,
             StateCommitment(vec![8, 8]),
             StateCommitment(vec![9, 9]),
-            vec![
-                (BlobIndex(0), vec![99, 50, 1, 2, 3]),
-                (BlobIndex(1), vec![99, 49, 1, 2, 3]),
-            ],
         );
 
         let txs = vec![
@@ -1097,23 +1082,18 @@ mod test {
             new_register_tx(second_contract_name_wd.clone(), initial_state_wd.clone());
 
         let blob_transaction_wd = new_blob_tx(
-            Identity::new("test.wd1"),
+            Identity::new("test@wd1"),
             first_contract_name_wd.clone(),
             second_contract_name_wd.clone(),
         );
-        let blob_transaction_hash_wd = blob_transaction_wd.hashed();
 
         let proof_tx_1_wd = new_proof_tx(
-            Identity::new("test.wd1"),
+            Identity::new("test@wd1"),
             first_contract_name_wd.clone(),
             BlobIndex(0),
-            blob_transaction_hash_wd.clone(),
+            &blob_transaction_wd,
             initial_state_wd.clone(),
             next_state_wd.clone(),
-            vec![
-                (BlobIndex(0), vec![99, 49, 1, 2, 3]),
-                (BlobIndex(1), vec![99, 50, 1, 2, 3]),
-            ],
         );
 
         let register_tx_1_wd = Transaction {
@@ -1287,15 +1267,6 @@ mod test {
                     "blobs": [{
                         "contract_name": "c1",
                         "data": hex::encode([1,2,3]),
-                        "proof_outputs": [{}]
-                    }],
-                    "tx_hash": blob_transaction_hash.to_string(),
-                    "index": 2,
-                },
-                {
-                    "blobs": [{
-                        "contract_name": "c1",
-                        "data": hex::encode([1,2,3]),
                         "proof_outputs": [
                             {
                                 "initial_state": [7,7,7],
@@ -1308,10 +1279,18 @@ mod test {
                     "transaction_status": "Sequenced",
                     "tx_hash": other_blob_transaction_hash.to_string(),
                     "index": 5,
+                },
+                {
+                    "blobs": [{
+                        "contract_name": "c1",
+                        "data": hex::encode([1,2,3]),
+                        "proof_outputs": [{}]
+                    }],
+                    "tx_hash": blob_transaction_hash.to_string(),
+                    "index": 2,
                 }
             ])
         );
-
         let all_txs = server.get("/transactions/block/0").await;
         all_txs.assert_status_ok();
         assert_json_include!(
@@ -1333,17 +1312,17 @@ mod test {
                     "blobs": [{
                         "contract_name": "c2",
                         "data": hex::encode([1,2,3]),
-                        "proof_outputs": [{}]
+                        "proof_outputs": []
                     }],
-                    "tx_hash": blob_transaction_hash.to_string(),
+                    "tx_hash": other_blob_transaction_hash.to_string(),
                 },
                 {
                     "blobs": [{
                         "contract_name": "c2",
                         "data": hex::encode([1,2,3]),
-                        "proof_outputs": []
+                        "proof_outputs": [{}]
                     }],
-                    "tx_hash": other_blob_transaction_hash.to_string(),
+                    "tx_hash": blob_transaction_hash.to_string(),
                 }
             ])
         );
