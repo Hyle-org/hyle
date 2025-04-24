@@ -236,6 +236,9 @@ macro_rules! tcp_client_server {
             pub async fn connect<Id: std::fmt::Display, A: $crate::net::ToSocketAddrs + std::fmt::Display>(id: Id, addr: A) -> Result<Client> {
                 $crate::tcp::tcp_client::TcpClient::<ClientCodec, $req, $res>::connect(id, addr).await
             }
+            pub async fn connect_with_opts<Id: std::fmt::Display, A: $crate::net::ToSocketAddrs + std::fmt::Display>(id: Id, max_frame_length: Option<usize>, addr: A) -> Result<Client> {
+                $crate::tcp::tcp_client::TcpClient::<ClientCodec, $req, $res>::connect_with_opts(id, max_frame_length, addr).await
+            }
         }
         }
     };

@@ -294,4 +294,63 @@ pub mod tests {
 
         Ok(())
     }
+
+    tcp_client_server! {
+        bytes,
+        request: Vec<u8>,
+        response: Vec<u8>
+    }
+
+    #[tokio::test]
+    async fn tcp_with_max_frame_length() -> Result<()> {
+        let mut server = codec_bytes::start_server_with_opts(0, Some(100)).await?;
+
+        let mut client = codec_bytes::connect_with_opts(
+            "me".to_string(),
+            Some(100),
+            format!("0.0.0.0:{}", server.local_addr().unwrap().port()),
+        )
+        .await?;
+
+        // Send data to server
+        // A vec will be prefixed with 4 bytes (u32) containing the size of the payload
+        // Here we reach 99 bytes < 100
+        client.send(vec![0b_0; 95]).await?;
+
+        let data = match server.listen_next().await.unwrap() {
+            TcpEvent::Message { data, .. } => data,
+            _ => panic!("Expected a Message event"),
+        };
+
+        assert_eq!(data.len(), 95);
+        assert!(server.pool_receiver.try_recv().is_err());
+
+        // Send data to server
+        // Here we reach 100 bytes, it should explode the limit
+        let sent = client.send(vec![0b_0; 96]).await;
+        assert!(sent.is_err_and(|e| e.to_string().contains("frame size too big")));
+
+        let mut client_relaxed = codec_bytes::connect(
+            "me".to_string(),
+            format!("0.0.0.0:{}", server.local_addr().unwrap().port()),
+        )
+        .await?;
+
+        // Should be ok server side
+        client_relaxed.send(vec![0b_0; 95]).await?;
+
+        let data = match server.listen_next().await.unwrap() {
+            TcpEvent::Message { data, .. } => data,
+            _ => panic!("Expected a Message event"),
+        };
+        assert_eq!(data.len(), 95);
+
+        // Should explode server side
+        client_relaxed.send(vec![0b_0; 96]).await?;
+
+        let received_data = server.listen_next().await;
+        assert!(received_data.is_some_and(|tcp_event| matches!(tcp_event, TcpEvent::Closed { .. })));
+
+        Ok(())
+    }
 }
