@@ -357,6 +357,20 @@ where
             }
         };
 
+        let peer_last_ping = self.tcp_server.get_last_ping(&peer_info.socket_addr);
+        if let Some(last_ping) = peer_last_ping {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_secs();
+            if now - last_ping > 3 * self.peers_ping_ticker.period().as_secs() {
+                bail!(
+                    "Peer {} has not sent ping for 3 tick periods",
+                    validator_pub_key
+                );
+            }
+        }
+
         if let Err(e) = self
             .tcp_server
             .send(
