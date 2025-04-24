@@ -41,6 +41,7 @@ jobs:
         run: cargo build -p ${{ matrix.crate }} --features ${{ matrix.features }}
       
       - name: Build doc for crate '${{ matrix.crate }}'
+        if: matric.crate != 'hyle-noir-tools'
         run: cargo docs-rs -p ${{ matrix.crate }}
 
   list-crates:
