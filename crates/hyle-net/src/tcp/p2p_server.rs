@@ -312,7 +312,7 @@ where
             .as_millis();
 
         let socket_addr = tcp_client.socket_addr.to_string();
-        self.tcp_server.setup_client(tcp_client)?;
+        self.tcp_server.setup_client(tcp_client);
         self.tcp_server
             .send(
                 socket_addr,
