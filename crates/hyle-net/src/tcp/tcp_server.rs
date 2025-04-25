@@ -65,7 +65,7 @@ where
             pool_receiver,
             ping_sender,
             ping_receiver,
-            _codec: PhantomData::<Codec>::default(),
+            _codec: PhantomData::<Codec>,
         })
     }
 
@@ -123,16 +123,14 @@ where
 
         let all = futures::future::join_all(tasks).await;
 
-        let res = HashMap::from_iter(all.into_iter().filter_map(|(client_name, send_result)| {
+        HashMap::from_iter(all.into_iter().filter_map(|(client_name, send_result)| {
             send_result.err().map(|error| {
                 (
                     client_name.clone(),
                     anyhow::anyhow!("Sending message to client {}: {}", client_name, error),
                 )
             })
-        }));
-
-        res
+        }))
     }
     pub async fn send(&mut self, socket_addr: String, msg: Res) -> anyhow::Result<()> {
         debug!("Sending msg {:?} to {}", msg, socket_addr);
@@ -236,16 +234,9 @@ where
         let abort_sender_task = tokio::spawn({
             let cloned_socket_addr = socket_addr.clone();
             async move {
-                loop {
-                    match sender_recv.recv().await {
-                        Some(msg) => {
-                            if let Err(e) = sender.send(msg).await {
-                                error!("Sending message to peer {}: {}", cloned_socket_addr, e);
-                            }
-                        }
-                        None => {
-                            break;
-                        }
+                while let Some(msg) = sender_recv.recv().await {
+                    if let Err(e) = sender.send(msg).await {
+                        error!("Sending message to peer {}: {}", cloned_socket_addr, e);
                     }
                 }
             }
