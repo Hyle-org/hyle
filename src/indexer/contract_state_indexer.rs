@@ -9,24 +9,33 @@ use tokio::sync::RwLock;
 use tracing::debug;
 
 use crate::{
-    bus::BusMessage,
-    log_error,
+    bus::{BusClientSender, BusMessage},
+    log_debug, log_error,
     model::{Blob, BlobTransaction, Block, CommonRunContext, Transaction, TransactionData},
-    module_handle_messages,
+    module_bus_client, module_handle_messages,
     node_state::module::NodeStateEvent,
     utils::{conf::Conf, modules::Module},
 };
 
-use super::indexer_bus_client::IndexerBusClient;
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub enum ProverEvent {
-    NewTx(Transaction),
+pub enum CSIEvent {
+    NewTx(BlobTransaction),
+    SettledTx(BlobTransaction),
+    FailedTx(BlobTransaction),
+    TimedOutTx(BlobTransaction),
 }
-impl BusMessage for ProverEvent {}
+impl BusMessage for CSIEvent {}
+
+module_bus_client! {
+#[derive(Debug)]
+struct CSIBusClient {
+    sender(CSIEvent),
+    receiver(NodeStateEvent),
+}
+}
 
 pub struct ContractStateIndexer<State> {
-    bus: IndexerBusClient,
+    bus: CSIBusClient,
     store: Arc<RwLock<ContractStateStore<State>>>,
     contract_name: ContractName,
     file: PathBuf,
@@ -55,7 +64,7 @@ where
     type Context = ContractStateIndexerCtx;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus = IndexerBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
+        let bus = CSIBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
         let file = ctx
             .common
             .config
@@ -150,15 +159,17 @@ where
         Ok(())
     }
 
-    async fn handle_txs<'a, T: IntoIterator<Item = &'a TxHash>, F>(
+    async fn handle_txs<'a, T: IntoIterator<Item = &'a TxHash>, F, G>(
         &mut self,
         txs: T,
         block: &Block,
         handler: F,
+        bus_wrapper: G,
         remove_from_unsettled: bool,
     ) -> Result<()>
     where
         F: Fn(&mut State, &BlobTransaction, BlobIndex, TxContext) -> Result<()>,
+        G: Fn(BlobTransaction) -> CSIEvent,
     {
         for tx in txs {
             let dp_hash = block.resolve_parent_dp_hash(tx)?.clone();
@@ -190,6 +201,11 @@ where
 
                 handler(state, &tx, BlobIndex(index), tx_context.clone())?;
             }
+
+            let _ = log_debug!(
+                self.bus.send(bus_wrapper(tx)),
+                "Sending CSIEvent message to bus."
+            );
         }
         Ok(())
     }
@@ -220,6 +236,7 @@ where
             block.txs.iter().map(Self::get_hash),
             &block,
             |state, tx, index, ctx| state.handle_transaction_sequenced(tx, index, ctx),
+            CSIEvent::NewTx,
             false,
         )
         .await?;
@@ -228,6 +245,7 @@ where
             &block.timed_out_txs,
             &block,
             |state, tx, index, ctx| state.handle_transaction_timeout(tx, index, ctx),
+            CSIEvent::TimedOutTx,
             false,
         )
         .await?;
@@ -236,6 +254,7 @@ where
             &block.failed_txs,
             &block,
             |state, tx, index, ctx| state.handle_transaction_failed(tx, index, ctx),
+            CSIEvent::FailedTx,
             false,
         )
         .await?;
@@ -244,6 +263,7 @@ where
             &block.successful_txs,
             &block,
             |state, tx, index, ctx| state.handle_transaction_success(tx, index, ctx),
+            CSIEvent::SettledTx,
             true,
         )
         .await?;
@@ -432,6 +452,7 @@ mod tests {
                     ..Block::default()
                 },
                 |state, tx, index, ctx| state.handle_transaction_success(tx, index, ctx),
+                CSIEvent::SettledTx,
                 true,
             )
             .await

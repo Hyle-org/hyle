@@ -10,6 +10,35 @@ use tracing_subscriber::{
 // Direct logging macros
 /// Macro designed to log warnings
 #[macro_export]
+macro_rules! log_debug {
+    // Pattern for format string with arguments
+    ($result:expr, $fmt:literal, $($arg:tt)*) => {
+        match $result {
+            Err(e) => {
+                let ae: anyhow::Error = e.into();
+                let ae = ae.context(format!($fmt, $($arg)*));
+                tracing::debug!(target: module_path!(), "{:#}", ae);
+                Err(ae)
+            }
+            Ok(t) => Ok(t),
+        }
+    };
+    // Pattern for a single expression (string or otherwise)
+    ($result:expr, $context:expr) => {
+        match $result {
+            Err(e) => {
+                let ae: anyhow::Error = e.into();
+                let ae = ae.context($context);
+                tracing::debug!(target: module_path!(), "{:#}", ae);
+                Err(ae)
+            }
+            Ok(t) => Ok(t),
+        }
+    };
+}
+
+/// Macro designed to log warnings
+#[macro_export]
 macro_rules! log_warn {
     // Pattern for format string with arguments
     ($result:expr, $fmt:literal, $($arg:tt)*) => {
