@@ -3,8 +3,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::contract_indexer::{ContractHandler, ContractStateStore};
 use hyle_contract_sdk::{BlobIndex, ContractName, TxId};
 use hyle_model::{RegisterContractEffect, TxContext, TxHash};
-use serde::{Deserialize, Serialize};
-use std::{ops::Deref, path::PathBuf, sync::Arc};
+use serde::Serialize;
+use std::{any::TypeId, ops::Deref, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::debug;
 
@@ -17,25 +17,24 @@ use crate::{
     utils::{conf::Conf, modules::Module},
 };
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub enum CSIEvent {
-    NewTx(BlobTransaction, ContractName),
-    SettledTx(BlobTransaction, ContractName),
-    FailedTx(BlobTransaction, ContractName),
-    TimedOutTx(BlobTransaction, ContractName),
+#[derive(Debug, Clone)]
+pub struct CSIBusEvent<E> {
+    #[allow(unused)]
+    pub event: E,
 }
-impl BusMessage for CSIEvent {}
+
+impl<E> BusMessage for CSIBusEvent<E> {}
 
 module_bus_client! {
 #[derive(Debug)]
-struct CSIBusClient {
-    sender(CSIEvent),
+struct CSIBusClient<E: Clone + Send + Sync + 'static> {
+    sender(CSIBusEvent<E>),
     receiver(NodeStateEvent),
 }
 }
 
-pub struct ContractStateIndexer<State> {
-    bus: CSIBusClient,
+pub struct ContractStateIndexer<State, Event: Default + Clone + Send + Sync + 'static = ()> {
+    bus: CSIBusClient<Event>,
     store: Arc<RwLock<ContractStateStore<State>>>,
     contract_name: ContractName,
     file: PathBuf,
@@ -48,7 +47,7 @@ pub struct ContractStateIndexerCtx {
     pub contract_name: ContractName,
 }
 
-impl<State> Module for ContractStateIndexer<State>
+impl<State, Event> Module for ContractStateIndexer<State, Event>
 where
     State: Serialize
         + Clone
@@ -56,10 +55,11 @@ where
         + Send
         + std::fmt::Debug
         + Default
-        + ContractHandler
+        + ContractHandler<Event>
         + BorshSerialize
         + BorshDeserialize
         + 'static,
+    Event: Default + std::fmt::Debug + Clone + Send + Sync + 'static,
 {
     type Context = ContractStateIndexerCtx;
 
@@ -118,7 +118,7 @@ where
     }
 }
 
-impl<State> ContractStateIndexer<State>
+impl<State, Event> ContractStateIndexer<State, Event>
 where
     State: Serialize
         + Clone
@@ -126,10 +126,11 @@ where
         + Send
         + std::fmt::Debug
         + Default
-        + ContractHandler
+        + ContractHandler<Event>
         + BorshSerialize
         + BorshDeserialize
         + 'static,
+    Event: Default + std::fmt::Debug + Clone + Send + Sync + 'static,
 {
     pub async fn start(&mut self) -> Result<(), Error> {
         module_handle_messages! {
@@ -159,17 +160,15 @@ where
         Ok(())
     }
 
-    async fn handle_txs<'a, T: IntoIterator<Item = &'a TxHash>, F, G>(
+    async fn handle_txs<'a, T: IntoIterator<Item = &'a TxHash>, F>(
         &mut self,
         txs: T,
         block: &Block,
         handler: F,
-        bus_wrapper: G,
         remove_from_unsettled: bool,
     ) -> Result<()>
     where
-        F: Fn(&mut State, &BlobTransaction, BlobIndex, TxContext) -> Result<()>,
-        G: Fn(BlobTransaction, ContractName) -> CSIEvent,
+        F: Fn(&mut State, &BlobTransaction, BlobIndex, TxContext) -> Result<Event>,
     {
         for tx in txs {
             let dp_hash = block.resolve_parent_dp_hash(tx)?.clone();
@@ -199,13 +198,16 @@ where
                     continue;
                 }
 
-                handler(state, &tx, BlobIndex(index), tx_context.clone())?;
+                let event = handler(state, &tx, BlobIndex(index), tx_context.clone())?;
+                if TypeId::of::<Event>() != TypeId::of::<()>() {
+                    let _ = log_debug!(
+                        self.bus.send(CSIBusEvent {
+                            event: event.clone(),
+                        }),
+                        "Sending CSI bus event"
+                    );
+                }
             }
-
-            let _ = log_debug!(
-                self.bus.send(bus_wrapper(tx, self.contract_name.clone())),
-                "Sending CSIEvent message to bus."
-            );
         }
         Ok(())
     }
@@ -236,7 +238,6 @@ where
             block.txs.iter().map(Self::get_hash),
             &block,
             |state, tx, index, ctx| state.handle_transaction_sequenced(tx, index, ctx),
-            CSIEvent::NewTx,
             false,
         )
         .await?;
@@ -245,7 +246,6 @@ where
             &block.timed_out_txs,
             &block,
             |state, tx, index, ctx| state.handle_transaction_timeout(tx, index, ctx),
-            CSIEvent::TimedOutTx,
             false,
         )
         .await?;
@@ -254,7 +254,6 @@ where
             &block.failed_txs,
             &block,
             |state, tx, index, ctx| state.handle_transaction_failed(tx, index, ctx),
-            CSIEvent::FailedTx,
             false,
         )
         .await?;
@@ -263,7 +262,6 @@ where
             &block.successful_txs,
             &block,
             |state, tx, index, ctx| state.handle_transaction_success(tx, index, ctx),
-            CSIEvent::SettledTx,
             true,
         )
         .await?;
@@ -302,6 +300,7 @@ mod tests {
     use client_sdk::transaction_builder::TxExecutorHandler;
     use hyle_contract_sdk::{BlobData, ProgramId, StateCommitment, ZkContract};
     use hyle_model::{DataProposalHash, Hashed, HyleOutput, LaneId};
+    use serde::Deserialize;
     use utoipa::openapi::OpenApi;
 
     use super::*;
@@ -452,7 +451,6 @@ mod tests {
                     ..Block::default()
                 },
                 |state, tx, index, ctx| state.handle_transaction_success(tx, index, ctx),
-                CSIEvent::SettledTx,
                 true,
             )
             .await
