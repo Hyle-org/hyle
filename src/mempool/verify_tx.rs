@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tracing::{debug, trace, warn};
 
 use crate::{
-    mempool::{InternalMempoolEvent, MempoolNetMessage},
+    mempool::{MempoolNetMessage, ProcessedDPEvent},
     model::{BlobProofOutput, DataProposal, Hashed, Transaction, TransactionData},
 };
 
@@ -38,13 +38,16 @@ impl super::Mempool {
         #[cfg(test)]
         self.on_hashed_data_proposal(&lane_id, data_proposal.clone())?;
         #[cfg(not(test))]
-        self.running_tasks.spawn_blocking(move || {
-            data_proposal.hashed();
-            Ok(InternalMempoolEvent::OnHashedDataProposal((
-                lane_id,
-                data_proposal,
-            )))
-        });
+        self.inner.processing_dps.spawn_on(
+            async move {
+                data_proposal.hashed();
+                Ok(ProcessedDPEvent::OnHashedDataProposal((
+                    lane_id,
+                    data_proposal,
+                )))
+            },
+            self.inner.long_tasks_runtime.handle(),
+        );
         Ok(())
     }
 
@@ -83,14 +86,17 @@ impl super::Mempool {
                 trace!("Further processing for DataProposal");
                 let kc = self.known_contracts.clone();
                 let lane_id = lane_id.clone();
-                self.running_tasks.spawn_blocking(move || {
-                    let decision = Self::process_data_proposal(&mut data_proposal, kc);
-                    Ok(InternalMempoolEvent::OnProcessedDataProposal((
-                        lane_id,
-                        decision,
-                        data_proposal,
-                    )))
-                });
+                self.inner.processing_dps.spawn_on(
+                    async move {
+                        let decision = Self::process_data_proposal(&mut data_proposal, kc);
+                        Ok(ProcessedDPEvent::OnProcessedDataProposal((
+                            lane_id,
+                            decision,
+                            data_proposal,
+                        )))
+                    },
+                    self.inner.long_tasks_runtime.handle(),
+                );
             }
             DataProposalVerdict::Wait => {
                 // Push the data proposal in the waiting list
