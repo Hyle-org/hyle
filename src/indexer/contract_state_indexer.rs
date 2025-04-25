@@ -33,7 +33,7 @@ struct CSIBusClient<E: Clone + Send + Sync + 'static> {
 }
 }
 
-pub struct ContractStateIndexer<State, Event: Default + Clone + Send + Sync + 'static = ()> {
+pub struct ContractStateIndexer<State, Event: Clone + Send + Sync + 'static = ()> {
     bus: CSIBusClient<Event>,
     store: Arc<RwLock<ContractStateStore<State>>>,
     contract_name: ContractName,
@@ -59,7 +59,7 @@ where
         + BorshSerialize
         + BorshDeserialize
         + 'static,
-    Event: Default + std::fmt::Debug + Clone + Send + Sync + 'static,
+    Event: std::fmt::Debug + Clone + Send + Sync + 'static,
 {
     type Context = ContractStateIndexerCtx;
 
@@ -130,7 +130,7 @@ where
         + BorshSerialize
         + BorshDeserialize
         + 'static,
-    Event: Default + std::fmt::Debug + Clone + Send + Sync + 'static,
+    Event: std::fmt::Debug + Clone + Send + Sync + 'static,
 {
     pub async fn start(&mut self) -> Result<(), Error> {
         module_handle_messages! {
@@ -168,7 +168,7 @@ where
         remove_from_unsettled: bool,
     ) -> Result<()>
     where
-        F: Fn(&mut State, &BlobTransaction, BlobIndex, TxContext) -> Result<Event>,
+        F: Fn(&mut State, &BlobTransaction, BlobIndex, TxContext) -> Result<Option<Event>>,
     {
         for tx in txs {
             let dp_hash = block.resolve_parent_dp_hash(tx)?.clone();
@@ -200,12 +200,14 @@ where
 
                 let event = handler(state, &tx, BlobIndex(index), tx_context.clone())?;
                 if TypeId::of::<Event>() != TypeId::of::<()>() {
-                    let _ = log_debug!(
-                        self.bus.send(CSIBusEvent {
-                            event: event.clone(),
-                        }),
-                        "Sending CSI bus event"
-                    );
+                    if let Some(event) = event {
+                        let _ = log_debug!(
+                            self.bus.send(CSIBusEvent {
+                                event: event.clone(),
+                            }),
+                            "Sending CSI bus event"
+                        );
+                    }
                 }
             }
         }
@@ -349,9 +351,9 @@ mod tests {
             tx: &BlobTransaction,
             index: BlobIndex,
             _tx_context: TxContext,
-        ) -> Result<()> {
+        ) -> Result<Option<()>> {
             self.0 = tx.blobs.get(index.0).unwrap().data.0.clone();
-            Ok(())
+            Ok(None)
         }
 
         async fn api(_store: Arc<RwLock<ContractStateStore<Self>>>) -> (axum::Router<()>, OpenApi) {
