@@ -109,7 +109,7 @@ where
     bus: WebSocketBusClient<In, Out>,
     app: Option<Router>,
     peer_senders: HashMap<PeerAddress, SplitSink<WebSocket, Message>>,
-    topic_senders: HashMap<Topic, Vec<PeerAddress>>,
+    topic_listeners: HashMap<Topic, Vec<PeerAddress>>,
     #[allow(clippy::type_complexity)]
     peer_receivers: JoinSet<
         Option<(
@@ -149,7 +149,7 @@ where
             bus: WebSocketBusClient::new_from_bus(ctx.bus.new_handle()).await,
             app: Some(app),
             peer_senders: HashMap::new(),
-            topic_senders: HashMap::new(),
+            topic_listeners: HashMap::new(),
             peer_receivers: JoinSet::new(),
             new_peers,
             config,
@@ -199,7 +199,7 @@ where
                         match msg {
                             WsMsg::RegisterTopic(topic) => {
                                 debug!("Registering topic: {} for {}", topic, addr);
-                                self.topic_senders.entry(topic.clone()).or_default().push(addr.clone());
+                                self.topic_listeners.entry(topic.clone()).or_default().push(addr.clone());
                             }
                             WsMsg::Message(msg) => {
                                 if let Err(e) = self.handle_incoming_message(WsInMessage{addr: addr.clone(), message : msg}).await {
@@ -260,7 +260,7 @@ where
         let text = serde_json::to_string(&msg).context("Failed to serialize outbound message")?;
         let text: Message = Message::Text(text.clone().into());
 
-        if let Some(sender_addr) = self.topic_senders.get(&topic) {
+        if let Some(sender_addr) = self.topic_listeners.get(&topic) {
             for addr in sender_addr.clone() {
                 let sender = self
                     .peer_senders
@@ -272,7 +272,7 @@ where
                     .context("Failed to send message")
                 {
                     debug!("Failed to send message to topic {topic}: {e}");
-                    self.topic_senders
+                    self.topic_listeners
                         .entry(topic.clone())
                         .or_default()
                         .retain(|x| *x != addr);
