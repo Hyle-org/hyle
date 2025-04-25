@@ -57,7 +57,7 @@ where
     node_p2p_public_address: String,
     node_da_public_address: String,
     max_frame_length: Option<usize>,
-    tcp_server: TcpServer<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>,
+    pub tcp_server: TcpServer<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>,
     pub peers: HashMap<ValidatorPublicKey, PeerInfo>,
     handshake_clients_tasks: HandShakeJoinSet<Codec, Msg>,
     peers_ping_ticker: Interval,
@@ -416,7 +416,10 @@ pub mod tests {
     use hyle_crypto::BlstCrypto;
     use tokio::net::TcpListener;
 
-    use crate::p2p_server_mod;
+    use crate::{
+        p2p_server_mod,
+        tcp::{Handshake, P2PTcpEvent, P2PTcpMessage, TcpEvent},
+    };
 
     pub async fn find_available_port() -> u16 {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -430,6 +433,19 @@ pub mod tests {
     p2p_server_mod! {
         pub test,
         message: crate::tcp::p2p_server::tests::TestMessage
+    }
+
+    macro_rules! receive_and_handle_event {
+        ($server:expr, $pattern:pat, $error_msg:expr) => {{
+            let event = receive_event($server, $error_msg).await?;
+            assert!(
+                matches!(event, $pattern),
+                "Expected {:?}, got {:?}",
+                stringify!($pattern),
+                event,
+            );
+            $server.handle_p2p_tcp_event(event).await?;
+        }};
     }
 
     async fn setup_p2p_server_pair() -> Result<(
@@ -472,25 +488,25 @@ pub mod tests {
         Ok(((port1, p2p_server1), (port2, p2p_server2)))
     }
 
-    async fn process_messages(
+    async fn receive_event(
         p2p_server: &mut super::P2PServer<p2p_server_test::codec_tcp::ServerCodec, TestMessage>,
-        n: u8,
-    ) -> Result<()> {
-        // Process messages for both servers to complete handshake
-        for _ in 0..n {
-            tokio::select! {
-                event = p2p_server.listen_next() => {
-                    p2p_server
-                        .handle_p2p_tcp_event(event)
-                        .await?;
-                }
-                _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {
-                    println!("Timeout waiting for message");
-                    break;
+        error_msg: &str,
+    ) -> Result<P2PTcpEvent<p2p_server_test::codec_tcp::ServerCodec, TestMessage>> {
+        loop {
+            let timeout_duration = std::time::Duration::from_millis(50);
+
+            match tokio::time::timeout(timeout_duration, p2p_server.listen_next()).await {
+                Ok(event) => match event {
+                    P2PTcpEvent::PingPeers => {
+                        continue;
+                    }
+                    _ => return Ok(event),
+                },
+                Err(_) => {
+                    anyhow::bail!("Timed out while waiting for message: {error_msg}");
                 }
             }
         }
-        Ok(())
     }
 
     #[test_log::test(tokio::test)]
@@ -504,16 +520,52 @@ pub mod tests {
         p2p_server2.start_handshake(format!("127.0.0.1:{port1}"));
 
         // For TcpClient to connect
-        process_messages(&mut p2p_server1, 1).await?;
-        process_messages(&mut p2p_server2, 1).await?;
+        receive_and_handle_event!(
+            &mut p2p_server1,
+            P2PTcpEvent::HandShakeTcpClient(_),
+            "Expected HandShake TCP Client connection"
+        );
+        receive_and_handle_event!(
+            &mut p2p_server2,
+            P2PTcpEvent::HandShakeTcpClient(_),
+            "Expected HandShake TCP Client connection"
+        );
 
         // For handshake Hello message
-        process_messages(&mut p2p_server1, 1).await?;
-        process_messages(&mut p2p_server2, 1).await?;
+        receive_and_handle_event!(
+            &mut p2p_server2,
+            P2PTcpEvent::TcpEvent(TcpEvent::Message {
+                dest: _,
+                data: P2PTcpMessage::Handshake(Handshake::Hello(_))
+            }),
+            "Expected HandShake Hello message"
+        );
+        receive_and_handle_event!(
+            &mut p2p_server1,
+            P2PTcpEvent::TcpEvent(TcpEvent::Message {
+                dest: _,
+                data: P2PTcpMessage::Handshake(Handshake::Hello(_))
+            }),
+            "Expected HandShake Hello message"
+        );
 
         // For handshake Verack message
-        process_messages(&mut p2p_server1, 1).await?;
-        process_messages(&mut p2p_server2, 1).await?;
+        receive_and_handle_event!(
+            &mut p2p_server1,
+            P2PTcpEvent::TcpEvent(TcpEvent::Message {
+                dest: _,
+                data: P2PTcpMessage::Handshake(Handshake::Verack(_))
+            }),
+            "Expected HandShake Verack"
+        );
+        receive_and_handle_event!(
+            &mut p2p_server2,
+            P2PTcpEvent::TcpEvent(TcpEvent::Message {
+                dest: _,
+                data: P2PTcpMessage::Handshake(Handshake::Verack(_))
+            }),
+            "Expected HandShake Verack"
+        );
 
         // Verify that both servers have each other in their peers map
         assert_eq!(p2p_server1.peers.len(), 1);
@@ -532,38 +584,77 @@ pub mod tests {
     async fn p2p_server_reconnection_test() -> Result<()> {
         let ((_, mut p2p_server1), (port2, mut p2p_server2)) = setup_p2p_server_pair().await?;
 
+        let server2_pub_key = p2p_server2.crypto.validator_pubkey().clone();
+
         // Initial connection
         p2p_server1.start_handshake(format!("127.0.0.1:{port2}"));
 
-        // Server1 waits for TcpClient to reconnect
-        process_messages(&mut p2p_server1, 1).await?;
-        // Server2 receives Ping & Hello message
-        process_messages(&mut p2p_server2, 2).await?;
-        // Server1 receives Ping & Verack message
-        process_messages(&mut p2p_server1, 2).await?;
+        // Server1 waits for TcpClient to connect
+        receive_and_handle_event!(
+            &mut p2p_server1,
+            P2PTcpEvent::HandShakeTcpClient(_),
+            "Expected HandShake TCP Client connection"
+        );
+        // Server2 receives Hello message
+        receive_and_handle_event!(
+            &mut p2p_server2,
+            P2PTcpEvent::TcpEvent(TcpEvent::Message {
+                dest: _,
+                data: P2PTcpMessage::Handshake(Handshake::Hello(_))
+            }),
+            "Expected HandShake Hello message"
+        );
+        // Server1 receives Verack message
+        receive_and_handle_event!(
+            &mut p2p_server1,
+            P2PTcpEvent::TcpEvent(TcpEvent::Message {
+                dest: _,
+                data: P2PTcpMessage::Handshake(Handshake::Verack(_))
+            }),
+            "Expected HandShake Verack"
+        );
 
         // Verify initial connection
         assert_eq!(p2p_server1.peers.len(), 1);
-        let peer_key = p2p_server1.peers.keys().next().unwrap().clone();
 
         // Simulate disconnection by dropping peer from server2
         p2p_server2.remove_peer(p2p_server1.crypto.validator_pubkey());
 
         // Try to send a message - this should trigger reconnection
         let test_msg = TestMessage("test reconnection".to_string());
-        p2p_server1.send(peer_key.clone(), test_msg).await?;
+        p2p_server1.send(server2_pub_key, test_msg).await?;
 
-        // Verify that server1 received the error for the previous send
-        process_messages(&mut p2p_server1, 1).await?;
+        // Server1 receives Error message
+        receive_and_handle_event!(
+            &mut p2p_server1,
+            P2PTcpEvent::TcpEvent(TcpEvent::Error { dest: _, error: _ }),
+            "Expected Tcp Error message"
+        );
 
         // Server1 waits for TcpClient to reconnect
-        process_messages(&mut p2p_server1, 1).await?;
-
-        // Verify that server2 receives new handshake after reconnection
-        process_messages(&mut p2p_server2, 1).await?;
-
-        // Verify that server1 received server2's Verack
-        process_messages(&mut p2p_server1, 1).await?;
+        receive_and_handle_event!(
+            &mut p2p_server1,
+            P2PTcpEvent::HandShakeTcpClient(_),
+            "Expected HandShake TCP Client connection"
+        );
+        // Server2 receives Hello message
+        receive_and_handle_event!(
+            &mut p2p_server2,
+            P2PTcpEvent::TcpEvent(TcpEvent::Message {
+                dest: _,
+                data: P2PTcpMessage::Handshake(Handshake::Hello(_))
+            }),
+            "Expected HandShake Hello message"
+        );
+        // Server1 receives Verack message
+        receive_and_handle_event!(
+            &mut p2p_server1,
+            P2PTcpEvent::TcpEvent(TcpEvent::Message {
+                dest: _,
+                data: P2PTcpMessage::Handshake(Handshake::Verack(_))
+            }),
+            "Expected HandShake Verack"
+        );
 
         assert_eq!(
             p2p_server1.peers.len(),
