@@ -132,6 +132,56 @@ where
             })
         }))
     }
+    pub async fn send_batched(
+        &mut self,
+        socket_addrs: Vec<String>,
+        msg: Res,
+    ) -> HashMap<String, anyhow::Error> {
+        debug!("Broadcasting msg {:?} to all", msg);
+
+        // Getting targetted addrs that are not in the connected sockets list
+        let unknown_socket_addrs = {
+            let mut res = socket_addrs.clone();
+            res.retain(|addr| !self.sockets.contains_key(addr));
+            res
+        };
+
+        // Send the message to all targets concurrently and wait for them to finish
+        let all_sent = {
+            let mut tasks = vec![];
+            for (name, socket) in self.sockets.iter_mut() {
+                tasks.push(
+                    socket
+                        .sender
+                        .send(TcpMessage::Data(msg.clone()))
+                        .map(|res| (name.clone(), res)),
+                );
+            }
+            futures::future::join_all(tasks).await
+        };
+
+        // Regroup future results in a map keyed with addrs
+        let mut result = HashMap::from_iter(all_sent.into_iter().filter_map(
+            |(client_name, send_result)| {
+                send_result.err().map(|error| {
+                    (
+                        client_name.clone(),
+                        anyhow::anyhow!("Sending message to client {}: {}", client_name, error),
+                    )
+                })
+            },
+        ));
+
+        // Filling the map with errors for unknown targets
+        for unknown in unknown_socket_addrs {
+            result.insert(
+                unknown.clone(),
+                anyhow::anyhow!("Unknown socket_addr {}", unknown),
+            );
+        }
+
+        result
+    }
     pub async fn send(&mut self, socket_addr: String, msg: Res) -> anyhow::Result<()> {
         debug!("Sending msg {:?} to {}", msg, socket_addr);
         let stream = self
