@@ -243,10 +243,6 @@ where
             trace!("Peer {} dropped & disconnected", peer_ip);
         }
     }
-
-    pub fn get_last_ping(&self, socket_addr: &String) -> Option<u64> {
-        self.sockets.get(socket_addr).map(|socket| socket.last_ping)
-    }
 }
 
 #[cfg(test)]
