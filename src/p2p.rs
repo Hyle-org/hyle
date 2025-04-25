@@ -13,10 +13,10 @@ use crate::{
 };
 use anyhow::{Context, Error, Result};
 use hyle_crypto::SharedBlstCrypto;
-use hyle_model::{ConsensusNetMessage, SignedByValidator, ValidatorPublicKey};
-use hyle_net::tcp::p2p_server::{P2PServer, P2PServerEvent};
+use hyle_model::{ConsensusNetMessage, SignedByValidator};
+use hyle_net::tcp::p2p_server::P2PServerEvent;
 use network::{p2p_server_consensus_mempool, NetMessage, OutboundMessage, PeerEvent};
-use tracing::{info, trace, warn};
+use tracing::{info, trace};
 
 pub mod network;
 
@@ -92,34 +92,13 @@ impl P2P {
             listen<OutboundMessage> res => {
                 match res {
                     OutboundMessage::SendMessage { validator_id, msg } => {
-                        if let Err(e) = p2p_server.send(validator_id.clone(), msg.clone()).await {
-                            self.handle_failed_send(
-                                &mut p2p_server,
-                                validator_id,
-                                msg,
-                                e
-                            ).await;
-                        }
+                        let _ = log_warn!(p2p_server.send(validator_id, msg).await, "Sending message");
                     }
                     OutboundMessage::BroadcastMessage(message) => {
-                        for (failed_peer, error) in p2p_server.broadcast(message.clone()).await {
-                            self.handle_failed_send(
-                                &mut p2p_server,
-                                failed_peer,
-                                message.clone(),
-                                error,
-                            ).await;
-                        }
+                        p2p_server.broadcast(message).await;
                     }
                     OutboundMessage::BroadcastMessageOnlyFor(only_for, message) => {
-                        for (failed_peer, error) in p2p_server.broadcast_only_for(&only_for, message.clone()).await {
-                            self.handle_failed_send(
-                                &mut p2p_server,
-                                failed_peer,
-                                message.clone(),
-                                error,
-                            ).await;
-                        }
+                        p2p_server.broadcast_only_for(&only_for, message).await;
                     }
                 };
             }
@@ -161,27 +140,5 @@ impl P2P {
             }
         }
         Ok(())
-    }
-
-    async fn handle_failed_send(
-        &self,
-        p2p_server: &mut P2PServer<
-            p2p_server_consensus_mempool::codec_tcp::ServerCodec,
-            NetMessage,
-        >,
-        validator_id: ValidatorPublicKey,
-        _msg: NetMessage,
-        error: Error,
-    ) {
-        // TODO: add waiting list for failed messages
-
-        warn!("{error}. Reconnecting to peer...");
-        if let Some(validator_ip) = p2p_server
-            .peers
-            .get(&validator_id)
-            .map(|peer| peer.node_connection_data.p2p_public_address.clone())
-        {
-            p2p_server.start_handshake_task(validator_ip);
-        }
     }
 }

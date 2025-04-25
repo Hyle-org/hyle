@@ -17,6 +17,7 @@ type TcpSender<ClientCodec, Req> =
     SplitSink<Framed<TcpStream, TcpMessageCodec<ClientCodec>>, TcpMessage<Req>>;
 type TcpReceiver<ClientCodec> = SplitStream<Framed<TcpStream, TcpMessageCodec<ClientCodec>>>;
 
+#[derive(Debug)]
 pub struct TcpClient<ClientCodec, Req, Res>
 where
     ClientCodec: Decoder<Item = Res> + Encoder<Req> + Default,

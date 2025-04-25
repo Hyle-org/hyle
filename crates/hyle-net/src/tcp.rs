@@ -56,6 +56,7 @@ pub enum TcpEvent<Data: Clone> {
     Closed { dest: String },
 }
 
+#[derive(Debug)]
 pub enum P2PTcpEvent<Codec, Msg>
 where
     Msg: Clone + std::fmt::Debug,
@@ -67,6 +68,7 @@ where
     TcpEvent(TcpEvent<P2PTcpMessage<Msg>>),
     HandShakeTcpClient(TcpClient<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>),
     PingPeers,
+    RetrySendMessages,
 }
 
 // A Generic Codec to unwrap/wrap with TcpMessage<T>
