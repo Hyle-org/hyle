@@ -37,9 +37,19 @@ pub enum Handshake {
     Verack((sdk::SignedByValidator<NodeConnectionData>, u128)),
 }
 
+#[derive(
+    Default, Debug, Clone, BorshSerialize, BorshDeserialize, Hash, PartialEq, Eq, PartialOrd, Ord,
+)]
+pub enum Canal {
+    #[default]
+    A,
+    B,
+}
+
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub struct NodeConnectionData {
     pub version: u16,
+    pub canal: Canal,
     pub name: String,
     pub p2p_public_address: String,
     pub da_public_address: String,
@@ -64,7 +74,10 @@ where
     <Codec as Encoder<P2PTcpMessage<Msg>>>::Error: std::fmt::Debug + Send,
 {
     TcpEvent(TcpEvent<P2PTcpMessage<Msg>>),
-    HandShakeTcpClient(TcpClient<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>),
+    HandShakeTcpClient(
+        TcpClient<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>,
+        Canal,
+    ),
     PingPeers,
 }
 
