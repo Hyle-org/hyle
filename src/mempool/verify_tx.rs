@@ -39,7 +39,10 @@ impl super::Mempool {
         // Check if we have a cached response to this DP hash (we can safely trust the hash here)
         // TODO: if we are currently hashing the same DP we'll still re-hash it
         // but this requires a signed header to quickly process the message.
-        match self.cached_dp_votes.get(&received_hash) {
+        match self
+            .cached_dp_votes
+            .get(&(lane_id.clone(), received_hash.clone()))
+        {
             // Ignore
             Some(
                 DataProposalVerdict::Empty
@@ -69,6 +72,7 @@ impl super::Mempool {
             }
             _ => {}
         }
+
         // This is annoying to run in tests because we don't have the event loop setup, so go synchronous.
         #[cfg(test)]
         self.on_hashed_data_proposal(&lane_id, data_proposal.clone())?;
@@ -100,8 +104,10 @@ impl super::Mempool {
         );
         let data_proposal_hash = data_proposal.hashed();
         let (verdict, lane_size) = self.get_verdict(lane_id, &data_proposal)?;
-        self.cached_dp_votes
-            .insert(data_proposal_hash.clone(), verdict.clone());
+        self.cached_dp_votes.insert(
+            (lane_id.clone(), data_proposal_hash.clone()),
+            verdict.clone(),
+        );
         match verdict {
             DataProposalVerdict::Empty => {
                 warn!(

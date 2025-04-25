@@ -109,7 +109,7 @@ pub struct MempoolStore {
     #[borsh(skip)]
     processing_dps: JoinSet<Result<ProcessedDPEvent>>,
     #[borsh(skip)]
-    cached_dp_votes: HashMap<DataProposalHash, DataProposalVerdict>,
+    cached_dp_votes: HashMap<(LaneId, DataProposalHash), DataProposalVerdict>,
 
     // Dedicated thread pool for data proposal and tx hashing
     #[borsh(skip)]
@@ -906,7 +906,8 @@ pub mod test {
         }
 
         pub fn timer_tick(&mut self) -> Result<bool> {
-            self.mempool.create_new_data_proposals()
+            Ok(self.mempool.create_new_data_proposals()?
+                || self.mempool.disseminate_data_proposals()?)
         }
 
         pub fn handle_poda_update(
