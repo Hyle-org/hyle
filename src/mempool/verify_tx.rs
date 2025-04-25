@@ -167,6 +167,8 @@ impl super::Mempool {
             lane_id,
             data_proposal.txs.len()
         );
+        self.cached_dp_votes
+            .insert((lane_id.clone(), data_proposal.hashed()), verdict.clone());
         match verdict {
             DataProposalVerdict::Empty => {
                 unreachable!("Empty DataProposal should never be processed");
