@@ -179,6 +179,7 @@ where
                 self.start_handshake_task(
                     peer_info.node_connection_data.p2p_public_address.clone(),
                 );
+                break;
             }
         }
         None
@@ -187,10 +188,15 @@ where
     fn handle_closed_event(&mut self, dest: String) {
         // TODO: investigate how to properly handle this case
         // The connection has been closed by peer. We do not try to reconnect to it. We remove the peer.
-        for (peer_pub_key, peer_info) in self.peers.clone() {
+        for (_peer_pub_key, peer_info) in self.peers.clone() {
             if peer_info.socket_addr == dest {
-                self.peers.remove(&peer_pub_key);
-                self.tcp_server.drop_peer_stream(dest.clone());
+                // self.peers.remove(&peer_pub_key);
+                // self.tcp_server.drop_peer_stream(dest.clone());
+
+                // For the moment, on a closed event we just start a new handshake
+                self.start_handshake_task(
+                    peer_info.node_connection_data.p2p_public_address.clone(),
+                );
                 break;
             }
         }
