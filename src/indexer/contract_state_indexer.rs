@@ -19,10 +19,10 @@ use crate::{
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum CSIEvent {
-    NewTx(BlobTransaction),
-    SettledTx(BlobTransaction),
-    FailedTx(BlobTransaction),
-    TimedOutTx(BlobTransaction),
+    NewTx(BlobTransaction, ContractName),
+    SettledTx(BlobTransaction, ContractName),
+    FailedTx(BlobTransaction, ContractName),
+    TimedOutTx(BlobTransaction, ContractName),
 }
 impl BusMessage for CSIEvent {}
 
@@ -169,7 +169,7 @@ where
     ) -> Result<()>
     where
         F: Fn(&mut State, &BlobTransaction, BlobIndex, TxContext) -> Result<()>,
-        G: Fn(BlobTransaction) -> CSIEvent,
+        G: Fn(BlobTransaction, ContractName) -> CSIEvent,
     {
         for tx in txs {
             let dp_hash = block.resolve_parent_dp_hash(tx)?.clone();
@@ -203,7 +203,7 @@ where
             }
 
             let _ = log_debug!(
-                self.bus.send(bus_wrapper(tx)),
+                self.bus.send(bus_wrapper(tx, self.contract_name.clone())),
                 "Sending CSIEvent message to bus."
             );
         }
