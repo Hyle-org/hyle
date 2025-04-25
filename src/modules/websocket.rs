@@ -169,9 +169,15 @@ where
             .ok_or_else(|| anyhow!("Router was already taken"))?;
 
         info!("WebSocket server listening on port {}", self.config.port);
+        debug!("WebSocket server listening on {}", bind_addr);
 
         let server = tokio::spawn(async move {
-            if let Err(e) = axum::serve(listener, app).await {
+            if let Err(e) = axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            {
                 error!("Server error: {}", e);
             } else {
                 info!("Server stopped");
@@ -204,7 +210,6 @@ where
                             WsMsg::Message(msg) => {
                                 if let Err(e) = self.handle_incoming_message(WsInMessage{addr: addr.clone(), message : msg}).await {
                                     error!("Error handling incoming message: {} from {}", e, addr);
-                                    break;
                                 }
                             }
                         }
@@ -213,7 +218,6 @@ where
                     }
                     (_, _, Err(e)) => {
                         error!("Error receiving message: {}", e);
-                        break;
                     }
                 }
             }
@@ -349,7 +353,9 @@ where
                     error!("WebSocket receive error: {}", e);
                     break;
                 }
-                _ => {} // Ignore other message types
+                _ => {
+                    debug!("Ignoring non-text message");
+                } // Ignore other message types
             }
         }
         None
