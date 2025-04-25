@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
-    io::{Error, ErrorKind},
+    io::ErrorKind,
+    marker::PhantomData,
     net::{Ipv4Addr, SocketAddr},
 };
 
@@ -8,7 +9,7 @@ use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use futures::{
     stream::{SplitSink, SplitStream},
-    SinkExt, StreamExt,
+    FutureExt, SinkExt, StreamExt,
 };
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::codec::{Decoder, Encoder, Framed};
@@ -21,17 +22,15 @@ use tracing::{debug, error, trace, warn};
 
 use super::{tcp_client::TcpClient, SocketStream, TcpEvent};
 
-pub struct TcpServer<Codec, Req: Clone + std::fmt::Debug, Res: Clone + std::fmt::Debug>
-where
-    Codec: Decoder<Item = Req> + Encoder<Res> + Default,
-{
+pub struct TcpServer<Codec, Req: Clone + std::fmt::Debug, Res: Clone + std::fmt::Debug> {
     tcp_listener: TcpListener,
     max_frame_length: Option<usize>,
     pool_sender: Sender<TcpEvent<Req>>,
     pool_receiver: Receiver<TcpEvent<Req>>,
     ping_sender: Sender<String>,
     ping_receiver: Receiver<String>,
-    sockets: HashMap<String, SocketStream<Codec, Req, Res>>,
+    sockets: HashMap<String, SocketStream<Res>>,
+    _codec: std::marker::PhantomData<Codec>,
 }
 
 impl<Codec, Req, Res> TcpServer<Codec, Req, Res>
@@ -66,6 +65,7 @@ where
             pool_receiver,
             ping_sender,
             ping_receiver,
+            _codec: PhantomData::<Codec>::default(),
         })
     }
 
@@ -103,57 +103,68 @@ where
     }
 
     /// Adresses of currently connected clients (no health check)
-    pub fn connected_clients(&self) -> anyhow::Result<Vec<String>> {
-        Ok(self.sockets.keys().cloned().collect::<Vec<String>>())
+    pub fn connected_clients(&self) -> Vec<String> {
+        self.sockets.keys().cloned().collect::<Vec<String>>()
     }
 
-    pub async fn broadcast(&mut self, msg: Res) -> HashMap<String, Error> {
-        let mut failed_sockets = HashMap::new();
+    pub async fn broadcast(&mut self, msg: Res) -> HashMap<String, anyhow::Error> {
         debug!("Broadcasting msg {:?} to all", msg);
 
-        // TODO: investigate if parallelizing this is better
-        for socket_addr in self.sockets.keys().cloned().collect::<Vec<_>>() {
-            if let Err(e) = self.send(socket_addr.clone(), msg.clone()).await {
-                failed_sockets.insert(socket_addr.clone(), e);
-            }
+        let mut tasks = vec![];
+
+        for (name, socket) in self.sockets.iter_mut() {
+            tasks.push(
+                socket
+                    .sender
+                    .send(TcpMessage::Data(msg.clone()))
+                    .map(|res| (name.clone(), res)),
+            );
         }
 
-        failed_sockets
-    }
+        let all = futures::future::join_all(tasks).await;
 
-    pub async fn send(&mut self, socket_addr: String, msg: Res) -> Result<(), Error> {
+        let res = HashMap::from_iter(all.into_iter().filter_map(|(client_name, send_result)| {
+            send_result.err().map(|error| {
+                (
+                    client_name.clone(),
+                    anyhow::anyhow!("Sending message to client {}: {}", client_name, error),
+                )
+            })
+        }));
+
+        res
+    }
+    pub async fn send(&mut self, socket_addr: String, msg: Res) -> anyhow::Result<()> {
         debug!("Sending msg {:?} to {}", msg, socket_addr);
-        if let Some(stream) = self.sockets.get_mut(&socket_addr) {
-            stream.sender.send(TcpMessage::Data(msg)).await
-        } else {
-            Err(Error::new(
-                ErrorKind::NotFound,
-                format!(
-                    "Failed to retrieve socket address {} for sending a message",
-                    &socket_addr
-                ),
-            ))
-        }
+        let stream = self
+            .sockets
+            .get_mut(&socket_addr)
+            .context(format!("Retrieving client {}", socket_addr))?;
+
+        stream
+            .sender
+            .send(TcpMessage::Data(msg))
+            .await
+            .map_err(|e| anyhow::anyhow!("Sending msg to client {}: {}", socket_addr, e))
     }
 
-    pub async fn ping(&mut self, socket_addr: String) -> Result<(), Error> {
-        if let Some(stream) = self.sockets.get_mut(&socket_addr) {
-            stream.sender.send(TcpMessage::Ping).await
-        } else {
-            Err(Error::new(
-                ErrorKind::NotFound,
-                format!(
-                    "Failed to retrieve socket address {} for sending a Ping",
-                    &socket_addr
-                ),
-            ))
-        }
+    pub async fn ping(&mut self, socket_addr: String) -> anyhow::Result<()> {
+        let stream = self
+            .sockets
+            .get_mut(&socket_addr)
+            .context(format!("Retrieving client {}", socket_addr))?;
+
+        stream
+            .sender
+            .send(TcpMessage::Ping)
+            .await
+            .map_err(|e| anyhow::anyhow!("Sending ping to client {}: {}", socket_addr, e))
     }
 
     /// Setup stream in the managed list for a new client
     fn setup_stream(
         &mut self,
-        sender: SplitSink<Framed<TcpStream, TcpMessageCodec<Codec>>, TcpMessage<Res>>,
+        mut sender: SplitSink<Framed<TcpStream, TcpMessageCodec<Codec>>, TcpMessage<Res>>,
         mut receiver: SplitStream<Framed<TcpStream, TcpMessageCodec<Codec>>>,
         socket_addr: &String,
     ) {
@@ -167,7 +178,7 @@ where
         // This task is responsible for reception of ping and message.
         // If an error occurs and is not an InvalidData error, we assume the task is to be aborted.
         // If the stream is closed, we also assume the task is to be aborted.
-        let abort = tokio::spawn(async move {
+        let abort_receiver_task = tokio::spawn(async move {
             loop {
                 match receiver.next().await {
                     Some(Ok(TcpMessage::Ping)) => {
@@ -219,14 +230,36 @@ where
                 }
             }
         });
+
+        let (sender_snd, mut sender_recv) = tokio::sync::mpsc::channel(1000);
+
+        let abort_sender_task = tokio::spawn({
+            let cloned_socket_addr = socket_addr.clone();
+            async move {
+                loop {
+                    match sender_recv.recv().await {
+                        Some(msg) => {
+                            if let Err(e) = sender.send(msg).await {
+                                error!("Sending message to peer {}: {}", cloned_socket_addr, e);
+                            }
+                        }
+                        None => {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+
         tracing::debug!("Socket {} connected", socket_addr);
         // Store socket in the list.
         self.sockets.insert(
             socket_addr.to_string(),
             SocketStream {
                 last_ping: get_current_timestamp(),
-                sender,
-                abort,
+                sender: sender_snd,
+                abort_sender_task,
+                abort_receiver_task,
             },
         );
     }
@@ -239,7 +272,8 @@ where
 
     pub fn drop_peer_stream(&mut self, peer_ip: String) {
         if let Some(peer_stream) = self.sockets.remove(&peer_ip) {
-            peer_stream.abort.abort();
+            peer_stream.abort_sender_task.abort();
+            peer_stream.abort_receiver_task.abort();
             trace!("Peer {} dropped & disconnected", peer_ip);
         }
     }
@@ -304,7 +338,7 @@ pub mod tests {
             TcpMessage::Data(DataAvailabilityEvent::SignedBlock("blabla".to_string()))
         );
 
-        let client_socket_addr = server.connected_clients()?.first().unwrap().clone();
+        let client_socket_addr = server.connected_clients().first().unwrap().clone();
 
         server.ping(client_socket_addr).await?;
 
