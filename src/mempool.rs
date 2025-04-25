@@ -299,8 +299,10 @@ impl Mempool {
             self.conf.consensus.slot_duration / 2,
             Duration::from_millis(500),
         );
-        let mut interval = tokio::time::interval(tick_interval);
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut new_dp_timer = tokio::time::interval(tick_interval);
+        let mut disseminate_timer = tokio::time::interval(tick_interval * 4);
+        new_dp_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        disseminate_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
         // TODO: Recompute optimistic node_state for contract registrations.
         module_handle_messages! {
@@ -377,8 +379,15 @@ impl Mempool {
                     }
                 }
             }
-            _ = interval.tick() => {
-                let _ = log_error!(self.handle_data_proposal_management(), "Creating Data Proposal on tick");
+            _ = new_dp_timer.tick() => {
+                if let Ok(true) = log_error!(self.create_new_data_proposals(), "Create data proposals on tick") {
+                    disseminate_timer.reset();
+                }
+            }
+            _ = disseminate_timer.tick() => {
+                if let Ok(true) = log_error!(self.disseminate_data_proposals(), "Disseminate data proposals on tick") {
+                    disseminate_timer.reset();
+                }
             }
         };
 
@@ -894,8 +903,8 @@ pub mod test {
                 .unwrap()
         }
 
-        pub fn timer_tick(&mut self) -> Result<()> {
-            self.mempool.handle_data_proposal_management()
+        pub fn timer_tick(&mut self) -> Result<bool> {
+            self.mempool.create_new_data_proposals()
         }
 
         pub fn handle_poda_update(

@@ -38,21 +38,17 @@ pub mod risc0_1 {
         let journal = risc0_proof_verifier(&proof.0, &program_id.0)?;
         // First try to decode it as a single HyleOutput
         Ok(
-            match std::panic::catch_unwind(|| journal.decode::<HyleOutput>()).unwrap_or(Err(
+            match std::panic::catch_unwind(|| journal.decode::<Vec<HyleOutput>>()).unwrap_or(Err(
                 risc0_zkvm::serde::Error::Custom("Failed to decode single HyleOutput".into()),
             )) {
-                Ok(ho) => vec![ho],
+                Ok(ho) => ho,
                 Err(_) => {
-                    debug!(
-                        "Failed to decode single HyleOutput, trying to decode as Vec<HyleOutput>"
-                    );
+                    debug!("Failed to decode Vec<HyleOutput>, trying to decode as HyleOutput");
                     let hyle_output = journal
-                        .decode::<Vec<HyleOutput>>()
+                        .decode::<HyleOutput>()
                         .context("Failed to extract HyleOuput from Risc0's journal")?;
 
-                    debug!("Found {} HyleOutputs", hyle_output.len());
-
-                    hyle_output
+                    vec![hyle_output]
                 }
             },
         )
@@ -71,10 +67,11 @@ pub mod risc0_1 {
         output
             .drain(..)
             .map(|o| {
-                risc0_zkvm::serde::from_slice::<HyleOutput, _>(&o.1)
+                risc0_zkvm::serde::from_slice::<Vec<HyleOutput>, _>(&o.1)
                     .map(|h| (ProgramId(o.0.to_vec()), h))
             })
             .collect::<Result<(Vec<_>, Vec<_>), _>>()
+            .map(|(ids, outputs)| (ids, outputs.into_iter().flatten().collect()))
             .context("Failed to decode HyleOutput")
     }
 

@@ -27,7 +27,12 @@ impl super::Mempool {
         data_proposal_hash: DataProposalHash,
     ) -> Result<()> {
         let validator = &msg.signature.validator;
-        debug!("Vote from {} on own lane {}", validator, self.own_lane_id());
+        debug!(
+            "Vote from {} on own lane {}, dp {}",
+            validator,
+            self.own_lane_id(),
+            data_proposal_hash
+        );
         let lane_id = self.own_lane_id();
 
         let signatures = self.lanes.add_signatures(
@@ -65,10 +70,19 @@ impl super::Mempool {
         Ok(())
     }
 
-    pub(super) fn handle_data_proposal_management(&mut self) -> Result<()> {
-        trace!("🌝 Handling DataProposal management");
+    pub(super) fn create_new_data_proposals(&mut self) -> Result<bool> {
+        trace!("🐣 Create new data proposals");
 
         self.create_new_dp_if_pending()?;
+
+        // TODO: when we have a smarter system, we should probably not trigger this here
+        // to make the event loop more efficient.
+        self.disseminate_data_proposals()
+    }
+
+    // Returns true if we did disseminate something
+    pub(super) fn disseminate_data_proposals(&mut self) -> Result<bool> {
+        trace!("🌝 Disseminate data proposals");
 
         let last_cut = self
             .last_ccp
@@ -106,7 +120,7 @@ impl super::Mempool {
                 self.broadcast_net_message(MempoolNetMessage::DataProposal(data_proposal.clone()))?;
 
                 // TODO: for performance reasons in the event loop, we'll only process the first item for now.
-                break;
+                return Ok(true);
             } else {
                 // If None, rebroadcast it to every validator that has not yet signed it
                 let validator_that_has_signed: HashSet<&ValidatorPublicKey> = entry_metadata
@@ -151,11 +165,11 @@ impl super::Mempool {
                     MempoolNetMessage::DataProposal(data_proposal.clone()),
                 )?;
                 // TODO: for performance reasons in the event loop, we'll only process the first item for now.
-                break;
+                return Ok(true);
             }
         }
 
-        Ok(())
+        Ok(false)
     }
 
     /// Creates and saves a new DataProposal if there are pending transactions
