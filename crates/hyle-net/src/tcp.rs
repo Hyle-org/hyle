@@ -56,6 +56,7 @@ pub enum TcpEvent<Data: Clone> {
     Closed { dest: String },
 }
 
+#[derive(Debug)]
 pub enum P2PTcpEvent<Codec, Msg>
 where
     Msg: Clone + std::fmt::Debug,
