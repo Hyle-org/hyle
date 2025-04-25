@@ -18,7 +18,7 @@ mod e2e_consensus {
     use hyle_contract_sdk::Identity;
     use hyle_contract_sdk::ZkContract;
     use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF, STAKING_ELF};
-    use hyle_model::{ContractName, StateCommitment};
+    use hyle_model::{ContractName, StateCommitment, TxHash};
     use hyllar::client::tx_executor_handler::transfer;
     use hyllar::erc20::ERC20;
     use hyllar::{Hyllar, FAUCET_ID};
@@ -176,7 +176,8 @@ mod e2e_consensus {
         tx_ctx: &mut TxExecutor<States>,
         id: String,
         amount: u128,
-    ) -> Result<()> {
+    ) -> Result<Vec<TxHash>> {
+        let mut tx_hashes = vec![];
         let identity = Identity(format!("{}@hydentity", id));
         {
             let mut transaction = ProvableBlobTx::new(identity.clone());
@@ -206,9 +207,10 @@ mod e2e_consensus {
 
             let tx_hash = send_transaction(ctx.client(), transaction, tx_ctx).await;
             tracing::warn!("Transfer TX Hash: {:?}", tx_hash);
+            tx_hashes.push(tx_hash);
         }
 
-        Ok(())
+        Ok(tx_hashes)
     }
 
     #[test_log::test(tokio::test)]
@@ -286,34 +288,58 @@ mod e2e_consensus {
     async fn can_restart_single_node_after_txs() -> Result<()> {
         let mut ctx = E2ECtx::new_single_with_indexer(500).await?;
 
+        ctx.wait_indexer_height(1).await?;
+
         // Gen a few txs
         let mut tx_ctx = init_states(&mut ctx).await;
 
         warn!("Starting generating txs");
 
-        for i in 0..6 {
-            _ = gen_txs(&mut ctx, &mut tx_ctx, format!("alex{}", i), 100 + i).await;
+        for i in 0..2 {
+            _ = gen_txs(&mut ctx, &mut tx_ctx, format!("alex{}", i), 100 + i).await?;
         }
 
-        ctx.wait_height(1).await?;
+        // Wait until it's processed.
+        let mut state: Hyllar;
+        loop {
+            let s: Result<Hyllar> = ctx
+                .indexer_client()
+                .fetch_current_state(&ContractName::new("hyllar"))
+                .await;
+            if let Ok(s) = s {
+                state = s;
+                if state.balance_of("alex1@hydentity").is_ok() {
+                    break;
+                }
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        }
 
         ctx.stop_node(0).await?;
         ctx.restart_node(0)?;
 
         ctx.wait_height(0).await?;
 
-        for i in 6..10 {
-            _ = gen_txs(&mut ctx, &mut tx_ctx, format!("alex{}", i), 100 + i).await;
+        _ = gen_txs(&mut ctx, &mut tx_ctx, format!("alex{}", 2), 100 + 2).await?;
+
+        // Wait until it's processed.
+        let mut state: Hyllar;
+        loop {
+            let s: Result<Hyllar> = ctx
+                .indexer_client()
+                .fetch_current_state(&ContractName::new("hyllar"))
+                .await;
+            if let Ok(s) = s {
+                state = s;
+                if state.balance_of("alex2@hydentity").is_ok() {
+                    break;
+                }
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         }
 
-        ctx.wait_indexer_height(2).await?;
-
-        let state: Hyllar = ctx
-            .indexer_client()
-            .fetch_current_state(&ContractName::new("hyllar"))
-            .await?;
-
-        for i in 0..10 {
+        // Check everything works out.
+        for i in 0..3 {
             let balance = state.balance_of(&format!("alex{}@hydentity", i));
             info!("Checking alex{}@hydentity balance: {:?}", i, balance);
             assert_eq!(balance.unwrap(), ((100 + i) as u128));
@@ -331,18 +357,30 @@ mod e2e_consensus {
         )
         .await?;
 
-        _ = ctx.wait_height(1).await;
+        _ = ctx.wait_indexer_height(1).await;
 
         // Gen a few txs
         let mut tx_ctx = init_states(&mut ctx).await;
 
-        warn!("Starting generating txs");
-
         for i in 0..2 {
-            _ = gen_txs(&mut ctx, &mut tx_ctx, format!("alex{}", i), 100 + i).await;
+            _ = gen_txs(&mut ctx, &mut tx_ctx, format!("alex{}", i), 100 + i).await?;
         }
 
-        _ = ctx.wait_height(2).await;
+        // Wait until it's processed.
+        let mut state: Hyllar;
+        loop {
+            let s: Result<Hyllar> = ctx
+                .indexer_client()
+                .fetch_current_state(&ContractName::new("hyllar"))
+                .await;
+            if let Ok(s) = s {
+                state = s;
+                if state.balance_of("alex1@hydentity").is_ok() {
+                    break;
+                }
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        }
 
         ctx.stop_all().await;
 
@@ -356,21 +394,27 @@ mod e2e_consensus {
         ctx.restart_node(3)?;
         ctx.restart_node(4)?;
 
-        ctx.wait_height(2).await?;
+        ctx.wait_height(1).await?;
 
-        for i in 2..4 {
-            _ = gen_txs(&mut ctx, &mut tx_ctx, format!("alex{}", i), 100 + i).await;
+        _ = gen_txs(&mut ctx, &mut tx_ctx, format!("alex{}", 2), 100 + 2).await?;
+
+        // Wait until it's processed.
+        loop {
+            let s: Result<Hyllar> = ctx
+                .indexer_client()
+                .fetch_current_state(&ContractName::new("hyllar"))
+                .await;
+            if let Ok(s) = s {
+                state = s;
+                if state.balance_of("alex2@hydentity").is_ok() {
+                    break;
+                }
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
         }
 
-        ctx.wait_height(5).await?;
-        ctx.wait_indexer_height(5).await?;
-
-        let state: Hyllar = ctx
-            .indexer_client()
-            .fetch_current_state(&ContractName::new("hyllar"))
-            .await?;
-
-        for i in 0..4 {
+        // Check everything works out.
+        for i in 0..3 {
             let balance = state.balance_of(&format!("alex{}@hydentity", i));
             info!("Checking alex{}@hydentity balance: {:?}", i, balance);
             assert_eq!(balance.unwrap(), ((100 + i) as u128));

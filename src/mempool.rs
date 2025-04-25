@@ -145,11 +145,16 @@ impl Default for LongTasksRuntime {
 
 impl Drop for LongTasksRuntime {
     fn drop(&mut self) {
-        // Shut down the hashing runtime
-        unsafe {
-            // TODO: serialize?
-            std::mem::ManuallyDrop::take(&mut self.0).shutdown_timeout(Duration::from_secs(10));
-        }
+        // Shut down the hashing runtime.
+        // TODO: serialize?
+        let rt = unsafe { std::mem::ManuallyDrop::take(&mut self.0) };
+        // This has to be done outside the current runtime.
+        tokio::task::spawn_blocking(move || {
+            #[cfg(test)]
+            rt.shutdown_timeout(Duration::from_millis(10));
+            #[cfg(not(test))]
+            rt.shutdown_timeout(Duration::from_secs(10));
+        });
     }
 }
 
