@@ -57,7 +57,7 @@ where
     node_p2p_public_address: String,
     node_da_public_address: String,
     max_frame_length: Option<usize>,
-    tcp_server: TcpServer<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>,
+    pub tcp_server: TcpServer<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>,
     pub peers: HashMap<ValidatorPublicKey, PeerInfo>,
     handshake_clients_tasks: HandShakeJoinSet<Codec, Msg>,
     peers_ping_ticker: Interval,
