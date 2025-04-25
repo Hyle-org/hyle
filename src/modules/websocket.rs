@@ -109,7 +109,7 @@ where
     bus: WebSocketBusClient<In, Out>,
     app: Option<Router>,
     peer_senders: HashMap<PeerAddress, SplitSink<WebSocket, Message>>,
-    topic_senders: HashMap<Topic, PeerAddress>,
+    topic_senders: HashMap<Topic, Vec<PeerAddress>>,
     #[allow(clippy::type_complexity)]
     peer_receivers: JoinSet<
         Option<(
@@ -199,7 +199,7 @@ where
                         match msg {
                             WsMsg::RegisterTopic(topic) => {
                                 debug!("Registering topic: {} for {}", topic, addr);
-                                self.topic_senders.insert(topic, addr.clone());
+                                self.topic_senders.entry(topic.clone()).or_default().push(addr.clone());
                             }
                             WsMsg::Message(msg) => {
                                 if let Err(e) = self.handle_incoming_message(WsInMessage{addr: addr.clone(), message : msg}).await {
@@ -261,13 +261,22 @@ where
         let text: Message = Message::Text(text.clone().into());
 
         if let Some(sender_addr) = self.topic_senders.get(&topic) {
-            let sender = self
-                .peer_senders
-                .get_mut(sender_addr)
-                .ok_or_else(|| anyhow!("No peer sender for topic: {}", topic))?;
-            if let Err(e) = sender.send(text).await.context("Failed to send message") {
-                debug!("Failed to send message to topic {topic}: {e}");
-                self.topic_senders.remove(&topic);
+            for addr in sender_addr.clone() {
+                let sender = self
+                    .peer_senders
+                    .get_mut(&addr)
+                    .ok_or_else(|| anyhow!("No peer sender for topic: {}", topic))?;
+                if let Err(e) = sender
+                    .send(text.clone())
+                    .await
+                    .context("Failed to send message")
+                {
+                    debug!("Failed to send message to topic {topic}: {e}");
+                    self.topic_senders
+                        .entry(topic.clone())
+                        .or_default()
+                        .retain(|x| *x != addr);
+                }
             }
         } else {
             debug!("No sender for topic: {}", topic);
