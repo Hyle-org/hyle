@@ -20,10 +20,10 @@ use super::{
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DataProposalVerdict {
+    Process,
     Empty,
     Wait,
     Vote,
-    Process,
     Refuse,
 }
 
@@ -31,9 +31,48 @@ impl super::Mempool {
     pub(super) fn on_data_proposal(
         &mut self,
         lane_id: &LaneId,
+        received_hash: DataProposalHash,
         data_proposal: DataProposal,
     ) -> Result<()> {
         let lane_id = lane_id.clone();
+
+        // Check if we have a cached response to this DP hash (we can safely trust the hash here)
+        // TODO: if we are currently hashing the same DP we'll still re-hash it
+        // but this requires a signed header to quickly process the message.
+        match self
+            .cached_dp_votes
+            .get(&(lane_id.clone(), received_hash.clone()))
+        {
+            // Ignore
+            Some(
+                DataProposalVerdict::Empty
+                | DataProposalVerdict::Refuse
+                | DataProposalVerdict::Process,
+            ) => {
+                debug!(
+                    "Ignoring DataProposal {:?} on lane {} (cached verdict)",
+                    received_hash, lane_id
+                );
+                return Ok(());
+            }
+            Some(DataProposalVerdict::Vote) => {
+                // Resend our vote
+                // First fetch the lane size, if we somehow don't have it ignore.
+                if let Ok(lane_size) = self.lanes.get_lane_size_at(&lane_id, &received_hash) {
+                    debug!(
+                        "Resending vote for DataProposal {:?} on lane {}",
+                        received_hash, lane_id
+                    );
+                    return self.send_vote(
+                        self.get_lane_operator(&lane_id),
+                        received_hash,
+                        lane_size,
+                    );
+                }
+            }
+            _ => {}
+        }
+
         // This is annoying to run in tests because we don't have the event loop setup, so go synchronous.
         #[cfg(test)]
         self.on_hashed_data_proposal(&lane_id, data_proposal.clone())?;
@@ -65,6 +104,10 @@ impl super::Mempool {
         );
         let data_proposal_hash = data_proposal.hashed();
         let (verdict, lane_size) = self.get_verdict(lane_id, &data_proposal)?;
+        self.cached_dp_votes.insert(
+            (lane_id.clone(), data_proposal_hash.clone()),
+            verdict.clone(),
+        );
         match verdict {
             DataProposalVerdict::Empty => {
                 warn!(
@@ -124,6 +167,8 @@ impl super::Mempool {
             lane_id,
             data_proposal.txs.len()
         );
+        self.cached_dp_votes
+            .insert((lane_id.clone(), data_proposal.hashed()), verdict.clone());
         match verdict {
             DataProposalVerdict::Empty => {
                 unreachable!("Empty DataProposal should never be processed");
@@ -454,15 +499,16 @@ pub mod test {
             &[make_register_contract_tx(ContractName::new("test1"))],
         );
         let size = LaneBytesSize(data_proposal.estimate_size() as u64);
+        let hash = data_proposal.hashed();
 
-        let signed_msg = ctx
-            .mempool
-            .crypto
-            .sign(MempoolNetMessage::DataProposal(data_proposal.clone()))?;
+        let signed_msg = ctx.mempool.crypto.sign(MempoolNetMessage::DataProposal(
+            hash.clone(),
+            data_proposal.clone(),
+        ))?;
 
         ctx.mempool
             .handle_net_message(SignedByValidator {
-                msg: MempoolNetMessage::DataProposal(data_proposal.clone()),
+                msg: MempoolNetMessage::DataProposal(hash.clone(), data_proposal.clone()),
                 signature: signed_msg.signature,
             })
             .expect("should handle net message");
@@ -475,7 +521,7 @@ pub mod test {
             .msg
         {
             MempoolNetMessage::DataVote(data_vote, voted_size) => {
-                assert_eq!(data_vote, data_proposal.hashed());
+                assert_eq!(data_vote, hash);
                 assert_eq!(size, voted_size);
             }
             _ => panic!("Expected DataProposal message"),
