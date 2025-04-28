@@ -12,6 +12,7 @@ use crate::{
     },
     mempool::Mempool,
     model::{api::NodeInfo, CommonRunContext, NodeRunContext, SharedRunContext},
+    modules::websocket::{WebSocketConfig, WebSocketModule, WebSocketModuleCtx},
     node_state::module::NodeStateModule,
     p2p::P2P,
     rest::{ApiDoc, RestApi, RestApiRunContext},
@@ -19,6 +20,7 @@ use crate::{
     tcp_server::TcpServer,
     tools::mock_workflow::MockWorkflowHandler,
     utils::{
+        bus_ws_connector::{NodeWebsocketConnector, NodeWebsocketConnectorCtx, WebsocketOutEvent},
         conf::{self, P2pMode},
         modules::ModulesHandler,
     },
@@ -297,6 +299,19 @@ async fn common_main(
             })
             .await?;
     }
+
+    handler
+        .build_module::<WebSocketModule<(), WebsocketOutEvent>>(WebSocketModuleCtx {
+            bus: bus.new_handle(),
+            config: WebSocketConfig::default(),
+        })
+        .await?;
+
+    handler
+        .build_module::<NodeWebsocketConnector>(NodeWebsocketConnectorCtx {
+            bus: bus.new_handle(),
+        })
+        .await?;
 
     if config.run_rest_server {
         // Should come last so the other modules have nested their own routes.
