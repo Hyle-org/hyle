@@ -65,8 +65,8 @@ impl Module for P2P {
 impl P2P {
     pub fn choose_canal(msg: &NetMessage) -> Canal {
         match msg {
-            NetMessage::MempoolMessage(_) => Canal::A,
-            NetMessage::ConsensusMessage(_) => Canal::B,
+            NetMessage::MempoolMessage(_) => Canal::new("mempool"),
+            NetMessage::ConsensusMessage(_) => Canal::new("consensus"),
         }
     }
 
@@ -87,8 +87,8 @@ impl P2P {
         );
 
         for peer_ip in self.config.p2p.peers.clone() {
-            p2p_server.start_handshake(peer_ip.clone(), Canal::A);
-            p2p_server.start_handshake(peer_ip, Canal::B);
+            p2p_server.start_handshake(peer_ip.clone(), Canal::new("mempool"));
+            p2p_server.start_handshake(peer_ip, Canal::new("consensus"));
         }
 
         module_handle_messages! {
@@ -96,7 +96,7 @@ impl P2P {
             listen<P2PCommand> cmd => {
                 match cmd {
                     P2PCommand::ConnectTo { peer } => {
-                        p2p_server.start_handshake(peer, Canal::B);
+                        p2p_server.start_handshake(peer, Canal::new("consensus"));
                     }
                 }
             }
@@ -190,12 +190,11 @@ impl P2P {
         // TODO: add waiting list for failed messages
         let canal = Self::choose_canal(&_msg);
         warn!("{error}. Reconnecting to peer on canal {:?}...", canal);
-        if let Some(validator_ip) = p2p_server
-            .peers
-            .get(&(validator_id, canal.clone()))
-            .map(|peer| peer.node_connection_data.p2p_public_address.clone())
-        {
-            p2p_server.start_handshake_task(validator_ip, canal);
+        if let Some(peer_info) = p2p_server.peers.get(&validator_id) {
+            p2p_server.start_handshake_task(
+                peer_info.node_connection_data.p2p_public_address.clone(),
+                canal,
+            );
         }
     }
 }

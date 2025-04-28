@@ -33,23 +33,24 @@ pub enum P2PTcpMessage<Data: Clone> {
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub enum Handshake {
-    Hello((sdk::SignedByValidator<NodeConnectionData>, u128)),
-    Verack((sdk::SignedByValidator<NodeConnectionData>, u128)),
+    Hello((Canal, sdk::SignedByValidator<NodeConnectionData>, u128)),
+    Verack((Canal, sdk::SignedByValidator<NodeConnectionData>, u128)),
 }
 
 #[derive(
     Default, Debug, Clone, BorshSerialize, BorshDeserialize, Hash, PartialEq, Eq, PartialOrd, Ord,
 )]
-pub enum Canal {
-    #[default]
-    A,
-    B,
+pub struct Canal(String);
+
+impl Canal {
+    pub fn new<T: Into<String>>(t: T) -> Canal {
+        Canal(t.into())
+    }
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub struct NodeConnectionData {
     pub version: u16,
-    pub canal: Canal,
     pub name: String,
     pub p2p_public_address: String,
     pub da_public_address: String,
