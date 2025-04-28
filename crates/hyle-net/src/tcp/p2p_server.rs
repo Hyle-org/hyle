@@ -381,8 +381,25 @@ where
     }
 
     pub async fn broadcast(&mut self, msg: Msg) -> HashMap<ValidatorPublicKey, anyhow::Error> {
-        let peer_keys: HashSet<ValidatorPublicKey> = self.peers.keys().cloned().collect();
-        self.broadcast_only_for(&peer_keys, msg).await
+        let peer_addr_to_pubkey: HashMap<String, ValidatorPublicKey> = self
+            .peers
+            .iter()
+            .map(|p| (p.1.socket_addr.clone(), p.0.clone()))
+            .collect();
+
+        let res = self
+            .tcp_server
+            .send_parallel(
+                peer_addr_to_pubkey.keys().cloned().collect(),
+                P2PTcpMessage::Data(msg),
+            )
+            .await;
+
+        HashMap::from_iter(res.into_iter().filter_map(|(k, v)| {
+            peer_addr_to_pubkey
+                .get(&k)
+                .map(|pubkey| (pubkey.clone(), v))
+        }))
     }
 
     pub async fn broadcast_only_for(
@@ -390,14 +407,26 @@ where
         only_for: &HashSet<ValidatorPublicKey>,
         msg: Msg,
     ) -> HashMap<ValidatorPublicKey, anyhow::Error> {
-        let mut failed_sends = HashMap::new();
-        // TODO: investigate if parallelizing this is better
-        for validator_pub_key in only_for {
-            if let Err(e) = self.send(validator_pub_key.clone(), msg.clone()).await {
-                failed_sends.insert(validator_pub_key.clone(), e);
-            }
-        }
-        failed_sends
+        let peer_addr_to_pubkey: HashMap<String, ValidatorPublicKey> = self
+            .peers
+            .iter()
+            .filter(|(p, _)| only_for.contains(p))
+            .map(|p| (p.1.socket_addr.clone(), p.0.clone()))
+            .collect();
+
+        let res = self
+            .tcp_server
+            .send_parallel(
+                peer_addr_to_pubkey.keys().cloned().collect(),
+                P2PTcpMessage::Data(msg),
+            )
+            .await;
+
+        HashMap::from_iter(res.into_iter().filter_map(|(k, v)| {
+            peer_addr_to_pubkey
+                .get(&k)
+                .map(|pubkey| (pubkey.clone(), v))
+        }))
     }
 }
 
