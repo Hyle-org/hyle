@@ -57,6 +57,12 @@ impl DataProposal {
             }
         });
     }
+
+    /// This is used to set the hash of the DataProposal when we can trust we know it
+    /// (specifically - deserializating from local storage)
+    pub fn trusted_set_hash(&mut self, hash: &DataProposalHash) {
+        self.hash_cache.write().unwrap().replace(hash.clone());
+    }
 }
 
 impl Clone for DataProposal {
