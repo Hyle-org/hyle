@@ -191,7 +191,7 @@ async fn setup_drop_client(
 
                 if peer_names == all_other_peers {
                     break {
-                        tracing::info!("Breaking tcp peers {:?}", p2p.tcp_server.connected_clients()?);
+                        tracing::info!("Breaking tcp peers {:?}", p2p.tcp_server.connected_clients());
                         Ok(())
                     };
                 }

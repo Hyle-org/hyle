@@ -576,8 +576,6 @@ pub mod tests {
     async fn p2p_server_reconnection_test() -> Result<()> {
         let ((_, mut p2p_server1), (port2, mut p2p_server2)) = setup_p2p_server_pair().await?;
 
-        let server2_pub_key = p2p_server2.crypto.validator_pubkey().clone();
-
         // Initial connection
         p2p_server1.start_handshake(format!("127.0.0.1:{port2}"));
 
@@ -612,14 +610,10 @@ pub mod tests {
         // Simulate disconnection by dropping peer from server2
         p2p_server2.remove_peer(p2p_server1.crypto.validator_pubkey());
 
-        // Try to send a message - this should trigger reconnection
-        let test_msg = TestMessage("test reconnection".to_string());
-        p2p_server1.send(server2_pub_key, test_msg).await?;
-
-        // Server1 receives Error message
+        // Server1 receives Closed message
         receive_and_handle_event!(
             &mut p2p_server1,
-            P2PTcpEvent::TcpEvent(TcpEvent::Error { dest: _, error: _ }),
+            P2PTcpEvent::TcpEvent(TcpEvent::Closed { dest: _ }),
             "Expected Tcp Error message"
         );
 
