@@ -208,9 +208,7 @@ where
                                 self.topic_listeners.entry(topic.clone()).or_default().push(addr.clone());
                             }
                             WsMsg::Message(msg) => {
-                                if let Err(e) = self.handle_incoming_message(WsInMessage{addr: addr.clone(), message : msg}).await {
-                                    error!("Error handling incoming message: {} from {}", e, addr);
-                                }
+                                 self.handle_incoming_message(WsInMessage{addr: addr.clone(), message : msg}).await;
                             }
                         }
                         // Add it again to the receiver
@@ -255,9 +253,8 @@ where
     In: DeserializeOwned + std::fmt::Debug + Send + Sync + Clone + 'static,
     Out: Serialize + Send + Sync + Clone + 'static,
 {
-    async fn handle_incoming_message(&mut self, msg: WsInMessage<In>) -> Result<()> {
+    async fn handle_incoming_message(&mut self, msg: WsInMessage<In>) {
         let _ = log_warn!(self.bus.send(msg), "Sending WsInMessage message to bus.");
-        Ok(())
     }
 
     async fn topic_message(&mut self, topic: Topic, msg: Out) -> Result<()> {
