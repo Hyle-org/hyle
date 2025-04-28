@@ -6,12 +6,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytes::BytesMut;
-use futures::stream::SplitSink;
 use tcp_client::TcpClient;
 use tokio::task::JoinHandle;
-use tokio_util::codec::{Decoder, Encoder, Framed, LengthDelimitedCodec};
+use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 
-use crate::net::TcpStream;
 use anyhow::Result;
 
 pub fn get_current_timestamp() -> u64 {
@@ -56,6 +54,7 @@ pub enum TcpEvent<Data: Clone> {
     Closed { dest: String },
 }
 
+#[derive(Debug)]
 pub enum P2PTcpEvent<Codec, Msg>
 where
     Msg: Clone + std::fmt::Debug,
@@ -154,20 +153,20 @@ where
     }
 }
 
-/// A socket we can send data to
+/// A socket abstraction to send a receive data
 #[derive(Debug)]
-struct SocketStream<Codec, In, Out>
+struct SocketStream<Out>
 where
-    In: Clone,
     Out: Clone + std::fmt::Debug,
-    Codec: Decoder<Item = In> + Encoder<Out> + Default,
 {
     /// Last timestamp we received a ping from the peer.
     last_ping: u64,
     /// Sender to stream data to the peer
-    sender: SplitSink<Framed<TcpStream, TcpMessageCodec<Codec>>, TcpMessage<Out>>,
+    sender: tokio::sync::mpsc::Sender<TcpMessage<Out>>,
+    /// Handle to abort the sending side of the stream
+    abort_sender_task: JoinHandle<()>,
     /// Handle to abort the receiving side of the stream
-    abort: JoinHandle<()>,
+    abort_receiver_task: JoinHandle<()>,
 }
 
 #[macro_export]

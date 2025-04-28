@@ -159,25 +159,73 @@ pub mod sp1 {
 }
 
 pub mod test {
+    use crate::transaction_builder::TxExecutorHandler;
+
     use super::*;
 
-    pub struct TestProver {}
+    /// Generates valid proofs for the 'test' verifier using the TxExecutor
+    pub struct TxExecutorTestProver<C: TxExecutorHandler> {
+        contract: std::sync::Arc<std::sync::Mutex<C>>,
+    }
 
-    impl ClientSdkProver<Vec<Calldata>> for TestProver {
+    impl<C: TxExecutorHandler> TxExecutorTestProver<C> {
+        pub fn new(contract: C) -> Self {
+            Self {
+                contract: std::sync::Arc::new(std::sync::Mutex::new(contract)),
+            }
+        }
+    }
+
+    impl<C: TxExecutorHandler> ClientSdkProver<Vec<Calldata>> for TxExecutorTestProver<C> {
+        fn prove(
+            &self,
+            _commitment_metadata: Vec<u8>,
+            calldatas: Vec<Calldata>,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>>
+        {
+            let hos = calldatas
+                .iter()
+                .map(|calldata| self.contract.lock().unwrap().handle(calldata))
+                .collect::<Result<Vec<_>, String>>();
+            Box::pin(async move {
+                match hos {
+                    Ok(hos) => Ok(ProofData(borsh::to_vec(&hos).unwrap())),
+                    Err(e) => Err(anyhow::anyhow!(e)),
+                }
+            })
+        }
+    }
+
+    pub struct MockProver {}
+
+    impl ClientSdkProver<Calldata> for MockProver {
         fn prove(
             &self,
             commitment_metadata: Vec<u8>,
-            calldatas: Vec<Calldata>,
+            calldata: Calldata,
         ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
             Box::pin(async move {
-                let mut hyle_outputs = Vec::with_capacity(calldatas.len());
-                for calldata in calldatas {
-                    let hyle_output = execute(commitment_metadata.clone(), calldata.clone())?;
-                    hyle_outputs.push(hyle_output);
-                }
+                let hyle_output = execute(commitment_metadata.clone(), calldata.clone())?;
                 Ok(ProofData(
-                    borsh::to_vec(&hyle_outputs).expect("Failed to encode proof"),
+                    borsh::to_vec(&hyle_output).expect("Failed to encode proof"),
                 ))
+            })
+        }
+    }
+
+    impl ClientSdkProver<Vec<Calldata>> for MockProver {
+        fn prove(
+            &self,
+            commitment_metadata: Vec<u8>,
+            calldata: Vec<Calldata>,
+        ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
+            Box::pin(async move {
+                let mut proofs = Vec::new();
+                for call in calldata {
+                    let hyle_output = test::execute(commitment_metadata.clone(), call)?;
+                    proofs.push(hyle_output);
+                }
+                Ok(ProofData(borsh::to_vec(&proofs)?))
             })
         }
     }
