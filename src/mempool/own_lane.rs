@@ -117,7 +117,10 @@ impl super::Mempool {
                 );
                 self.metrics.add_data_proposal(&data_proposal);
                 self.metrics.add_proposed_txs(&data_proposal);
-                self.broadcast_net_message(MempoolNetMessage::DataProposal(data_proposal.clone()))?;
+                self.broadcast_net_message(MempoolNetMessage::DataProposal(
+                    data_proposal.hashed(),
+                    data_proposal.clone(),
+                ))?;
 
                 // TODO: for performance reasons in the event loop, we'll only process the first item for now.
                 return Ok(true);
@@ -162,7 +165,7 @@ impl super::Mempool {
                 );
                 self.broadcast_only_for_net_message(
                     only_for,
-                    MempoolNetMessage::DataProposal(data_proposal.clone()),
+                    MempoolNetMessage::DataProposal(data_proposal.hashed(), data_proposal.clone()),
                 )?;
                 // TODO: for performance reasons in the event loop, we'll only process the first item for now.
                 return Ok(true);
@@ -484,7 +487,7 @@ pub mod test {
         ctx.timer_tick()?;
 
         let data_proposal = match ctx.assert_broadcast("DataProposal").msg {
-            MempoolNetMessage::DataProposal(dp) => dp,
+            MempoolNetMessage::DataProposal(_, dp) => dp,
             _ => panic!("Expected DataProposal message"),
         };
         let size = LaneBytesSize(data_proposal.estimate_size() as u64);

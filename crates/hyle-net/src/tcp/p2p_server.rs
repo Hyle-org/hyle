@@ -402,12 +402,12 @@ where
             .peers
             .iter()
             .filter(|p| p.0 .1 == canal)
-            .map(|((pubkey, _), addr)| (addr.socket_addr.clone(), pubkey.clone()))
+            .map(|p| (p.1.socket_addr.clone(), p.0.clone()))
             .collect();
 
         let res = self
             .tcp_server
-            .send_batched(
+            .send_parallel(
                 peer_addr_to_pubkey.keys().cloned().collect(),
                 P2PTcpMessage::Data(msg),
             )
@@ -430,12 +430,12 @@ where
             .peers
             .iter()
             .filter(|((_pubkey, _canal), _addr)| _canal == &canal && only_for.contains(_pubkey))
-            .map(|((pubkey, _), addr)| (addr.socket_addr.clone(), pubkey.clone()))
+            .map(|p| (p.1.socket_addr.clone(), p.0.clone()))
             .collect();
 
         let res = self
             .tcp_server
-            .send_batched(
+            .send_parallel(
                 peer_addr_to_pubkey.keys().cloned().collect(),
                 P2PTcpMessage::Data(msg),
             )

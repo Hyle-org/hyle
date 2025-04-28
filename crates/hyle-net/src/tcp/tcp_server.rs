@@ -132,7 +132,7 @@ where
             })
         }))
     }
-    pub async fn send_batched(
+    pub async fn send_parallel(
         &mut self,
         socket_addrs: Vec<String>,
         msg: Res,
