@@ -3,30 +3,38 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::contract_indexer::{ContractHandler, ContractStateStore};
 use hyle_contract_sdk::{BlobIndex, ContractName, TxId};
 use hyle_model::{RegisterContractEffect, TxContext, TxHash};
-use serde::{Deserialize, Serialize};
-use std::{ops::Deref, path::PathBuf, sync::Arc};
+use serde::Serialize;
+use std::{any::TypeId, ops::Deref, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::debug;
 
 use crate::{
-    bus::BusMessage,
-    log_error,
+    bus::{BusClientSender, BusMessage},
+    log_debug, log_error,
     model::{Blob, BlobTransaction, Block, CommonRunContext, Transaction, TransactionData},
-    module_handle_messages,
+    module_bus_client, module_handle_messages,
     node_state::module::NodeStateEvent,
     utils::{conf::Conf, modules::Module},
 };
 
-use super::indexer_bus_client::IndexerBusClient;
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub enum ProverEvent {
-    NewTx(Transaction),
+#[derive(Debug, Clone)]
+pub struct CSIBusEvent<E> {
+    #[allow(unused)]
+    pub event: E,
 }
-impl BusMessage for ProverEvent {}
 
-pub struct ContractStateIndexer<State> {
-    bus: IndexerBusClient,
+impl<E> BusMessage for CSIBusEvent<E> {}
+
+module_bus_client! {
+#[derive(Debug)]
+struct CSIBusClient<E: Clone + Send + Sync + 'static> {
+    sender(CSIBusEvent<E>),
+    receiver(NodeStateEvent),
+}
+}
+
+pub struct ContractStateIndexer<State, Event: Clone + Send + Sync + 'static = ()> {
+    bus: CSIBusClient<Event>,
     store: Arc<RwLock<ContractStateStore<State>>>,
     contract_name: ContractName,
     file: PathBuf,
@@ -39,7 +47,7 @@ pub struct ContractStateIndexerCtx {
     pub contract_name: ContractName,
 }
 
-impl<State> Module for ContractStateIndexer<State>
+impl<State, Event> Module for ContractStateIndexer<State, Event>
 where
     State: Serialize
         + Clone
@@ -47,15 +55,16 @@ where
         + Send
         + std::fmt::Debug
         + Default
-        + ContractHandler
+        + ContractHandler<Event>
         + BorshSerialize
         + BorshDeserialize
         + 'static,
+    Event: std::fmt::Debug + Clone + Send + Sync + 'static,
 {
     type Context = ContractStateIndexerCtx;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus = IndexerBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
+        let bus = CSIBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
         let file = ctx
             .common
             .config
@@ -109,7 +118,7 @@ where
     }
 }
 
-impl<State> ContractStateIndexer<State>
+impl<State, Event> ContractStateIndexer<State, Event>
 where
     State: Serialize
         + Clone
@@ -117,10 +126,11 @@ where
         + Send
         + std::fmt::Debug
         + Default
-        + ContractHandler
+        + ContractHandler<Event>
         + BorshSerialize
         + BorshDeserialize
         + 'static,
+    Event: std::fmt::Debug + Clone + Send + Sync + 'static,
 {
     pub async fn start(&mut self) -> Result<(), Error> {
         module_handle_messages! {
@@ -158,7 +168,7 @@ where
         remove_from_unsettled: bool,
     ) -> Result<()>
     where
-        F: Fn(&mut State, &BlobTransaction, BlobIndex, TxContext) -> Result<()>,
+        F: Fn(&mut State, &BlobTransaction, BlobIndex, TxContext) -> Result<Option<Event>>,
     {
         for tx in txs {
             let dp_hash = block.resolve_parent_dp_hash(tx)?.clone();
@@ -188,7 +198,17 @@ where
                     continue;
                 }
 
-                handler(state, &tx, BlobIndex(index), tx_context.clone())?;
+                let event = handler(state, &tx, BlobIndex(index), tx_context.clone())?;
+                if TypeId::of::<Event>() != TypeId::of::<()>() {
+                    if let Some(event) = event {
+                        let _ = log_debug!(
+                            self.bus.send(CSIBusEvent {
+                                event: event.clone(),
+                            }),
+                            "Sending CSI bus event"
+                        );
+                    }
+                }
             }
         }
         Ok(())
@@ -282,6 +302,7 @@ mod tests {
     use client_sdk::transaction_builder::TxExecutorHandler;
     use hyle_contract_sdk::{BlobData, ProgramId, StateCommitment, ZkContract};
     use hyle_model::{DataProposalHash, Hashed, HyleOutput, LaneId};
+    use serde::Deserialize;
     use utoipa::openapi::OpenApi;
 
     use super::*;
@@ -330,9 +351,9 @@ mod tests {
             tx: &BlobTransaction,
             index: BlobIndex,
             _tx_context: TxContext,
-        ) -> Result<()> {
+        ) -> Result<Option<()>> {
             self.0 = tx.blobs.get(index.0).unwrap().data.0.clone();
-            Ok(())
+            Ok(None)
         }
 
         async fn api(_store: Arc<RwLock<ContractStateStore<Self>>>) -> (axum::Router<()>, OpenApi) {

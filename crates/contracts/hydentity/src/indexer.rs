@@ -36,7 +36,7 @@ impl ContractHandler for Hydentity {
         tx: &BlobTransaction,
         index: BlobIndex,
         _tx_context: TxContext,
-    ) -> Result<()> {
+    ) -> Result<Option<()>> {
         let Blob {
             contract_name,
             data,
@@ -56,7 +56,7 @@ impl ContractHandler for Hydentity {
             }
             _ => {}
         }
-        Ok(())
+        Ok(None)
     }
 }
 
