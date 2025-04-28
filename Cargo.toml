@@ -141,7 +141,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
   "fmt",
   "json",
 ] }
-fjall = { version = "2.9.0" }
+fjall = { version = "2.10.0" }
 
 dhat = { version = "0.3.3", optional = true }
 utoipa = { version = "5.3.1", features = ["axum_extras"] }
