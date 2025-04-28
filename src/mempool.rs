@@ -108,6 +108,8 @@ pub struct MempoolStore {
     // verify_tx.rs
     #[borsh(skip)]
     processing_dps: JoinSet<Result<ProcessedDPEvent>>,
+    #[borsh(skip)]
+    cached_dp_votes: HashMap<(LaneId, DataProposalHash), DataProposalVerdict>,
 
     // Dedicated thread pool for data proposal and tx hashing
     #[borsh(skip)]
@@ -208,7 +210,7 @@ impl DerefMut for Mempool {
     IntoStaticStr,
 )]
 pub enum MempoolNetMessage {
-    DataProposal(DataProposal),
+    DataProposal(DataProposalHash, DataProposal),
     DataVote(DataProposalHash, LaneBytesSize), // New lane size with this DP
     PoDAUpdate(DataProposalHash, Vec<SignedByValidator<MempoolNetMessage>>),
     SyncRequest(Option<DataProposalHash>, Option<DataProposalHash>),
@@ -518,9 +520,9 @@ impl Mempool {
         // }
 
         match msg.msg {
-            MempoolNetMessage::DataProposal(data_proposal) => {
+            MempoolNetMessage::DataProposal(data_proposal_hash, data_proposal) => {
                 let lane_id = self.get_lane(validator);
-                self.on_data_proposal(&lane_id, data_proposal)?;
+                self.on_data_proposal(&lane_id, data_proposal_hash, data_proposal)?;
             }
             MempoolNetMessage::DataVote(ref data_proposal_hash, _) => {
                 self.on_data_vote(&msg, data_proposal_hash.clone())?;
@@ -608,7 +610,7 @@ impl Mempool {
             if self.lanes.contains(lane_id, &wp.hashed()) {
                 continue;
             }
-            self.on_data_proposal(lane_id, std::mem::take(wp))
+            self.on_data_proposal(lane_id, wp.hashed(), std::mem::take(wp))
                 .context("Consuming waiting data proposal")?;
         }
 
@@ -904,7 +906,8 @@ pub mod test {
         }
 
         pub fn timer_tick(&mut self) -> Result<bool> {
-            self.mempool.create_new_data_proposals()
+            Ok(self.mempool.create_new_data_proposals()?
+                || self.mempool.disseminate_data_proposals()?)
         }
 
         pub fn handle_poda_update(
