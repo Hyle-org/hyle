@@ -410,7 +410,7 @@ impl NodeState {
 
         if self.unsettled_transactions.is_next_to_settle(&blob_tx_hash) {
             let block_height = self.current_height;
-            // Get the contract's timeout window
+            // Update timeouts
             let timeout_window = self.get_tx_timeout_window(&tx.blobs);
             if let TimeoutWindow::Timeout(timeout_window) = timeout_window {
                 self.timeouts

@@ -765,10 +765,17 @@ impl Default for TimeoutWindow {
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 /// Used as a blob action to register a contract.
 pub struct RegisterContractAction {
+    /// Verifier to use for transactions sent to this new contract.
     pub verifier: Verifier,
+    /// Other verifier data, such as a Risc0 program ID or noir public key.
+    /// Transactions sent to this contract will have to match this program ID.
     pub program_id: ProgramId,
+    /// Initial state commitment of the contract to register.
     pub state_commitment: StateCommitment,
+    /// Name of the contract to register.
     pub contract_name: ContractName,
+    /// Optionally set the timeout window for the contract.
+    /// If the contract exists, the timeout window will be unchanged, otherwise, the default value will be used.
     pub timeout_window: Option<TimeoutWindow>,
 }
 
