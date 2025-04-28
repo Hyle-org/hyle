@@ -37,7 +37,7 @@ impl<State> Default for ContractStateStore<State> {
     }
 }
 
-pub trait ContractHandler
+pub trait ContractHandler<Event = ()>
 where
     Self: Sized + Default + TxExecutorHandler + 'static,
 {
@@ -50,7 +50,7 @@ where
         tx: &BlobTransaction,
         index: BlobIndex,
         tx_context: TxContext,
-    ) -> Result<()> {
+    ) -> Result<Option<Event>> {
         let Blob {
             contract_name,
             data: _,
@@ -74,7 +74,7 @@ where
             handler = %contract_name,
             "hyle_output: {:?}", hyle_output
         );
-        Ok(())
+        Ok(None)
     }
 
     fn handle_transaction_failed(
@@ -82,8 +82,8 @@ where
         _tx: &BlobTransaction,
         _index: BlobIndex,
         _tx_context: TxContext,
-    ) -> Result<()> {
-        Ok(())
+    ) -> Result<Option<Event>> {
+        Ok(None)
     }
 
     fn handle_transaction_timeout(
@@ -91,8 +91,8 @@ where
         _tx: &BlobTransaction,
         _index: BlobIndex,
         _tx_context: TxContext,
-    ) -> Result<()> {
-        Ok(())
+    ) -> Result<Option<Event>> {
+        Ok(None)
     }
 
     fn handle_transaction_sequenced(
@@ -100,8 +100,8 @@ where
         _tx: &BlobTransaction,
         _index: BlobIndex,
         _tx_context: TxContext,
-    ) -> Result<()> {
-        Ok(())
+    ) -> Result<Option<Event>> {
+        Ok(None)
     }
 }
 

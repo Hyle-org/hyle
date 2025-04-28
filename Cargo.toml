@@ -132,7 +132,7 @@ sqlx = { version = "0.8.4", features = [
   "migrate",
   "chrono",
 ] }
-syn = { version = "2.0.100" }
+syn = { version = "2.0.101" }
 tokio = { version = "1.44.2", features = ["full", "tracing"] }
 tokio-util = { version = "0.7.14" }
 tower-http = { version = "0.6.2", features = ["trace", "cors"] }
@@ -141,14 +141,14 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
   "fmt",
   "json",
 ] }
-fjall = { version = "2.9.0" }
+fjall = { version = "2.10.0" }
 
 dhat = { version = "0.3.3", optional = true }
 utoipa = { version = "5.3.1", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "9.0.0", features = ["axum"] }
 utoipa-axum = { version = "0.2.0" }
 testcontainers-modules = { version = "0.11.6", features = ["postgres"] }
-toml = "0.8.20"
+toml = "0.8.21"
 
 # We force zip version here as later version is not compatible with utoipa-swagger-ui
 zip = "=2.3.0"
