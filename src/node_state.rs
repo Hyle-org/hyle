@@ -116,6 +116,7 @@ impl Default for NodeStateStore {
                 program_id: ProgramId(vec![]),
                 state: StateCommitment(vec![0]),
                 verifier: Verifier("hyle".to_owned()),
+                timeout_window: TimeoutWindow::NoTimeout,
             },
         );
         ret
@@ -274,8 +275,18 @@ impl NodeState {
                         .get(unsettled_tx)
                         .map(|ut| ut.tx_context.block_height)
                     {
-                        // Timeout starts from when the blob tx was sequenced
-                        self.timeouts.set(unsettled_tx.clone(), block_height);
+                        // Get the contract's timeout window
+                        #[allow(clippy::unwrap_used, reason = "must exist because of above checks")]
+                        let timeout_window = self
+                            .unsettled_transactions
+                            .get(unsettled_tx)
+                            .map(|tx| self.get_tx_timeout_window(tx.blobs.iter().map(|b| &b.blob)))
+                            .unwrap();
+                        if let TimeoutWindow::Timeout(timeout_window) = timeout_window {
+                            // Update timeouts
+                            self.timeouts
+                                .set(unsettled_tx.clone(), block_height, timeout_window);
+                        }
                     }
                 }
             }
@@ -294,6 +305,7 @@ impl NodeState {
         block_under_construction
     }
 
+    #[cfg(test)]
     pub fn handle_register_contract_effect(&mut self, tx: &RegisterContractEffect) {
         info!("📝 Registering contract {}", tx.contract_name);
         self.contracts.insert(
@@ -303,8 +315,32 @@ impl NodeState {
                 program_id: tx.program_id.clone(),
                 state: tx.state_commitment.clone(),
                 verifier: tx.verifier.clone(),
+                timeout_window: tx.timeout_window.clone().unwrap_or_default(),
             },
         );
+    }
+
+    fn get_tx_timeout_window<'a, T: IntoIterator<Item = &'a Blob>>(
+        &self,
+        blobs: T,
+    ) -> TimeoutWindow {
+        let mut timeout = TimeoutWindow::NoTimeout;
+        for blob in blobs {
+            if let Some(contract_timeout) = self
+                .contracts
+                .get(&blob.contract_name)
+                .map(|c| c.timeout_window.clone())
+            {
+                timeout = match (timeout, contract_timeout) {
+                    (TimeoutWindow::NoTimeout, contract_timeout) => contract_timeout,
+                    (TimeoutWindow::Timeout(a), TimeoutWindow::Timeout(b)) => {
+                        TimeoutWindow::Timeout(a.min(b))
+                    }
+                    _ => TimeoutWindow::NoTimeout,
+                }
+            }
+        }
+        timeout
     }
 
     /// Returns a TxHash only if the blob transaction calls only native verifiers and thus can be
@@ -375,7 +411,11 @@ impl NodeState {
         if self.unsettled_transactions.is_next_to_settle(&blob_tx_hash) {
             let block_height = self.current_height;
             // Update timeouts
-            self.timeouts.set(blob_tx_hash.clone(), block_height);
+            let timeout_window = self.get_tx_timeout_window(&tx.blobs);
+            if let TimeoutWindow::Timeout(timeout_window) = timeout_window {
+                self.timeouts
+                    .set(blob_tx_hash.clone(), block_height, timeout_window);
+            }
         }
 
         if should_try_and_settle {
@@ -803,6 +843,7 @@ impl NodeState {
                             program_id: contract.program_id.clone(),
                             state_commitment: contract.state.clone(),
                             verifier: contract.verifier.clone(),
+                            timeout_window: Some(contract.timeout_window.clone()),
                         },
                     ));
 
@@ -895,53 +936,48 @@ impl NodeState {
             .blob;
 
         // Verify that each side effect has a matching register/delete contract action in this specific blob
-        // (this doesn't really need to be a for loop but it's neater this way)
-        for effect in &hyle_output.onchain_effects {
-            match effect {
-                OnchainEffect::RegisterContract(reg) => {
-                    // For RegisterContract effects, check if this blob has a matching register action
-                    if let Ok(data) =
-                        StructuredBlobData::<RegisterContractAction>::try_from(blob.data.clone())
-                    {
-                        if data.parameters.contract_name != reg.contract_name
-                            || data.parameters.verifier != reg.verifier
-                            || data.parameters.program_id != reg.program_id
-                            || data.parameters.state_commitment != reg.state_commitment
-                        {
-                            bail!(
-                                "RegisterContract effect for '{}' does not match the registration action in blob #{}",
-                                reg.contract_name,
-                                hyle_output.index.0
-                            );
-                        }
-                    } else {
-                        bail!(
-                            "RegisterContract effect for '{}' found but blob #{} is not a registration action",
-                            reg.contract_name,
-                            hyle_output.index.0
-                        );
-                    }
+        if let Ok(data) = StructuredBlobData::<RegisterContractAction>::try_from(blob.data.clone())
+        {
+            let Some(eff) = hyle_output.onchain_effects.first() else {
+                bail!(
+                    "Proof for RegisterContractAction blob #{} does not have any onchain effects",
+                    hyle_output.index
+                )
+            };
+            if let OnchainEffect::RegisterContract(effect) = eff {
+                if effect != &data.parameters {
+                    bail!(
+                        "Proof for RegisterContractAction blob #{} does not match the onchain effect",
+                        hyle_output.index
+                    )
                 }
-                OnchainEffect::DeleteContract(name) => {
-                    // For DeleteContract effects, check if this blob has a matching delete action
-                    if let Ok(data) =
-                        StructuredBlobData::<DeleteContractAction>::try_from(blob.data.clone())
-                    {
-                        if data.parameters.contract_name != *name {
-                            bail!(
-                                "DeleteContract effect for '{}' does not match the deletion action in blob #{}",
-                                name,
-                                hyle_output.index.0
-                            );
-                        }
-                    } else {
-                        bail!(
-                            "DeleteContract effect for '{}' found but blob #{} is not a deletion action",
-                            name,
-                            hyle_output.index.0
-                        );
-                    }
+            } else {
+                bail!(
+                    "Proof for RegisterContractAction blob #{} does not have a register onchain effect",
+                    hyle_output.index
+                )
+            }
+        } else if let Ok(data) =
+            StructuredBlobData::<DeleteContractAction>::try_from(blob.data.clone())
+        {
+            let Some(eff) = hyle_output.onchain_effects.first() else {
+                bail!(
+                    "Proof for DeleteContractAction blob #{} does not have any onchain effects",
+                    hyle_output.index
+                )
+            };
+            if let OnchainEffect::DeleteContract(effect) = eff {
+                if effect != &data.parameters.contract_name {
+                    bail!(
+                        "Proof for DeleteContractAction blob #{} does not match the onchain effect",
+                        hyle_output.index
+                    )
                 }
+            } else {
+                bail!(
+                    "Proof for DeleteContractAction blob #{} does not have a delete onchain effect",
+                    hyle_output.index
+                )
             }
         }
 
@@ -1033,6 +1069,10 @@ impl NodeState {
                             program_id: effect.program_id.clone(),
                             state: effect.state_commitment.clone(),
                             verifier: effect.verifier.clone(),
+                            timeout_window: effect
+                                .timeout_window
+                                .clone()
+                                .unwrap_or(contract.timeout_window.clone()),
                         }),
                     );
                 }
@@ -1101,8 +1141,16 @@ impl NodeState {
                 for unsettled_tx in next_unsettled_txs {
                     if self.unsettled_transactions.is_next_to_settle(&unsettled_tx) {
                         let block_height = self.current_height;
-                        // Timeout starts from current_height
-                        self.timeouts.set(unsettled_tx.clone(), block_height);
+                        #[allow(clippy::unwrap_used, reason = "must exist because of above checks")]
+                        let tx = self.unsettled_transactions.get(&unsettled_tx).unwrap();
+                        // Get the contract's timeout window
+                        let timeout_window =
+                            self.get_tx_timeout_window(tx.blobs.iter().map(|b| &b.blob));
+                        if let TimeoutWindow::Timeout(timeout_window) = timeout_window {
+                            // Set the timeout for the transaction
+                            self.timeouts
+                                .set(unsettled_tx.clone(), block_height, timeout_window);
+                        }
                     }
                 }
 
@@ -1149,17 +1197,19 @@ pub mod test {
                 program_id: ProgramId(vec![]),
                 state_commitment: StateCommitment(vec![0, 1, 2, 3]),
                 contract_name: name,
+                timeout_window: None,
             }
             .as_blob("hyle".into(), None, None)],
         )
     }
 
-    fn make_register_contract_effect(contract_name: ContractName) -> RegisterContractEffect {
+    pub fn make_register_contract_effect(contract_name: ContractName) -> RegisterContractEffect {
         RegisterContractEffect {
             verifier: "test".into(),
             program_id: ProgramId(vec![]),
             state_commitment: StateCommitment(vec![0, 1, 2, 3]),
             contract_name,
+            timeout_window: None,
         }
     }
 
@@ -1988,6 +2038,8 @@ pub mod test {
         let register_c1 = make_register_contract_tx(c1.clone());
         let register_c2 = make_register_contract_tx(c2.clone());
 
+        const TIMEOUT_WINDOW: BlockHeight = BlockHeight(100);
+
         // Add Three transactions - the first blocks the next two, and the next two are NOT ready to settle.
         let tx1 = BlobTransaction::new(
             Identity::new("test@c1"),
@@ -2022,7 +2074,7 @@ pub mod test {
         // Assert timeout only contains tx1
         assert_eq!(
             timeouts::tests::get(&state.timeouts, &tx1_hash),
-            Some(104 + timeouts::tests::get_timeout_window(&state.timeouts))
+            Some(104 + TIMEOUT_WINDOW)
         );
         assert_eq!(timeouts::tests::get(&state.timeouts, &tx2_hash), None);
         assert_eq!(timeouts::tests::get(&state.timeouts, &tx3_hash), None);
@@ -2042,7 +2094,7 @@ pub mod test {
         // Assert that tx3 timeout is reset
         assert_eq!(
             timeouts::tests::get(&state.timeouts, &tx3_hash),
-            Some(204 + timeouts::tests::get_timeout_window(&state.timeouts))
+            Some(204 + TIMEOUT_WINDOW)
         );
 
         // Assert that tx4 has no timeout
@@ -2059,7 +2111,7 @@ pub mod test {
         // Assert that tx4 timeout is set with remaining timeout window
         assert_eq!(
             timeouts::tests::get(&state.timeouts, &tx4_hash),
-            Some(104 + timeouts::tests::get_timeout_window(&state.timeouts))
+            Some(104 + TIMEOUT_WINDOW)
         );
     }
 
@@ -2080,6 +2132,7 @@ pub mod test {
                     program_id: ProgramId(vec![]),
                     state_commitment: StateCommitment(vec![0, 1, 2, 3]),
                     contract_name: name,
+                    timeout_window: None,
                 }
                 .as_blob(tld, None, None)],
             )
@@ -2190,6 +2243,7 @@ pub mod test {
                     program_id: ProgramId(vec![]),
                     state_commitment: StateCommitment(vec![9, 9, 9, 9]), // Different state_commitment than in the blob action
                     contract_name: "sub.test.hyle".into(),
+                    timeout_window: None,
                 }));
 
             let proof_tx = new_proof_tx(&"test.hyle".into(), &output, &tx_hash);
@@ -2229,6 +2283,7 @@ pub mod test {
                         program_id: ProgramId(vec![]),
                         state_commitment: StateCommitment(vec![0, 1, 2, 3]),
                         contract_name: "c1".into(),
+                        timeout_window: None,
                     }
                     .as_blob("hyle".into(), None, None),
                     Blob {
@@ -2357,6 +2412,7 @@ pub mod test {
                     program_id: ProgramId(vec![]),
                     state_commitment: StateCommitment(vec![0, 1, 2, 3]),
                     contract_name: "sub.c2.hyle".into(),
+                    timeout_window: None,
                 }));
             let sub_c2_proof = new_proof_tx(&"c2.hyle".into(), &output, &register_sub_c2.hashed());
 
@@ -2445,6 +2501,7 @@ pub mod test {
                     program_id: ProgramId(vec![]),
                     state_commitment: StateCommitment(vec![0, 1, 2, 3]),
                     contract_name: "sub.c2.hyle".into(),
+                    timeout_window: None,
                 }));
             let sub_c2_proof = new_proof_tx(&"c2.hyle".into(), &output, &register_sub_c2.hashed());
 
@@ -2488,11 +2545,17 @@ pub mod test {
             let update_tx =
                 make_register_tx("test@c.hyle".into(), "c.hyle".into(), "c.hyle".into());
 
-            let proof_update = new_proof_tx(
-                &"c.hyle".into(),
-                &make_hyle_output(update_tx.clone(), BlobIndex(0)),
-                &update_tx.hashed(),
-            );
+            let mut output = make_hyle_output(update_tx.clone(), BlobIndex(0));
+            output
+                .onchain_effects
+                .push(OnchainEffect::RegisterContract(RegisterContractEffect {
+                    verifier: "test".into(),
+                    program_id: ProgramId(vec![]),
+                    state_commitment: StateCommitment(vec![0, 1, 2, 3]),
+                    contract_name: "c.hyle".into(),
+                    timeout_window: None,
+                }));
+            let proof_update = new_proof_tx(&"c.hyle".into(), &output, &update_tx.hashed());
 
             let mut output =
                 make_hyle_output_with_state(delete_self_tx.clone(), BlobIndex(0), &[4, 5, 6], &[1]);
@@ -2541,6 +2604,162 @@ pub mod test {
                 3,
             )
             .await;
+        }
+        #[test_log::test(tokio::test)]
+        async fn test_custom_timeout_then_upgrade_with_none() {
+            let mut state = new_node_state().await;
+
+            let c1 = ContractName::new("c1");
+            let register_c1 = make_register_contract_tx(c1.clone());
+
+            // Register the contract
+            state.handle_signed_block(&craft_signed_block(1, vec![register_c1.into()]));
+
+            let custom_timeout = BlockHeight(150);
+
+            // Upgrade the contract with a custom timeout
+            {
+                let action = RegisterContractAction {
+                    verifier: "test".into(),
+                    program_id: ProgramId(vec![]),
+                    state_commitment: StateCommitment(vec![0, 1, 2, 3]),
+                    contract_name: c1.clone(),
+                    timeout_window: Some(TimeoutWindow::Timeout(custom_timeout)),
+                };
+                let upgrade_with_timeout = BlobTransaction::new(
+                    Identity::new("test@c1"),
+                    vec![action.clone().as_blob("c1".into(), None, None)],
+                );
+
+                let upgrade_with_timeout_hash = upgrade_with_timeout.hashed();
+                state.handle_signed_block(&craft_signed_block(
+                    2,
+                    vec![upgrade_with_timeout.clone().into()],
+                ));
+
+                // Verify the timeout is set correctly - this is the old timeout
+                assert_eq!(
+                    timeouts::tests::get(&state.timeouts, &upgrade_with_timeout_hash),
+                    Some(BlockHeight(2) + BlockHeight(100))
+                );
+
+                // Settle it
+                let mut hyle_output = make_hyle_output(upgrade_with_timeout, BlobIndex(0));
+                hyle_output
+                    .onchain_effects
+                    .push(OnchainEffect::RegisterContract(action));
+                let upgrade_with_timeout_proof =
+                    new_proof_tx(&c1, &hyle_output, &upgrade_with_timeout_hash);
+                state.handle_signed_block(&craft_signed_block(
+                    3,
+                    vec![upgrade_with_timeout_proof.into()],
+                ));
+            }
+
+            // Upgrade the contract again with a None timeout
+            {
+                let action = RegisterContractAction {
+                    verifier: "test".into(),
+                    program_id: ProgramId(vec![]),
+                    state_commitment: StateCommitment(vec![4, 5, 6]),
+                    contract_name: c1.clone(),
+                    timeout_window: None,
+                };
+                let upgrade_with_none = BlobTransaction::new(
+                    Identity::new("test@c1"),
+                    vec![action.clone().as_blob("c1".into(), None, None)],
+                );
+
+                let upgrade_with_none_hash = upgrade_with_none.hashed();
+                state.handle_signed_block(&craft_signed_block(
+                    4,
+                    vec![upgrade_with_none.clone().into()],
+                ));
+
+                // Verify the timeout is the custom timeout
+                assert_eq!(
+                    timeouts::tests::get(&state.timeouts, &upgrade_with_none_hash),
+                    Some(BlockHeight(4) + custom_timeout)
+                );
+                // Settle it
+                let mut hyle_output = make_hyle_output_with_state(
+                    upgrade_with_none,
+                    BlobIndex(0),
+                    &[4, 5, 6],
+                    &[4, 5, 6],
+                );
+                hyle_output
+                    .onchain_effects
+                    .push(OnchainEffect::RegisterContract(action));
+                let upgrade_with_none_proof =
+                    new_proof_tx(&c1, &hyle_output, &upgrade_with_none_hash);
+                state.handle_signed_block(&craft_signed_block(
+                    5,
+                    vec![upgrade_with_none_proof.into()],
+                ));
+            }
+
+            // Upgrade the contract again with another custom timeout
+            let another_custom_timeout = BlockHeight(200);
+            {
+                let action = RegisterContractAction {
+                    verifier: "test".into(),
+                    program_id: ProgramId(vec![]),
+                    state_commitment: StateCommitment(vec![4, 5, 6]),
+                    contract_name: c1.clone(),
+                    timeout_window: Some(TimeoutWindow::Timeout(another_custom_timeout)),
+                };
+                let upgrade_with_another_timeout = BlobTransaction::new(
+                    Identity::new("test@c1"),
+                    vec![action.clone().as_blob("c1".into(), None, None)],
+                );
+
+                let upgrade_with_another_timeout_hash = upgrade_with_another_timeout.hashed();
+                state.handle_signed_block(&craft_signed_block(
+                    6,
+                    vec![upgrade_with_another_timeout.clone().into()],
+                ));
+
+                // Verify the timeout is still the OG custom timeout
+                assert_eq!(
+                    timeouts::tests::get(&state.timeouts, &upgrade_with_another_timeout_hash),
+                    Some(BlockHeight(6) + custom_timeout)
+                );
+                // Settle it
+                let mut hyle_output = make_hyle_output_with_state(
+                    upgrade_with_another_timeout,
+                    BlobIndex(0),
+                    &[4, 5, 6],
+                    &[4, 5, 6],
+                );
+                hyle_output
+                    .onchain_effects
+                    .push(OnchainEffect::RegisterContract(action));
+                let upgrade_with_another_timeout_proof =
+                    new_proof_tx(&c1, &hyle_output, &upgrade_with_another_timeout_hash);
+                state.handle_signed_block(&craft_signed_block(
+                    7,
+                    vec![upgrade_with_another_timeout_proof.into()],
+                ));
+            }
+
+            // Send a final transaction with no timeout and Check it uses the new timeout
+            let final_tx = BlobTransaction::new(
+                Identity::new("test@c1"),
+                vec![Blob {
+                    contract_name: c1.clone(),
+                    data: BlobData(vec![0, 1, 2, 3]),
+                }],
+            );
+
+            let final_tx_hash = final_tx.hashed();
+            state.handle_signed_block(&craft_signed_block(8, vec![final_tx.into()]));
+
+            // Verify the timeout remains the same as the last custom timeout
+            assert_eq!(
+                timeouts::tests::get(&state.timeouts, &final_tx_hash),
+                Some(BlockHeight(8) + another_custom_timeout)
+            );
         }
     }
 }

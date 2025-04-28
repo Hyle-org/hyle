@@ -3,7 +3,8 @@ use axum::{extract::State, http::StatusCode, response::IntoResponse, Json, Route
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_contract_sdk::TxHash;
 use hyle_model::{
-    api::APIRegisterContract, ContractAction, RegisterContractAction, StructuredBlobData,
+    api::APIRegisterContract, BlockHeight, ContractAction, RegisterContractAction,
+    StructuredBlobData, TimeoutWindow,
 };
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -156,6 +157,11 @@ pub async fn register_contract(
             program_id: payload.program_id,
             state_commitment: payload.state_commitment,
             contract_name: payload.contract_name,
+            timeout_window: match payload.timeout_window {
+                Some(0) => Some(TimeoutWindow::NoTimeout),
+                Some(timeout) => Some(TimeoutWindow::Timeout(BlockHeight(timeout))),
+                None => None,
+            },
         }
         .as_blob(owner, None, None)],
     );

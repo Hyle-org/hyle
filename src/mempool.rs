@@ -1209,6 +1209,7 @@ pub mod test {
                 program_id: ProgramId(vec![]),
                 state_commitment: StateCommitment(vec![0, 1, 2, 3]),
                 contract_name: name,
+                timeout_window: None,
             }
             .as_blob("hyle".into(), None, None)],
         )

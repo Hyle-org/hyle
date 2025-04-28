@@ -63,6 +63,7 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
                         program_id: ProgramId(vec![]),
                         state_commitment: StateCommitment(vec![0, 1, 2, 3]),
                         contract_name: contract_name.clone(),
+                        ..Default::default()
                     }
                     .as_blob("hyle".into(), None, None)],
                 )
