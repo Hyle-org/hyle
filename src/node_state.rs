@@ -133,6 +133,7 @@ impl NodeState {
                 self.current_height
             );
         }
+        debug!("Handling signed block: {:?}", signed_block.height());
 
         self.current_height = signed_block.height();
 
@@ -287,6 +288,8 @@ impl NodeState {
             .record_unsettled_transactions(self.unsettled_transactions.len() as u64);
         self.metrics.add_processed_block();
         self.metrics.record_current_height(self.current_height.0);
+
+        debug!("Done handling signed block: {:?}", signed_block.height());
 
         block_under_construction
     }

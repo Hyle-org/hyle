@@ -17,6 +17,7 @@ type TcpSender<ClientCodec, Req> =
     SplitSink<Framed<TcpStream, TcpMessageCodec<ClientCodec>>, TcpMessage<Req>>;
 type TcpReceiver<ClientCodec> = SplitStream<Framed<TcpStream, TcpMessageCodec<ClientCodec>>>;
 
+#[derive(Debug)]
 pub struct TcpClient<ClientCodec, Req, Res>
 where
     ClientCodec: Decoder<Item = Res> + Encoder<Req> + Default,
@@ -171,14 +172,14 @@ mod tests {
             client.socket_addr
         });
 
-        while server.connected_clients()?.is_empty() {
+        while server.connected_clients().is_empty() {
             _ = tokio::time::timeout(Duration::from_millis(100), server.listen_next()).await;
         }
 
         let client_socket = client_socket.await?;
         assert_eq!(client_socket.port(), server_socket.port());
 
-        let clients = server.connected_clients()?;
+        let clients = server.connected_clients();
         assert_eq!(clients.len(), 1);
         assert_ne!(clients, vec![server_socket.to_string()]);
 

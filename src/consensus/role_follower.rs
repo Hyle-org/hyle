@@ -613,39 +613,42 @@ impl Consensus {
         ticket: Ticket,
         view: View,
     ) -> Result<()> {
-        if self
+        let mut missing_dp_hash = consensus_proposal.parent_hash.clone();
+
+        // Buffer this prepare if we don't know one.
+        if !self
             .follower_state()
             .buffered_prepares
             .contains(&consensus_proposal.hashed())
         {
-            // As we broadcast the SyncRequest, we will get a duplicated response
-            // We could here check that all responses are identical
-            return Ok(());
+            let prepare_message = (sender.clone(), consensus_proposal, ticket, view);
+            self.follower_state()
+                .buffered_prepares
+                .push(prepare_message);
         }
 
-        if !self
+        // Check if we have a missing DP up to our current known DP (this assumes we're not on a fork)
+        let current_dp_hash = self.bft_round_state.current_proposal.hashed();
+        // TODO: we should switch back to joining if we try to catch up on too many prepares.
+        while let Some(prep) = self
             .follower_state()
             .buffered_prepares
-            .contains(&consensus_proposal.parent_hash)
+            .get(&missing_dp_hash)
         {
-            debug!(
-                proposal_hash = %consensus_proposal.hashed(),
-                to = %sender,
-                "🔉 Requesting missing parent proposal {}",
-                consensus_proposal.parent_hash
-            );
-            // TODO: use send & retry in case of no response instead of broadcast
-            // It's not supposed to occur often, so it's fine for now
-            self.broadcast_net_message(ConsensusNetMessage::SyncRequest(
-                consensus_proposal.parent_hash.clone(),
-            ))
-            .context("Sending SyncRequest")?;
+            if missing_dp_hash == current_dp_hash {
+                return Ok(());
+            }
+            missing_dp_hash = prep.1.parent_hash.clone();
         }
-
-        let prepare_message = (sender, consensus_proposal, ticket, view);
-        self.follower_state()
-            .buffered_prepares
-            .push(prepare_message);
+        debug!(
+            to = %sender,
+            "🔉 Requesting missing parent prepare for proposal {}",
+            missing_dp_hash
+        );
+        // TODO: use send & retry in case of no response instead of broadcast
+        // It's not supposed to occur often, so it's fine for now
+        self.broadcast_net_message(ConsensusNetMessage::SyncRequest(missing_dp_hash.clone()))
+            .context("Sending SyncRequest")?;
 
         Ok(())
     }
@@ -819,7 +822,14 @@ impl BufferedPrepares {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bus::dont_use_this::get_receiver;
+    use crate::bus::metrics::BusMetrics;
+    use crate::bus::SharedMessageBus;
+    use crate::consensus::test::ConsensusTestCtx;
     use crate::consensus::{ConsensusProposal, Ticket, ValidatorPublicKey};
+    use crate::model::ConsensusNetMessage;
+    use crate::p2p::network::{NetMessage, OutboundMessage};
+    use hyle_model::SignedByValidator;
 
     #[test]
     fn test_contains() {
@@ -856,5 +866,105 @@ mod tests {
         assert!(retrieved_message.is_some());
         let retrieved_message = retrieved_message.unwrap();
         assert_eq!(retrieved_message.1, proposal);
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_buffer_prepare_message_and_fetch_missing_parent_with_gaps() {
+        // Create a chain of proposals
+        let current_proposal = ConsensusProposal::default();
+        let missing_prepare1 = ConsensusProposal {
+            parent_hash: current_proposal.hashed(),
+            ..ConsensusProposal::default()
+        };
+        let buffered_prepare = ConsensusProposal {
+            parent_hash: missing_prepare1.hashed(),
+            ..ConsensusProposal::default()
+        };
+        let missing_prepare2 = ConsensusProposal {
+            parent_hash: buffered_prepare.hashed(),
+            ..ConsensusProposal::default()
+        };
+        let just_received_prepare = ConsensusProposal {
+            parent_hash: missing_prepare2.hashed(),
+            ..ConsensusProposal::default()
+        };
+
+        let bus = SharedMessageBus::new(BusMetrics::global("global".to_string()));
+        let mut sync_request_rv = get_receiver::<OutboundMessage>(&bus).await;
+
+        let mut consensus =
+            ConsensusTestCtx::build_consensus(&bus, BlstCrypto::new("test-node").unwrap()).await;
+
+        consensus.bft_round_state.current_proposal = current_proposal;
+
+        // Add the buffered prepare to the state
+        consensus.follower_state().buffered_prepares.push((
+            ValidatorPublicKey::default(),
+            buffered_prepare,
+            Ticket::Genesis,
+            0,
+        ));
+
+        // Call the function with the just received prepare
+        consensus
+            .buffer_prepare_message_and_fetch_missing_parent(
+                ValidatorPublicKey::default(),
+                just_received_prepare.clone(),
+                Ticket::Genesis,
+                0,
+            )
+            .unwrap();
+
+        // We should request missing_prepare2
+        match sync_request_rv.recv().await {
+            Ok(OutboundMessage::BroadcastMessage(NetMessage::ConsensusMessage(
+                SignedByValidator::<ConsensusNetMessage> {
+                    msg: ConsensusNetMessage::SyncRequest(hash),
+                    ..
+                },
+            ))) => {
+                assert_eq!(
+                    hash,
+                    missing_prepare2.hashed(),
+                    "First sync request should be for missing_prepare2"
+                );
+            }
+            _ => panic!("Expected SyncRequest for missing_prepare2"),
+        }
+
+        // Add the buffered prepare to the state
+        consensus.follower_state().buffered_prepares.push((
+            ValidatorPublicKey::default(),
+            missing_prepare2.clone(),
+            Ticket::Genesis,
+            0,
+        ));
+
+        // Call the function again with the prepare we received
+        consensus
+            .buffer_prepare_message_and_fetch_missing_parent(
+                ValidatorPublicKey::default(),
+                missing_prepare2.clone(),
+                Ticket::Genesis,
+                0,
+            )
+            .unwrap();
+
+        // We should request missing_prepare1
+        match sync_request_rv.recv().await {
+            Ok(OutboundMessage::BroadcastMessage(NetMessage::ConsensusMessage(
+                SignedByValidator::<ConsensusNetMessage> {
+                    msg: ConsensusNetMessage::SyncRequest(hash),
+                    ..
+                },
+            ))) => {
+                assert_eq!(
+                    hash,
+                    missing_prepare1.hashed(),
+                    "First sync request should be for missing_prepare1"
+                );
+            }
+            _ => panic!("Expected SyncRequest for missing_prepare1"),
+        }
     }
 }

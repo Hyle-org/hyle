@@ -105,6 +105,16 @@ pub struct MempoolStore {
     buffered_proposals: BTreeMap<LaneId, Vec<DataProposal>>,
     buffered_podas: BTreeMap<LaneId, BTreeMap<DataProposalHash, Vec<PodaSignatures>>>,
 
+    // verify_tx.rs
+    #[borsh(skip)]
+    processing_dps: JoinSet<Result<ProcessedDPEvent>>,
+    #[borsh(skip)]
+    cached_dp_votes: HashMap<(LaneId, DataProposalHash), DataProposalVerdict>,
+
+    // Dedicated thread pool for data proposal and tx hashing
+    #[borsh(skip)]
+    long_tasks_runtime: LongTasksRuntime,
+
     // block_construction.rs
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
     #[borsh(skip)]
@@ -120,10 +130,53 @@ pub struct MempoolStore {
     known_contracts: Arc<std::sync::RwLock<KnownContracts>>,
 }
 
+pub struct LongTasksRuntime(std::mem::ManuallyDrop<tokio::runtime::Runtime>);
+impl Default for LongTasksRuntime {
+    fn default() -> Self {
+        Self(std::mem::ManuallyDrop::new(
+            #[allow(clippy::expect_used, reason = "Fails at startup, is OK")]
+            tokio::runtime::Builder::new_multi_thread()
+                // Limit the number of threads arbitrarily to lower the maximal impact on the whole node
+                .worker_threads(3)
+                .thread_name("mempool-hashing")
+                .build()
+                .expect("Failed to create hashing runtime"),
+        ))
+    }
+}
+
+impl Drop for LongTasksRuntime {
+    fn drop(&mut self) {
+        // Shut down the hashing runtime.
+        // TODO: serialize?
+        let rt = unsafe { std::mem::ManuallyDrop::take(&mut self.0) };
+        // This has to be done outside the current runtime.
+        tokio::task::spawn_blocking(move || {
+            #[cfg(test)]
+            rt.shutdown_timeout(Duration::from_millis(10));
+            #[cfg(not(test))]
+            rt.shutdown_timeout(Duration::from_secs(10));
+        });
+    }
+}
+
+impl Deref for LongTasksRuntime {
+    type Target = tokio::runtime::Runtime;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for LongTasksRuntime {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 pub struct Mempool {
     bus: MempoolBusClient,
     file: Option<PathBuf>,
-    running_tasks: JoinSet<Result<InternalMempoolEvent>>,
     conf: SharedConf,
     crypto: SharedBlstCrypto,
     metrics: MempoolMetrics,
@@ -157,7 +210,7 @@ impl DerefMut for Mempool {
     IntoStaticStr,
 )]
 pub enum MempoolNetMessage {
-    DataProposal(DataProposal),
+    DataProposal(DataProposalHash, DataProposal),
     DataVote(DataProposalHash, LaneBytesSize), // New lane size with this DP
     PoDAUpdate(DataProposalHash, Vec<SignedByValidator<MempoolNetMessage>>),
     SyncRequest(Option<DataProposalHash>, Option<DataProposalHash>),
@@ -176,11 +229,11 @@ impl BusMessage for MempoolBlockEvent {}
 impl BusMessage for MempoolStatusEvent {}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub enum InternalMempoolEvent {
+pub enum ProcessedDPEvent {
     OnHashedDataProposal((LaneId, DataProposal)),
     OnProcessedDataProposal((LaneId, DataProposalVerdict, DataProposal)),
 }
-impl BusMessage for InternalMempoolEvent {}
+impl BusMessage for ProcessedDPEvent {}
 
 impl Module for Mempool {
     type Context = SharedRunContext;
@@ -229,7 +282,6 @@ impl Module for Mempool {
             bus,
             file: Some(ctx.common.config.data_directory.clone()),
             conf: ctx.common.config.clone(),
-            running_tasks: JoinSet::new(),
             metrics,
             crypto: Arc::clone(&ctx.node.crypto),
             lanes: LanesStorage::new(&ctx.common.config.data_directory, lanes_tip)?,
@@ -249,14 +301,17 @@ impl Mempool {
             self.conf.consensus.slot_duration / 2,
             Duration::from_millis(500),
         );
-        let mut interval = tokio::time::interval(tick_interval);
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut new_dp_timer = tokio::time::interval(tick_interval);
+        let mut disseminate_timer = tokio::time::interval(tick_interval * 4);
+        new_dp_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        disseminate_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
         // TODO: Recompute optimistic node_state for contract registrations.
         module_handle_messages! {
             on_bus self.bus,
             delay_shutdown_until {
-                self.running_tasks.is_empty()
+                // TODO: serialize these somehow?
+                self.processing_dps.is_empty() && self.processing_txs.is_empty()
             },
             listen<SignedByValidator<MempoolNetMessage>> cmd => {
                 let _ = log_error!(self.handle_net_message(cmd), "Handling MempoolNetMessage in Mempool");
@@ -285,8 +340,8 @@ impl Mempool {
             command_response<QueryNewCut, Cut> staking => {
                 self.handle_querynewcut(staking)
             }
-            Some(event) = self.running_tasks.join_next() => {
-                if let Ok(event) = log_error!(event, "Processing InternalMempoolEvent from Blocker Joinset") {
+            Some(event) = self.inner.processing_dps.join_next() => {
+                if let Ok(event) = log_error!(event, "Processing DPs from JoinSet") {
                     if let Ok(event) = log_error!(event, "Error in running task") {
                         let _ = log_error!(self.handle_internal_event(event),
                             "Handling InternalMempoolEvent in Mempool");
@@ -326,8 +381,15 @@ impl Mempool {
                     }
                 }
             }
-            _ = interval.tick() => {
-                let _ = log_error!(self.handle_data_proposal_management(), "Creating Data Proposal on tick");
+            _ = new_dp_timer.tick() => {
+                if let Ok(true) = log_error!(self.create_new_data_proposals(), "Create data proposals on tick") {
+                    disseminate_timer.reset();
+                }
+            }
+            _ = disseminate_timer.tick() => {
+                if let Ok(true) = log_error!(self.disseminate_data_proposals(), "Disseminate data proposals on tick") {
+                    disseminate_timer.reset();
+                }
             }
         };
 
@@ -400,15 +462,14 @@ impl Mempool {
         Ok(cut)
     }
 
-    fn handle_internal_event(&mut self, event: InternalMempoolEvent) -> Result<()> {
+    fn handle_internal_event(&mut self, event: ProcessedDPEvent) -> Result<()> {
         match event {
-            InternalMempoolEvent::OnHashedDataProposal((lane_id, data_proposal)) => self
+            ProcessedDPEvent::OnHashedDataProposal((lane_id, data_proposal)) => self
                 .on_hashed_data_proposal(&lane_id, data_proposal)
                 .context("Hashing data proposal"),
-            InternalMempoolEvent::OnProcessedDataProposal((lane_id, verdict, data_proposal)) => {
-                self.on_processed_data_proposal(lane_id, verdict, data_proposal)
-                    .context("Processing data proposal")
-            }
+            ProcessedDPEvent::OnProcessedDataProposal((lane_id, verdict, data_proposal)) => self
+                .on_processed_data_proposal(lane_id, verdict, data_proposal)
+                .context("Processing data proposal"),
         }
     }
 
@@ -459,9 +520,9 @@ impl Mempool {
         // }
 
         match msg.msg {
-            MempoolNetMessage::DataProposal(data_proposal) => {
+            MempoolNetMessage::DataProposal(data_proposal_hash, data_proposal) => {
                 let lane_id = self.get_lane(validator);
-                self.on_data_proposal(&lane_id, data_proposal)?;
+                self.on_data_proposal(&lane_id, data_proposal_hash, data_proposal)?;
             }
             MempoolNetMessage::DataVote(ref data_proposal_hash, _) => {
                 self.on_data_vote(&msg, data_proposal_hash.clone())?;
@@ -549,7 +610,7 @@ impl Mempool {
             if self.lanes.contains(lane_id, &wp.hashed()) {
                 continue;
             }
-            self.on_data_proposal(lane_id, std::mem::take(wp))
+            self.on_data_proposal(lane_id, wp.hashed(), std::mem::take(wp))
                 .context("Consuming waiting data proposal")?;
         }
 
@@ -775,7 +836,6 @@ pub mod test {
                 bus,
                 file: None,
                 conf: SharedConf::default(),
-                running_tasks: JoinSet::new(),
                 crypto: Arc::new(crypto),
                 metrics: MempoolMetrics::global("id".to_string()),
                 lanes,
@@ -845,8 +905,9 @@ pub mod test {
                 .unwrap()
         }
 
-        pub fn timer_tick(&mut self) -> Result<()> {
-            self.mempool.handle_data_proposal_management()
+        pub fn timer_tick(&mut self) -> Result<bool> {
+            Ok(self.mempool.create_new_data_proposals()?
+                || self.mempool.disseminate_data_proposals()?)
         }
 
         pub fn handle_poda_update(
@@ -861,7 +922,8 @@ pub mod test {
         pub async fn handle_processed_data_proposals(&mut self) {
             let event = self
                 .mempool
-                .running_tasks
+                .inner
+                .processing_dps
                 .join_next()
                 .await
                 .expect("No event received")
