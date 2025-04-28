@@ -174,7 +174,7 @@ where
 
     pub fn find_socket_addr(&self, canal: &Canal, vid: &ValidatorPublicKey) -> Option<&String> {
         self.peers
-            .get(&vid)
+            .get(vid)
             .and_then(|p| p.canals.get(canal).map(|socket| &socket.socket_addr))
     }
 
@@ -184,7 +184,7 @@ where
         vid: &ValidatorPublicKey,
     ) -> Option<&mut PeerSocket> {
         self.peers
-            .get_mut(&vid)
+            .get_mut(vid)
             .and_then(|p| p.canals.get_mut(canal))
     }
 
@@ -297,7 +297,7 @@ where
             if peer_socket.timestamp < timestamp {
                 info!("Oups 1");
                 let socket_addr = peer_socket.socket_addr.clone();
-                peer_socket.timestamp = timestamp.clone();
+                peer_socket.timestamp = timestamp;
                 peer_socket.socket_addr = dest.clone();
                 info!("{:?}", self.tcp_server.connected_clients());
                 self.tcp_server.drop_peer_stream(socket_addr);

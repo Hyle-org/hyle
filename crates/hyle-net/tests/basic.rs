@@ -86,7 +86,7 @@ async fn setup_basic_host(
     tracing::info!("All other peers {:?}", all_other_peers);
 
     for peer in all_other_peers.clone() {
-        p2p.start_handshake(format!("{}:{}", peer.clone(), 9090), Canal::A);
+        p2p.start_handshake(format!("{}:{}", peer.clone(), 9090), Canal::new("A"));
     }
 
     let mut interval = tokio::time::interval(Duration::from_millis(100));
@@ -144,7 +144,7 @@ async fn setup_drop_host(peer: String, peers: Vec<String>) -> Result<(), Box<dyn
     tracing::info!("All other peers {:?}", all_other_peers);
 
     for peer in all_other_peers.clone() {
-        p2p.start_handshake(format!("{}:{}", peer.clone(), 9090), Canal::A);
+        p2p.start_handshake(format!("{}:{}", peer.clone(), 9090), Canal::new("A"));
     }
 
     let mut interval_broadcast = tokio::time::interval(Duration::from_millis(500));
@@ -154,7 +154,7 @@ async fn setup_drop_host(peer: String, peers: Vec<String>) -> Result<(), Box<dyn
                 _ = p2p.handle_p2p_tcp_event(tcp_event).await;
             }
             _ = interval_broadcast.tick() => {
-                p2p.broadcast(Msg(10), Canal::A).await;
+                p2p.broadcast(Msg(10), Canal::new("A")).await;
             }
         }
     }
@@ -181,7 +181,7 @@ async fn setup_drop_client(
     tracing::info!("All other peers {:?}", all_other_peers);
 
     for peer in all_other_peers.clone() {
-        p2p.start_handshake(format!("{}:{}", peer.clone(), 9090), Canal::A);
+        p2p.start_handshake(format!("{}:{}", peer.clone(), 9090), Canal::new("A"));
     }
 
     let mut interval_broadcast = tokio::time::interval(Duration::from_millis(500));
@@ -205,7 +205,7 @@ async fn setup_drop_client(
                 _ = p2p.handle_p2p_tcp_event(tcp_event).await;
             }
             _ = interval_broadcast.tick() => {
-                p2p.broadcast(Msg(10), Canal::A).await;
+                p2p.broadcast(Msg(10), Canal::new("A")).await;
             }
         }
     }
