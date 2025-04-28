@@ -100,7 +100,7 @@ impl Default for WebSocketConfig {
 impl From<NodeWebSocketConfig> for WebSocketConfig {
     fn from(config: NodeWebSocketConfig) -> Self {
         Self {
-            port: config.port,
+            port: config.server_port,
             ws_path: config.ws_path,
             health_path: config.health_path,
             peer_check_interval: Duration::from_millis(config.peer_check_interval),

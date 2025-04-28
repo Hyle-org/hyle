@@ -59,7 +59,7 @@ faucet_password = "password"
 
 [websocket]
 enabled = true
-port = 8080
+server_port = 8080
 ws_path = "/ws"
 health_path = "/ws_health"
 peer_check_interval = 100

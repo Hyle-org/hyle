@@ -66,7 +66,7 @@ pub struct NodeWebSocketConfig {
     /// Wether the WebSocket server is enabled
     pub enabled: bool,
     /// The port number to bind the WebSocket server to
-    pub port: u16,
+    pub server_port: u16,
     /// The endpoint path for WebSocket connections
     pub ws_path: String,
     /// The endpoint path for health checks
@@ -121,7 +121,7 @@ pub struct Conf {
     /// When running only the indexer, the address of the DA server to connect to
     pub da_read_from: String,
 
-    /// Websocket
+    /// Websocket configuration
     pub websocket: NodeWebSocketConfig,
 }
 
