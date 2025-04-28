@@ -389,7 +389,7 @@ where
 
         let res = self
             .tcp_server
-            .send_batched(
+            .send_parallel(
                 peer_addr_to_pubkey.keys().cloned().collect(),
                 P2PTcpMessage::Data(msg),
             )
@@ -416,7 +416,7 @@ where
 
         let res = self
             .tcp_server
-            .send_batched(
+            .send_parallel(
                 peer_addr_to_pubkey.keys().cloned().collect(),
                 P2PTcpMessage::Data(msg),
             )
