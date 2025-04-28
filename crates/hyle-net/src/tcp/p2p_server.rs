@@ -295,14 +295,12 @@ where
 
         if let Some(peer_socket) = self.get_socket_mut(&canal, &peer_pubkey) {
             if peer_socket.timestamp < timestamp {
-                info!("Oups 1");
                 let socket_addr = peer_socket.socket_addr.clone();
                 peer_socket.timestamp = timestamp;
                 peer_socket.socket_addr = dest.clone();
                 info!("{:?}", self.tcp_server.connected_clients());
                 self.tcp_server.drop_peer_stream(socket_addr);
             } else {
-                info!("Oups 2");
                 info!("{:?}", self.tcp_server.connected_clients());
                 self.tcp_server.drop_peer_stream(dest);
             }
@@ -310,7 +308,6 @@ where
         } else {
             // If the validator exists, but not this canal, we create it
             if let Some(validator) = self.peers.get_mut(&peer_pubkey) {
-                info!("Oups 3");
                 validator.canals.insert(
                     canal.clone(),
                     PeerSocket {
@@ -321,7 +318,6 @@ where
             }
             // If the validator was never created before
             else {
-                info!("Oups 4");
                 let peer_info = PeerInfo {
                     canals: HashMap::from_iter(vec![(
                         canal.clone(),
