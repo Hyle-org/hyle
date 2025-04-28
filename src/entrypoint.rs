@@ -12,7 +12,7 @@ use crate::{
     },
     mempool::Mempool,
     model::{api::NodeInfo, CommonRunContext, NodeRunContext, SharedRunContext},
-    modules::websocket::{WebSocketConfig, WebSocketModule, WebSocketModuleCtx},
+    modules::websocket::{WebSocketModule, WebSocketModuleCtx},
     node_state::module::NodeStateModule,
     p2p::P2P,
     rest::{ApiDoc, RestApi, RestApiRunContext},
@@ -300,18 +300,21 @@ async fn common_main(
             .await?;
     }
 
-    handler
-        .build_module::<WebSocketModule<(), WebsocketOutEvent>>(WebSocketModuleCtx {
-            bus: bus.new_handle(),
-            config: WebSocketConfig::default(),
-        })
-        .await?;
+    if config.websocket.enabled {
+        handler
+            .build_module::<WebSocketModule<(), WebsocketOutEvent>>(WebSocketModuleCtx {
+                bus: bus.new_handle(),
+                config: config.websocket.clone().into(),
+            })
+            .await?;
 
-    handler
-        .build_module::<NodeWebsocketConnector>(NodeWebsocketConnectorCtx {
-            bus: bus.new_handle(),
-        })
-        .await?;
+        handler
+            .build_module::<NodeWebsocketConnector>(NodeWebsocketConnectorCtx {
+                bus: bus.new_handle(),
+                events: config.websocket.events.clone(),
+            })
+            .await?;
+    }
 
     if config.run_rest_server {
         // Should come last so the other modules have nested their own routes.

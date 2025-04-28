@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 
+use crate::utils::conf::NodeWebSocketConfig;
 use crate::{
     bus::{BusClientSender, BusMessage, SharedMessageBus},
     log_warn, module_bus_client, module_handle_messages,
@@ -92,6 +93,17 @@ impl Default for WebSocketConfig {
             ws_path: "/ws".to_string(),
             health_path: "/ws_health".to_string(),
             peer_check_interval: Duration::from_millis(100),
+        }
+    }
+}
+
+impl From<NodeWebSocketConfig> for WebSocketConfig {
+    fn from(config: NodeWebSocketConfig) -> Self {
+        Self {
+            port: config.port,
+            ws_path: config.ws_path,
+            health_path: config.health_path,
+            peer_check_interval: Duration::from_millis(config.peer_check_interval),
         }
     }
 }
