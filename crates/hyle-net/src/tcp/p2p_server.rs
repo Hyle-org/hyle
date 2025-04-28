@@ -401,8 +401,8 @@ where
         let peer_addr_to_pubkey: HashMap<String, ValidatorPublicKey> = self
             .peers
             .iter()
-            .filter(|p| p.0 .1 == canal)
-            .map(|p| (p.1.socket_addr.clone(), p.0.clone()))
+            .filter(|((_, _canal), _)| _canal == &canal)
+            .map(|((pubkey, _), socket)| (socket.socket_addr.clone(), pubkey.clone()))
             .collect();
 
         let res = self
@@ -430,7 +430,7 @@ where
             .peers
             .iter()
             .filter(|((_pubkey, _canal), _addr)| _canal == &canal && only_for.contains(_pubkey))
-            .map(|p| (p.1.socket_addr.clone(), p.0.clone()))
+            .map(|((pubkey, _canal), socket)| (socket.socket_addr.clone(), pubkey.clone()))
             .collect();
 
         let res = self
