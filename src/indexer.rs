@@ -867,6 +867,7 @@ mod test {
                 program_id: ProgramId(vec![3, 2, 1]),
                 state_commitment,
                 contract_name,
+                ..Default::default()
             }
             .as_blob("hyle".into(), None, None)],
         )

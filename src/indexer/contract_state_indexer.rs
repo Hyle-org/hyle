@@ -301,7 +301,7 @@ where
 mod tests {
     use client_sdk::transaction_builder::TxExecutorHandler;
     use hyle_contract_sdk::{BlobData, ProgramId, StateCommitment, ZkContract};
-    use hyle_model::{DataProposalHash, Hashed, HyleOutput, LaneId};
+    use hyle_model::{DataProposalHash, Hashed, HyleOutput, LaneId, TimeoutWindow};
     use serde::Deserialize;
     use utoipa::openapi::OpenApi;
 
@@ -384,6 +384,7 @@ mod tests {
             state_commitment,
             verifier: "test".into(),
             program_id: ProgramId(vec![]),
+            timeout_window: Some(TimeoutWindow::default()),
         };
         indexer.handle_register_contract(rce).await.unwrap();
     }

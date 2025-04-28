@@ -378,6 +378,7 @@ impl E2ECtx {
             program_id: Contract::program_id(),
             state_commitment: Contract::state_commitment(),
             contract_name: name.into(),
+            timeout_window: None,
         }
         .as_blob("hyle".into(), None, None)];
 
