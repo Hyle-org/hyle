@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::{
     bus::command_response::CmdRespClient,
-    consensus::StateTag,
+    consensus::{ConsensusCommand, StateTag},
     mempool::QueryNewCut,
     model::{
         ConsensusNetMessage, ConsensusProposalHash, Hashed, SignedByValidator, Ticket,
@@ -13,6 +13,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_model::{utils::TimestampMs, ConsensusProposal, ConsensusStakingAction};
 use staking::state::MIN_STAKE;
+use tokio::sync::broadcast;
 use tracing::{debug, error, trace};
 
 use super::Consensus;
@@ -34,7 +35,11 @@ pub struct LeaderState {
 }
 
 impl Consensus {
-    pub(super) async fn start_round(&mut self, current_timestamp: TimestampMs) -> Result<()> {
+    pub(super) async fn start_round(
+        &mut self,
+        current_timestamp: TimestampMs,
+        may_delay: bool,
+    ) -> Result<()> {
         if !matches!(self.bft_round_state.leader.step, Step::StartNewSlot) {
             bail!(
                 "Cannot start a new slot while in step {:?}",
@@ -64,6 +69,53 @@ impl Consensus {
         if self.bft_round_state.current_proposal.slot == self.bft_round_state.slot {
             debug!("♻️ Starting new view with the same ConsensusProposal as previous views")
         } else {
+            // Creates ConsensusProposal
+            // Query new cut to Mempool
+            trace!(
+                "Querying Mempool for a new cut with Staking: {:#?}",
+                self.bft_round_state.staking
+            );
+
+            let cut = match tokio::time::timeout(
+                self.config.consensus.slot_duration,
+                self.bus
+                    .request(QueryNewCut(self.bft_round_state.staking.clone())),
+            )
+            .await
+            .context("Timeout while querying Mempool")
+            {
+                Ok(Ok(cut)) => {
+                    // If the cut is the same as before (and we didn't time out), then check if we should delay.
+                    if may_delay
+                        && !matches!(ticket, Ticket::TimeoutQC(..))
+                        && cut == self.bft_round_state.last_cut_seen
+                    {
+                        debug!("⏳ Delaying slot start");
+                        self.bft_round_state.leader.pending_ticket = Some(ticket);
+                        let command_sender = crate::utils::static_type_map::Pick::<
+                            broadcast::Sender<ConsensusCommand>,
+                        >::get(&self.bus)
+                        .clone();
+                        let interval = self.config.consensus.slot_duration;
+                        tokio::spawn(async move {
+                            tokio::time::sleep(interval).await;
+                            let _ = command_sender.send(ConsensusCommand::StartNewSlot(false));
+                        });
+                        return Ok(());
+                    }
+                    cut
+                }
+                Ok(Err(err)) | Err(err) => {
+                    // In case of an error, we reuse the last cut to avoid being considered byzantine
+                    // (we also never delay because we already delayed by at least slot_duration)
+                    error!(
+                        "Could not get a new cut from Mempool {:?}. Reusing previous one...",
+                        err
+                    );
+                    self.bft_round_state.last_cut_seen.clone()
+                }
+            };
+
             // TODO: keep candidates around?
             let mut new_validators_to_bond = std::mem::take(&mut self.validator_candidates);
             new_validators_to_bond.retain(|v| {
@@ -82,32 +134,6 @@ impl Consensus {
                 self.bft_round_state.staking.bonded().len(),
                 new_validators_to_bond.len()
             );
-
-            // Creates ConsensusProposal
-            // Query new cut to Mempool
-            trace!(
-                "Querying Mempool for a new cut with Staking: {:#?}",
-                self.bft_round_state.staking
-            );
-
-            let cut = match tokio::time::timeout(
-                self.config.consensus.slot_duration,
-                self.bus
-                    .request(QueryNewCut(self.bft_round_state.staking.clone())),
-            )
-            .await
-            .context("Timeout while querying Mempool")
-            {
-                Ok(Ok(cut)) => cut,
-                Ok(Err(err)) | Err(err) => {
-                    // In case of an error, we reuse the last cut to avoid being considered byzantine
-                    error!(
-                        "Could not get a new cut from Mempool {:?}. Reusing previous one...",
-                        err
-                    );
-                    self.bft_round_state.last_cut_seen.clone()
-                }
-            };
 
             let mut staking_actions: Vec<ConsensusStakingAction> = new_validators_to_bond
                 .into_iter()
