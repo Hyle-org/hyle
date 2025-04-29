@@ -84,10 +84,11 @@ impl super::Mempool {
         self.disseminate_data_proposals(Some(dp))
     }
 
-    // Returns true if we did disseminate something
+    /// If only_dp_with_hash is Some, only disseminate the DP with the specified hash. If None, disseminate any pending DPs.
+    /// Returns true if we did disseminate something
     pub(super) fn disseminate_data_proposals(
         &mut self,
-        dp_hash_hint: Option<DataProposalHash>,
+        only_dp_with_hash: Option<DataProposalHash>,
     ) -> Result<bool> {
         trace!("🌝 Disseminate data proposals");
 
@@ -102,8 +103,9 @@ impl super::Mempool {
             .get_pending_entries_in_lane(&self.own_lane_id(), last_cut)?;
 
         for (entry_metadata, dp_hash) in entries {
-            if let Some(ref dp_hash_hint) = dp_hash_hint {
-                if &dp_hash != dp_hash_hint {
+            // If only_dp_with_hash is Some, we only disseminate that one, so break and exit in all other cases.
+            if let Some(ref only_dp_with_hash) = only_dp_with_hash {
+                if &dp_hash != only_dp_with_hash {
                     break;
                 }
             }
