@@ -147,6 +147,7 @@ pub mod signal {
 macro_rules! module_handle_messages {
     (on_bus $bus:expr, delay_shutdown_until  $lay_shutdow_until:block, $($rest:tt)*) => {
         {
+            // Safety: this is disjoint.
             let mut shutdown_receiver = unsafe { &mut *$crate::utils::static_type_map::Pick::<tokio::sync::broadcast::Receiver<$crate::utils::modules::signal::ShutdownModule>>::splitting_get_mut(&mut $bus) };
             let mut should_shutdown = false;
             $crate::handle_messages! {
@@ -164,6 +165,7 @@ macro_rules! module_handle_messages {
     };
     (on_bus $bus:expr, $($rest:tt)*) => {
         {
+            // Safety: this is disjoint.
             let mut shutdown_receiver = unsafe { &mut *$crate::utils::static_type_map::Pick::<tokio::sync::broadcast::Receiver<$crate::utils::modules::signal::ShutdownModule>>::splitting_get_mut(&mut $bus) };
             let mut should_shutdown = false;
             $crate::handle_messages! {

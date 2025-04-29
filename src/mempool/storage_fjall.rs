@@ -109,7 +109,16 @@ impl Storage for LanesStorage {
             dp_hash,
             lane_id
         )?;
-        item.map(decode_data_proposal_from_item).transpose()
+        item.map(|s| {
+            decode_data_proposal_from_item(s).map(|mut dp| {
+                // SAFETY: we trust our own fjall storage
+                unsafe {
+                    dp.unsafe_set_hash(dp_hash);
+                }
+                dp
+            })
+        })
+        .transpose()
     }
 
     fn pop(
