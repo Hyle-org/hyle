@@ -138,6 +138,7 @@ macro_rules! handle_messages {
         $($rest:tt)*
     ) => {
         // Create a receiver with a unique variable $index
+        // Safety: this is disjoint.
         let $index = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<Query<$command, $response>>>::splitting_get_mut(&mut $bus) };
         $crate::utils::static_type_map::paste::paste! {
         let [<branch_ $index>] = [opentelemetry::KeyValue::new("branch", $crate::bus::metrics::BusMetrics::simplified_name::<Query<$command, $response>>())];
@@ -176,6 +177,7 @@ macro_rules! handle_messages {
         listen<$message:ty> $res:pat => $handler:block
         $($rest:tt)*
     ) => {
+        // Safety: this is disjoint.
         let $index = unsafe { &mut *Pick::<tokio::sync::broadcast::Receiver<$message>>::splitting_get_mut(&mut $bus) };
         $crate::utils::static_type_map::paste::paste! {
         let [<branch_ $index>] = [opentelemetry::KeyValue::new("branch", $crate::bus::metrics::BusMetrics::simplified_name::<$message>())];

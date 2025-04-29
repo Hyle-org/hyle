@@ -149,6 +149,7 @@ impl Drop for LongTasksRuntime {
     fn drop(&mut self) {
         // Shut down the hashing runtime.
         // TODO: serialize?
+        // Safety: We'll manually drop the runtime below and it won't be double-dropped as we use ManuallyDrop.
         let rt = unsafe { std::mem::ManuallyDrop::take(&mut self.0) };
         // This has to be done outside the current runtime.
         tokio::task::spawn_blocking(move || {
@@ -437,7 +438,7 @@ impl Mempool {
 
     /// Creates a cut with local material on QueryNewCut message reception (from consensus)
     fn handle_querynewcut(&mut self, staking: &mut QueryNewCut) -> Result<Cut> {
-        self.metrics.add_new_cut(staking);
+        self.metrics.query_new_cut(staking);
         let previous_cut = self
             .last_ccp
             .as_ref()
@@ -505,7 +506,6 @@ impl Mempool {
         let result = BlstCrypto::verify(&msg)?;
 
         if !result {
-            self.metrics.signature_error("mempool");
             bail!("Invalid signature for message {:?}", msg);
         }
 
