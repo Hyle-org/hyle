@@ -303,7 +303,7 @@ impl Mempool {
             Duration::from_millis(500),
         );
         let mut new_dp_timer = tokio::time::interval(tick_interval);
-        let mut disseminate_timer = tokio::time::interval(tick_interval * 4);
+        let mut disseminate_timer = tokio::time::interval(Duration::from_secs(10));
         new_dp_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         disseminate_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
