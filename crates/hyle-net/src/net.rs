@@ -65,8 +65,11 @@ where
 
     type Future = ResponseFuture<S, C>;
 
-    fn poll_ready(&mut self, cx: &mut std::task::Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.0.poll_ready(cx)
+    fn poll_ready(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> Poll<std::result::Result<(), Self::Error>> {
+        self.0.poll_ready(cx).map_err(|e| e.into())
     }
 
     fn call(&mut self, req: IncomingStream<'a, HyleNetTcpListener>) -> Self::Future {
