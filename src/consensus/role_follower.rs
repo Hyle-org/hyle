@@ -126,11 +126,9 @@ impl Consensus {
         // Sanity check: after processing the ticket, we should be in the right slot/view.
         // TODO: these checks are almost entirely redundant at this point because we process the ticket above.
         if consensus_proposal.slot != self.bft_round_state.slot {
-            self.metrics.prepare_error("wrong_slot");
             bail!("Prepare message received for wrong slot");
         }
         if view != self.bft_round_state.view {
-            self.metrics.prepare_error("wrong_view");
             bail!("Prepare message received for wrong view");
         }
 
@@ -138,7 +136,6 @@ impl Consensus {
         // (can't do this earlier as might need to process the ticket first)
         let round_leader = self.round_leader()?;
         if sender != round_leader {
-            self.metrics.prepare_error("wrong_leader");
             bail!(
                 "Prepare consensus message for {} {} does not come from current leader {}. I won't vote for it.",
                 self.bft_round_state.slot, self.bft_round_state.view, round_leader
@@ -194,8 +191,6 @@ impl Consensus {
                 self.crypto.validator_pubkey()
             );
         }
-
-        self.metrics.prepare();
 
         Ok(())
     }
