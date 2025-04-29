@@ -75,7 +75,7 @@ impl P2P {
             self.crypto.clone(),
             self.config.id.clone(),
             self.config.p2p.server_port,
-            Some(256 * 1024 * 1024),
+            Some(self.config.p2p.max_frame_length),
             self.config.p2p.public_address.clone(),
             self.config.da_public_address.clone(),
         )

@@ -44,6 +44,8 @@ pub struct P2pConf {
     pub public_address: String,
     /// Port to listen for incoming connections
     pub server_port: u16,
+    /// Max frame length
+    pub max_frame_length: usize,
     /// IPs of peers to connect to
     pub peers: Vec<String>,
     /// Time in milliseconds between pings to peers
@@ -87,6 +89,8 @@ pub struct Conf {
     pub da_public_address: String,
     /// Server port for the DA API
     pub da_server_port: u16,
+    /// Server port for the DA API
+    pub da_max_frame_length: usize,
 
     pub run_rest_server: bool,
     /// Server port for the REST API

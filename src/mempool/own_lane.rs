@@ -196,6 +196,7 @@ impl super::Mempool {
             collect_up_to = i;
             cumsize += tx.estimate_size();
             // Keep this one in anyways, we have a per-TX limit.
+            // To assert < self.config.p2p.max_frame_length
             if cumsize > 40_000_000 {
                 break;
             }
