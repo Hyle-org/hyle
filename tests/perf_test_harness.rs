@@ -37,25 +37,31 @@ async fn custom_setup() -> Result<()> {
     let count = 4;
     let mut nodes = {
         let mut nodes = Vec::new();
-        let mut peers = Vec::new();
         let mut confs = Vec::new();
-        let mut genesis_stakers = std::collections::HashMap::new();
 
         let default_conf = Conf::new(None, None, None).unwrap();
+
+        let mut peers = Vec::new();
+        let mut genesis_stakers = std::collections::HashMap::new();
+
         for i in 0..count {
             let mut node_conf = conf_maker.build("node").await;
+            peers.push(node_conf.p2p.public_address.clone());
+            genesis_stakers.insert(node_conf.id.clone(), 100);
+
             // Use predictable ports.
             node_conf.rest_server_port = default_conf.rest_server_port + i;
-            node_conf.da_server_port = default_conf.da_server_port + i;
             node_conf.tcp_server_port = default_conf.tcp_server_port + i;
+            node_conf.da_server_port = default_conf.da_server_port + i;
+            node_conf.da_public_address = format!("localhost:{}", node_conf.da_server_port);
+            // Connect all to the second node
+            node_conf.da_read_from = format!("localhost:{}", default_conf.da_server_port + 1);
 
-            node_conf.p2p.peers = peers.clone();
-            genesis_stakers.insert(node_conf.id.clone(), 100);
-            peers.push(node_conf.p2p.public_address.clone());
             confs.push(node_conf);
         }
 
         for node_conf in confs.iter_mut() {
+            node_conf.p2p.peers = peers.clone();
             node_conf.genesis.stakers = genesis_stakers.clone();
             let node = test_helpers::TestProcess::new("hyle", node_conf.clone());
             nodes.push(node);
@@ -63,15 +69,16 @@ async fn custom_setup() -> Result<()> {
         nodes
     };
 
+    tracing::warn!(
+        "🚀 Start the first node with the following command:\nhyle=$(pwd)/target/release/hyle && (cd {} && RUST_LOG=info \"$hyle\")",
+        nodes[0].dir.path().display()
+    );
+
     let _n = nodes
         .drain(1..)
         .map(|node| node.start())
         .collect::<Vec<_>>();
 
-    tracing::warn!(
-        "🚀 Start node with the following command:\nhyle=$(pwd)/target/release/hyle && (cd {} && RUST_LOG=info \"$hyle\")",
-        nodes[0].dir.path().display()
-    );
     tracing::warn!("🚀 E2E test environment is ready!");
 
     loop {
