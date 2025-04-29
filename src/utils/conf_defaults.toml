@@ -10,6 +10,8 @@ data_directory = "data_node"
 da_public_address = "127.0.0.1:4141"
 # Server port to listen on.
 da_server_port = 4141
+# Max frame size (1 gb)
+da_max_frame_length = 1_000_000_000
 
 # Rest API
 run_rest_server = true
@@ -32,6 +34,8 @@ mode = "FullValidator"
 public_address = "127.0.0.1:1231"
 # TCP server for the p2p incoming connections.
 server_port = 1231
+# Max frame length (256 mb)
+max_frame_length = 256_000_000
 # Peer IPs to connect to
 peers = []
 # Interval the p2p layer does a ping to check aliveness of other peers.
