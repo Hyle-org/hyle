@@ -42,7 +42,7 @@ macro_rules! turmoil_simple {
                     .simulation_duration(Duration::from_secs(100))
                     .tick_duration(Duration::from_millis(20))
                     .min_message_latency(Duration::from_millis(20))
-                .tcp_capacity(128)
+                .tcp_capacity(256)
                 .enable_tokio_io()
                     .build_with_rng(Box::new(rng));
 
