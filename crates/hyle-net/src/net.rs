@@ -69,7 +69,7 @@ where
         &mut self,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<std::result::Result<(), Self::Error>> {
-        self.0.poll_ready(cx).map_err(|e| e.into())
+        self.0.poll_ready(cx)
     }
 
     fn call(&mut self, req: IncomingStream<'a, HyleNetTcpListener>) -> Self::Future {
