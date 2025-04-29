@@ -12,9 +12,11 @@ use crate::utils::conf::SharedConf;
 use crate::utils::modules::{module_bus_client, Module};
 use anyhow::{Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_model::{TxHash, UnsettledBlobTransaction};
+use hyle_model::{SignedBlock, TxHash, UnsettledBlobTransaction};
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::sync::Arc;
+use tokio::task::JoinSet;
 use tracing::info;
 
 /// NodeStateModule maintains a NodeState,
@@ -25,6 +27,8 @@ pub struct NodeStateModule {
     config: SharedConf,
     bus: NodeStateBusClient,
     inner: NodeState,
+    buffered_signed_blocks: VecDeque<SignedBlock>,
+    processing_signed_block: JoinSet<(Block, NodeState)>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize)]
@@ -68,6 +72,13 @@ impl Module for NodeStateModule {
             ctx.config.data_directory.join("node_state.bin").as_path(),
         );
 
+        let buffered_signed_blocks = Self::load_from_disk_or_default::<VecDeque<SignedBlock>>(
+            ctx.config
+                .data_directory
+                .join("buffered_signed_block.bin")
+                .as_path(),
+        );
+
         for name in store.contracts.keys() {
             info!("📝 Loaded contract state for {}", name);
         }
@@ -78,12 +89,17 @@ impl Module for NodeStateModule {
             config: ctx.config.clone(),
             bus,
             inner: node_state,
+            buffered_signed_blocks,
+            processing_signed_block: JoinSet::new(),
         })
     }
 
     async fn run(&mut self) -> Result<()> {
         module_handle_messages! {
             on_bus self.bus,
+            delay_shutdown_until {
+                self.processing_signed_block.is_empty()
+            },
             command_response<QueryBlockHeight, BlockHeight> _ => {
                 Ok(self.inner.current_height)
             }
@@ -96,14 +112,45 @@ impl Module for NodeStateModule {
                     None => Err(anyhow::anyhow!("Transaction not found")),
                 }
             }
-            listen<DataEvent> block => {
-                match block {
-                    DataEvent::OrderedSignedBlock(block) => {
-                        let node_state_block = self.inner.handle_signed_block(&block);
-                        _ = log_error!(self
-                            .bus
-                            .send(NodeStateEvent::NewBlock(Box::new(node_state_block))), "Sending DataEvent while processing SignedBlock");
+            listen<DataEvent> data_event => {
+                match data_event {
+                    DataEvent::OrderedSignedBlock(signed_block) => {
+                        let mut inner = self.inner.clone();
+                        self.buffered_signed_blocks.push_front(signed_block.clone());
+
+                        // There is only the newly added block in the queue
+                        if self.buffered_signed_blocks.len() == 1 {
+                            self.processing_signed_block.spawn_blocking(move || {
+                                let node_state_block = inner.handle_signed_block(&signed_block);
+                                (node_state_block, inner)
+                            });
+                        }
                     }
+                }
+            }
+
+            Some(joinset_result) = self.processing_signed_block.join_next() => {
+                // Remove the signed block from the queue as it has been processed
+                self.buffered_signed_blocks.pop_back();
+
+                match joinset_result {
+                    Ok((block, new_node_state)) => {
+                        self.inner = new_node_state;
+                        _ = log_error!(
+                            self.bus
+                                .send(NodeStateEvent::NewBlock(Box::new(block))),
+                            "Sending DataEvent while processing SignedBlock"
+                        );
+                    },
+                    Err(err) => tracing::error!("Error joining task: {:?}", err),
+                };
+                // If there are more blocks to process, spawn a new task
+                if let Some(signed_block) = self.buffered_signed_blocks.back().cloned() {
+                    let mut inner = self.inner.clone();
+                    self.processing_signed_block.spawn_blocking(move || {
+                        let node_state_block = inner.handle_signed_block(&signed_block);
+                        (node_state_block, inner)
+                    });
                 }
             }
         };
@@ -114,6 +161,17 @@ impl Module for NodeStateModule {
                 &self.inner,
             ),
             "Saving node state"
+        );
+
+        let _ = log_error!(
+            Self::save_on_disk::<VecDeque<SignedBlock>>(
+                self.config
+                    .data_directory
+                    .join("buffered_signed_block.bin")
+                    .as_path(),
+                &self.buffered_signed_blocks,
+            ),
+            "Saving buffered signed blocks of node state"
         );
 
         Ok(())
