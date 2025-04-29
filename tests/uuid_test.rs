@@ -118,6 +118,7 @@ async fn test_uuid_registration() {
             verifier: "test".into(),
             program_id: ProgramId(vec![1]),
             state_commitment: StateCommitment(vec![0, 1, 2, 3]),
+            ..Default::default()
         },
         None,
         None,

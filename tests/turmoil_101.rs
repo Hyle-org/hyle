@@ -25,6 +25,7 @@ pub fn make_register_contract_tx(name: ContractName) -> BlobTransaction {
             program_id: ProgramId(vec![]),
             state_commitment: StateCommitment(vec![0, 1, 2, 3]),
             contract_name: name,
+            ..Default::default()
         }
         .as_blob("hyle".into(), None, None)],
     )
