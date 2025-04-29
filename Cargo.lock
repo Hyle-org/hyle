@@ -3074,6 +3074,7 @@ dependencies = [
  "test-log",
  "tokio",
  "tokio-util",
+ "tower-service",
  "tracing",
  "turmoil",
 ]
