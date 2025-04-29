@@ -41,5 +41,5 @@ test-log = { version = "0.2.17", features = [
 ], default-features = false }
 
 [features]
-default = ["turmoil"]
+# default = ["turmoil"]
 turmoil = ["dep:turmoil"]
