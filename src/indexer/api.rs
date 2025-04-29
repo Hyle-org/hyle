@@ -148,7 +148,7 @@ pub async fn get_transactions(
     let transactions = match pagination.start_block {
         Some(start_block) => sqlx::query_as::<_, TransactionDb>(
             r#"
-            SELECT t.*
+            SELECT t.*, b.timestamp
             FROM transactions t
             LEFT JOIN blocks b ON t.block_hash = b.hash
             WHERE b.height <= $1 and b.height > $2 AND t.transaction_type = 'blob_transaction'
@@ -161,7 +161,7 @@ pub async fn get_transactions(
         .bind(pagination.nb_results.unwrap_or(10)),
         None => sqlx::query_as::<_, TransactionDb>(
             r#"
-            SELECT t.*
+            SELECT t.*, b.timestamp
             FROM transactions t
             LEFT JOIN blocks b ON t.block_hash = b.hash
             WHERE t.transaction_type = 'blob_transaction'
@@ -213,7 +213,7 @@ pub async fn get_transactions_by_contract(
         .bind(pagination.nb_results.unwrap_or(10)),
         None => sqlx::query_as::<_, TransactionDb>(
             r#"
-            SELECT t.*
+            SELECT t.*, b.timestamp
             FROM transactions t
             JOIN blobs b ON t.tx_hash = b.tx_hash AND t.parent_dp_hash = b.parent_dp_hash
             WHERE b.contract_name = $1 AND t.transaction_type = 'blob_transaction'
@@ -251,7 +251,7 @@ pub async fn get_transactions_by_height(
 ) -> Result<Json<Vec<APITransaction>>, StatusCode> {
     let transactions = sqlx::query_as::<_, TransactionDb>(
         r#"
-        SELECT t.*
+        SELECT t.*, b.timestamp
         FROM transactions t
         JOIN blocks b ON t.block_hash = b.hash
         WHERE b.height = $1 AND t.transaction_type = 'blob_transaction'
@@ -284,8 +284,9 @@ pub async fn get_transaction_with_hash(
 ) -> Result<Json<APITransaction>, StatusCode> {
     let transaction = log_error!(sqlx::query_as::<_, TransactionDb>(
         r#"
-        SELECT tx_hash, version, transaction_type, transaction_status, parent_dp_hash, block_hash, index
+        SELECT tx_hash, version, transaction_type, transaction_status, parent_dp_hash, block_hash, index, b.timestamp
         FROM transactions
+        LEFT JOIN blocks b ON transactions.block_hash = b.hash
         WHERE tx_hash = $1 AND transaction_type = 'blob_transaction'
         ORDER BY index DESC
         "#,
@@ -637,7 +638,7 @@ pub async fn get_proofs(
     let transactions = match pagination.start_block {
         Some(start_block) => sqlx::query_as::<_, TransactionDb>(
             r#"
-            SELECT t.*
+            SELECT t.*, b.timestamp
             FROM transactions t
             LEFT JOIN blocks b ON t.block_hash = b.hash
             WHERE b.height <= $1 and b.height > $2 AND t.transaction_type = 'proof_transaction'
@@ -650,7 +651,7 @@ pub async fn get_proofs(
         .bind(pagination.nb_results.unwrap_or(10)),
         None => sqlx::query_as::<_, TransactionDb>(
             r#"
-            SELECT t.*
+            SELECT t.*, b.timestamp
             FROM transactions t
             LEFT JOIN blocks b ON t.block_hash = b.hash
             WHERE t.transaction_type = 'proof_transaction'
@@ -685,7 +686,7 @@ pub async fn get_proofs_by_height(
 ) -> Result<Json<Vec<APITransaction>>, StatusCode> {
     let transactions = sqlx::query_as::<_, TransactionDb>(
         r#"
-        SELECT t.*
+        SELECT t.*, b.timestamp
         FROM transactions t
         JOIN blocks b ON t.block_hash = b.hash
         WHERE b.height = $1 AND t.transaction_type = 'proof_transaction'
@@ -718,8 +719,9 @@ pub async fn get_proof_with_hash(
 ) -> Result<Json<APITransaction>, StatusCode> {
     let transaction = log_error!(sqlx::query_as::<_, TransactionDb>(
         r#"
-        SELECT tx_hash, version, transaction_type, transaction_status, parent_dp_hash, block_hash, index
+        SELECT tx_hash, version, transaction_type, transaction_status, parent_dp_hash, block_hash, index, b.timestamp
         FROM transactions
+        LEFT JOIN blocks b ON transactions.block_hash = b.hash
         WHERE tx_hash = $1 AND transaction_type = 'proof_transaction'
         ORDER BY index DESC
         "#,

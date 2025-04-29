@@ -50,6 +50,7 @@ pub struct TransactionDb {
     pub version: u32,                              // Transaction version
     pub transaction_type: TransactionTypeDb,       // Type of transaction
     pub transaction_status: TransactionStatusDb,   // Status of the transaction
+    pub timestamp: NaiveDateTime,                  // Timestamp of the transaction
 }
 
 impl<'r> FromRow<'r, PgRow> for TransactionDb {
@@ -73,6 +74,7 @@ impl<'r> FromRow<'r, PgRow> for TransactionDb {
                     .map_err(|e: TryFromIntError| sqlx::Error::Decode(e.into()))?,
             ),
         };
+        let timestamp: NaiveDateTime = row.try_get("timestamp")?;
         Ok(TransactionDb {
             tx_hash,
             parent_dp_hash,
@@ -81,12 +83,15 @@ impl<'r> FromRow<'r, PgRow> for TransactionDb {
             version,
             transaction_type,
             transaction_status,
+            timestamp,
         })
     }
 }
 
 impl From<TransactionDb> for APITransaction {
     fn from(val: TransactionDb) -> Self {
+        let timestamp: TimestampMs =
+            TimestampMs(val.timestamp.and_utc().timestamp_millis() as u128);
         APITransaction {
             tx_hash: val.tx_hash.0,
             parent_dp_hash: val.parent_dp_hash,
@@ -95,6 +100,7 @@ impl From<TransactionDb> for APITransaction {
             version: val.version,
             transaction_type: val.transaction_type,
             transaction_status: val.transaction_status,
+            timestamp,
         }
     }
 }
