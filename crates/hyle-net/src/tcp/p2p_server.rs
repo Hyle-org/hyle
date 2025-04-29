@@ -10,7 +10,7 @@ use hyle_crypto::BlstCrypto;
 use sdk::{SignedByValidator, ValidatorPublicKey};
 use tokio::{task::JoinSet, time::Interval};
 use tokio_util::codec::{Decoder, Encoder};
-use tracing::{info, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 use crate::tcp::{tcp_client::TcpClient, Handshake, P2PTcpEvent};
 
@@ -162,9 +162,9 @@ where
                 Ok(None)
             }
             P2PTcpEvent::PingPeers => {
-                for peer_info in self.peers.values().flat_map(|v| v.canals.values()) {
-                    if let Err(e) = self.tcp_server.ping(peer_info.socket_addr.clone()).await {
-                        warn!("Error pinging peer {}: {:?}", peer_info.socket_addr, e);
+                for peer_socket in self.peers.values().flat_map(|v| v.canals.values()) {
+                    if let Err(e) = self.tcp_server.ping(peer_socket.socket_addr.clone()).await {
+                        warn!("Error pinging peer {}: {:?}", peer_socket.socket_addr, e);
                     }
                 }
                 Ok(None)
@@ -295,19 +295,26 @@ where
 
         if let Some(peer_socket) = self.get_socket_mut(&canal, &peer_pubkey) {
             if peer_socket.timestamp < timestamp {
+                debug!(
+                    "Dropping local canal {:?} for peer {} ({}) in favor of more recent one {}",
+                    canal, peer_pubkey, peer_socket.socket_addr, dest
+                );
                 let socket_addr = peer_socket.socket_addr.clone();
                 peer_socket.timestamp = timestamp;
                 peer_socket.socket_addr = dest.clone();
-                info!("{:?}", self.tcp_server.connected_clients());
                 self.tcp_server.drop_peer_stream(socket_addr);
             } else {
-                info!("{:?}", self.tcp_server.connected_clients());
+                debug!(
+                    "Keeping local canal {:?} for peer {} ({}) - distant one is older {}",
+                    canal, peer_pubkey, peer_socket.socket_addr, dest
+                );
                 self.tcp_server.drop_peer_stream(dest);
             }
             None
         } else {
             // If the validator exists, but not this canal, we create it
             if let Some(validator) = self.peers.get_mut(&peer_pubkey) {
+                debug!("Creating new canal {:?} for existing peer {}", canal, dest);
                 validator.canals.insert(
                     canal.clone(),
                     PeerSocket {
@@ -318,6 +325,10 @@ where
             }
             // If the validator was never created before
             else {
+                debug!(
+                    "Creating new canal {:?} for an unknown peer {}",
+                    canal, dest
+                );
                 let peer_info = PeerInfo {
                     canals: HashMap::from_iter(vec![(
                         canal.clone(),
