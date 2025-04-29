@@ -36,6 +36,15 @@ impl super::Mempool {
     ) -> Result<()> {
         let lane_id = lane_id.clone();
 
+        debug!(
+            "Received DataProposal {:?} (unchecked) on lane {} ({} txs)",
+            received_hash,
+            lane_id,
+            data_proposal.txs.len(),
+        );
+
+        self.metrics.add_received_dp(&lane_id);
+
         // Check if we have a cached response to this DP hash (we can safely trust the hash here)
         // TODO: if we are currently hashing the same DP we'll still re-hash it
         // but this requires a signed header to quickly process the message.
@@ -96,12 +105,14 @@ impl super::Mempool {
         mut data_proposal: DataProposal,
     ) -> Result<()> {
         debug!(
-            "Received DataProposal {:?} on lane {} ({} txs, {})",
+            "Hashing done for DataProposal {:?} on lane {} ({} txs, {})",
             data_proposal.hashed(),
             lane_id,
             data_proposal.txs.len(),
             data_proposal.estimate_size()
         );
+        self.metrics.add_hashed_dp(lane_id);
+
         let data_proposal_hash = data_proposal.hashed();
         let (verdict, lane_size) = self.get_verdict(lane_id, &data_proposal)?;
         self.cached_dp_votes.insert(
@@ -167,6 +178,9 @@ impl super::Mempool {
             lane_id,
             data_proposal.txs.len()
         );
+
+        self.metrics.add_processed_dp(&lane_id);
+
         self.cached_dp_votes
             .insert((lane_id.clone(), data_proposal.hashed()), verdict.clone());
         match verdict {
@@ -411,7 +425,7 @@ impl super::Mempool {
         size: LaneBytesSize,
     ) -> Result<()> {
         self.metrics
-            .add_proposal_vote(self.crypto.validator_pubkey(), validator);
+            .add_dp_vote(self.crypto.validator_pubkey(), validator);
         debug!("🗳️ Sending vote for DataProposal {data_proposal_hash} to {validator} (lane size: {size})");
         self.send_net_message(
             validator.clone(),

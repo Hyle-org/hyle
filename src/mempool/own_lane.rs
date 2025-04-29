@@ -26,6 +26,8 @@ impl super::Mempool {
         msg: &SignedByValidator<MempoolNetMessage>,
         data_proposal_hash: DataProposalHash,
     ) -> Result<()> {
+        self.metrics.on_data_vote.add(1, &[]);
+
         let validator = &msg.signature.validator;
         debug!(
             "Vote from {} on own lane {}, dp {}",
@@ -115,8 +117,9 @@ impl super::Mempool {
                     self.staking.bonded().len(),
                     data_proposal.txs.len()
                 );
-                self.metrics.add_data_proposal(&data_proposal);
-                self.metrics.add_proposed_txs(&data_proposal);
+                self.metrics
+                    .dp_disseminations
+                    .add(self.staking.bonded().len() as u64, &[]);
                 self.broadcast_net_message(MempoolNetMessage::DataProposal(
                     data_proposal.hashed(),
                     data_proposal.clone(),
@@ -155,14 +158,17 @@ impl super::Mempool {
                     );
                 };
 
-                self.metrics.add_data_proposal(&data_proposal);
-                self.metrics.add_proposed_txs(&data_proposal);
                 debug!(
                     "🚗 Rebroadcast DataProposal {} (only for {} validators, {} txs)",
                     &data_proposal.hashed(),
                     only_for.len(),
                     &data_proposal.txs.len()
                 );
+
+                self.metrics
+                    .dp_disseminations
+                    .add(only_for.len() as u64, &[]);
+
                 self.broadcast_only_for_net_message(
                     only_for,
                     MempoolNetMessage::DataProposal(data_proposal.hashed(), data_proposal.clone()),
@@ -177,6 +183,9 @@ impl super::Mempool {
 
     /// Creates and saves a new DataProposal if there are pending transactions
     fn create_new_dp_if_pending(&mut self) -> Result<()> {
+        self.metrics
+            .snapshot_pending_tx(self.waiting_dissemination_txs.len());
+
         if self.waiting_dissemination_txs.is_empty() {
             return Ok(());
         }
@@ -233,6 +242,8 @@ impl super::Mempool {
                 txs_metadatas,
             })
             .context("Sending MempoolStatusEvent DataProposalCreated")?;
+
+        self.metrics.created_data_proposals.add(1, &[]);
 
         self.lanes
             .store_data_proposal(&self.crypto, &self.own_lane_id(), data_proposal)?;
