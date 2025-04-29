@@ -60,7 +60,9 @@ impl DataProposal {
 
     /// This is used to set the hash of the DataProposal when we can trust we know it
     /// (specifically - deserializating from local storage)
-    pub fn trusted_set_hash(&mut self, hash: &DataProposalHash) {
+    /// # Safety
+    /// Marked unsafe so you think twice before using it, but this is safe rust-wise.
+    pub unsafe fn unsafe_set_hash(&mut self, hash: &DataProposalHash) {
         self.hash_cache.write().unwrap().replace(hash.clone());
     }
 }

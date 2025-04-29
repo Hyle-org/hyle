@@ -111,7 +111,10 @@ impl Storage for LanesStorage {
         )?;
         item.map(|s| {
             decode_data_proposal_from_item(s).map(|mut dp| {
-                dp.trusted_set_hash(dp_hash);
+                // SAFETY: we trust our own fjall storage
+                unsafe {
+                    dp.unsafe_set_hash(dp_hash);
+                }
                 dp
             })
         })
