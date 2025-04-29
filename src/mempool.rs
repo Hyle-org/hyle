@@ -438,7 +438,7 @@ impl Mempool {
 
     /// Creates a cut with local material on QueryNewCut message reception (from consensus)
     fn handle_querynewcut(&mut self, staking: &mut QueryNewCut) -> Result<Cut> {
-        self.metrics.add_new_cut(staking);
+        self.metrics.query_new_cut(staking);
         let previous_cut = self
             .last_ccp
             .as_ref()
@@ -506,7 +506,6 @@ impl Mempool {
         let result = BlstCrypto::verify(&msg)?;
 
         if !result {
-            self.metrics.signature_error("mempool");
             bail!("Invalid signature for message {:?}", msg);
         }
 
