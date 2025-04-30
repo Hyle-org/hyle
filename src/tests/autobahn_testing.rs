@@ -176,7 +176,7 @@ macro_rules! disseminate {
         $owner
             .process_new_data_proposal(dp.clone())
             .unwrap();
-        $owner.timer_tick().unwrap();
+        $owner.timer_tick().await.unwrap();
 
         let dp_msg = broadcast! {
             description: "Disseminate DataProposal",
@@ -408,7 +408,7 @@ async fn autobahn_basic_flow() {
         .mempool_ctx
         .process_new_data_proposal(dp.clone())
         .unwrap();
-    node1.mempool_ctx.timer_tick().unwrap();
+    node1.mempool_ctx.timer_tick().await.unwrap();
 
     broadcast! {
         description: "Disseminate Tx",
@@ -538,7 +538,7 @@ async fn mempool_broadcast_multiple_data_proposals() {
         .mempool_ctx
         .process_new_data_proposal(dp.clone())
         .unwrap();
-    node1.mempool_ctx.timer_tick().unwrap();
+    node1.mempool_ctx.timer_tick().await.unwrap();
 
     broadcast! {
         description: "Disseminate Tx",
@@ -579,7 +579,7 @@ async fn mempool_broadcast_multiple_data_proposals() {
         .mempool_ctx
         .process_new_data_proposal(dp.clone())
         .unwrap();
-    node1.mempool_ctx.timer_tick().unwrap();
+    node1.mempool_ctx.timer_tick().await.unwrap();
 
     broadcast! {
         description: "Disseminate Tx",
@@ -619,7 +619,7 @@ async fn mempool_podaupdate_too_early() {
         .mempool_ctx
         .process_new_data_proposal(dp.clone())
         .unwrap();
-    node1.mempool_ctx.timer_tick().unwrap();
+    node1.mempool_ctx.timer_tick().await.unwrap();
 
     let dp_msg = broadcast! {
         description: "Disseminate Tx",
@@ -871,7 +871,7 @@ async fn mempool_fail_to_vote_on_fork() {
         .mempool_ctx
         .process_new_data_proposal(dp1.clone())
         .unwrap();
-    node1.mempool_ctx.timer_tick().unwrap();
+    node1.mempool_ctx.timer_tick().await.unwrap();
 
     let dp1_check;
 
@@ -918,7 +918,7 @@ async fn mempool_fail_to_vote_on_fork() {
         .mempool_ctx
         .process_new_data_proposal(dp2.clone())
         .unwrap();
-    node1.mempool_ctx.timer_tick().unwrap();
+    node1.mempool_ctx.timer_tick().await.unwrap();
 
     broadcast! {
         description: "Disseminate Tx",
@@ -2074,7 +2074,7 @@ async fn autobahn_commit_byzantine_across_views_attempts() {
         .mempool_ctx
         .process_new_data_proposal(dp.clone())
         .unwrap();
-    node1.mempool_ctx.timer_tick().unwrap();
+    node1.mempool_ctx.timer_tick().await.unwrap();
 
     node1
         .start_round_with_cut_from_mempool(TimestampMs(2000))
