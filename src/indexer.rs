@@ -198,6 +198,8 @@ impl Indexer {
         struct IndexerAPI;
 
         let (router, api) = OpenApiRouter::with_openapi(IndexerAPI::openapi())
+            // stats
+            .routes(routes!(api::get_stats))
             // block
             .routes(routes!(api::get_blocks))
             .routes(routes!(api::get_last_block))
