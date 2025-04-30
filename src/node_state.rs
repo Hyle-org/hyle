@@ -58,6 +58,17 @@ struct SettlementResult {
     blob_proof_output_indices: Vec<usize>,
 }
 
+/// How a new blob TX should be handled by the node.
+#[derive(Debug)]
+enum BlobTxHandled {
+    /// The node should try to settle the TX right away.
+    ShouldSettle(TxHash),
+    /// The TX is a duplicate of another unsettled TX and should be ignored/
+    Duplicate,
+    /// No special handling.
+    Ok,
+}
+
 #[derive(Debug, Clone)]
 pub struct NodeState {
     pub metrics: NodeStateMetrics,
@@ -194,7 +205,7 @@ impl NodeState {
                             chain_id: HYLE_TESTNET_CHAIN_ID,
                         },
                     ) {
-                        Ok(Some(tx_hash)) => {
+                        Ok(BlobTxHandled::ShouldSettle(tx_hash)) => {
                             let mut blob_tx_to_try_and_settle = BTreeSet::new();
                             blob_tx_to_try_and_settle.insert(tx_hash);
                             // In case of a BlobTransaction with only native verifies, we need to trigger the
@@ -204,7 +215,10 @@ impl NodeState {
                                 blob_tx_to_try_and_settle,
                             );
                         }
-                        Ok(None) => {
+                        Ok(BlobTxHandled::Duplicate) => {
+                            // literally do nothing.
+                        }
+                        Ok(BlobTxHandled::Ok) => {
                             block_under_construction
                                 .transactions_events
                                 .entry(tx_id.1.clone())
@@ -343,14 +357,12 @@ impl NodeState {
         timeout
     }
 
-    /// Returns a TxHash only if the blob transaction calls only native verifiers and thus can be
-    /// settled directly (or in the special case of the 'hyle' TLD contract)
     fn handle_blob_tx(
         &mut self,
         parent_dp_hash: DataProposalHash,
         tx: &BlobTransaction,
         tx_context: TxContext,
-    ) -> Result<Option<TxHash>, Error> {
+    ) -> Result<BlobTxHandled, Error> {
         let tx_hash = tx.hashed();
         debug!("Handle blob tx: {:?} (hash: {})", tx, tx_hash);
 
@@ -399,14 +411,19 @@ impl NodeState {
             .collect();
 
         // If we're behind other pending transactions, we can't settle yet.
-        should_try_and_settle = self.unsettled_transactions.add(UnsettledBlobTransaction {
+        match self.unsettled_transactions.add(UnsettledBlobTransaction {
             identity: tx.identity.clone(),
             parent_dp_hash,
             hash: tx_hash.clone(),
             tx_context,
             blobs_hash,
             blobs,
-        }) && should_try_and_settle;
+        }) {
+            Some(should_settle) => should_try_and_settle = should_settle && should_try_and_settle,
+            None => {
+                return Ok(BlobTxHandled::Duplicate);
+            }
+        }
 
         if self.unsettled_transactions.is_next_to_settle(&blob_tx_hash) {
             let block_height = self.current_height;
@@ -419,9 +436,9 @@ impl NodeState {
         }
 
         if should_try_and_settle {
-            Ok(Some(tx_hash))
+            Ok(BlobTxHandled::ShouldSettle(tx_hash))
         } else {
-            Ok(None)
+            Ok(BlobTxHandled::Ok)
         }
     }
 
@@ -2112,6 +2129,64 @@ pub mod test {
         assert_eq!(
             timeouts::tests::get(&state.timeouts, &tx4_hash),
             Some(104 + TIMEOUT_WINDOW)
+        );
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_duplicate_tx_timeout() {
+        let mut state = new_node_state().await;
+        let c1 = ContractName::new("c1");
+        let register_c1 = make_register_contract_tx(c1.clone());
+
+        // First register the contract
+        state.handle_signed_block(&craft_signed_block(1, vec![register_c1.into()]));
+
+        // Create a transaction
+        let blob_tx = BlobTransaction::new(Identity::new("test@c1"), vec![new_blob(&c1.0)]);
+        let blob_tx_hash = blob_tx.hashed();
+
+        // Submit the same transaction multiple times in different blocks
+        state.handle_signed_block(&craft_signed_block(2, vec![blob_tx.clone().into()]));
+
+        // Sanity check for timeout
+        assert_eq!(
+            timeouts::tests::get(&state.timeouts, &blob_tx_hash),
+            Some(BlockHeight(2) + BlockHeight(100))
+        );
+
+        state.handle_signed_block(&craft_signed_block(3, vec![blob_tx.clone().into()]));
+        let block = state.handle_signed_block(&craft_signed_block(4, vec![blob_tx.clone().into()]));
+
+        assert!(block.failed_txs.is_empty());
+        assert!(block.successful_txs.is_empty());
+
+        // Verify only one instance of the transaction is tracked
+        assert_eq!(state.unsettled_transactions.len(), 1);
+        assert!(state.unsettled_transactions.get(&blob_tx_hash).is_some());
+
+        // Check the timeout is still the same
+        assert_eq!(
+            timeouts::tests::get(&state.timeouts, &blob_tx_hash),
+            Some(BlockHeight(2) + BlockHeight(100)) // Timeout should be based on first appearance
+        );
+
+        // Time out the transaction
+        let block = state.handle_signed_block(&craft_signed_block(102, vec![]));
+
+        // Verify the transaction was timed out
+        assert_eq!(block.timed_out_txs, vec![blob_tx_hash.clone()]);
+        assert!(state.unsettled_transactions.get(&blob_tx_hash).is_none());
+        assert_eq!(timeouts::tests::get(&state.timeouts, &blob_tx_hash), None);
+
+        // Submit the same transaction again after timeout
+        state.handle_signed_block(&craft_signed_block(103, vec![blob_tx.clone().into()]));
+
+        // Verify it's treated as a new transaction
+        assert_eq!(state.unsettled_transactions.len(), 1);
+        assert!(state.unsettled_transactions.get(&blob_tx_hash).is_some());
+        assert_eq!(
+            timeouts::tests::get(&state.timeouts, &blob_tx_hash),
+            Some(BlockHeight(103) + BlockHeight(100))
         );
     }
 
