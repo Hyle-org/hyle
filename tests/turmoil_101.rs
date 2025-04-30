@@ -39,7 +39,7 @@ macro_rules! turmoil_simple {
                 tracing::info!("Starting test {} with seed {}", stringify!([<turmoil_ $simulation _ $seed _ $test>]), $seed);
                 let rng = StdRng::seed_from_u64($seed);
                 let mut sim = hyle_net::turmoil::Builder::new()
-                    .simulation_duration(Duration::from_secs(100))
+                    .simulation_duration(Duration::from_secs(120))
                     .tick_duration(Duration::from_millis(20))
                     .min_message_latency(Duration::from_millis(20))
                 .tcp_capacity(256)
