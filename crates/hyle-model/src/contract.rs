@@ -200,7 +200,11 @@ pub struct BlobData(pub Vec<u8>);
 
 impl std::fmt::Debug for BlobData {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "BlobData({})", hex::encode(&self.0))
+        if self.0.len() > 20 {
+            write!(f, "BlobData({}...)", hex::encode(&self.0[..20]))
+        } else {
+            write!(f, "BlobData({})", hex::encode(&self.0))
+        }
     }
 }
 
