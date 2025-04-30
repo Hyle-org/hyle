@@ -75,15 +75,21 @@ impl super::Mempool {
     pub(super) fn create_new_data_proposals(&mut self) -> Result<bool> {
         trace!("🐣 Create new data proposals");
 
-        self.create_new_dp_if_pending()?;
+        let Some(dp) = self.create_new_dp_if_pending()? else {
+            return Ok(false);
+        };
 
         // TODO: when we have a smarter system, we should probably not trigger this here
         // to make the event loop more efficient.
-        self.disseminate_data_proposals()
+        self.disseminate_data_proposals(Some(dp))
     }
 
-    // Returns true if we did disseminate something
-    pub(super) fn disseminate_data_proposals(&mut self) -> Result<bool> {
+    /// If only_dp_with_hash is Some, only disseminate the DP with the specified hash. If None, disseminate any pending DPs.
+    /// Returns true if we did disseminate something
+    pub(super) fn disseminate_data_proposals(
+        &mut self,
+        only_dp_with_hash: Option<DataProposalHash>,
+    ) -> Result<bool> {
         trace!("🌝 Disseminate data proposals");
 
         let last_cut = self
@@ -97,6 +103,12 @@ impl super::Mempool {
             .get_pending_entries_in_lane(&self.own_lane_id(), last_cut)?;
 
         for (entry_metadata, dp_hash) in entries {
+            // If only_dp_with_hash is Some, we only disseminate that one, so break and exit in all other cases.
+            if let Some(ref only_dp_with_hash) = only_dp_with_hash {
+                if &dp_hash != only_dp_with_hash {
+                    break;
+                }
+            }
             let Some(data_proposal) = self.lanes.get_dp_by_hash(&self.own_lane_id(), &dp_hash)?
             else {
                 bail!(
@@ -182,12 +194,12 @@ impl super::Mempool {
     }
 
     /// Creates and saves a new DataProposal if there are pending transactions
-    fn create_new_dp_if_pending(&mut self) -> Result<()> {
+    fn create_new_dp_if_pending(&mut self) -> Result<Option<DataProposalHash>> {
         self.metrics
             .snapshot_pending_tx(self.waiting_dissemination_txs.len());
 
         if self.waiting_dissemination_txs.is_empty() {
-            return Ok(());
+            return Ok(None);
         }
 
         let mut collect_up_to = 0;
@@ -237,9 +249,10 @@ impl super::Mempool {
             .map(|tx| tx.metadata(parent_data_proposal_hash.clone()))
             .collect();
 
+        let dp_hash = data_proposal.hashed();
         self.bus
             .send(MempoolStatusEvent::DataProposalCreated {
-                data_proposal_hash: data_proposal.hashed(),
+                data_proposal_hash: dp_hash.clone(),
                 txs_metadatas,
             })
             .context("Sending MempoolStatusEvent DataProposalCreated")?;
@@ -249,7 +262,7 @@ impl super::Mempool {
         self.lanes
             .store_data_proposal(&self.crypto, &self.own_lane_id(), data_proposal)?;
 
-        Ok(())
+        Ok(Some(dp_hash))
     }
 
     pub(super) fn handle_api_message(&mut self, command: RestApiMessage) -> Result<()> {

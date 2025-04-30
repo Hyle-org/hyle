@@ -388,7 +388,7 @@ impl Mempool {
                 }
             }
             _ = disseminate_timer.tick() => {
-                if let Ok(true) = log_error!(self.disseminate_data_proposals(), "Disseminate data proposals on tick") {
+                if let Ok(true) = log_error!(self.disseminate_data_proposals(None), "Disseminate data proposals on tick") {
                     disseminate_timer.reset();
                 }
             }
@@ -907,7 +907,7 @@ pub mod test {
 
         pub fn timer_tick(&mut self) -> Result<bool> {
             Ok(self.mempool.create_new_data_proposals()?
-                || self.mempool.disseminate_data_proposals()?)
+                || self.mempool.disseminate_data_proposals(None)?)
         }
 
         pub fn handle_poda_update(
