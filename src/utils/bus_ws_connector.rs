@@ -118,6 +118,7 @@ impl NodeWebsocketConnector {
                 transaction_status,
                 block_hash: Some(block.hash.clone()),
                 index: Some(idx as u32),
+                timestamp: Some(block.block_timestamp.clone()),
             };
             txs.push(WebsocketOutEvent::NewTx(api_tx));
         }

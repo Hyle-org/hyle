@@ -3,7 +3,6 @@ use hyle_model::DeleteContractAction;
 use hyle_model::RegisterContractAction;
 use hyle_model::StructuredBlobData;
 use hyle_model::TxHash;
-use tracing::warn;
 
 use crate::model::ContractName;
 use crate::model::UnsettledBlobTransaction;
@@ -88,11 +87,10 @@ impl OrderedTxMap {
     }
 
     /// Returns true if the tx is the next unsettled tx for all the contracts it contains
-    /// NB: not if the TX was already added to the map, which feels like it generally shouldn't happen?
-    pub fn add(&mut self, tx: UnsettledBlobTransaction) -> bool {
+    /// If the TX was already in the map, this returns None
+    pub fn add(&mut self, tx: UnsettledBlobTransaction) -> Option<bool> {
         if self.map.contains_key(&tx.hash) {
-            warn!("Trying to add a tx {} that is already in the map", tx.hash);
-            return false;
+            return None;
         }
         let mut is_next = true;
 
@@ -116,7 +114,7 @@ impl OrderedTxMap {
         }
 
         self.map.insert(tx.hash.clone(), tx);
-        is_next
+        Some(is_next)
     }
 
     pub fn remove(&mut self, hash: &TxHash) -> Option<UnsettledBlobTransaction> {
@@ -231,7 +229,7 @@ mod tests {
 
         let hash = tx.hash.clone();
 
-        assert!(map.add(tx));
+        assert!(map.add(tx).unwrap());
         assert_eq!(
             map.tx_order.get(&"c1".into()),
             Some(&VecDeque::from_iter(vec![hash.clone()]))
