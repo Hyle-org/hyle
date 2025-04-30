@@ -31,6 +31,7 @@ hyper = { version = "1.6.0", features = ["client", "http1"] }
 hyper-util = "0.1.10"
 serde = "1.0.219"
 axum = "0.8.3"
+tower-service = "0.3.3"
 
 [dev-dependencies]
 rand = { version = "0.8.5", features = ["std"] }

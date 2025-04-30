@@ -60,3 +60,11 @@ solo = true
 stakers = {}
 
 faucet_password = "password"
+
+[websocket]
+enabled = true
+server_port = 8080
+ws_path = "/ws"
+health_path = "/ws_health"
+peer_check_interval = 100
+events = ["node_state", "new_block", "new_tx"]
