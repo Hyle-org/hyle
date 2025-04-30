@@ -214,7 +214,9 @@ impl super::Mempool {
     fn init_dp_preparation_if_pending(&mut self) -> Result<Option<DataProposal>> {
         self.metrics
             .snapshot_pending_tx(self.waiting_dissemination_txs.len());
-        if self.waiting_dissemination_txs.is_empty() {
+        if self.waiting_dissemination_txs.is_empty()
+            || !self.own_data_proposal_in_preparation.is_empty()
+        {
             return Ok(None);
         }
 
