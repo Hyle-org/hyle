@@ -171,7 +171,7 @@ impl NodeApiHttpClient {
 
     /// Create a client with the retry configuration (n=3, duration=1000ms)
     pub fn retry_15times_1000ms(&self) -> Self {
-        self.with_retry(15, Duration::from_millis(1000))
+        self.with_retry(8, Duration::from_millis(4000))
     }
 
     pub async fn register_contract(&self, tx: &APIRegisterContract) -> Result<TxHash> {
