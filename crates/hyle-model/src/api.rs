@@ -56,7 +56,7 @@ pub struct APIFees {
     pub balances: BTreeMap<ValidatorPublicKey, APIFeesBalance>,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct APIBlock {
     // Struct for the blocks table
     pub hash: ConsensusProposalHash,

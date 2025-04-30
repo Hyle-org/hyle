@@ -1,7 +1,7 @@
-use std::net::SocketAddr;
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 
+use crate::utils::conf::NodeWebSocketConfig;
 use crate::{
     bus::{BusClientSender, BusMessage, SharedMessageBus},
     log_warn, module_bus_client, module_handle_messages,
@@ -23,6 +23,7 @@ use futures::{
     sink::SinkExt,
     stream::{SplitSink, SplitStream, StreamExt},
 };
+use hyle_net::net::{HyleNetIntoMakeServiceWithconnectInfo, HyleNetSocketAddr};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::{sync::Mutex, task::JoinSet};
 use tracing::{debug, error, info};
@@ -96,6 +97,17 @@ impl Default for WebSocketConfig {
     }
 }
 
+impl From<NodeWebSocketConfig> for WebSocketConfig {
+    fn from(config: NodeWebSocketConfig) -> Self {
+        Self {
+            port: config.server_port,
+            ws_path: config.ws_path,
+            health_path: config.health_path,
+            peer_check_interval: Duration::from_millis(config.peer_check_interval),
+        }
+    }
+}
+
 pub type PeerAddress = String;
 pub type Topic = String;
 
@@ -158,8 +170,7 @@ where
 
     async fn run(&mut self) -> Result<()> {
         // Start the server
-        let bind_addr = format!("0.0.0.0:{}", self.config.port);
-        let listener = tokio::net::TcpListener::bind(&bind_addr)
+        let listener = hyle_net::net::bind_tcp_listener(self.config.port)
             .await
             .map_err(|e| anyhow!("Failed to bind to port {}: {}", self.config.port, e))?;
 
@@ -169,12 +180,14 @@ where
             .ok_or_else(|| anyhow!("Router was already taken"))?;
 
         info!("WebSocket server listening on port {}", self.config.port);
-        debug!("WebSocket server listening on {}", bind_addr);
+        debug!("WebSocket server listening on {}", self.config.port);
 
         let server = tokio::spawn(async move {
             if let Err(e) = axum::serve(
                 listener,
-                app.into_make_service_with_connect_info::<SocketAddr>(),
+                HyleNetIntoMakeServiceWithconnectInfo(
+                    app.into_make_service_with_connect_info::<HyleNetSocketAddr>(),
+                ),
             )
             .await
             {
@@ -238,7 +251,7 @@ where
 async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<NewPeers>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    ConnectInfo(addr): ConnectInfo<HyleNetSocketAddr>,
 ) -> impl IntoResponse {
     ws.on_upgrade(async move |socket| {
         debug!("New WebSocket connection established");
