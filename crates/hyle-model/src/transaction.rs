@@ -26,7 +26,7 @@ impl Transaction {
         TransactionMetadata {
             version: self.version,
             transaction_kind: self.transaction_data.discriminant(),
-            id: TxId(parent_data_proposal_hash.clone(), self.hashed()),
+            id: TxId(parent_data_proposal_hash, self.hashed()),
         }
     }
 }
