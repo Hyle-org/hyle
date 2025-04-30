@@ -8,7 +8,7 @@ use client_sdk::{
 use hyle::{
     model::BlobTransaction,
     rest::client::NodeApiHttpClient,
-    utils::conf::{Conf, P2pConf, P2pMode},
+    utils::conf::{Conf, NodeWebSocketConfig, P2pConf, P2pMode},
 };
 use hyle_crypto::BlstCrypto;
 use hyle_model::TxHash;
@@ -33,6 +33,7 @@ impl ConfMaker {
         let da_port = find_available_port().await;
         let tcp_port = find_available_port().await;
         let rest_port = find_available_port().await;
+        let ws_port = find_available_port().await;
 
         Conf {
             id: if prefix == "single-node" {
@@ -54,6 +55,10 @@ impl ConfMaker {
             da_public_address: format!("127.0.0.1:{}", da_port),
             tcp_server_port: tcp_port,
             rest_server_port: rest_port,
+            websocket: NodeWebSocketConfig {
+                server_port: ws_port,
+                ..self.default.websocket.clone()
+            },
             ..self.default.clone()
         }
     }
