@@ -18,6 +18,16 @@ pub struct NodeInfo {
     pub da_address: String,
 }
 
+#[derive(Clone, Serialize, Deserialize, Debug, ToSchema)]
+pub struct NetworkStats {
+    pub total_transactions: i64,           // Total number of transactions
+    pub txs_last_day: i64,                 // Number of transactions in the last day
+    pub total_contracts: i64,              // Total number of contracts
+    pub contracts_last_day: i64,           // Number of contracts in the last day
+    pub graph_tx_volume: Vec<(i64, i64)>,  // Graph data for transactions volume
+    pub graph_block_time: Vec<(i64, f64)>, // Graph data for block time
+}
+
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
 pub struct APIRegisterContract {
     pub verifier: Verifier,
