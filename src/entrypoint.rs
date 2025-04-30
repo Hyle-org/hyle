@@ -12,6 +12,7 @@ use crate::{
     },
     mempool::Mempool,
     model::{api::NodeInfo, CommonRunContext, NodeRunContext, SharedRunContext},
+    modules::websocket::{WebSocketModule, WebSocketModuleCtx},
     node_state::module::NodeStateModule,
     p2p::P2P,
     rest::{ApiDoc, RestApi, RestApiRunContext},
@@ -19,6 +20,7 @@ use crate::{
     tcp_server::TcpServer,
     tools::mock_workflow::MockWorkflowHandler,
     utils::{
+        bus_ws_connector::{NodeWebsocketConnector, NodeWebsocketConnectorCtx, WebsocketOutEvent},
         conf::{self, P2pMode},
         modules::ModulesHandler,
     },
@@ -294,6 +296,22 @@ async fn common_main(
             .build_module::<DAListener>(DAListenerCtx {
                 common: common_run_ctx.clone(),
                 start_block: None,
+            })
+            .await?;
+    }
+
+    if config.websocket.enabled {
+        handler
+            .build_module::<WebSocketModule<(), WebsocketOutEvent>>(WebSocketModuleCtx {
+                bus: bus.new_handle(),
+                config: config.websocket.clone().into(),
+            })
+            .await?;
+
+        handler
+            .build_module::<NodeWebsocketConnector>(NodeWebsocketConnectorCtx {
+                bus: bus.new_handle(),
+                events: config.websocket.events.clone(),
             })
             .await?;
     }
