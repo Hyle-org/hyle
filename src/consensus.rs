@@ -157,6 +157,21 @@ impl DerefMut for Consensus {
     }
 }
 
+macro_rules! with_metric {
+    ($metrics:expr, $name:literal, $t:expr) => {
+        {
+            let ret = $t;
+            paste::paste!(
+            match &ret {
+                Ok(_) => { $metrics.[<$name _ok>].add(1, &[]); }
+                Err(_) => { $metrics.[<$name _err>].add(1, &[]); }
+            }
+            );
+            ret
+        }
+    };
+}
+
 impl Consensus {
     fn round_leader(&self) -> Result<ValidatorPublicKey> {
         // Find out who the next leader will be.
@@ -259,6 +274,9 @@ impl Consensus {
             self.bft_round_state.slot, self.bft_round_state.view
         );
 
+        self.metrics
+            .at_round(self.bft_round_state.slot, self.bft_round_state.view);
+
         let round_leader = self.round_leader()?;
         if round_leader == *self.crypto.validator_pubkey() {
             self.bft_round_state.state_tag = StateTag::Leader;
@@ -340,12 +358,10 @@ impl Consensus {
             self.verify_quorum_signers_part_of_consensus(quorum_certificate),
         ) {
             (Ok(res), true) if !res => {
-                //self.metrics.confirm_error("qc_invalid"); todo
                 bail!("Quorum Certificate received is invalid")
             }
             (Err(err), _) => bail!("Quorum Certificate verification failed: {}", err),
             (_, false) => {
-                //self.metrics.confirm_error("qc_invalid"); todo
                 bail!("Quorum Certificate received contains non-consensus validators")
             }
             _ => {}
@@ -372,7 +388,6 @@ impl Consensus {
 
         // Verify enough validators signed
         if voting_power < 2 * f + 1 {
-            self.metrics.confirm_error("prepare_qc_incomplete");
             bail!("Quorum Certificate does not contain enough voting power")
         }
         Ok(())
@@ -398,7 +413,6 @@ impl Consensus {
         msg: SignedByValidator<ConsensusNetMessage>,
     ) -> Result<(), Error> {
         if !BlstCrypto::verify(&msg)? {
-            self.metrics.signature_error("prepare");
             bail!("Invalid signature for message {:?}", &msg);
         }
 
@@ -413,39 +427,67 @@ impl Consensus {
 
         match net_message {
             ConsensusNetMessage::Prepare(consensus_proposal, ticket, view) => {
-                self.on_prepare(sender, consensus_proposal, ticket, view)
+                with_metric!(
+                    self.metrics,
+                    "on_prepare",
+                    self.on_prepare(sender, consensus_proposal, ticket, view)
+                )
             }
             ConsensusNetMessage::PrepareVote(consensus_proposal_hash) => {
-                self.on_prepare_vote(msg, consensus_proposal_hash)
+                with_metric!(
+                    self.metrics,
+                    "on_prepare_vote",
+                    self.on_prepare_vote(msg, consensus_proposal_hash)
+                )
             }
             ConsensusNetMessage::Confirm(prepare_quorum_certificate, proposal_hash_hint) => {
-                self.on_confirm(sender, prepare_quorum_certificate, proposal_hash_hint)
+                with_metric!(
+                    self.metrics,
+                    "on_confirm",
+                    self.on_confirm(sender, prepare_quorum_certificate, proposal_hash_hint)
+                )
             }
             ConsensusNetMessage::ConfirmAck(consensus_proposal_hash) => {
-                self.on_confirm_ack(msg, consensus_proposal_hash)
+                with_metric!(
+                    self.metrics,
+                    "on_confirm_ack",
+                    self.on_confirm_ack(msg, consensus_proposal_hash)
+                )
             }
             ConsensusNetMessage::Commit(commit_quorum_certificate, proposal_hash_hint) => {
                 self.on_commit(sender, commit_quorum_certificate, proposal_hash_hint)
             }
-            ConsensusNetMessage::Timeout(..) => self.on_timeout(msg),
+            ConsensusNetMessage::Timeout(..) => {
+                with_metric!(self.metrics, "on_timeout", self.on_timeout(msg))
+            }
             ConsensusNetMessage::TimeoutCertificate(
                 certificate_of_timeout,
                 certificate_of_proposal,
                 slot,
                 view,
-            ) => self.on_timeout_certificate(
-                &certificate_of_timeout,
-                &certificate_of_proposal,
-                slot,
-                view,
+            ) => with_metric!(
+                self.metrics,
+                "on_timeout_certificate",
+                self.on_timeout_certificate(
+                    &certificate_of_timeout,
+                    &certificate_of_proposal,
+                    slot,
+                    view,
+                )
             ),
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
                 self.on_validator_candidacy(msg, candidacy)
             }
             ConsensusNetMessage::SyncRequest(proposal_hash) => {
-                self.on_sync_request(sender, proposal_hash)
+                with_metric!(
+                    self.metrics,
+                    "on_sync_request",
+                    self.on_sync_request(sender, proposal_hash)
+                )
             }
-            ConsensusNetMessage::SyncReply(prepare) => self.on_sync_reply(prepare),
+            ConsensusNetMessage::SyncReply(prepare) => {
+                with_metric!(self.metrics, "on_sync_reply", self.on_sync_reply(prepare))
+            }
         }
     }
 

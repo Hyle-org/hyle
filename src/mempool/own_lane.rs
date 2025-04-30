@@ -26,6 +26,8 @@ impl super::Mempool {
         msg: &SignedByValidator<MempoolNetMessage>,
         data_proposal_hash: DataProposalHash,
     ) -> Result<()> {
+        self.metrics.on_data_vote.add(1, &[]);
+
         let validator = &msg.signature.validator;
         debug!(
             "Vote from {} on own lane {}, dp {}",
@@ -70,18 +72,41 @@ impl super::Mempool {
         Ok(())
     }
 
-    pub(super) fn create_new_data_proposals(&mut self) -> Result<bool> {
-        trace!("🐣 Create new data proposals");
+    pub(super) fn prepare_new_data_proposal(&mut self) -> Result<bool> {
+        trace!("🐣 Prepare new owned data proposal");
+        let Some(dp) = self.init_dp_preparation_if_pending()? else {
+            return Ok(false);
+        };
 
-        self.create_new_dp_if_pending()?;
+        let handle = self.inner.long_tasks_runtime.handle();
+
+        self.inner
+            .own_data_proposal_in_preparation
+            .spawn_on(async move { (dp.hashed(), dp) }, handle);
+
+        Ok(true)
+    }
+
+    pub(super) fn resume_new_data_proposal(
+        &mut self,
+        data_proposal: DataProposal,
+        data_proposal_hash: DataProposalHash,
+    ) -> Result<bool> {
+        trace!("🐣 Create new data proposal");
+
+        self.register_new_data_proposal(data_proposal)?;
 
         // TODO: when we have a smarter system, we should probably not trigger this here
         // to make the event loop more efficient.
-        self.disseminate_data_proposals()
+        self.disseminate_data_proposals(Some(data_proposal_hash))
     }
 
-    // Returns true if we did disseminate something
-    pub(super) fn disseminate_data_proposals(&mut self) -> Result<bool> {
+    /// If only_dp_with_hash is Some, only disseminate the DP with the specified hash. If None, disseminate any pending DPs.
+    /// Returns true if we did disseminate something
+    pub(super) fn disseminate_data_proposals(
+        &mut self,
+        only_dp_with_hash: Option<DataProposalHash>,
+    ) -> Result<bool> {
         trace!("🌝 Disseminate data proposals");
 
         let last_cut = self
@@ -95,6 +120,12 @@ impl super::Mempool {
             .get_pending_entries_in_lane(&self.own_lane_id(), last_cut)?;
 
         for (entry_metadata, dp_hash) in entries {
+            // If only_dp_with_hash is Some, we only disseminate that one, so break and exit in all other cases.
+            if let Some(ref only_dp_with_hash) = only_dp_with_hash {
+                if &dp_hash != only_dp_with_hash {
+                    break;
+                }
+            }
             let Some(data_proposal) = self.lanes.get_dp_by_hash(&self.own_lane_id(), &dp_hash)?
             else {
                 bail!(
@@ -115,8 +146,9 @@ impl super::Mempool {
                     self.staking.bonded().len(),
                     data_proposal.txs.len()
                 );
-                self.metrics.add_data_proposal(&data_proposal);
-                self.metrics.add_proposed_txs(&data_proposal);
+                self.metrics
+                    .dp_disseminations
+                    .add(self.staking.bonded().len() as u64, &[]);
                 self.broadcast_net_message(MempoolNetMessage::DataProposal(
                     data_proposal.hashed(),
                     data_proposal.clone(),
@@ -155,14 +187,17 @@ impl super::Mempool {
                     );
                 };
 
-                self.metrics.add_data_proposal(&data_proposal);
-                self.metrics.add_proposed_txs(&data_proposal);
                 debug!(
                     "🚗 Rebroadcast DataProposal {} (only for {} validators, {} txs)",
                     &data_proposal.hashed(),
                     only_for.len(),
                     &data_proposal.txs.len()
                 );
+
+                self.metrics
+                    .dp_disseminations
+                    .add(only_for.len() as u64, &[]);
+
                 self.broadcast_only_for_net_message(
                     only_for,
                     MempoolNetMessage::DataProposal(data_proposal.hashed(), data_proposal.clone()),
@@ -175,10 +210,14 @@ impl super::Mempool {
         Ok(false)
     }
 
-    /// Creates and saves a new DataProposal if there are pending transactions
-    fn create_new_dp_if_pending(&mut self) -> Result<()> {
-        if self.waiting_dissemination_txs.is_empty() {
-            return Ok(());
+    /// Inits DataProposal preparation if there are pending transactions
+    fn init_dp_preparation_if_pending(&mut self) -> Result<Option<DataProposal>> {
+        self.metrics
+            .snapshot_pending_tx(self.waiting_dissemination_txs.len());
+        if self.waiting_dissemination_txs.is_empty()
+            || !self.own_data_proposal_in_preparation.is_empty()
+        {
+            return Ok(None);
         }
 
         let mut collect_up_to = 0;
@@ -187,6 +226,7 @@ impl super::Mempool {
             collect_up_to = i;
             cumsize += tx.estimate_size();
             // Keep this one in anyways, we have a per-TX limit.
+            // To assert < self.config.p2p.max_frame_length
             if cumsize > 40_000_000 {
                 break;
             }
@@ -203,12 +243,16 @@ impl super::Mempool {
             self.waiting_dissemination_txs.len()
         );
 
-        let validator_key = self.crypto.validator_pubkey().clone();
-
         // Create new data proposal
         let data_proposal =
             DataProposal::new(self.get_last_data_prop_hash_in_own_lane(), collected_txs);
 
+        Ok(Some(data_proposal))
+    }
+
+    /// Register and do effects locally on own lane with prepared data proposal
+    fn register_new_data_proposal(&mut self, data_proposal: DataProposal) -> Result<()> {
+        let validator_key = self.crypto.validator_pubkey().clone();
         debug!(
             "Creating new DataProposal in local lane ({}) with {} transactions (parent: {:?})",
             validator_key,
@@ -217,9 +261,10 @@ impl super::Mempool {
         );
 
         // TODO: handle this differently
-        let parent_data_proposal_hash = self
-            .get_last_data_prop_hash_in_own_lane()
-            .unwrap_or(DataProposalHash(self.crypto.validator_pubkey().to_string()));
+        let parent_data_proposal_hash = data_proposal
+            .parent_data_proposal_hash
+            .clone()
+            .unwrap_or(DataProposalHash(validator_key.to_string()));
 
         let txs_metadatas = data_proposal
             .txs
@@ -233,6 +278,8 @@ impl super::Mempool {
                 txs_metadatas,
             })
             .context("Sending MempoolStatusEvent DataProposalCreated")?;
+
+        self.metrics.created_data_proposals.add(1, &[]);
 
         self.lanes
             .store_data_proposal(&self.crypto, &self.own_lane_id(), data_proposal)?;
@@ -430,7 +477,7 @@ pub mod test {
             }
         );
 
-        ctx.timer_tick()?;
+        ctx.timer_tick().await?;
 
         let dp_hash = ctx
             .mempool
@@ -458,7 +505,7 @@ pub mod test {
         );
 
         // Timer again with no txs
-        ctx.timer_tick()?;
+        ctx.timer_tick().await?;
 
         assert_eq!(
             ctx.mempool.get_last_data_prop_hash_in_own_lane().unwrap(),
@@ -484,7 +531,7 @@ pub mod test {
         let register_tx = make_register_contract_tx(ContractName::new("test1"));
         let dp = ctx.create_data_proposal(None, &[register_tx]);
         ctx.process_new_data_proposal(dp)?;
-        ctx.timer_tick()?;
+        ctx.timer_tick().await?;
 
         let data_proposal = match ctx.assert_broadcast("DataProposal").msg {
             MempoolNetMessage::DataProposal(_, dp) => dp,

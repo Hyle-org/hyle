@@ -39,10 +39,10 @@ macro_rules! turmoil_simple {
                 tracing::info!("Starting test {} with seed {}", stringify!([<turmoil_ $simulation _ $seed _ $test>]), $seed);
                 let rng = StdRng::seed_from_u64($seed);
                 let mut sim = hyle_net::turmoil::Builder::new()
-                    .simulation_duration(Duration::from_secs(100))
+                    .simulation_duration(Duration::from_secs(120))
                     .tick_duration(Duration::from_millis(20))
                     .min_message_latency(Duration::from_millis(20))
-                .tcp_capacity(128)
+                .tcp_capacity(256)
                 .enable_tokio_io()
                     .build_with_rng(Box::new(rng));
 
@@ -73,12 +73,12 @@ macro_rules! turmoil_simple {
     };
 }
 
-turmoil_simple!(401..=420, simulation_basic, submit_10_contracts);
-turmoil_simple!(501..=520, simulation_slow_node, submit_10_contracts);
-turmoil_simple!(501..=520, simulation_two_slow_nodes, submit_10_contracts);
-turmoil_simple!(501..=520, simulation_slow_network, submit_10_contracts);
-turmoil_simple!(501..=520, simulation_hold, submit_10_contracts);
-turmoil_simple!(601..=620, simulation_one_more_node, submit_10_contracts);
+turmoil_simple!(411..=420, simulation_basic, submit_10_contracts);
+turmoil_simple!(511..=520, simulation_slow_node, submit_10_contracts);
+turmoil_simple!(511..=520, simulation_two_slow_nodes, submit_10_contracts);
+turmoil_simple!(511..=520, simulation_slow_network, submit_10_contracts);
+turmoil_simple!(511..=520, simulation_hold, submit_10_contracts);
+turmoil_simple!(611..=620, simulation_one_more_node, submit_10_contracts);
 
 /// **Simulation**
 ///

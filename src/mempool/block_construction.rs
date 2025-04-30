@@ -75,6 +75,8 @@ impl super::Mempool {
             .try_get_full_data_for_signed_block(buc)
             .context("Processing queued committedConsensusProposal")?;
 
+        self.metrics.constructed_block.add(1, &[]);
+
         self.bus
             .send(MempoolBlockEvent::BuiltSignedBlock(SignedBlock {
                 data_proposals: block_data,

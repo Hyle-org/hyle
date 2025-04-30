@@ -105,8 +105,11 @@ impl DataAvailability {
             self.config.da_server_port
         );
 
-        let mut server: DaTcpServer =
-            codec_data_availability::start_server(self.config.da_server_port).await?;
+        let mut server: DaTcpServer = codec_data_availability::start_server_with_opts(
+            self.config.da_server_port,
+            Some(self.config.da_max_frame_length),
+        )
+        .await?;
 
         let (catchup_block_sender, mut catchup_block_receiver) =
             tokio::sync::mpsc::channel::<SignedBlock>(100);

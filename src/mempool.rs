@@ -102,6 +102,8 @@ pub struct MempoolStore {
     #[borsh(skip)]
     notify_new_tx_to_process: tokio::sync::Notify,
     waiting_dissemination_txs: Vec<Transaction>,
+    #[borsh(skip)]
+    own_data_proposal_in_preparation: JoinSet<(DataProposalHash, DataProposal)>,
     buffered_proposals: BTreeMap<LaneId, Vec<DataProposal>>,
     buffered_podas: BTreeMap<LaneId, BTreeMap<DataProposalHash, Vec<PodaSignatures>>>,
 
@@ -303,7 +305,7 @@ impl Mempool {
             Duration::from_millis(500),
         );
         let mut new_dp_timer = tokio::time::interval(tick_interval);
-        let mut disseminate_timer = tokio::time::interval(tick_interval * 4);
+        let mut disseminate_timer = tokio::time::interval(Duration::from_secs(3));
         new_dp_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         disseminate_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
@@ -312,7 +314,7 @@ impl Mempool {
             on_bus self.bus,
             delay_shutdown_until {
                 // TODO: serialize these somehow?
-                self.processing_dps.is_empty() && self.processing_txs.is_empty()
+                self.processing_dps.is_empty() && self.processing_txs.is_empty() && self.own_data_proposal_in_preparation.is_empty()
             },
             listen<SignedByValidator<MempoolNetMessage>> cmd => {
                 let _ = log_error!(self.handle_net_message(cmd), "Handling MempoolNetMessage in Mempool");
@@ -382,13 +384,18 @@ impl Mempool {
                     }
                 }
             }
-            _ = new_dp_timer.tick() => {
-                if let Ok(true) = log_error!(self.create_new_data_proposals(), "Create data proposals on tick") {
+            Some(own_dp) = self.inner.own_data_proposal_in_preparation.join_next() => {
+                // Fatal here, if we loose the dp in the join next error, it's lost
+                if let Ok((own_dp_hash, own_dp)) = log_error!(own_dp, "Getting result for data proposal preparation from joinset"){
+                    _ = log_error!(self.resume_new_data_proposal(own_dp, own_dp_hash), "Resuming own data proposal creation");
                     disseminate_timer.reset();
                 }
             }
+            _ = new_dp_timer.tick() => {
+                _  = log_error!(self.prepare_new_data_proposal(), "Try preparing a new data proposal on tick");
+            }
             _ = disseminate_timer.tick() => {
-                if let Ok(true) = log_error!(self.disseminate_data_proposals(), "Disseminate data proposals on tick") {
+                if let Ok(true) = log_error!(self.disseminate_data_proposals(None), "Disseminate data proposals on tick") {
                     disseminate_timer.reset();
                 }
             }
@@ -438,7 +445,7 @@ impl Mempool {
 
     /// Creates a cut with local material on QueryNewCut message reception (from consensus)
     fn handle_querynewcut(&mut self, staking: &mut QueryNewCut) -> Result<Cut> {
-        self.metrics.add_new_cut(staking);
+        self.metrics.query_new_cut(staking);
         let previous_cut = self
             .last_ccp
             .as_ref()
@@ -506,7 +513,6 @@ impl Mempool {
         let result = BlstCrypto::verify(&msg)?;
 
         if !result {
-            self.metrics.signature_error("mempool");
             bail!("Invalid signature for message {:?}", msg);
         }
 
@@ -906,9 +912,20 @@ pub mod test {
                 .unwrap()
         }
 
-        pub fn timer_tick(&mut self) -> Result<bool> {
-            Ok(self.mempool.create_new_data_proposals()?
-                || self.mempool.disseminate_data_proposals()?)
+        pub async fn timer_tick(&mut self) -> Result<bool> {
+            let Ok(true) = self.mempool.prepare_new_data_proposal() else {
+                return self.mempool.disseminate_data_proposals(None);
+            };
+
+            let (dp_hash, dp) = self
+                .mempool
+                .own_data_proposal_in_preparation
+                .join_next()
+                .await
+                .context("join next data proposal in preparation")??;
+
+            Ok(self.mempool.resume_new_data_proposal(dp, dp_hash)?
+                || self.mempool.disseminate_data_proposals(None)?)
         }
 
         pub fn handle_poda_update(

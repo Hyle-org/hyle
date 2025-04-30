@@ -6,9 +6,9 @@ use strum::IntoDiscriminant;
 use utoipa::ToSchema;
 
 use crate::{
-    BlockHash, BlockHeight, ConsensusProposalHash, ContractName, DataProposalHash, Identity,
-    LaneBytesSize, ProgramId, StateCommitment, Transaction, TransactionKind, TxHash,
-    ValidatorPublicKey, Verifier,
+    utils::TimestampMs, BlockHash, BlockHeight, ConsensusProposalHash, ContractName,
+    DataProposalHash, Identity, LaneBytesSize, ProgramId, StateCommitment, Transaction,
+    TransactionKind, TxHash, ValidatorPublicKey, Verifier,
 };
 
 #[derive(Clone, Serialize, Deserialize, Debug, ToSchema)]
@@ -56,7 +56,7 @@ pub struct APIFees {
     pub balances: BTreeMap<ValidatorPublicKey, APIFeesBalance>,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct APIBlock {
     // Struct for the blocks table
     pub hash: ConsensusProposalHash,
@@ -119,6 +119,7 @@ pub struct APITransaction {
     pub transaction_status: TransactionStatusDb,   // Status of the transaction
     pub block_hash: Option<ConsensusProposalHash>, // Corresponds to the block hash
     pub index: Option<u32>,                        // Index of the transaction within the block
+    pub timestamp: Option<TimestampMs>,            // Timestamp of the transaction (block timestamp)
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq, Eq)]
