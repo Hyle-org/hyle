@@ -216,7 +216,10 @@ impl NodeState {
                             );
                         }
                         Ok(BlobTxHandled::Duplicate) => {
-                            // literally do nothing.
+                            debug!(
+                                "Blob transaction: {:?} is already in the unsettled map, ignoring.",
+                                tx_id
+                            );
                         }
                         Ok(BlobTxHandled::Ok) => {
                             block_under_construction
