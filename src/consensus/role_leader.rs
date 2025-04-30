@@ -142,7 +142,7 @@ impl Consensus {
         );
         self.follower_state().buffered_prepares.push(prepare);
 
-        self.metrics.start_new_round("consensus_proposal");
+        self.metrics.start_new_round(self.bft_round_state.slot);
 
         // Verifies that to-be-built block is large enough (?)
 
@@ -190,7 +190,6 @@ impl Consensus {
         // Verify that the PrepareVote is for the correct proposal.
         // This also checks slot/view as those are part of the hash.
         if consensus_proposal_hash != self.bft_round_state.current_proposal.hashed() {
-            self.metrics.prepare_vote_error("invalid_proposal_hash");
             bail!("PrepareVote has not received valid consensus proposal hash");
         }
 
@@ -211,8 +210,6 @@ impl Consensus {
             .staking
             .compute_voting_power(&validated_votes);
         let voting_power = votes_power + self.get_own_voting_power();
-
-        self.metrics.prepare_votes_gauge(voting_power as u64); // TODO risky cast
 
         // Waits for at least n-f = 2f+1 matching PrepareVote messages
         let f = self.bft_round_state.staking.compute_f();
@@ -237,8 +234,6 @@ impl Consensus {
                 ConsensusNetMessage::PrepareVote(proposal_hash_hint.clone()),
                 aggregates,
             )?;
-
-            self.metrics.prepare_votes_aggregation();
 
             // Process the Confirm message locally, then send it to peers.
             self.bft_round_state.leader.step = Step::ConfirmAck;
@@ -287,7 +282,6 @@ impl Consensus {
 
         // Verify that the ConfirmAck is for the correct proposal
         if consensus_proposal_hash != self.bft_round_state.current_proposal.hashed() {
-            self.metrics.confirm_ack_error("invalid_proposal_hash");
             debug!(
                 sender = %msg.signature.validator,
                 "Got {} expected {}",
@@ -299,7 +293,6 @@ impl Consensus {
 
         // Save ConfirmAck. Ends if the message already has been processed
         if !self.store.bft_round_state.leader.confirm_ack.insert(msg) {
-            self.metrics.confirm_ack("already_processed");
             trace!("ConfirmAck has already been processed");
 
             return Ok(());
@@ -331,8 +324,6 @@ impl Consensus {
             self.bft_round_state.staking.total_bond()
         );
 
-        self.metrics.confirmed_ack_gauge(voting_power as u64); // TODO risky cast
-
         if voting_power > 2 * f {
             // Get all signatures received and change ValidatorPublicKey for ValidatorPubKey
             let aggregates: &Vec<&SignedByValidator<ConsensusNetMessage>> =
@@ -343,8 +334,6 @@ impl Consensus {
                 ConsensusNetMessage::ConfirmAck(self.bft_round_state.current_proposal.hashed()),
                 aggregates,
             )?;
-
-            self.metrics.confirm_ack_commit_aggregate();
 
             // Buffers the *Commit* Quorum Cerficiate
             let commit_quorum_certificate = commit_signed_aggregation.signature;

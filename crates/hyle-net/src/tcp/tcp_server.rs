@@ -305,10 +305,9 @@ where
         );
     }
 
-    pub fn setup_client(&mut self, tcp_client: TcpClient<Codec, Res, Req>) {
-        let socket_addr = tcp_client.socket_addr.to_string();
+    pub fn setup_client(&mut self, addr: String, tcp_client: TcpClient<Codec, Res, Req>) {
         let (sender, receiver) = tcp_client.split();
-        self.setup_stream(sender, receiver, &socket_addr);
+        self.setup_stream(sender, receiver, &addr);
     }
 
     pub fn drop_peer_stream(&mut self, peer_ip: String) {
