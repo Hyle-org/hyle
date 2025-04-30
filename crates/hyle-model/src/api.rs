@@ -119,7 +119,7 @@ pub struct APITransaction {
     pub transaction_status: TransactionStatusDb,   // Status of the transaction
     pub block_hash: Option<ConsensusProposalHash>, // Corresponds to the block hash
     pub index: Option<u32>,                        // Index of the transaction within the block
-    pub timestamp: TimestampMs,                    // Timestamp of the transaction
+    pub timestamp: Option<TimestampMs>,            // Timestamp of the transaction (block timestamp)
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq, Eq)]
