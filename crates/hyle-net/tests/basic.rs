@@ -34,7 +34,7 @@ macro_rules! turmoil_simple {
                 tracing::info!("Starting test {} with seed {}", stringify!([<turmoil_ $simulation _ $seed >]), $seed);
                 let rng = StdRng::seed_from_u64($seed);
                 let mut sim = hyle_net::turmoil::Builder::new()
-                    .simulation_duration(Duration::from_secs(100))
+                    .simulation_duration(Duration::from_secs(25))
                     .tick_duration(Duration::from_millis(50))
                     .enable_tokio_io()
                     .build_with_rng(Box::new(rng));
@@ -126,7 +126,11 @@ pub fn setup_basic(peers: Vec<String>, sim: &mut Sim<'_>, seed: u64) -> anyhow::
     Ok(())
 }
 
-async fn setup_drop_host(peer: String, peers: Vec<String>) -> Result<(), Box<dyn Error>> {
+async fn setup_drop_host(
+    peer: String,
+    peers: Vec<String>,
+    duration: u64,
+) -> Result<(), Box<dyn Error>> {
     let crypto = BlstCrypto::new(peer.clone().as_str())?;
     let mut p2p = p2p_server_test::start_server(
         std::sync::Arc::new(crypto),
@@ -147,9 +151,18 @@ async fn setup_drop_host(peer: String, peers: Vec<String>) -> Result<(), Box<dyn
         p2p.start_handshake(format!("{}:{}", peer.clone(), 9090), Canal::new("A"));
     }
 
-    let mut interval_broadcast = tokio::time::interval(Duration::from_millis(500));
+    let mut interval_broadcast = tokio::time::interval(Duration::from_millis(50));
+    let mut interval_start_shutdown = tokio::time::interval(Duration::from_millis(duration - 1000));
+    interval_start_shutdown.tick().await;
     loop {
         tokio::select! {
+            _ = interval_start_shutdown.tick() => {
+                tracing::error!("Current peers {:?}", p2p.peers.keys());
+                tracing::error!("Current tcp peers {:?}", p2p.tcp_server.connected_clients());
+
+                assert_eq!(all_other_peers.len(), p2p.tcp_server.connected_clients().len());
+                assert_eq!(p2p.peers.keys().len(), p2p.tcp_server.connected_clients().len());
+            }
             tcp_event = p2p.listen_next() => {
                 _ = p2p.handle_p2p_tcp_event(tcp_event).await;
             }
@@ -184,16 +197,18 @@ async fn setup_drop_client(
         p2p.start_handshake(format!("{}:{}", peer.clone(), 9090), Canal::new("A"));
     }
 
-    let mut interval_broadcast = tokio::time::interval(Duration::from_millis(500));
+    let mut interval_broadcast = tokio::time::interval(Duration::from_millis(100));
     let mut interval_start_shutdown = tokio::time::interval(Duration::from_millis(duration));
+    interval_start_shutdown.tick().await;
     loop {
         tokio::select! {
             _ = interval_start_shutdown.tick() => {
                 let peer_names = HashSet::from_iter(p2p.peers.iter().map(|(_, v)| v.node_connection_data.name.clone()));
 
-                tracing::info!("Current peers {:?}", peer_names);
+                tracing::error!("Current peers {:?}", peer_names);
+                tracing::error!("Current tcp peers {:?}", p2p.tcp_server.connected_clients());
 
-                if peer_names == all_other_peers {
+                if peer_names == all_other_peers && peer_names.len() == p2p.tcp_server.connected_clients().len() {
                     break {
                         tracing::info!("Breaking tcp peers {:?}", p2p.tcp_server.connected_clients());
                         Ok(())
@@ -213,7 +228,7 @@ async fn setup_drop_client(
 pub fn setup_drops(peers: Vec<String>, sim: &mut Sim<'_>, seed: u64) -> anyhow::Result<()> {
     tracing::info!("Starting simulation with peers {:?}", peers.clone());
 
-    let sim_duration = 12000;
+    let sim_duration = 20000;
     let mut host_peers = peers.clone();
     let client_peer = host_peers.pop().unwrap();
 
@@ -225,7 +240,7 @@ pub fn setup_drops(peers: Vec<String>, sim: &mut Sim<'_>, seed: u64) -> anyhow::
         sim.host(peer.clone(), move || {
             let peer_clone = peer_clone.clone();
             let peers_clone = peers_clone.clone();
-            async move { setup_drop_host(peer_clone, peers_clone).await }
+            async move { setup_drop_host(peer_clone, peers_clone, sim_duration).await }
         });
     }
 
