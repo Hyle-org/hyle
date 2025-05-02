@@ -156,6 +156,11 @@ impl Conf {
             .set_override_option("run_indexer", run_indexer)?
             .build()?
             .try_deserialize()?;
+        // Mostly for convenience, ignore ourself from the peers list
+        conf.p2p
+            .peers
+            .retain(|peer| peer != &conf.p2p.public_address);
+
         if conf.consensus.solo {
             conf.genesis.stakers.insert(
                 conf.id.clone(),
