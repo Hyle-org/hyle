@@ -465,7 +465,7 @@ where
 
     /// Create a tcp connection
     pub fn start_handshake_task(&mut self, peer_ip: String, canal: Canal) {
-        let mfl = self.max_frame_length.clone();
+        let mfl = self.max_frame_length;
         self.handshake_clients_tasks.spawn(async move {
             let handshake_task =
                 TcpClient::connect_with_opts("p2p_server_handshake", mfl, peer_ip.clone());
