@@ -6,9 +6,9 @@ use strum::IntoDiscriminant;
 use utoipa::ToSchema;
 
 use crate::{
-    BlockHash, BlockHeight, ConsensusProposalHash, ContractName, DataProposalHash, Identity,
-    LaneBytesSize, ProgramId, StateCommitment, Transaction, TransactionKind, TxHash,
-    ValidatorPublicKey, Verifier,
+    utils::TimestampMs, BlockHash, BlockHeight, ConsensusProposalHash, ContractName,
+    DataProposalHash, Identity, LaneBytesSize, ProgramId, StateCommitment, Transaction,
+    TransactionKind, TxHash, ValidatorPublicKey, Verifier,
 };
 
 #[derive(Clone, Serialize, Deserialize, Debug, ToSchema)]
@@ -16,6 +16,16 @@ pub struct NodeInfo {
     pub id: String,
     pub pubkey: Option<ValidatorPublicKey>,
     pub da_address: String,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, ToSchema)]
+pub struct NetworkStats {
+    pub total_transactions: i64,           // Total number of transactions
+    pub txs_last_day: i64,                 // Number of transactions in the last day
+    pub total_contracts: i64,              // Total number of contracts
+    pub contracts_last_day: i64,           // Number of contracts in the last day
+    pub graph_tx_volume: Vec<(i64, i64)>,  // Graph data for transactions volume
+    pub graph_block_time: Vec<(i64, f64)>, // Graph data for block time
 }
 
 #[derive(Clone, Serialize, Deserialize, ToSchema)]
@@ -119,6 +129,7 @@ pub struct APITransaction {
     pub transaction_status: TransactionStatusDb,   // Status of the transaction
     pub block_hash: Option<ConsensusProposalHash>, // Corresponds to the block hash
     pub index: Option<u32>,                        // Index of the transaction within the block
+    pub timestamp: Option<TimestampMs>,            // Timestamp of the transaction (block timestamp)
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq, Eq)]

@@ -6,7 +6,7 @@ mod fixtures;
 
 use std::time::Duration;
 
-use fixtures::turmoil::TurmoilNodeProcess;
+use fixtures::turmoil::TurmoilHost;
 use hyle::log_error;
 use hyle_model::{
     BlobTransaction, ContractAction, ContractName, ProgramId, RegisterContractAction,
@@ -39,13 +39,12 @@ macro_rules! turmoil_simple {
                 tracing::info!("Starting test {} with seed {}", stringify!([<turmoil_ $simulation _ $seed _ $test>]), $seed);
                 let rng = StdRng::seed_from_u64($seed);
                 let mut sim = hyle_net::turmoil::Builder::new()
-                    .simulation_duration(Duration::from_secs(100))
+                    .simulation_duration(Duration::from_secs(120))
                     .tick_duration(Duration::from_millis(20))
                     .min_message_latency(Duration::from_millis(20))
                 .tcp_capacity(256)
                 .enable_tokio_io()
                     .build_with_rng(Box::new(rng));
-
 
                 let mut ctx = TurmoilCtx::new_multi(4, 500, $seed, &mut sim)?;
 
@@ -59,8 +58,6 @@ macro_rules! turmoil_simple {
 
                 $simulation(&mut ctx, &mut sim)?;
 
-                ctx.clean()?;
-
                 Ok(())
             }
         }
@@ -73,12 +70,12 @@ macro_rules! turmoil_simple {
     };
 }
 
-turmoil_simple!(401..=420, simulation_basic, submit_10_contracts);
-turmoil_simple!(501..=520, simulation_slow_node, submit_10_contracts);
-turmoil_simple!(501..=520, simulation_two_slow_nodes, submit_10_contracts);
-turmoil_simple!(501..=520, simulation_slow_network, submit_10_contracts);
-turmoil_simple!(501..=520, simulation_hold, submit_10_contracts);
-turmoil_simple!(601..=620, simulation_one_more_node, submit_10_contracts);
+turmoil_simple!(411..=420, simulation_basic, submit_10_contracts);
+turmoil_simple!(511..=520, simulation_slow_node, submit_10_contracts);
+turmoil_simple!(511..=520, simulation_two_slow_nodes, submit_10_contracts);
+turmoil_simple!(511..=520, simulation_slow_network, submit_10_contracts);
+turmoil_simple!(511..=520, simulation_hold, submit_10_contracts);
+turmoil_simple!(611..=620, simulation_one_more_node, submit_10_contracts);
 
 /// **Simulation**
 ///
@@ -275,7 +272,7 @@ pub fn simulation_basic(_ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyhow::Res
 ///
 /// Inject 10 contracts on node-1.
 /// Check on the node (all of them) that all 10 contracts are here.
-pub async fn submit_10_contracts(node: TurmoilNodeProcess) -> anyhow::Result<()> {
+pub async fn submit_10_contracts(node: TurmoilHost) -> anyhow::Result<()> {
     let client_with_retries = node.client.retry_15times_1000ms();
 
     _ = wait_height(&client_with_retries, 1).await;

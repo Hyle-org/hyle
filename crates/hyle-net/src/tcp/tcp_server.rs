@@ -15,8 +15,9 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::codec::{Decoder, Encoder, Framed};
 
 use crate::{
+    clock::TimestampMsClock,
     net::{TcpListener, TcpStream},
-    tcp::{get_current_timestamp, TcpMessage, TcpMessageCodec},
+    tcp::{TcpMessage, TcpMessageCodec},
 };
 use tracing::{debug, error, trace, warn};
 
@@ -85,7 +86,7 @@ where
                 Some(socket_addr) = self.ping_receiver.recv() => {
                     trace!("Received ping from {}", socket_addr);
                     if let Some(socket) = self.sockets.get_mut(&socket_addr) {
-                        socket.last_ping = get_current_timestamp();
+                        socket.last_ping = TimestampMsClock::now();
                     }
                 }
                 message = self.pool_receiver.recv() => {
@@ -287,6 +288,7 @@ where
                 while let Some(msg) = sender_recv.recv().await {
                     if let Err(e) = sender.send(msg).await {
                         error!("Sending message to peer {}: {}", cloned_socket_addr, e);
+                        break;
                     }
                 }
             }
@@ -297,7 +299,7 @@ where
         self.sockets.insert(
             socket_addr.to_string(),
             SocketStream {
-                last_ping: get_current_timestamp(),
+                last_ping: TimestampMsClock::now(),
                 sender: sender_snd,
                 abort_sender_task,
                 abort_receiver_task,
@@ -314,7 +316,7 @@ where
         if let Some(peer_stream) = self.sockets.remove(&peer_ip) {
             peer_stream.abort_sender_task.abort();
             peer_stream.abort_receiver_task.abort();
-            trace!("Peer {} dropped & disconnected", peer_ip);
+            error!("Client {} dropped & disconnected", peer_ip);
         }
     }
 }
