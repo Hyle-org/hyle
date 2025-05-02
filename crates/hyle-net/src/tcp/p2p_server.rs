@@ -450,7 +450,7 @@ where
         if let Some(ongoing) = self.connecting.get(&(peer_address.clone(), canal.clone())) {
             match ongoing {
                 HandshakeOngoing::TcpClientStartedAt(last_connect_attempt, abort_handle) => {
-                    if now.clone() - last_connect_attempt.clone() < Duration::from_secs(5) {
+                    if now.clone() - last_connect_attempt.clone() < Duration::from_secs(3) {
                         {
                             return Ok(());
                         }
@@ -458,7 +458,7 @@ where
                     abort_handle.abort();
                 }
                 HandshakeOngoing::HandshakeStartedAt(addr, last_handshake_started_at) => {
-                    if now.clone() - last_handshake_started_at.clone() < Duration::from_secs(5) {
+                    if now.clone() - last_handshake_started_at.clone() < Duration::from_secs(3) {
                         {
                             return Ok(());
                         }
