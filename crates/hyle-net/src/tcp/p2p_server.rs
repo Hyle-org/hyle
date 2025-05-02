@@ -647,7 +647,7 @@ where
             peer_addr_to_pubkey.get(&k).map(|(canal, pubkey)| {
                 error!("Error sending message to {} during broadcast: {}", k, v);
                 if let Err(e) = self.try_start_connection_for_peer(pubkey, canal.clone()) {
-                    warn!("Problem when triggering re-handshake after message sending error with peer {}/{:?}: {}", pubkey, canal, e);
+                    warn!("Problem when triggering re-handshake after message sending error with peer {}/{}: {}", pubkey, canal, e);
                 }
                 (pubkey.clone(), v)
             })
@@ -762,10 +762,10 @@ pub mod tests {
         let ((port1, mut p2p_server1), (port2, mut p2p_server2)) = setup_p2p_server_pair().await?;
 
         // Initiate handshake from p2p_server1 to p2p_server2
-        p2p_server1.try_start_connection(format!("127.0.0.1:{port2}"), Canal::new("A"));
+        _ = p2p_server1.try_start_connection(format!("127.0.0.1:{port2}"), Canal::new("A"));
 
         // Initiate handshake from p2p_server2 to p2p_server1
-        p2p_server2.try_start_connection(format!("127.0.0.1:{port1}"), Canal::new("A"));
+        _ = p2p_server2.try_start_connection(format!("127.0.0.1:{port1}"), Canal::new("A"));
 
         // For TcpClient to connect
         receive_and_handle_event!(
@@ -835,16 +835,16 @@ pub mod tests {
         let ((port1, mut p2p_server1), (port2, mut p2p_server2)) = setup_p2p_server_pair().await?;
 
         // Initiate handshake from p2p_server1 to p2p_server2 on canal A
-        p2p_server1.try_start_connection(format!("127.0.0.1:{port2}"), Canal::new("A"));
+        let _ = p2p_server1.try_start_connection(format!("127.0.0.1:{port2}"), Canal::new("A"));
 
         // Initiate handshake from p2p_server2 to p2p_server1 on canal A
-        p2p_server2.try_start_connection(format!("127.0.0.1:{port1}"), Canal::new("A"));
+        let _ = p2p_server2.try_start_connection(format!("127.0.0.1:{port1}"), Canal::new("A"));
 
         // Initiate handshake from p2p_server1 to p2p_server2 on canal B
-        p2p_server1.try_start_connection(format!("127.0.0.1:{port2}"), Canal::new("B"));
+        let _ = p2p_server1.try_start_connection(format!("127.0.0.1:{port2}"), Canal::new("B"));
 
         // Initiate handshake from p2p_server2 to p2p_server1 on canal B
-        p2p_server2.try_start_connection(format!("127.0.0.1:{port1}"), Canal::new("B"));
+        let _ = p2p_server2.try_start_connection(format!("127.0.0.1:{port1}"), Canal::new("B"));
 
         // For TcpClient to connect
         receive_and_handle_event!(
@@ -978,7 +978,7 @@ pub mod tests {
         let ((_, mut p2p_server1), (port2, mut p2p_server2)) = setup_p2p_server_pair().await?;
 
         // Initial connection
-        p2p_server1.try_start_connection(format!("127.0.0.1:{port2}"), Canal::new("A"));
+        let _ = p2p_server1.try_start_connection(format!("127.0.0.1:{port2}"), Canal::new("A"));
 
         // Server1 waits for TcpClient to connect
         receive_and_handle_event!(
