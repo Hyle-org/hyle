@@ -77,14 +77,14 @@ pub trait Storage {
         &self,
         lane_id: &LaneId,
         staking: &Staking,
-        previous_committed_car: Option<&(DataProposalHash, PoDA)>,
+        previous_committed_car: Option<&(LaneId, DataProposalHash, LaneBytesSize, PoDA)>,
     ) -> Result<Option<(DataProposalHash, LaneBytesSize, PoDA)>> {
         let bonded_validators = staking.bonded();
         // We start from the tip of the lane, and go backup until we find a DP with enough signatures
         if let Some(tip_dp_hash) = self.get_lane_hash_tip(lane_id) {
             let mut dp_hash = tip_dp_hash.clone();
             while let Some(le) = self.get_metadata_by_hash(lane_id, &dp_hash)? {
-                if let Some((hash, poda)) = previous_committed_car {
+                if let Some((_, hash, _, poda)) = previous_committed_car {
                     if &dp_hash == hash {
                         // Latest car has already been committed
                         return Ok(Some((hash.clone(), le.cumul_size, poda.clone())));
