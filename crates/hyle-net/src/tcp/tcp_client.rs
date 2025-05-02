@@ -5,9 +5,10 @@ use futures::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
+use sdk::hyle_model_utils::TimestampMs;
 use tokio_util::codec::{Decoder, Encoder, Framed};
 
-use crate::{net::TcpStream, tcp::get_current_timestamp};
+use crate::{clock::TimestampMsClock, net::TcpStream};
 use anyhow::{bail, Result};
 use tracing::{debug, info, trace, warn};
 
@@ -27,7 +28,7 @@ where
     pub id: String,
     pub sender: TcpSender<ClientCodec, Req>,
     pub receiver: TcpReceiver<ClientCodec>,
-    pub last_ping: u64,
+    pub last_ping: TimestampMs,
     pub socket_addr: SocketAddr,
 }
 
@@ -97,7 +98,7 @@ where
             id: id.to_string(),
             sender,
             receiver,
-            last_ping: get_current_timestamp(),
+            last_ping: TimestampMsClock::now(),
             socket_addr: addr,
         })
     }
