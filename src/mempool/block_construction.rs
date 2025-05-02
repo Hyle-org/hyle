@@ -433,7 +433,7 @@ pub mod test {
                     signatures: vec![ctx
                         .mempool
                         .crypto
-                        .sign(MempoolNetMessage::DataVote(dp1_hash, dp1_size))
+                        .sign((dp1_hash, dp1_size))
                         .expect("should sign")],
                 },
                 dp1.clone(),
@@ -451,9 +451,7 @@ pub mod test {
                 LaneEntryMetadata {
                     parent_data_proposal_hash: dp1b.parent_data_proposal_hash.clone(),
                     cumul_size: dp1b_size,
-                    signatures: vec![crypto2
-                        .sign(MempoolNetMessage::DataVote(dp1b_hash, dp1b_size))
-                        .expect("should sign")],
+                    signatures: vec![crypto2.sign((dp1b_hash, dp1b_size)).expect("should sign")],
                 },
                 dp1b.clone(),
             )],

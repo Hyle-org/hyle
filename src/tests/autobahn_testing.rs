@@ -275,7 +275,7 @@ use crate::consensus::ConsensusEvent;
 use crate::data_availability::codec::codec_data_availability;
 use crate::handle_messages;
 use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
-use crate::mempool::{MempoolNetMessage, QueryNewCut};
+use crate::mempool::{MempoolNetMessage, QueryNewCut, ValidatorDAG};
 use crate::model::*;
 use crate::node_state::module::NodeStateEvent;
 use crate::p2p::network::OutboundMessage;
@@ -376,22 +376,19 @@ fn create_poda(
     data_proposal_hash: DataProposalHash,
     line_size: LaneBytesSize,
     nodes: &[&AutobahnTestCtx],
-) -> hyle_crypto::Signed<MempoolNetMessage, AggregateSignature> {
-    let msg = MempoolNetMessage::DataVote(data_proposal_hash, line_size);
-    let mut signed_messages: Vec<Signed<MempoolNetMessage, ValidatorSignature>> = nodes
+) -> hyle_crypto::Signed<(DataProposalHash, LaneBytesSize), AggregateSignature> {
+    let mut signed_messages: Vec<ValidatorDAG> = nodes
         .iter()
         .map(|node| {
             node.mempool_ctx
-                .mempool
-                .sign_net_message(msg.clone())
+                .sign_data((data_proposal_hash.clone(), line_size))
                 .unwrap()
         })
         .collect();
     signed_messages.sort_by(|a, b| a.signature.cmp(&b.signature));
 
-    let aggregates: Vec<&hyle_crypto::Signed<MempoolNetMessage, ValidatorSignature>> =
-        signed_messages.iter().collect();
-    BlstCrypto::aggregate(msg, &aggregates).unwrap()
+    let aggregates: Vec<&ValidatorDAG> = signed_messages.iter().collect();
+    BlstCrypto::aggregate((data_proposal_hash.clone(), line_size), &aggregates).unwrap()
 }
 
 #[test_log::test(tokio::test)]
@@ -951,7 +948,7 @@ async fn mempool_fail_to_vote_on_fork() {
 
     let data_proposal_fork_3 = node1
         .mempool_ctx
-        .sign_data(MempoolNetMessage::DataProposal(
+        .create_net_message(MempoolNetMessage::DataProposal(
             dp_fork_3.hashed(),
             dp_fork_3.clone(),
         ))

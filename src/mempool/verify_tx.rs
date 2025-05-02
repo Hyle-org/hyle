@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use hyle_model::{
     ContractName, DataProposalHash, DataSized, LaneBytesSize, LaneId, ProgramId,
     RegisterContractAction, StructuredBlobData, ValidatorPublicKey, Verifier,
@@ -84,11 +84,28 @@ impl super::Mempool {
 
         // This is annoying to run in tests because we don't have the event loop setup, so go synchronous.
         #[cfg(test)]
-        self.on_hashed_data_proposal(&lane_id, data_proposal.clone())?;
+        {
+            // We must verify the hash
+            if data_proposal.hashed() != received_hash {
+                bail!(
+                    "Received DataProposal with wrong hash: expected {:?}, got {:?}",
+                    received_hash,
+                    data_proposal.hashed()
+                );
+            }
+            self.on_hashed_data_proposal(&lane_id, data_proposal.clone())?;
+        }
         #[cfg(not(test))]
         self.inner.processing_dps.spawn_on(
             async move {
-                data_proposal.hashed();
+                // We must verify the hash
+                if data_proposal.hashed() != received_hash {
+                    bail!(
+                        "Received DataProposal with wrong hash: expected {:?}, got {:?}",
+                        received_hash,
+                        data_proposal.hashed()
+                    );
+                }
                 Ok(ProcessedDPEvent::OnHashedDataProposal((
                     lane_id,
                     data_proposal,
@@ -429,7 +446,7 @@ impl super::Mempool {
         debug!("🗳️ Sending vote for DataProposal {data_proposal_hash} to {validator} (lane size: {size})");
         self.send_net_message(
             validator.clone(),
-            MempoolNetMessage::DataVote(data_proposal_hash, size),
+            MempoolNetMessage::DataVote(self.crypto.sign((data_proposal_hash, size))?),
         )?;
         Ok(())
     }
@@ -438,9 +455,12 @@ impl super::Mempool {
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::mempool::{
-        test::{make_register_contract_tx, MempoolTestCtx},
-        MempoolNetMessage,
+    use crate::{
+        mempool::{
+            test::{make_register_contract_tx, MempoolTestCtx},
+            MempoolNetMessage,
+        },
+        p2p::network::HeaderSigner,
     };
     use hyle_crypto::BlstCrypto;
     use hyle_model::{DataProposalHash, SignedByValidator};
@@ -515,16 +535,16 @@ pub mod test {
         let size = LaneBytesSize(data_proposal.estimate_size() as u64);
         let hash = data_proposal.hashed();
 
-        let signed_msg = ctx.mempool.crypto.sign(MempoolNetMessage::DataProposal(
-            hash.clone(),
-            data_proposal.clone(),
-        ))?;
+        let signed_msg =
+            ctx.mempool
+                .crypto
+                .sign_msg_with_header(MempoolNetMessage::DataProposal(
+                    hash.clone(),
+                    data_proposal.clone(),
+                ))?;
 
         ctx.mempool
-            .handle_net_message(SignedByValidator {
-                msg: MempoolNetMessage::DataProposal(hash.clone(), data_proposal.clone()),
-                signature: signed_msg.signature,
-            })
+            .handle_net_message(signed_msg)
             .expect("should handle net message");
 
         ctx.handle_processed_data_proposals().await;
@@ -534,7 +554,10 @@ pub mod test {
             .assert_send(&ctx.mempool.crypto.validator_pubkey().clone(), "DataVote")
             .msg
         {
-            MempoolNetMessage::DataVote(data_vote, voted_size) => {
+            MempoolNetMessage::DataVote(SignedByValidator {
+                msg: (data_vote, voted_size),
+                ..
+            }) => {
                 assert_eq!(data_vote, hash);
                 assert_eq!(size, voted_size);
             }

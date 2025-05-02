@@ -10,7 +10,7 @@ use tracing::{debug, trace};
 
 use super::verifiers::{verify_proof, verify_recursive_proof};
 use super::{api::RestApiMessage, storage::Storage};
-use super::{KnownContracts, MempoolNetMessage};
+use super::{KnownContracts, MempoolNetMessage, ValidatorDAG};
 
 impl super::Mempool {
     fn get_last_data_prop_hash_in_own_lane(&self) -> Option<DataProposalHash> {
@@ -21,14 +21,11 @@ impl super::Mempool {
         LaneId(self.crypto.validator_pubkey().clone())
     }
 
-    pub(super) fn on_data_vote(
-        &mut self,
-        msg: &SignedByValidator<MempoolNetMessage>,
-        data_proposal_hash: DataProposalHash,
-    ) -> Result<()> {
+    pub(super) fn on_data_vote(&mut self, vdag: ValidatorDAG) -> Result<()> {
         self.metrics.on_data_vote.add(1, &[]);
 
-        let validator = &msg.signature.validator;
+        let validator = vdag.signature.validator.clone();
+        let data_proposal_hash = vdag.msg.0.clone();
         debug!(
             "Vote from {} on own lane {}, dp {}",
             validator,
@@ -37,11 +34,9 @@ impl super::Mempool {
         );
         let lane_id = self.own_lane_id();
 
-        let signatures = self.lanes.add_signatures(
-            &lane_id,
-            &data_proposal_hash,
-            std::iter::once(msg.clone()),
-        )?;
+        let signatures =
+            self.lanes
+                .add_signatures(&lane_id, &data_proposal_hash, std::iter::once(vdag))?;
 
         // Compute voting power of all signers to check if the DataProposal received enough votes
         let validators: Vec<ValidatorPublicKey> = signatures
@@ -51,7 +46,7 @@ impl super::Mempool {
         let old_voting_power = self.staking.compute_voting_power(
             validators
                 .iter()
-                .filter(|v| *v != validator)
+                .filter(|v| *v != &validator)
                 .cloned()
                 .collect::<Vec<_>>()
                 .as_slice(),
@@ -453,7 +448,8 @@ pub mod test {
 
     use super::*;
     use crate::{
-        mempool::storage::LaneEntryMetadata, tests::autobahn_testing::assert_chanmsg_matches,
+        mempool::storage::LaneEntryMetadata, p2p::network::HeaderSigner,
+        tests::autobahn_testing::assert_chanmsg_matches,
     };
     use anyhow::Result;
     use hyle_crypto::BlstCrypto;
@@ -540,12 +536,12 @@ pub mod test {
         let size = LaneBytesSize(data_proposal.estimate_size() as u64);
 
         // Simulate receiving votes from other validators
-        let signed_msg2 =
-            crypto2.sign(MempoolNetMessage::DataVote(data_proposal.hashed(), size))?;
-        let signed_msg3 =
-            crypto3.sign(MempoolNetMessage::DataVote(data_proposal.hashed(), size))?;
-        ctx.mempool.handle_net_message(signed_msg2)?;
-        ctx.mempool.handle_net_message(signed_msg3)?;
+        let signed_msg2 = create_data_vote(&crypto2, data_proposal.hashed(), size)?;
+        let signed_msg3 = create_data_vote(&crypto3, data_proposal.hashed(), size)?;
+        ctx.mempool
+            .handle_net_message(crypto2.sign_msg_with_header(signed_msg2)?)?;
+        ctx.mempool
+            .handle_net_message(crypto3.sign_msg_with_header(signed_msg3)?)?;
 
         // Assert that PoDAUpdate message is broadcasted
         match ctx.assert_broadcast("PoDAUpdate").msg {
@@ -570,14 +566,10 @@ pub mod test {
         let size = LaneBytesSize(data_proposal.estimate_size() as u64);
 
         let temp_crypto = BlstCrypto::new("temp_crypto").unwrap();
-        let signed_msg =
-            temp_crypto.sign(MempoolNetMessage::DataVote(data_proposal.hashed(), size))?;
+        let signed_msg = create_data_vote(&temp_crypto, data_proposal.hashed(), size)?;
         assert!(ctx
             .mempool
-            .handle_net_message(SignedByValidator {
-                msg: MempoolNetMessage::DataVote(data_proposal.hashed(), size),
-                signature: signed_msg.signature,
-            })
+            .handle_net_message(temp_crypto.sign_msg_with_header(signed_msg)?)
             .is_err());
 
         Ok(())
@@ -600,13 +592,10 @@ pub mod test {
         let crypto2 = BlstCrypto::new("2").unwrap();
         ctx.add_trusted_validator(crypto2.validator_pubkey());
 
-        let signed_msg = crypto2.sign(MempoolNetMessage::DataVote(
-            data_proposal_hash.clone(),
-            size,
-        ))?;
+        let signed_msg = create_data_vote(&crypto2, data_proposal_hash, size)?;
 
         ctx.mempool
-            .handle_net_message(signed_msg)
+            .handle_net_message(crypto2.sign_msg_with_header(signed_msg)?)
             .expect("should handle net message");
 
         // Assert that we added the vote to the signatures
@@ -625,12 +614,16 @@ pub mod test {
         let crypto2 = BlstCrypto::new("2").unwrap();
         ctx.add_trusted_validator(crypto2.validator_pubkey());
 
-        let signed_msg = crypto2.sign(MempoolNetMessage::DataVote(
+        let signed_msg = create_data_vote(
+            &crypto2,
             DataProposalHash("non_existent".to_owned()),
             LaneBytesSize(0),
-        ))?;
+        )?;
 
-        assert!(ctx.mempool.handle_net_message(signed_msg).is_err());
+        assert!(ctx
+            .mempool
+            .handle_net_message(crypto2.sign_msg_with_header(signed_msg)?)
+            .is_err());
         Ok(())
     }
 }
