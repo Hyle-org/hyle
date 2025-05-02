@@ -4,7 +4,7 @@ use anyhow::{bail, Result};
 use fjall::{
     Config, Keyspace, KvSeparationOptions, PartitionCreateOptions, PartitionHandle, Slice,
 };
-use hyle_model::{LaneId, Signed, SignedByValidator, ValidatorSignature};
+use hyle_model::LaneId;
 use tracing::info;
 
 use crate::{
@@ -14,7 +14,7 @@ use crate::{
 
 use super::{
     storage::{CanBePutOnTop, LaneEntryMetadata, Storage},
-    MempoolNetMessage,
+    ValidatorDAG,
 };
 
 pub use hyle_model::LaneBytesSize;
@@ -208,12 +208,12 @@ impl Storage for LanesStorage {
         Ok(())
     }
 
-    fn add_signatures<T: IntoIterator<Item = SignedByValidator<MempoolNetMessage>>>(
+    fn add_signatures<T: IntoIterator<Item = ValidatorDAG>>(
         &mut self,
         lane_id: &LaneId,
         dp_hash: &DataProposalHash,
         vote_msgs: T,
-    ) -> Result<Vec<Signed<MempoolNetMessage, ValidatorSignature>>> {
+    ) -> Result<Vec<ValidatorDAG>> {
         let key = format!("{}:{}", lane_id, dp_hash);
         let Some(mut lem) = log_warn!(
             self.by_hash_metadata.get(key.clone()),
@@ -232,13 +232,7 @@ impl Storage for LanesStorage {
         };
 
         for msg in vote_msgs {
-            let MempoolNetMessage::DataVote(dph, cumul_size) = &msg.msg else {
-                tracing::warn!(
-                    "Received a non-DataVote message in add_signatures: {:?}",
-                    msg.msg
-                );
-                continue;
-            };
+            let (dph, cumul_size) = &msg.msg;
             if &lem.cumul_size != cumul_size || dp_hash != dph {
                 tracing::warn!(
                     "Received a DataVote message with wrong hash or size: {:?}",

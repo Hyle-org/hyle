@@ -4,12 +4,12 @@ use std::{
 };
 
 use anyhow::{bail, Result};
-use hyle_model::{LaneBytesSize, LaneId, Signed, SignedByValidator, ValidatorSignature};
+use hyle_model::{LaneBytesSize, LaneId};
 use tracing::info;
 
 use super::{
     storage::{CanBePutOnTop, LaneEntryMetadata, Storage},
-    MempoolNetMessage,
+    ValidatorDAG,
 };
 use crate::model::{DataProposal, DataProposalHash, Hashed};
 
@@ -127,12 +127,12 @@ impl Storage for LanesStorage {
         Ok(())
     }
 
-    fn add_signatures<T: IntoIterator<Item = SignedByValidator<MempoolNetMessage>>>(
+    fn add_signatures<T: IntoIterator<Item = ValidatorDAG>>(
         &mut self,
         lane_id: &LaneId,
         dp_hash: &DataProposalHash,
         vote_msgs: T,
-    ) -> Result<Vec<Signed<MempoolNetMessage, ValidatorSignature>>> {
+    ) -> Result<Vec<ValidatorDAG>> {
         let Some(lane) = self.by_hash.get_mut(lane_id) else {
             bail!("Can't find validator {}", lane_id);
         };
@@ -142,13 +142,7 @@ impl Storage for LanesStorage {
         };
 
         for msg in vote_msgs {
-            let MempoolNetMessage::DataVote(dph, cumul_size) = &msg.msg else {
-                tracing::warn!(
-                    "Received a non-DataVote message in add_signatures: {:?}",
-                    msg.msg
-                );
-                continue;
-            };
+            let (dph, cumul_size) = &msg.msg;
             if &metadata.cumul_size != cumul_size || dp_hash != dph {
                 tracing::warn!(
                     "Received a DataVote message with wrong hash or size: {:?}",
