@@ -549,7 +549,7 @@ impl Mempool {
 
     fn handle_net_message(&mut self, msg: MsgWithHeader<MempoolNetMessage>) -> Result<()> {
         // Ignore messages that seem incorrectly timestamped (1h ahead or back)
-        if msg.header.msg.timestamp.abs_diff(TimestampMsClock::now().0) > 3600 {
+        if msg.header.msg.timestamp.abs_diff(TimestampMsClock::now().0) > 3_600_000 {
             bail!("Message timestamp too far from current time");
         }
         let result = BlstCrypto::verify(&msg.header)?;
@@ -1298,13 +1298,13 @@ pub mod test {
         // Test message with timestamp too far in future
         let mut bad_time_msg =
             crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(None, None))?;
-        bad_time_msg.header.msg.timestamp = TimestampMsClock::now().0 + 7200; // 2h in future
+        bad_time_msg.header.msg.timestamp = TimestampMsClock::now().0 + 7200000; // 2h in future
         assert_err!(ctx.mempool.handle_net_message(bad_time_msg.clone()));
 
         // Test message with timestamp too far in past
         let mut bad_time_msg =
             crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(None, None))?;
-        bad_time_msg.header.msg.timestamp = TimestampMsClock::now().0 - 7200; // 2h in future
+        bad_time_msg.header.msg.timestamp = TimestampMsClock::now().0 - 7200000; // 2h in future
         assert_err!(ctx.mempool.handle_net_message(bad_time_msg.clone()));
 
         // Test message with bad signature
