@@ -150,7 +150,6 @@ impl Consensus {
 
         // At this point we are OK with this new consensus proposal, update locally and vote.
         self.bft_round_state.current_proposal = consensus_proposal.clone();
-        self.bft_round_state.last_cut_seen = consensus_proposal.cut.clone();
         let cp_hash = self.bft_round_state.current_proposal.hashed();
 
         self.follower_state().buffered_prepares.push((
@@ -313,6 +312,17 @@ impl Consensus {
             self.bft_round_state.staking
         );
 
+        // Check the cut includes all lanes from the previous cut.
+        // TODO: this is not really necessary on the consensus side.
+        if self
+            .bft_round_state
+            .parent_cut
+            .iter()
+            .any(|(lane_id, _, _, _)| !consensus_proposal.cut.iter().any(|(l, ..)| l == lane_id))
+        {
+            bail!("Cut does not include all lanes from the previous cut");
+        }
+
         for (lane_id, data_proposal_hash, lane_size, poda_sig) in &consensus_proposal.cut {
             let voting_power = self
                 .bft_round_state
@@ -326,17 +336,27 @@ impl Consensus {
             }
 
             // If this same data proposal was in the last cut, ignore.
-            if self
+            if let Some(cut) = self
                 .bft_round_state
-                .last_cut_seen
+                .parent_cut
                 .iter()
-                .any(|(v, h, _, _)| v == lane_id && h == data_proposal_hash)
+                .find(|(v, ..)| v == lane_id)
             {
-                debug!(
-                    "DataProposal {} from lane {} was already in the last cut, not checking PoDA",
-                    data_proposal_hash, lane_id
-                );
-                continue;
+                if &cut.1 == data_proposal_hash {
+                    debug!(
+                        "DataProposal {} from lane {} was already in the last cut, not checking PoDA",
+                        data_proposal_hash, lane_id
+                    );
+                    continue;
+                }
+                // Ensure we're not going backwards in the cut.
+                if lane_size <= &cut.2 {
+                    bail!(
+                        "DataProposal {} from lane {} is smaller than the last one in the cut",
+                        data_proposal_hash,
+                        lane_id
+                    );
+                }
             }
 
             trace!("consensus_proposal: {:#?}", consensus_proposal);

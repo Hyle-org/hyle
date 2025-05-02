@@ -97,11 +97,12 @@ pub struct BFTRoundState {
     staking: Staking,
     slot: Slot,
     view: View,
+    // TODO: should we just store parent proposal
     parent_hash: ConsensusProposalHash,
     parent_timestamp: TimestampMs,
+    parent_cut: Cut,
 
     current_proposal: ConsensusProposal,
-    last_cut_seen: Cut,
 
     leader: LeaderState,
     follower: FollowerState,
@@ -217,6 +218,7 @@ impl Consensus {
                 self.bft_round_state.parent_hash = self.bft_round_state.current_proposal.hashed();
                 self.bft_round_state.parent_timestamp =
                     self.bft_round_state.current_proposal.timestamp.clone();
+                self.bft_round_state.parent_cut = self.bft_round_state.current_proposal.cut.clone();
 
                 // Store the last commited QC to avoid issues when parsing Commit messages before Prepare
                 self.bft_round_state.follower.buffered_quorum_certificate = match ticket {

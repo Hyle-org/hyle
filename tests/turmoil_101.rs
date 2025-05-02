@@ -6,7 +6,7 @@ mod fixtures;
 
 use std::time::Duration;
 
-use fixtures::turmoil::TurmoilNodeProcess;
+use fixtures::turmoil::TurmoilHost;
 use hyle::log_error;
 use hyle_model::{
     BlobTransaction, ContractAction, ContractName, ProgramId, RegisterContractAction,
@@ -46,7 +46,6 @@ macro_rules! turmoil_simple {
                 .enable_tokio_io()
                     .build_with_rng(Box::new(rng));
 
-
                 let mut ctx = TurmoilCtx::new_multi(4, 500, $seed, &mut sim)?;
 
                 for node in ctx.nodes.iter() {
@@ -58,8 +57,6 @@ macro_rules! turmoil_simple {
                 }
 
                 $simulation(&mut ctx, &mut sim)?;
-
-                ctx.clean()?;
 
                 Ok(())
             }
@@ -275,7 +272,7 @@ pub fn simulation_basic(_ctx: &mut TurmoilCtx, sim: &mut Sim<'_>) -> anyhow::Res
 ///
 /// Inject 10 contracts on node-1.
 /// Check on the node (all of them) that all 10 contracts are here.
-pub async fn submit_10_contracts(node: TurmoilNodeProcess) -> anyhow::Result<()> {
+pub async fn submit_10_contracts(node: TurmoilHost) -> anyhow::Result<()> {
     let client_with_retries = node.client.retry_15times_1000ms();
 
     _ = wait_height(&client_with_retries, 1).await;
