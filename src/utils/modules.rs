@@ -160,8 +160,10 @@ macro_rules! module_handle_messages {
                     }
                 }
             }
+            tracing::info!("Event loop listening to {} has stopped", stringify!($bus));
             should_shutdown
         }
+
     };
     (on_bus $bus:expr, $($rest:tt)*) => {
         {
@@ -175,6 +177,7 @@ macro_rules! module_handle_messages {
                     break;
                 }
             }
+            tracing::info!("Event loop listening to {} has stopped", stringify!($bus));
             should_shutdown
         }
     };
