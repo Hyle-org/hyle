@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_crypto::BlstCrypto;
-use hyle_model::{DataSized, LaneId, Signed, ValidatorSignature};
+use hyle_model::{DataSized, LaneId};
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
 use std::vec;
@@ -11,7 +11,7 @@ use crate::model::{
     Cut, DataProposal, DataProposalHash, Hashed, PoDA, SignedByValidator, ValidatorPublicKey,
 };
 
-use super::MempoolNetMessage;
+use super::ValidatorDAG;
 
 pub use hyle_model::LaneBytesSize;
 
@@ -25,7 +25,7 @@ pub enum CanBePutOnTop {
 pub struct LaneEntryMetadata {
     pub parent_data_proposal_hash: Option<DataProposalHash>,
     pub cumul_size: LaneBytesSize,
-    pub signatures: Vec<SignedByValidator<MempoolNetMessage>>,
+    pub signatures: Vec<ValidatorDAG>,
 }
 
 pub trait Storage {
@@ -54,12 +54,12 @@ pub trait Storage {
         entry: (LaneEntryMetadata, DataProposal),
     ) -> Result<()>;
 
-    fn add_signatures<T: IntoIterator<Item = SignedByValidator<MempoolNetMessage>>>(
+    fn add_signatures<T: IntoIterator<Item = ValidatorDAG>>(
         &mut self,
         lane_id: &LaneId,
         dp_hash: &DataProposalHash,
         vote_msgs: T,
-    ) -> Result<Vec<Signed<MempoolNetMessage, ValidatorSignature>>>;
+    ) -> Result<Vec<ValidatorDAG>>;
 
     fn get_lane_ids(&self) -> impl Iterator<Item = &LaneId>;
     fn get_lane_hash_tip(&self, lane_id: &LaneId) -> Option<&DataProposalHash>;
@@ -91,14 +91,14 @@ pub trait Storage {
                     }
                 }
                 // Filter signatures on DataProposal to only keep the ones from the current validators
-                let filtered_signatures: Vec<SignedByValidator<MempoolNetMessage>> = le
-                    .signatures
-                    .iter()
-                    .filter(|signed_msg| {
-                        bonded_validators.contains(&signed_msg.signature.validator)
-                    })
-                    .cloned()
-                    .collect();
+                let filtered_signatures: Vec<SignedByValidator<(DataProposalHash, LaneBytesSize)>> =
+                    le.signatures
+                        .iter()
+                        .filter(|signed_msg| {
+                            bonded_validators.contains(&signed_msg.signature.validator)
+                        })
+                        .cloned()
+                        .collect();
 
                 // Collect all filtered validators that signed the DataProposal
                 let filtered_validators: Vec<ValidatorPublicKey> = filtered_signatures
@@ -120,7 +120,7 @@ pub trait Storage {
 
                 // Aggregate the signatures in a PoDA
                 let poda = match BlstCrypto::aggregate(
-                    MempoolNetMessage::DataVote(dp_hash.clone(), le.cumul_size),
+                    (dp_hash.clone(), le.cumul_size),
                     &filtered_signatures.iter().collect::<Vec<_>>(),
                 ) {
                     Ok(poda) => poda,
@@ -153,7 +153,7 @@ pub trait Storage {
         let lane_size = self.get_lane_size_tip(lane_id).cloned().unwrap_or_default();
         let cumul_size = lane_size + dp_size;
 
-        let msg = MempoolNetMessage::DataVote(data_proposal_hash.clone(), cumul_size);
+        let msg = (data_proposal_hash.clone(), cumul_size);
         let signatures = vec![crypto.sign(msg)?];
 
         // FIXME: Investigate if we can directly use put_no_verification
@@ -307,8 +307,8 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
-    use crate::mempool::{storage_memory::LanesStorage, MempoolNetMessage};
-    use hyle_model::{DataSized, Signature, Transaction};
+    use crate::mempool::storage_memory::LanesStorage;
+    use hyle_model::{DataSized, Signature, Transaction, ValidatorSignature};
     use staking::state::Staking;
 
     fn setup_storage() -> LanesStorage {
@@ -365,7 +365,7 @@ mod tests {
             .put(lane_id.clone(), (entry.clone(), data_proposal.clone()))
             .unwrap();
         entry.signatures.push(SignedByValidator {
-            msg: MempoolNetMessage::DataVote(dp_hash.clone(), cumul_size),
+            msg: (dp_hash.clone(), cumul_size),
             signature: ValidatorSignature {
                 validator: crypto.validator_pubkey().clone(),
                 signature: Signature::default(),
@@ -402,7 +402,7 @@ mod tests {
         assert_eq!(1, lane_entry.signatures.len());
 
         // 2 votes on this DP
-        let vote_msg = MempoolNetMessage::DataVote(dp_hash.clone(), cumul_size);
+        let vote_msg = (dp_hash.clone(), cumul_size);
         let signed_msg = crypto2.sign(vote_msg).expect("Failed to sign message");
 
         let signatures = storage
@@ -426,7 +426,7 @@ mod tests {
         let (dp_hash, cumul_size) = storage.store_data_proposal(&crypto, lane_id2, dp).unwrap();
 
         // 3 votes on this DP
-        let vote_msg = MempoolNetMessage::DataVote(dp_hash.clone(), cumul_size);
+        let vote_msg = (dp_hash.clone(), cumul_size);
         let signed_msg = crypto3.sign(vote_msg).expect("Failed to sign message");
 
         // 1 updates its lane with all signatures

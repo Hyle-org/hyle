@@ -18,7 +18,9 @@ use hyle_net::tcp::{
     p2p_server::{P2PServer, P2PServerEvent},
     Canal,
 };
-use network::{p2p_server_consensus_mempool, NetMessage, OutboundMessage, PeerEvent};
+use network::{
+    p2p_server_consensus_mempool, MsgWithHeader, NetMessage, OutboundMessage, PeerEvent,
+};
 use tracing::{info, trace, warn};
 
 pub mod network;
@@ -28,17 +30,15 @@ pub enum P2PCommand {
     ConnectTo { peer: String },
 }
 impl BusMessage for P2PCommand {}
-
 module_bus_client! {
 struct P2PBusClient {
-    sender(SignedByValidator<MempoolNetMessage>),
+    sender(MsgWithHeader<MempoolNetMessage>),
     sender(SignedByValidator<ConsensusNetMessage>),
     sender(PeerEvent),
     receiver(P2PCommand),
     receiver(OutboundMessage),
 }
 }
-
 pub struct P2P {
     config: SharedConf,
     bus: P2PBusClient,
@@ -162,7 +162,7 @@ impl P2P {
         trace!("RECV: {:?}", msg);
         match msg {
             NetMessage::MempoolMessage(mempool_msg) => {
-                trace!("Received new mempool net message {}", mempool_msg);
+                trace!("Received new mempool net message {}", mempool_msg.msg);
                 self.bus
                     .send(mempool_msg)
                     .context("Receiving mempool net message")?;

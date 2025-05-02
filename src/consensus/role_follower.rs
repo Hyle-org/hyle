@@ -8,7 +8,6 @@ use super::Consensus;
 use crate::{
     bus::BusClientSender,
     consensus::{role_timeout::TimeoutState, StateTag},
-    mempool::MempoolNetMessage,
     model::{Hashed, Signed, ValidatorPublicKey},
     p2p::P2PCommand,
     utils::conf::TimestampCheck,
@@ -368,7 +367,7 @@ impl Consensus {
             }
 
             // Verify that PoDA signature is valid
-            let msg = MempoolNetMessage::DataVote(data_proposal_hash.clone(), *lane_size);
+            let msg = (data_proposal_hash.clone(), *lane_size);
             match BlstCrypto::verify_aggregate(&Signed {
                 msg,
                 signature: poda_sig.clone(),
