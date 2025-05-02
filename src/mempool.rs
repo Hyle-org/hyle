@@ -452,19 +452,19 @@ impl Mempool {
             .map(|ccp| ccp.consensus_proposal.cut.clone())
             .unwrap_or_default();
 
-        let lane_last_cut: HashMap<LaneId, (DataProposalHash, PoDA)> = previous_cut
-            .iter()
-            .map(|(lid, dp, _, poda)| (lid.clone(), (dp.clone(), poda.clone())))
-            .collect();
-
         // For each lane, we get the last CAR and put it in the cut
         let mut cut: Cut = vec![];
         for lane_id in self.lanes.get_lane_ids() {
+            let previous_entry = previous_cut
+                .iter()
+                .find(|(lane_id_, _, _, _)| lane_id_ == lane_id);
             if let Some((dp_hash, cumul_size, poda)) =
                 self.lanes
-                    .get_latest_car(lane_id, &staking.0, lane_last_cut.get(lane_id))?
+                    .get_latest_car(lane_id, &staking.0, previous_entry)?
             {
                 cut.push((lane_id.clone(), dp_hash, cumul_size, poda));
+            } else if let Some(lane) = previous_entry {
+                cut.push(lane.clone());
             }
         }
         Ok(cut)

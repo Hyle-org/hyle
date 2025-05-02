@@ -279,6 +279,7 @@ impl Storage for LanesStorage {
         dp_hash: DataProposalHash,
         size: LaneBytesSize,
     ) -> Option<(DataProposalHash, LaneBytesSize)> {
+        tracing::trace!("Updating lane tip for lane {} to {:?}", lane_id, dp_hash);
         self.lanes_tip.insert(lane_id, (dp_hash, size))
     }
 
