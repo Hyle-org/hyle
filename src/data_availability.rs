@@ -373,7 +373,7 @@ impl DataAvailability {
                     .map_or(start_height, |block| block.height())
                     + 1,
             )
-            .filter_map(|block| block.map(|b| b.hashed()).ok())
+            .filter_map(|item| item.ok())
             .collect();
         processed_block_hashes.reverse();
 

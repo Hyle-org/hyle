@@ -33,8 +33,11 @@ impl AsRef<[u8]> for FjallHeightKey {
 }
 
 impl FjallValue {
-    fn new(block: &SignedBlock) -> Result<Self> {
+    fn new_with_block(block: &SignedBlock) -> Result<Self> {
         Ok(Self(borsh::to_vec(block)?))
+    }
+    fn new_with_block_hash(block_hash: &ConsensusProposalHash) -> Result<Self> {
+        Ok(Self(borsh::to_vec(block_hash)?))
     }
 }
 
@@ -51,7 +54,10 @@ pub struct Blocks {
 }
 
 impl Blocks {
-    fn decode_item(item: Slice) -> Result<SignedBlock> {
+    fn decode_block(item: Slice) -> Result<SignedBlock> {
+        borsh::from_slice(&item).map_err(Into::into)
+    }
+    fn decode_block_hash(item: Slice) -> Result<ConsensusProposalHash> {
         borsh::from_slice(&item).map_err(Into::into)
     }
 
@@ -102,18 +108,18 @@ impl Blocks {
         trace!("📦 storing block in fjall {}", block.height());
         self.by_hash.insert(
             FjallHashKey(block_hash).as_ref(),
-            FjallValue::new(&block)?.as_ref(),
+            FjallValue::new_with_block(&block)?.as_ref(),
         )?;
         self.by_height.insert(
             FjallHeightKey::new(block.height()).as_ref(),
-            FjallValue::new(&block)?.as_ref(),
+            FjallValue::new_with_block_hash(&block.hashed())?.as_ref(),
         )?;
         Ok(())
     }
 
-    pub fn get(&mut self, block_hash: &ConsensusProposalHash) -> Result<Option<SignedBlock>> {
+    pub fn get(&self, block_hash: &ConsensusProposalHash) -> Result<Option<SignedBlock>> {
         let item = self.by_hash.get(FjallHashKey(block_hash.clone()))?;
-        item.map(Self::decode_item).transpose()
+        item.map(Self::decode_block).transpose()
     }
 
     pub fn contains(&mut self, block: &ConsensusProposalHash) -> bool {
@@ -124,7 +130,12 @@ impl Blocks {
 
     pub fn last(&self) -> Option<SignedBlock> {
         match self.by_height.last_key_value() {
-            Ok(Some((_, v))) => Self::decode_item(v).ok(),
+            Ok(Some((_, v))) => {
+                let Ok(hash) = Self::decode_block_hash(v) else {
+                    return None;
+                };
+                self.get(&hash).ok().flatten()
+            }
             Ok(None) => None,
             Err(e) => {
                 error!("Error getting last block: {:?}", e);
@@ -141,11 +152,11 @@ impl Blocks {
         &mut self,
         min: BlockHeight,
         max: BlockHeight,
-    ) -> impl Iterator<Item = Result<SignedBlock>> {
+    ) -> impl Iterator<Item = Result<ConsensusProposalHash>> {
         self.by_height
             .range(FjallHeightKey::new(min)..FjallHeightKey::new(max))
             .map_while(|maybe_item| match maybe_item {
-                Ok((_, v)) => Some(Self::decode_item(v)),
+                Ok((_, v)) => Some(Self::decode_block_hash(v)),
                 Err(_) => None,
             })
     }
