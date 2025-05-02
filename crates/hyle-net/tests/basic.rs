@@ -228,7 +228,10 @@ async fn setup_drop_client(
 pub fn setup_drops(peers: Vec<String>, sim: &mut Sim<'_>, seed: u64) -> anyhow::Result<()> {
     tracing::info!("Starting simulation with peers {:?}", peers.clone());
 
-    let sim_duration = 20000;
+    // Nb of node kills, every second
+    let nb_drops = 10;
+
+    let sim_duration: u64 = (nb_drops * 1000 + peers.len() * 1000 + 5000) as u64;
     let mut host_peers = peers.clone();
     let client_peer = host_peers.pop().unwrap();
 
@@ -285,13 +288,13 @@ pub fn setup_drops(peers: Vec<String>, sim: &mut Sim<'_>, seed: u64) -> anyhow::
             .step()
             .map_err(|e| anyhow::anyhow!("Simulation error {}", e.to_string()))?;
 
-        if sim.elapsed().abs_diff(last_trigger) > Duration::from_secs(1) && drops < 10 {
+        if sim.elapsed().abs_diff(last_trigger) > Duration::from_secs(1) && drops < nb_drops {
             tracing::error!("Repair {} {}", last_couple.0.clone(), last_couple.1.clone());
             sim.repair(last_couple.0.clone(), last_couple.1.clone());
 
             // regen couple
             last_couple = gen_hosts_couple();
-            if drops < 9 {
+            if drops < nb_drops - 1 {
                 sim.partition(last_couple.0.clone(), last_couple.1.clone());
                 tracing::error!(
                     "Partition {} {}",

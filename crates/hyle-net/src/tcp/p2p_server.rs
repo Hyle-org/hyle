@@ -307,9 +307,6 @@ where
     ) -> Option<P2PServerEvent<Msg>> {
         let peer_pubkey = v.signature.validator.clone();
 
-        // error!("Peers connecting {:?}", self.connecting);
-        // error!("Peers all {:?}", self.peers);
-
         if let Some(peer_socket) = self.get_socket_mut(&canal, &peer_pubkey) {
             let peer_addr_to_drop = if peer_socket.timestamp < timestamp {
                 debug!(
@@ -398,12 +395,12 @@ where
         pubkey: &ValidatorPublicKey,
         canal: Canal,
     ) -> anyhow::Result<()> {
-        tracing::error!("Attempt to reconnect to {}/{}", pubkey, canal);
         let peer = self
             .peers
             .get_mut(pubkey)
             .context(format!("Peer not found {}", pubkey))?;
-        tracing::error!(
+
+        tracing::info!(
             "Attempt to reconnect to {}/{}",
             peer.node_connection_data.p2p_public_address,
             canal
@@ -419,14 +416,14 @@ where
         {
             match ongoing {
                 HandshakeOngoing::TcpClientStartedAt(last_connect_attempt) => {
-                    if now.clone() - last_connect_attempt.clone() < Duration::from_secs(2) {
+                    if now.clone() - last_connect_attempt.clone() < Duration::from_secs(5) {
                         {
                             return Ok(());
                         }
                     }
                 }
-                HandshakeOngoing::HandshakeStartedAt(last_handshake_at) => {
-                    if now.clone() - last_handshake_at.clone() < Duration::from_secs(2) {
+                HandshakeOngoing::HandshakeStartedAt(last_handshake_started_at) => {
+                    if now.clone() - last_handshake_started_at.clone() < Duration::from_secs(5) {
                         {
                             return Ok(());
                         }
@@ -437,7 +434,7 @@ where
 
         let peer_address = peer.node_connection_data.p2p_public_address.clone();
 
-        tracing::error!("Reconnecting to {}/{}", peer_address, canal);
+        tracing::info!("Reconnecting to {}/{}", peer_address, canal);
 
         self.connecting.insert(
             peer_address.clone(),
@@ -484,7 +481,7 @@ where
         let signed_node_connection_data = self.create_signed_node_connection_data()?;
         let timestamp = TimestampMsClock::now();
 
-        error!(
+        debug!(
             "Doing handshake on {}({})/{}",
             public_addr,
             tcp_client.socket_addr.to_string(),
