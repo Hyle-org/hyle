@@ -88,7 +88,7 @@ impl Consensus {
                     // If the cut is the same as before (and we didn't time out), then check if we should delay.
                     if may_delay
                         && !matches!(ticket, Ticket::TimeoutQC(..))
-                        && cut == self.bft_round_state.last_cut_seen
+                        && cut == self.bft_round_state.parent_cut
                     {
                         debug!("⏳ Delaying slot start");
                         self.bft_round_state.leader.pending_ticket = Some(ticket);
@@ -112,7 +112,7 @@ impl Consensus {
                         "Could not get a new cut from Mempool {:?}. Reusing previous one...",
                         err
                     );
-                    self.bft_round_state.last_cut_seen.clone()
+                    self.bft_round_state.parent_cut.clone()
                 }
             };
 
@@ -128,11 +128,15 @@ impl Consensus {
             });
 
             debug!(
-                "🚀 Starting new slot {} (view {}) with {} existing validators and {} candidates",
+                "🚀 Starting new slot {} (view {}) with {} existing validators and {} candidates. Cut: {:?}",
                 self.bft_round_state.slot,
                 self.bft_round_state.view,
                 self.bft_round_state.staking.bonded().len(),
-                new_validators_to_bond.len()
+                new_validators_to_bond.len(),
+                cut.iter()
+                    .map(|tx| format!("{}:{}({})", tx.0, tx.1, tx.2))
+                    .collect::<Vec<String>>()
+                    .join(", ")
             );
 
             let mut staking_actions: Vec<ConsensusStakingAction> = new_validators_to_bond
@@ -149,7 +153,6 @@ impl Consensus {
             }
 
             // Start Consensus with following cut
-            self.bft_round_state.last_cut_seen = cut.clone();
             self.bft_round_state.current_proposal = ConsensusProposal {
                 slot: self.bft_round_state.slot,
                 cut,
