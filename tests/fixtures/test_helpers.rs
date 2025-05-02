@@ -259,10 +259,10 @@ pub async fn send_transaction<S: StateUpdater>(
     tx_hash
 }
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static CALL_COUNT: AtomicUsize = AtomicUsize::new(10000);
+
 pub async fn find_available_port() -> u16 {
-    let listener = hyle_net::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
-    let addr = listener.local_addr().unwrap();
-    addr.port()
+    CALL_COUNT.fetch_add(1, Ordering::SeqCst) as u16
 }
