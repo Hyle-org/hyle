@@ -34,7 +34,7 @@ macro_rules! turmoil_simple {
                 tracing::info!("Starting test {} with seed {}", stringify!([<turmoil_ $simulation _ $seed >]), $seed);
                 let rng = StdRng::seed_from_u64($seed);
                 let mut sim = hyle_net::turmoil::Builder::new()
-                    .simulation_duration(Duration::from_secs(25))
+                    .simulation_duration(Duration::from_secs(50))
                     .tick_duration(Duration::from_millis(50))
                     .enable_tokio_io()
                     .build_with_rng(Box::new(rng));
@@ -231,7 +231,7 @@ pub fn setup_drops(peers: Vec<String>, sim: &mut Sim<'_>, seed: u64) -> anyhow::
     // Nb of node kills, every second
     let nb_drops = 10;
 
-    let sim_duration: u64 = (nb_drops * 1000 + peers.len() * 1000 + 5000) as u64;
+    let sim_duration: u64 = (nb_drops * 1000 + peers.len() * 1500 + 5000) as u64;
     let mut host_peers = peers.clone();
     let client_peer = host_peers.pop().unwrap();
 

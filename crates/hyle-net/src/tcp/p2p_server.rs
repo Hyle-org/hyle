@@ -57,7 +57,7 @@ type HandShakeJoinSet<Codec, Msg> = JoinSet<(
 #[derive(Debug)]
 pub enum HandshakeOngoing {
     TcpClientStartedAt(TimestampMs),
-    HandshakeStartedAt(TimestampMs),
+    HandshakeStartedAt(String, TimestampMs),
 }
 
 /// P2PServer is a wrapper around TcpServer that manages peer connections
@@ -422,12 +422,13 @@ where
                         }
                     }
                 }
-                HandshakeOngoing::HandshakeStartedAt(last_handshake_started_at) => {
+                HandshakeOngoing::HandshakeStartedAt(addr, last_handshake_started_at) => {
                     if now.clone() - last_handshake_started_at.clone() < Duration::from_secs(5) {
                         {
                             return Ok(());
                         }
                     }
+                    self.tcp_server.drop_peer_stream(addr.to_string());
                 }
             }
         }
@@ -488,12 +489,13 @@ where
             canal
         );
 
+        let addr = format!("{}/{}", public_addr, canal);
+
         self.connecting.insert(
             public_addr.clone(),
-            HandshakeOngoing::HandshakeStartedAt(timestamp.clone()),
+            HandshakeOngoing::HandshakeStartedAt(addr.clone(), timestamp.clone()),
         );
 
-        let addr = format!("{}/{}", public_addr, canal);
         self.tcp_server.setup_client(addr.clone(), tcp_client);
         self.tcp_server
             .send(
