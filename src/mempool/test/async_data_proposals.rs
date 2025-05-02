@@ -15,16 +15,15 @@ use crate::mempool::api::RestApiMessage;
 use crate::mempool::test::NodeStateEvent;
 use crate::mempool::{MempoolNetMessage, QueryNewCut};
 use crate::model::*;
+use crate::p2p::network::{HeaderSigner, MsgWithHeader};
 use crate::rest::RestApi;
 use crate::utils::integration_test::NodeIntegrationCtxBuilder;
-
-use super::SignedByValidator;
 
 bus_client! {
     struct Client {
         sender(GenesisEvent),
         sender(RestApiMessage),
-        sender(SignedByValidator<MempoolNetMessage>),
+        sender(MsgWithHeader<MempoolNetMessage>),
         sender(Query<QueryNewCut, Cut>),
         receiver(NodeStateEvent),
         receiver(ConsensusEvent),
@@ -216,17 +215,15 @@ async fn impl_test_mempool_isnt_blocked_by_proof_verification() -> Result<()> {
         }
     });
 
-    node_client.send(node_modules.crypto.sign(MempoolNetMessage::DataProposal(
-        data_proposal.hashed(),
-        data_proposal,
-    ))?)?;
+    node_client.send(node_modules.crypto.sign_msg_with_header(
+        MempoolNetMessage::DataProposal(data_proposal.hashed(), data_proposal),
+    )?)?;
 
     // Wait until we commit this TX
     loop {
         let cut: NodeStateEvent = node_client.recv().await?;
         match cut {
             NodeStateEvent::NewBlock(block) => {
-                info!("Got block");
                 if block.txs.iter().any(|(_tx_id, tx)| {
                     if let TransactionData::VerifiedProof(data) = &tx.transaction_data {
                         data.contract_name == contract_name
