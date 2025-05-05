@@ -182,7 +182,7 @@ tokio-stream = "0.1.17"
 tempfile = "3.19.1"
 assert-json-diff = "2.0.2"
 risc0-recursion = { workspace = true }
-risc0-zkvm = { version = "2.0.0", default-features = false, features = [
+risc0-zkvm = { version = "2.0.2", default-features = false, features = [
   "client",
 ] }
 signal-child = "1.0.6"
