@@ -86,7 +86,7 @@ impl AutoProverCtx {
         Self {
             common,
             start_height,
-            prover: Arc::new(SP1Prover::new(elf)),
+            prover: Arc::new(client_sdk::helpers::sp1::SP1Prover::new(elf)),
             contract_name,
             node,
         }
