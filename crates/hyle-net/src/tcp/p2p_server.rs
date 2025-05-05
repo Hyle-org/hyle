@@ -8,7 +8,10 @@ use anyhow::{bail, Context};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_crypto::BlstCrypto;
 use sdk::{hyle_model_utils::TimestampMs, SignedByValidator, ValidatorPublicKey};
-use tokio::{task::JoinSet, time::Interval};
+use tokio::{
+    task::{AbortHandle, JoinSet},
+    time::Interval,
+};
 use tokio_util::codec::{Decoder, Encoder};
 use tracing::{debug, error, info, trace, warn};
 
@@ -56,7 +59,7 @@ type HandShakeJoinSet<Codec, Msg> = JoinSet<(
 
 #[derive(Debug)]
 pub enum HandshakeOngoing {
-    TcpClientStartedAt(TimestampMs),
+    TcpClientStartedAt(TimestampMs, AbortHandle),
     HandshakeStartedAt(String, TimestampMs),
 }
 
@@ -73,7 +76,7 @@ where
     crypto: Arc<BlstCrypto>,
     node_id: String,
     // Hashmap containing the last attempts to connect
-    pub connecting: HashMap<String, HandshakeOngoing>,
+    pub connecting: HashMap<(String, Canal), HandshakeOngoing>,
     node_p2p_public_address: String,
     node_da_public_address: String,
     max_frame_length: Option<usize>,
@@ -122,18 +125,21 @@ where
                     return P2PTcpEvent::TcpEvent(tcp_event);
                 },
                 Some(joinset_result) = self.handshake_clients_tasks.join_next() => {
-                    if let Ok(task_result) = joinset_result {
-                        if let (public_addr, Ok(tcp_client), canal) = task_result {
-                            return P2PTcpEvent::HandShakeTcpClient(public_addr, tcp_client, canal);
-                        }
-                        else {
-                            warn!("Error during TcpClient connection for handshake");
+                    match joinset_result {
+                        Ok(task_result) =>{
+                            if let (public_addr, Ok(tcp_client), canal) = task_result {
+                                return P2PTcpEvent::HandShakeTcpClient(public_addr, tcp_client, canal);
+                            }
+                            else {
+                                warn!("Error during TcpClient connection for handshake");
+                                continue
+                            }
+                        },
+                        Err(e) =>
+                        {
+                            debug!("Error during joinset execution of handshake task: {:?}", e);
                             continue
                         }
-                    }
-                    else {
-                        warn!("Error during joinset execution of handshake task");
-                        continue
                     }
                 },
                 _ = self.peers_ping_ticker.tick() => {
@@ -168,16 +174,31 @@ where
                 }
             },
             P2PTcpEvent::HandShakeTcpClient(public_addr, tcp_client, canal) => {
-                if let Err(e) = self.do_handshake(public_addr, tcp_client, canal).await {
+                if let Err(e) = self
+                    .do_handshake(public_addr.clone(), tcp_client, canal.clone())
+                    .await
+                {
                     warn!("Error during handshake: {:?}", e);
-                    // TODO: Retry ?
+                    let _ = self.try_start_connection(public_addr, canal);
                 }
                 Ok(None)
             }
             P2PTcpEvent::PingPeers => {
-                for peer_socket in self.peers.values().flat_map(|v| v.canals.values()) {
-                    if let Err(e) = self.tcp_server.ping(peer_socket.socket_addr.clone()).await {
-                        warn!("Error pinging peer {}: {:?}", peer_socket.socket_addr, e);
+                let sockets: Vec<(ValidatorPublicKey, Canal, PeerSocket)> = self
+                    .peers
+                    .iter()
+                    .flat_map(move |(k, v)| {
+                        let cloned = k.clone();
+                        v.canals
+                            .iter()
+                            .map(move |(c, s)| (cloned.clone(), c.clone(), s.clone()))
+                    })
+                    .collect();
+
+                for (pubkey, canal, socket) in sockets {
+                    if let Err(e) = self.tcp_server.ping(socket.socket_addr.clone()).await {
+                        debug!("Error pinging peer {}: {:?}", socket.socket_addr, e);
+                        let _ = self.try_start_connection_for_peer(&pubkey, canal.clone());
                     }
                 }
                 Ok(None)
@@ -226,7 +247,7 @@ where
         // TODO: match the error type to decide what to do
         self.tcp_server.drop_peer_stream(dest.clone());
         if let Some((canal, info, _)) = self.get_peer_by_socket_addr(&dest) {
-            self.start_handshake_task(
+            self.start_connection_task(
                 info.node_connection_data.p2p_public_address.clone(),
                 canal.clone(),
             )
@@ -236,10 +257,10 @@ where
 
     fn handle_closed_event(&mut self, dest: String) {
         // TODO: investigate how to properly handle this case
-        // The connection has been closed by peer. We do not try to reconnect to it. We remove the peer.
+        // The connection has been closed by peer. We remove the peer and try to reconnect.
         self.tcp_server.drop_peer_stream(dest.clone());
         if let Some((canal, info, _)) = self.get_peer_by_socket_addr(&dest) {
-            self.start_handshake_task(
+            self.start_connection_task(
                 info.node_connection_data.p2p_public_address.clone(),
                 canal.clone(),
             )
@@ -390,14 +411,14 @@ where
         self.crypto.sign(node_connection_data)
     }
 
-    fn start_handshake_from_existing_peer(
+    fn try_start_connection_for_peer(
         &mut self,
         pubkey: &ValidatorPublicKey,
         canal: Canal,
     ) -> anyhow::Result<()> {
         let peer = self
             .peers
-            .get_mut(pubkey)
+            .get(pubkey)
             .context(format!("Peer not found {}", pubkey))?;
 
         tracing::info!(
@@ -406,24 +427,38 @@ where
             canal
         );
 
+        self.try_start_connection(peer.node_connection_data.p2p_public_address.clone(), canal)?;
+
+        Ok(())
+    }
+
+    /// Checks if creating a fresh tcp client is relevant and do it if so
+    pub fn try_start_connection(
+        &mut self,
+        peer_address: String,
+        canal: Canal,
+    ) -> anyhow::Result<()> {
+        if peer_address == self.node_p2p_public_address {
+            trace!("Trying to connect to self");
+            return Ok(());
+        }
+
         let now = TimestampMsClock::now();
 
         // A connection is already started for this public address ? If it is too old, let 's try retry one
         // If it is recent, let's wait for it to finish
-        if let Some(ongoing) = self
-            .connecting
-            .get(&peer.node_connection_data.p2p_public_address)
-        {
+        if let Some(ongoing) = self.connecting.get(&(peer_address.clone(), canal.clone())) {
             match ongoing {
-                HandshakeOngoing::TcpClientStartedAt(last_connect_attempt) => {
-                    if now.clone() - last_connect_attempt.clone() < Duration::from_secs(5) {
+                HandshakeOngoing::TcpClientStartedAt(last_connect_attempt, abort_handle) => {
+                    if now.clone() - last_connect_attempt.clone() < Duration::from_secs(3) {
                         {
                             return Ok(());
                         }
                     }
+                    abort_handle.abort();
                 }
                 HandshakeOngoing::HandshakeStartedAt(addr, last_handshake_started_at) => {
-                    if now.clone() - last_handshake_started_at.clone() < Duration::from_secs(5) {
+                    if now.clone() - last_handshake_started_at.clone() < Duration::from_secs(3) {
                         {
                             return Ok(());
                         }
@@ -433,44 +468,34 @@ where
             }
         }
 
-        let peer_address = peer.node_connection_data.p2p_public_address.clone();
-
-        tracing::info!("Reconnecting to {}/{}", peer_address, canal);
-
-        self.connecting.insert(
-            peer_address.clone(),
-            HandshakeOngoing::TcpClientStartedAt(now),
-        );
-        self.start_handshake_task(peer_address, canal);
+        self.start_connection_task(peer_address, canal);
         Ok(())
     }
 
-    pub fn start_handshake(&mut self, peer_ip: String, canal: Canal) {
-        if peer_ip == self.node_p2p_public_address {
-            trace!("Trying to connect to self");
-            return;
-        }
-
-        for peer in self.peers.values() {
-            if peer_ip == peer.node_connection_data.p2p_public_address {
-                warn!("Peer {} already connected", peer_ip);
-                return;
-            }
-        }
-
-        self.start_handshake_task(peer_ip, canal);
-    }
-
-    /// Create a tcp connection
-    pub fn start_handshake_task(&mut self, peer_ip: String, canal: Canal) {
+    /// Creates a task that attempts to create a tcp client
+    pub fn start_connection_task(&mut self, peer_address: String, canal: Canal) {
         let mfl = self.max_frame_length;
-        self.handshake_clients_tasks.spawn(async move {
-            let handshake_task =
-                TcpClient::connect_with_opts("p2p_server_handshake", mfl, peer_ip.clone());
+        let now = TimestampMsClock::now();
+        let peer_address_clone = peer_address.clone();
+        let canal_clone = canal.clone();
+
+        tracing::info!("Starting Connecting to {}/{}", peer_address, canal);
+
+        let abort_handle = self.handshake_clients_tasks.spawn(async move {
+            let handshake_task = TcpClient::connect_with_opts(
+                "p2p_server_handshake",
+                mfl,
+                peer_address_clone.clone(),
+            );
 
             let result = handshake_task.await;
-            (peer_ip, result, canal)
+            (peer_address_clone, result, canal_clone)
         });
+
+        self.connecting.insert(
+            (peer_address.clone(), canal),
+            HandshakeOngoing::TcpClientStartedAt(now, abort_handle),
+        );
     }
 
     async fn do_handshake(
@@ -492,7 +517,7 @@ where
         let addr = format!("{}/{}", public_addr, canal);
 
         self.connecting.insert(
-            public_addr.clone(),
+            (public_addr.clone(), canal.clone()),
             HandshakeOngoing::HandshakeStartedAt(addr.clone(), timestamp.clone()),
         );
 
@@ -540,7 +565,7 @@ where
             )
             .await
         {
-            self.start_handshake_from_existing_peer(&validator_pub_key, canal)
+            self.try_start_connection_for_peer(&validator_pub_key, canal)
                 .context(format!(
                     "Re-handshaking after message sending error with peer {}",
                     validator_pub_key
@@ -583,7 +608,7 @@ where
         HashMap::from_iter(res.into_iter().filter_map(|(k, v)| {
             peer_addr_to_pubkey.get(&k).map(|(_canal, pubkey)| {
                 error!("Error sending message to {} during broadcast: {}", k, v);
-                if let Err(e) = self.start_handshake_from_existing_peer(pubkey, _canal.clone()) {
+                if let Err(e) = self.try_start_connection_for_peer(pubkey, _canal.clone()) {
                     warn!("Problem when triggering re-handshake after message sending error with peer {}/{}: {}", pubkey, _canal, e);
                 }
                 (pubkey.clone(), v)
@@ -621,8 +646,8 @@ where
         HashMap::from_iter(res.into_iter().filter_map(|(k, v)| {
             peer_addr_to_pubkey.get(&k).map(|(canal, pubkey)| {
                 error!("Error sending message to {} during broadcast: {}", k, v);
-                if let Err(e) = self.start_handshake_from_existing_peer(pubkey, canal.clone()) {
-                    warn!("Problem when triggering re-handshake after message sending error with peer {}/{:?}: {}", pubkey, canal, e);
+                if let Err(e) = self.try_start_connection_for_peer(pubkey, canal.clone()) {
+                    warn!("Problem when triggering re-handshake after message sending error with peer {}/{}: {}", pubkey, canal, e);
                 }
                 (pubkey.clone(), v)
             })
@@ -737,10 +762,10 @@ pub mod tests {
         let ((port1, mut p2p_server1), (port2, mut p2p_server2)) = setup_p2p_server_pair().await?;
 
         // Initiate handshake from p2p_server1 to p2p_server2
-        p2p_server1.start_handshake(format!("127.0.0.1:{port2}"), Canal::new("A"));
+        _ = p2p_server1.try_start_connection(format!("127.0.0.1:{port2}"), Canal::new("A"));
 
         // Initiate handshake from p2p_server2 to p2p_server1
-        p2p_server2.start_handshake(format!("127.0.0.1:{port1}"), Canal::new("A"));
+        _ = p2p_server2.try_start_connection(format!("127.0.0.1:{port1}"), Canal::new("A"));
 
         // For TcpClient to connect
         receive_and_handle_event!(
@@ -810,16 +835,16 @@ pub mod tests {
         let ((port1, mut p2p_server1), (port2, mut p2p_server2)) = setup_p2p_server_pair().await?;
 
         // Initiate handshake from p2p_server1 to p2p_server2 on canal A
-        p2p_server1.start_handshake(format!("127.0.0.1:{port2}"), Canal::new("A"));
+        let _ = p2p_server1.try_start_connection(format!("127.0.0.1:{port2}"), Canal::new("A"));
 
         // Initiate handshake from p2p_server2 to p2p_server1 on canal A
-        p2p_server2.start_handshake(format!("127.0.0.1:{port1}"), Canal::new("A"));
+        let _ = p2p_server2.try_start_connection(format!("127.0.0.1:{port1}"), Canal::new("A"));
 
         // Initiate handshake from p2p_server1 to p2p_server2 on canal B
-        p2p_server1.start_handshake(format!("127.0.0.1:{port2}"), Canal::new("B"));
+        let _ = p2p_server1.try_start_connection(format!("127.0.0.1:{port2}"), Canal::new("B"));
 
         // Initiate handshake from p2p_server2 to p2p_server1 on canal B
-        p2p_server2.start_handshake(format!("127.0.0.1:{port1}"), Canal::new("B"));
+        let _ = p2p_server2.try_start_connection(format!("127.0.0.1:{port1}"), Canal::new("B"));
 
         // For TcpClient to connect
         receive_and_handle_event!(
@@ -953,7 +978,7 @@ pub mod tests {
         let ((_, mut p2p_server1), (port2, mut p2p_server2)) = setup_p2p_server_pair().await?;
 
         // Initial connection
-        p2p_server1.start_handshake(format!("127.0.0.1:{port2}"), Canal::new("A"));
+        let _ = p2p_server1.try_start_connection(format!("127.0.0.1:{port2}"), Canal::new("A"));
 
         // Server1 waits for TcpClient to connect
         receive_and_handle_event!(

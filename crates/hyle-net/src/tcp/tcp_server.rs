@@ -316,7 +316,7 @@ where
         if let Some(peer_stream) = self.sockets.remove(&peer_ip) {
             peer_stream.abort_sender_task.abort();
             peer_stream.abort_receiver_task.abort();
-            error!("Client {} dropped & disconnected", peer_ip);
+            tracing::debug!("Client {} dropped & disconnected", peer_ip);
         }
     }
 }

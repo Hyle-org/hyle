@@ -87,8 +87,8 @@ impl P2P {
         );
 
         for peer_ip in self.config.p2p.peers.clone() {
-            p2p_server.start_handshake(peer_ip.clone(), Canal::new("mempool"));
-            p2p_server.start_handshake(peer_ip, Canal::new("consensus"));
+            _ = p2p_server.try_start_connection(peer_ip.clone(), Canal::new("mempool"));
+            _ = p2p_server.try_start_connection(peer_ip, Canal::new("consensus"));
         }
 
         module_handle_messages! {
@@ -96,7 +96,7 @@ impl P2P {
             listen<P2PCommand> cmd => {
                 match cmd {
                     P2PCommand::ConnectTo { peer } => {
-                        p2p_server.start_handshake(peer, Canal::new("consensus"));
+                        _ = p2p_server.try_start_connection(peer, Canal::new("consensus"));
                     }
                 }
             }
@@ -191,7 +191,7 @@ impl P2P {
         let canal = Self::choose_canal(&_msg);
         warn!("{error}. Reconnecting to peer on canal {:?}...", canal);
         if let Some(peer_info) = p2p_server.peers.get(&validator_id) {
-            p2p_server.start_handshake_task(
+            p2p_server.start_connection_task(
                 peer_info.node_connection_data.p2p_public_address.clone(),
                 canal,
             );

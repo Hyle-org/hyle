@@ -86,7 +86,7 @@ async fn setup_basic_host(
     tracing::info!("All other peers {:?}", all_other_peers);
 
     for peer in all_other_peers.clone() {
-        p2p.start_handshake(format!("{}:{}", peer.clone(), 9090), Canal::new("A"));
+        let _ = p2p.try_start_connection(format!("{}:{}", peer.clone(), 9090), Canal::new("A"));
     }
 
     let mut interval = tokio::time::interval(Duration::from_millis(100));
@@ -148,7 +148,7 @@ async fn setup_drop_host(
     tracing::info!("All other peers {:?}", all_other_peers);
 
     for peer in all_other_peers.clone() {
-        p2p.start_handshake(format!("{}:{}", peer.clone(), 9090), Canal::new("A"));
+        let _ = p2p.try_start_connection(format!("{}:{}", peer.clone(), 9090), Canal::new("A"));
     }
 
     let mut interval_broadcast = tokio::time::interval(Duration::from_millis(50));
@@ -194,7 +194,7 @@ async fn setup_drop_client(
     tracing::info!("All other peers {:?}", all_other_peers);
 
     for peer in all_other_peers.clone() {
-        p2p.start_handshake(format!("{}:{}", peer.clone(), 9090), Canal::new("A"));
+        let _ = p2p.try_start_connection(format!("{}:{}", peer.clone(), 9090), Canal::new("A"));
     }
 
     let mut interval_broadcast = tokio::time::interval(Duration::from_millis(100));
