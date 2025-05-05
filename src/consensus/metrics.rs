@@ -29,32 +29,38 @@ pub struct ConsensusMetrics {
     pub on_sync_reply_err: Counter<u64>,
 }
 
+macro_rules! build {
+    ($meter:ident, $type:ty, $name:expr) => {
+        paste::paste! { $meter.[<u64_ $type>](stringify!([<"consensus_" $name>])).build() }
+    };
+}
+
 impl ConsensusMetrics {
     pub fn global(id: String) -> ConsensusMetrics {
         let scope = InstrumentationScope::builder(id).build();
         let my_meter = opentelemetry::global::meter_with_scope(scope);
 
         ConsensusMetrics {
-            current_slot: my_meter.u64_gauge("current_slot").build(),
-            current_view: my_meter.u64_gauge("current_view").build(),
-            last_started_round: my_meter.u64_gauge("last_started_round").build(),
-            commit: my_meter.u64_counter("commit").build(),
-            on_prepare_ok: my_meter.u64_counter("on_prepare_ok").build(),
-            on_prepare_err: my_meter.u64_counter("on_prepare_err").build(),
-            on_prepare_vote_ok: my_meter.u64_counter("on_prepare_vote_ok").build(),
-            on_prepare_vote_err: my_meter.u64_counter("on_prepare_vote_err").build(),
-            on_confirm_ok: my_meter.u64_counter("on_confirm_ok").build(),
-            on_confirm_err: my_meter.u64_counter("on_confirm_err").build(),
-            on_confirm_ack_ok: my_meter.u64_counter("on_confirm_ack_ok").build(),
-            on_confirm_ack_err: my_meter.u64_counter("on_confirm_ack_err").build(),
-            on_timeout_ok: my_meter.u64_counter("on_timeout_ok").build(),
-            on_timeout_err: my_meter.u64_counter("on_timeout_err").build(),
-            on_timeout_certificate_ok: my_meter.u64_counter("on_timeout_certificate_ok").build(),
-            on_timeout_certificate_err: my_meter.u64_counter("on_timeout_certificate_err").build(),
-            on_sync_request_ok: my_meter.u64_counter("on_sync_request_ok").build(),
-            on_sync_request_err: my_meter.u64_counter("on_sync_request_err").build(),
-            on_sync_reply_ok: my_meter.u64_counter("on_sync_reply_ok").build(),
-            on_sync_reply_err: my_meter.u64_counter("on_sync_reply_err").build(),
+            current_slot: build!(my_meter, gauge, "current_slot"),
+            current_view: build!(my_meter, gauge, "current_view"),
+            last_started_round: build!(my_meter, gauge, "last_started_round"),
+            commit: build!(my_meter, counter, "commit"),
+            on_prepare_ok: build!(my_meter, counter, "on_prepare_ok"),
+            on_prepare_err: build!(my_meter, counter, "on_prepare_err"),
+            on_prepare_vote_ok: build!(my_meter, counter, "on_prepare_vote_ok"),
+            on_prepare_vote_err: build!(my_meter, counter, "on_prepare_vote_err"),
+            on_confirm_ok: build!(my_meter, counter, "on_confirm_ok"),
+            on_confirm_err: build!(my_meter, counter, "on_confirm_err"),
+            on_confirm_ack_ok: build!(my_meter, counter, "on_confirm_ack_ok"),
+            on_confirm_ack_err: build!(my_meter, counter, "on_confirm_ack_err"),
+            on_timeout_ok: build!(my_meter, counter, "on_timeout_ok"),
+            on_timeout_err: build!(my_meter, counter, "on_timeout_err"),
+            on_timeout_certificate_ok: build!(my_meter, counter, "on_timeout_certificate_ok"),
+            on_timeout_certificate_err: build!(my_meter, counter, "on_timeout_certificate_err"),
+            on_sync_request_ok: build!(my_meter, counter, "on_sync_request_ok"),
+            on_sync_request_err: build!(my_meter, counter, "on_sync_request_err"),
+            on_sync_reply_ok: build!(my_meter, counter, "on_sync_reply_ok"),
+            on_sync_reply_err: build!(my_meter, counter, "on_sync_reply_err"),
         }
     }
 
