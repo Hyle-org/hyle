@@ -93,7 +93,7 @@ hyle-model = { workspace = true, default-features = false, features = [
 ] }
 hyle-crypto = { workspace = true }
 hydentity = { workspace = true, features = ["client"] }
-hyllar = { workspace = true, features = ["client"] }
+hyllar = { workspace = true, features = ["client", "impl"] }
 smt-token = { workspace = true, features = ["client"] }
 risc0-recursion = { workspace = true }
 hyle-verifiers = { workspace = true }
