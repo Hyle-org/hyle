@@ -474,7 +474,9 @@ mod tests {
             metrics: NodeStateMetrics::global("test".to_string(), "test"),
             store: NodeStateStore::default(),
         };
-        let block = node_state.handle_signed_block(&SignedBlock::default());
+        let block = node_state
+            .handle_signed_block(&SignedBlock::default())
+            .unwrap();
 
         let event = NodeStateEvent::NewBlock(Box::new(block));
 

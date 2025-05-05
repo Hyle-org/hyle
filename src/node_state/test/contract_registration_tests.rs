@@ -28,13 +28,9 @@ async fn test_register_contract_simple_hyle() {
     let register_c2 = make_register_tx("hyle@hyle".into(), "hyle".into(), "c2.hyle".into());
     let register_c3 = make_register_tx("hyle@hyle".into(), "hyle".into(), "c3".into());
 
-    let block_1 = craft_signed_block(1, vec![register_c1.clone().into()]);
-    state.handle_signed_block(&block_1);
+    state.craft_block_and_handle(1, vec![register_c1.clone().into()]);
 
-    state.handle_signed_block(&craft_signed_block(
-        2,
-        vec![register_c2.into(), register_c3.into()],
-    ));
+    state.craft_block_and_handle(2, vec![register_c2.into(), register_c3.into()]);
 
     assert_eq!(
         state.contracts.keys().collect::<HashSet<_>>(),
@@ -46,7 +42,7 @@ async fn test_register_contract_simple_hyle() {
         ])
     );
 
-    let block = state.handle_signed_block(&craft_signed_block(3, vec![register_c1.clone().into()]));
+    let block = state.craft_block_and_handle(3, vec![register_c1.clone().into()]);
 
     assert_eq!(block.failed_txs, vec![register_c1.hashed()]);
     assert_eq!(state.contracts.len(), 4);
@@ -81,7 +77,7 @@ async fn test_register_contract_failure() {
         ],
     );
 
-    let block = state.handle_signed_block(&signed_block);
+    let block = state.force_handle_block(&signed_block);
 
     assert_eq!(state.contracts.len(), 2);
     assert_eq!(block.successful_txs, vec![register_good.hashed()]);
@@ -127,14 +123,14 @@ async fn test_register_contract_proof_mismatch() {
     let proof_tx = new_proof_tx(&"test.hyle".into(), &output, &tx_hash);
 
     // Submit both transactions
-    let block = state.handle_signed_block(&craft_signed_block(
+    let block = state.craft_block_and_handle(
         1,
         vec![
             register_parent_tx.into(),
             register_tx.into(),
             proof_tx.into(),
         ],
-    ));
+    );
 
     // The transaction should fail because the proof's registration effect doesn't match the blob action
     tracing::warn!("{:?}", state.contracts);
@@ -146,7 +142,7 @@ async fn test_register_contract_proof_mismatch() {
 async fn test_register_contract_composition() {
     let mut state = new_node_state().await;
     let register = make_register_tx("hyle@hyle".into(), "hyle".into(), "hydentity".into());
-    let block = state.handle_signed_block(&craft_signed_block(1, vec![register.clone().into()]));
+    let block = state.craft_block_and_handle(1, vec![register.clone().into()]);
 
     check_block_is_ok(&block);
 
@@ -184,7 +180,7 @@ async fn test_register_contract_composition() {
         ],
     );
 
-    let block = state.handle_signed_block(&crafted_block);
+    let block = state.force_handle_block(&crafted_block);
     assert_eq!(state.contracts.len(), 2);
 
     check_block_is_ok(&block);
@@ -195,7 +191,7 @@ async fn test_register_contract_composition() {
         &compositing_register_good.hashed(),
     );
 
-    let block = state.handle_signed_block(&craft_signed_block(103, vec![proof_tx.into()]));
+    let block = state.craft_block_and_handle(103, vec![proof_tx.into()]);
 
     check_block_is_ok(&block);
 
@@ -214,17 +210,17 @@ async fn test_register_contract_composition() {
         &third_tx.hashed(),
     );
 
-    let block = state.handle_signed_block(&craft_signed_block(104, vec![third_tx.clone().into()]));
+    let block = state.craft_block_and_handle(104, vec![third_tx.clone().into()]);
 
     check_block_is_ok(&block);
 
     assert_eq!(state.contracts.len(), 2);
 
-    let block = state.handle_signed_block(&craft_signed_block(105, vec![proof_tx.clone().into()]));
+    let block = state.craft_block_and_handle(105, vec![proof_tx.clone().into()]);
 
     check_block_is_ok(&block);
 
-    let block = state.handle_signed_block(&craft_signed_block(202, vec![]));
+    let block = state.craft_block_and_handle(202, vec![]);
 
     check_block_is_ok(&block);
 
@@ -291,7 +287,7 @@ async fn test_register_contract_and_delete_hyle() {
         }));
     let sub_c2_proof = new_proof_tx(&"c2.hyle".into(), &output, &register_sub_c2.hashed());
 
-    let block = state.handle_signed_block(&craft_signed_block(
+    let block = state.craft_block_and_handle(
         1,
         vec![
             register_c1.into(),
@@ -299,7 +295,7 @@ async fn test_register_contract_and_delete_hyle() {
             register_sub_c2.into(),
             sub_c2_proof.into(),
         ],
-    ));
+    );
     assert_eq!(
         block
             .registered_contracts
@@ -332,7 +328,7 @@ async fn test_register_contract_and_delete_hyle() {
         .push(OnchainEffect::DeleteContract("sub.c2.hyle".into()));
     let delete_sub_proof = new_proof_tx(&"c2.hyle".into(), &output, &delete_sub_tx.hashed());
 
-    let block = state.handle_signed_block(&craft_signed_block(
+    let block = state.craft_block_and_handle(
         2,
         vec![
             self_delete_tx.into(),
@@ -341,7 +337,7 @@ async fn test_register_contract_and_delete_hyle() {
             delete_sub_proof.into(),
             delete_tx.into(),
         ],
-    ));
+    );
 
     assert_eq!(
         block
@@ -378,24 +374,21 @@ async fn test_hyle_sub_delete() {
         }));
     let sub_c2_proof = new_proof_tx(&"c2.hyle".into(), &output, &register_sub_c2.hashed());
 
-    state.handle_signed_block(&craft_signed_block(
+    state.craft_block_and_handle(
         1,
         vec![
             register_c2.into(),
             register_sub_c2.into(),
             sub_c2_proof.into(),
         ],
-    ));
+    );
     assert_eq!(state.contracts.len(), 3);
 
     // Now delete the intermediate contract first, then delete the sub-contract via hyle
     let delete_tx = make_delete_tx("hyle@hyle".into(), "hyle".into(), "c2.hyle".into());
     let delete_sub_tx = make_delete_tx("hyle@hyle".into(), "hyle".into(), "sub.c2.hyle".into());
 
-    let block = state.handle_signed_block(&craft_signed_block(
-        2,
-        vec![delete_tx.into(), delete_sub_tx.into()],
-    ));
+    let block = state.craft_block_and_handle(2, vec![delete_tx.into(), delete_sub_tx.into()]);
 
     assert_eq!(
         block
@@ -448,7 +441,7 @@ async fn test_register_update_delete_combinations_hyle() {
         if let Some(proofs) = proofs {
             txs.extend(proofs.iter().map(|p| (*p).clone().into()));
         }
-        let block = state.handle_signed_block(&craft_signed_block(1, txs));
+        let block = state.craft_block_and_handle(1, txs);
 
         assert_eq!(state.contracts.len(), expected_ct);
         assert_eq!(block.successful_txs.len(), expected_txs);
@@ -483,7 +476,7 @@ async fn test_custom_timeout_then_upgrade_with_none() {
     let register_c1 = make_register_contract_tx(c1.clone());
 
     // Register the contract
-    state.handle_signed_block(&craft_signed_block(1, vec![register_c1.into()]));
+    state.craft_block_and_handle(1, vec![register_c1.into()]);
 
     let custom_timeout = BlockHeight(150);
 
@@ -502,10 +495,7 @@ async fn test_custom_timeout_then_upgrade_with_none() {
         );
 
         let upgrade_with_timeout_hash = upgrade_with_timeout.hashed();
-        state.handle_signed_block(&craft_signed_block(
-            2,
-            vec![upgrade_with_timeout.clone().into()],
-        ));
+        state.craft_block_and_handle(2, vec![upgrade_with_timeout.clone().into()]);
 
         // Verify the timeout is set correctly - this is the old timeout
         assert_eq!(
@@ -520,10 +510,7 @@ async fn test_custom_timeout_then_upgrade_with_none() {
             .push(OnchainEffect::RegisterContract(action));
         let upgrade_with_timeout_proof =
             new_proof_tx(&c1, &hyle_output, &upgrade_with_timeout_hash);
-        state.handle_signed_block(&craft_signed_block(
-            3,
-            vec![upgrade_with_timeout_proof.into()],
-        ));
+        state.craft_block_and_handle(3, vec![upgrade_with_timeout_proof.into()]);
     }
 
     // Upgrade the contract again with a None timeout
@@ -541,10 +528,7 @@ async fn test_custom_timeout_then_upgrade_with_none() {
         );
 
         let upgrade_with_none_hash = upgrade_with_none.hashed();
-        state.handle_signed_block(&craft_signed_block(
-            4,
-            vec![upgrade_with_none.clone().into()],
-        ));
+        state.craft_block_and_handle(4, vec![upgrade_with_none.clone().into()]);
 
         // Verify the timeout is the custom timeout
         assert_eq!(
@@ -558,7 +542,7 @@ async fn test_custom_timeout_then_upgrade_with_none() {
             .onchain_effects
             .push(OnchainEffect::RegisterContract(action));
         let upgrade_with_none_proof = new_proof_tx(&c1, &hyle_output, &upgrade_with_none_hash);
-        state.handle_signed_block(&craft_signed_block(5, vec![upgrade_with_none_proof.into()]));
+        state.craft_block_and_handle(5, vec![upgrade_with_none_proof.into()]);
     }
 
     // Upgrade the contract again with another custom timeout
@@ -577,10 +561,7 @@ async fn test_custom_timeout_then_upgrade_with_none() {
         );
 
         let upgrade_with_another_timeout_hash = upgrade_with_another_timeout.hashed();
-        state.handle_signed_block(&craft_signed_block(
-            6,
-            vec![upgrade_with_another_timeout.clone().into()],
-        ));
+        state.craft_block_and_handle(6, vec![upgrade_with_another_timeout.clone().into()]);
 
         // Verify the timeout is still the OG custom timeout
         assert_eq!(
@@ -599,10 +580,7 @@ async fn test_custom_timeout_then_upgrade_with_none() {
             .push(OnchainEffect::RegisterContract(action));
         let upgrade_with_another_timeout_proof =
             new_proof_tx(&c1, &hyle_output, &upgrade_with_another_timeout_hash);
-        state.handle_signed_block(&craft_signed_block(
-            7,
-            vec![upgrade_with_another_timeout_proof.into()],
-        ));
+        state.craft_block_and_handle(7, vec![upgrade_with_another_timeout_proof.into()]);
     }
 
     // Send a final transaction with no timeout and Check it uses the new timeout
@@ -615,7 +593,7 @@ async fn test_custom_timeout_then_upgrade_with_none() {
     );
 
     let final_tx_hash = final_tx.hashed();
-    state.handle_signed_block(&craft_signed_block(8, vec![final_tx.into()]));
+    state.craft_block_and_handle(8, vec![final_tx.into()]);
 
     // Verify the timeout remains the same as the last custom timeout
     assert_eq!(
