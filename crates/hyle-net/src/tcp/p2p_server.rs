@@ -179,7 +179,7 @@ where
                     .await
                 {
                     warn!("Error during handshake: {:?}", e);
-                    _ = self.try_start_connection(public_addr, canal);
+                    let _ = self.try_start_connection(public_addr, canal);
                 }
                 Ok(None)
             }
@@ -195,10 +195,10 @@ where
                     })
                     .collect();
 
-                for (puabkey, canal, socket) in sockets {
+                for (pubkey, canal, socket) in sockets {
                     if let Err(e) = self.tcp_server.ping(socket.socket_addr.clone()).await {
                         debug!("Error pinging peer {}: {:?}", socket.socket_addr, e);
-                        _ = self.try_start_connection_for_peer(&puabkey, canal.clone());
+                        let _ = self.try_start_connection_for_peer(&pubkey, canal.clone());
                     }
                 }
                 Ok(None)
