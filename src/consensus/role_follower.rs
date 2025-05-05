@@ -659,10 +659,36 @@ impl Consensus {
             "🔉 Requesting missing parent prepare for proposal {}",
             missing_dp_hash
         );
-        // TODO: use send & retry in case of no response instead of broadcast
-        // It's not supposed to occur often, so it's fine for now
-        self.broadcast_net_message(ConsensusNetMessage::SyncRequest(missing_dp_hash.clone()))
-            .context("Sending SyncRequest")?;
+        // We use send instead of broadcast to avoid an exponential number of messages
+        // TODO: improve on this.
+        #[cfg(not(test))]
+        let node_to_ask = {
+            let bonded = self.bft_round_state.staking.bonded();
+            if bonded.is_empty() {
+                None
+            } else {
+                let i: usize = rand::random();
+                // Skip us
+                if bonded
+                    .get(i)
+                    .map(|x| x == self.crypto.validator_pubkey())
+                    .unwrap_or(true)
+                {
+                    bonded.get((i + 1) % bonded.len()).cloned()
+                } else {
+                    bonded.get(i).cloned()
+                }
+            }
+        };
+        // For test deterministically always use the sender
+        #[cfg(test)]
+        let node_to_ask = Some(sender.clone());
+        let mess = ConsensusNetMessage::SyncRequest(missing_dp_hash.clone());
+        match node_to_ask {
+            Some(n) => self.send_net_message(n, mess),
+            None => self.broadcast_net_message(mess),
+        }
+        .context("Sending SyncRequest")?;
 
         Ok(())
     }
@@ -931,12 +957,14 @@ mod tests {
 
         // We should request missing_prepare2
         match sync_request_rv.recv().await {
-            Ok(OutboundMessage::BroadcastMessage(NetMessage::ConsensusMessage(
-                SignedByValidator::<ConsensusNetMessage> {
-                    msg: ConsensusNetMessage::SyncRequest(hash),
-                    ..
-                },
-            ))) => {
+            Ok(OutboundMessage::SendMessage {
+                msg:
+                    NetMessage::ConsensusMessage(SignedByValidator::<ConsensusNetMessage> {
+                        msg: ConsensusNetMessage::SyncRequest(hash),
+                        ..
+                    }),
+                ..
+            }) => {
                 assert_eq!(
                     hash,
                     missing_prepare2.hashed(),
@@ -966,12 +994,14 @@ mod tests {
 
         // We should request missing_prepare1
         match sync_request_rv.recv().await {
-            Ok(OutboundMessage::BroadcastMessage(NetMessage::ConsensusMessage(
-                SignedByValidator::<ConsensusNetMessage> {
-                    msg: ConsensusNetMessage::SyncRequest(hash),
-                    ..
-                },
-            ))) => {
+            Ok(OutboundMessage::SendMessage {
+                msg:
+                    NetMessage::ConsensusMessage(SignedByValidator::<ConsensusNetMessage> {
+                        msg: ConsensusNetMessage::SyncRequest(hash),
+                        ..
+                    }),
+                ..
+            }) => {
                 assert_eq!(
                     hash,
                     missing_prepare1.hashed(),

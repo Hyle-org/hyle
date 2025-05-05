@@ -821,7 +821,6 @@ pub mod test {
     };
     use assertables::assert_contains;
     use tokio::sync::broadcast::Receiver;
-    use tracing::error;
     use utils::TimestampMs;
 
     pub struct ConsensusTestCtx {
@@ -1170,18 +1169,17 @@ pub mod test {
                 msg: net_msg,
             } = rec
             {
-                assert_eq!(to, &dest, "Got message {:?}", net_msg);
                 if let NetMessage::ConsensusMessage(msg) = net_msg {
+                    assert_eq!(to, &dest, "Got message {:?}", msg);
                     msg
                 } else {
-                    warn!("{description}: skipping {:?}", net_msg);
+                    warn!("{description}: skipping non-consensus message, details in debug");
+                    debug!("Message is: {:?}", net_msg);
                     self.assert_send(to, description)
                 }
             } else {
-                error!(
-                    "{description}: OutboundMessage::Send message is missing, found {:?}",
-                    rec
-                );
+                warn!("{description}: Skipping broadcast message, details in debug");
+                debug!("Message is: {:?}", rec);
                 self.assert_send(to, description)
             }
         }
