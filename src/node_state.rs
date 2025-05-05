@@ -135,11 +135,11 @@ impl Default for NodeStateStore {
 }
 
 impl NodeState {
-    pub fn handle_signed_block(&mut self, signed_block: &SignedBlock) -> Block {
+    pub fn handle_signed_block(&mut self, signed_block: &SignedBlock) -> Result<Block> {
         let next_block = self.current_height + 1 == signed_block.height();
         let initial_block = self.current_height.0 == 0 && signed_block.height().0 == 0;
         if !next_block && !initial_block {
-            error!(
+            bail!(
                 "Handling signed block of height {} while current height is {}",
                 signed_block.height(),
                 self.current_height
@@ -319,22 +319,7 @@ impl NodeState {
 
         debug!("Done handling signed block: {:?}", signed_block.height());
 
-        block_under_construction
-    }
-
-    #[cfg(test)]
-    pub fn handle_register_contract_effect(&mut self, tx: &RegisterContractEffect) {
-        info!("📝 Registering contract {}", tx.contract_name);
-        self.contracts.insert(
-            tx.contract_name.clone(),
-            Contract {
-                name: tx.contract_name.clone(),
-                program_id: tx.program_id.clone(),
-                state: tx.state_commitment.clone(),
-                verifier: tx.verifier.clone(),
-                timeout_window: tx.timeout_window.clone().unwrap_or_default(),
-            },
-        );
+        Ok(block_under_construction)
     }
 
     fn get_tx_timeout_window<'a, T: IntoIterator<Item = &'a Blob>>(
@@ -1304,6 +1289,38 @@ pub mod test {
                 ..ConsensusProposal::default()
             },
             data_proposals: vec![(LaneId::default(), vec![DataProposal::new(None, txs)])],
+        }
+    }
+
+    impl NodeState {
+        // Convenience method to handle a signed block in tests.
+        pub fn force_handle_block(&mut self, block: &SignedBlock) -> Block {
+            if block.consensus_proposal.slot <= self.current_height.0
+                || block.consensus_proposal.slot == 0
+            {
+                panic!("Invalid block height");
+            }
+            self.current_height = BlockHeight(block.consensus_proposal.slot - 1);
+            self.handle_signed_block(block).unwrap()
+        }
+
+        pub fn craft_block_and_handle(&mut self, height: u64, txs: Vec<Transaction>) -> Block {
+            let block = craft_signed_block(height, txs);
+            self.force_handle_block(&block)
+        }
+
+        pub fn handle_register_contract_effect(&mut self, tx: &RegisterContractEffect) {
+            info!("📝 Registering contract {}", tx.contract_name);
+            self.contracts.insert(
+                tx.contract_name.clone(),
+                Contract {
+                    name: tx.contract_name.clone(),
+                    program_id: tx.program_id.clone(),
+                    state: tx.state_commitment.clone(),
+                    verifier: tx.verifier.clone(),
+                    timeout_window: tx.timeout_window.clone().unwrap_or_default(),
+                },
+            );
         }
     }
 
