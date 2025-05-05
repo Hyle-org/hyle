@@ -136,8 +136,9 @@ pub fn setup_late_host_at_first_handshake(peers: Vec<String>, sim: &mut Sim<'_>,
     tracing::info!("Starting simulation with peers {:?}", peers.clone());
     let mut rng = StdRng::seed_from_u64(seed); 
     let late_host = peers.get((rng.next_u64() as usize) % peers.len()).unwrap();
-    
+
     for peer in peers.clone().into_iter() {
+        let late = rng.next_u64() % 12;
         let peer_clone = peer.clone();
         let peers_clone = peers.clone();
         let late_clone = late_host.clone();
@@ -146,6 +147,7 @@ pub fn setup_late_host_at_first_handshake(peers: Vec<String>, sim: &mut Sim<'_>,
                 tokio::time::sleep(Duration::from_secs(15)).await;
                 setup_basic_host(peer_clone, peers_clone, false, seed).await
             } else {
+                tokio::time::sleep(Duration::from_secs(late)).await;
                 setup_basic_host(peer_clone, peers_clone, true, seed).await
             }
         })
