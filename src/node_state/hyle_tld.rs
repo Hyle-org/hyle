@@ -12,6 +12,7 @@ pub fn handle_blob_for_hyle_tld(
 ) -> Result<()> {
     // TODO: check the identity of the caller here.
 
+    tracing::warn!("totoro");
     // TODO: support unstructured blobs as well ?
     if let Ok(reg) =
         StructuredBlobData::<RegisterContractAction>::try_from(current_blob.data.clone())

@@ -468,6 +468,86 @@ async fn test_register_update_delete_combinations_hyle() {
     )
     .await;
 }
+
+#[test_log::test(tokio::test)]
+async fn test_unknown_contract_and_delete_cleanup() {
+    let mut state = new_node_state().await;
+
+    // 1. Create a blob transaction for an unknown contract
+    let unknown_contract_tx = BlobTransaction::new(
+        "test@unknown",
+        vec![Blob {
+            contract_name: "unknown".into(),
+            data: BlobData(vec![1, 2, 3, 4]),
+        }],
+    );
+
+    // This transaction should be rejected immediately since the contract doesn't exist
+    let block = state.craft_block_and_handle(1, vec![unknown_contract_tx.clone().into()]);
+    assert_eq!(block.failed_txs, vec![unknown_contract_tx.hashed()]);
+
+    // 2. Register a contract
+    let register_tx = make_register_tx("hyle@hyle".into(), "hyle".into(), "to_delete".into());
+    state.craft_block_and_handle(2, vec![register_tx.clone().into()]);
+
+    // 3. Submit blob transactions for the contract but don't settle them
+    // The first will delete it, the others are just there to time out.
+    let blob_tx1 = make_delete_tx(
+        "hyle@to_delete".into(),
+        "to_delete".into(),
+        "to_delete".into(),
+    );
+    let blob_tx2 = BlobTransaction::new(
+        "test@to_delete",
+        vec![Blob {
+            contract_name: "to_delete".into(),
+            data: BlobData(vec![1, 2, 3, 4]),
+        }],
+    );
+    let blob_tx3 = BlobTransaction::new(
+        "test2@to_delete",
+        vec![Blob {
+            contract_name: "to_delete".into(),
+            data: BlobData(vec![5, 6, 7, 8]),
+        }],
+    );
+    let blob_tx1_hash = blob_tx1.hashed();
+    let blob_tx2_hash = blob_tx2.hashed();
+    let blob_tx3_hash = blob_tx3.hashed();
+
+    state.craft_block_and_handle(
+        3,
+        vec![blob_tx1.clone().into(), blob_tx2.into(), blob_tx3.into()],
+    );
+
+    // Verify transactions are in the unsettled map
+    assert!(state.unsettled_transactions.get(&blob_tx1_hash).is_some());
+    assert!(state.unsettled_transactions.get(&blob_tx2_hash).is_some());
+    assert!(state.unsettled_transactions.get(&blob_tx3_hash).is_some());
+
+    // 4. Delete the contract
+    // Create proof for the deletion
+    let mut output = make_hyle_output(blob_tx1.clone(), BlobIndex(0));
+    output
+        .onchain_effects
+        .push(OnchainEffect::DeleteContract("to_delete".into()));
+    let proof_tx = new_proof_tx(&"hyle".into(), &output, &blob_tx1_hash);
+    // Execute the deletion
+    state.craft_block_and_handle(4, vec![proof_tx.into()]);
+
+    // Verify contract was deleted
+    assert!(!state.contracts.contains_key(&"to_delete".into()));
+
+    // Verify all associated transactions were removed from the unsettled map
+    assert!(state.unsettled_transactions.get(&blob_tx1_hash).is_none());
+    assert!(state.unsettled_transactions.get(&blob_tx2_hash).is_none());
+    assert!(state.unsettled_transactions.get(&blob_tx3_hash).is_none());
+    assert!(state
+        .unsettled_transactions
+        .get_next_unsettled_tx(&"to_delete".into())
+        .is_none());
+}
+
 #[test_log::test(tokio::test)]
 async fn test_custom_timeout_then_upgrade_with_none() {
     let mut state = new_node_state().await;
