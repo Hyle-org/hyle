@@ -112,7 +112,7 @@ tracing = "0.1"
 
 anymap = { version = "0.12.1" }
 assertables = { version = "9.5.2" }
-axum = { version = "0.8.3", features = ["ws", "macros"] }
+axum = { version = "0.8.4", features = ["ws", "macros"] }
 axum-otel-metrics = { version = "0.10.0" }
 bytes = { version = "1.10.0" }
 clap = { version = "4.5.37", features = ["derive"] }
@@ -149,7 +149,7 @@ utoipa = { version = "5.3.1", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "9.0.0", features = ["axum"] }
 utoipa-axum = { version = "0.2.0" }
 testcontainers-modules = { version = "0.11.6", features = ["postgres"] }
-toml = "0.8.21"
+toml = "0.8.22"
 
 # We force zip version here as later version is not compatible with utoipa-swagger-ui
 zip = "=2.3.0"
@@ -182,7 +182,7 @@ tokio-stream = "0.1.17"
 tempfile = "3.19.1"
 assert-json-diff = "2.0.2"
 risc0-recursion = { workspace = true }
-risc0-zkvm = { version = "2.0.0", default-features = false, features = [
+risc0-zkvm = { version = "2.0.2", default-features = false, features = [
   "client",
 ] }
 signal-child = "1.0.6"
