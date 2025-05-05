@@ -257,7 +257,7 @@ where
 
     fn handle_closed_event(&mut self, dest: String) {
         // TODO: investigate how to properly handle this case
-        // The connection has been closed by peer. We do not try to reconnect to it. We remove the peer.
+        // The connection has been closed by peer. We remove the peer and try to reconnect.
         self.tcp_server.drop_peer_stream(dest.clone());
         if let Some((canal, info, _)) = self.get_peer_by_socket_addr(&dest) {
             self.start_connection_task(
