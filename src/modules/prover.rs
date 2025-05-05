@@ -11,7 +11,8 @@ use crate::{
 use anyhow::{anyhow, Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::{
-    helpers::risc0::Risc0Prover, rest_client::NodeApiHttpClient,
+    helpers::{risc0::Risc0Prover, ClientSdkProver},
+    rest_client::NodeApiHttpClient,
     transaction_builder::TxExecutorHandler,
 };
 use hyle_model::{
@@ -53,9 +54,43 @@ pub struct AutoProverBusClient<Contract: Send + Sync + Clone + 'static> {
 pub struct AutoProverCtx {
     pub common: Arc<CommonRunContext>,
     pub start_height: BlockHeight,
-    pub elf: &'static [u8],
+    pub prover: Arc<dyn ClientSdkProver<Vec<Calldata>> + Send + Sync>,
     pub contract_name: ContractName,
     pub node: Arc<NodeApiHttpClient>,
+}
+
+impl AutoProverCtx {
+    pub fn risc0(
+        common: Arc<CommonRunContext>,
+        elf: &'static [u8],
+        contract_name: ContractName,
+        node: Arc<NodeApiHttpClient>,
+    ) -> Self {
+        Self {
+            common,
+            start_height: BlockHeight(0),
+            prover: Arc::new(Risc0Prover::new(elf)),
+            contract_name,
+            node,
+        }
+    }
+
+    #[cfg(feature = "sp1")]
+    pub fn sp1(
+        common: Arc<CommonRunContext>,
+        elf: &'static [u8],
+        contract_name: ContractName,
+        start_height: BlockHeight,
+        node: Arc<NodeApiHttpClient>,
+    ) -> Self {
+        Self {
+            common,
+            start_height,
+            prover: Arc::new(SP1Prover::new(elf)),
+            contract_name,
+            node,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -332,7 +367,7 @@ where
         };
 
         let node_client = self.ctx.node.clone();
-        let prover = Risc0Prover::new(self.ctx.elf);
+        let prover = self.ctx.prover.clone();
         let contract_name = self.ctx.contract_name.clone();
         tokio::task::spawn(async move {
             match prover.prove(commitment_metadata, calldatas).await {
