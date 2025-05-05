@@ -134,7 +134,8 @@ where
                                 return P2PTcpEvent::HandShakeTcpClient(public_addr, tcp_client, canal);
                             }
                             else {
-                                warn!("Error during TcpClient connection for handshake");
+                                warn!("Error during TcpClient connection, retrying on {}/{}", task_result.0, task_result.2);
+                                _ = self.try_start_connection(task_result.0, task_result.2);
                                 continue
                             }
                         },
@@ -440,6 +441,7 @@ where
     }
 
     /// Checks if creating a fresh tcp client is relevant and do it if so
+    /// Start a task, cancellation safe
     pub fn try_start_connection(
         &mut self,
         peer_address: String,
