@@ -29,6 +29,7 @@ pub struct NodeStateModule {
 
 #[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize)]
 pub enum NodeStateEvent {
+    // TODO: use Arc instead (Boxes are cloned, and their content when used with broadcast channel)
     NewBlock(Box<Block>),
 }
 impl BusMessage for NodeStateEvent {}

@@ -1,19 +1,14 @@
 //! Networking layer
 
 use crate::{
-    bus::{BusClientSender, BusMessage},
-    log_warn,
-    mempool::MempoolNetMessage,
-    model::SharedRunContext,
-    module_handle_messages,
-    utils::{
+    bus::{BusClientSender, BusMessage}, log_warn, mempool::MempoolNetMessage, model::SharedRunContext, module_handle_messages, node_state::module::NodeStateEvent, utils::{
         conf::SharedConf,
         modules::{module_bus_client, Module},
-    },
+    }
 };
 use anyhow::{Context, Error, Result};
 use hyle_crypto::SharedBlstCrypto;
-use hyle_model::{ConsensusNetMessage, SignedByValidator, ValidatorPublicKey};
+use hyle_model::{BlockHeight, ConsensusNetMessage, SignedByValidator, ValidatorPublicKey};
 use hyle_net::tcp::{
     p2p_server::{P2PServer, P2PServerEvent},
     Canal,
@@ -36,6 +31,7 @@ struct P2PBusClient {
     sender(SignedByValidator<ConsensusNetMessage>),
     sender(PeerEvent),
     receiver(P2PCommand),
+    receiver(NodeStateEvent),
     receiver(OutboundMessage),
 }
 }
@@ -79,7 +75,8 @@ impl P2P {
             self.config.p2p.public_address.clone(),
             self.config.da_public_address.clone(),
         )
-        .await?;
+            .await?;
+
 
         info!(
             "📡  Starting P2P module, listening on {}",
@@ -93,6 +90,11 @@ impl P2P {
 
         module_handle_messages! {
             on_bus self.bus,
+            listen<NodeStateEvent> NodeStateEvent::NewBlock(b) => {
+                if b.block_height.0 > p2p_server.current_height {
+                    p2p_server.current_height = b.block_height.0;
+                }
+            }
             listen<P2PCommand> cmd => {
                 match cmd {
                     P2PCommand::ConnectTo { peer } => {
@@ -141,11 +143,12 @@ impl P2P {
             p2p_tcp_event = p2p_server.listen_next() => {
                 if let Ok(Some(p2p_server_event)) = log_warn!(p2p_server.handle_p2p_tcp_event(p2p_tcp_event).await, "Handling P2PTcpEvent") {
                     match p2p_server_event {
-                        P2PServerEvent::NewPeer { name, pubkey, da_address } => {
+                        P2PServerEvent::NewPeer { name, pubkey, da_address, height } => {
                             let _ = log_warn!(self.bus.send(PeerEvent::NewPeer {
                                 name,
                                 pubkey,
                                 da_address,
+                                height: BlockHeight(height)
                             }), "Sending new peer event");
                         },
                         P2PServerEvent::P2PMessage { msg: net_message } => {

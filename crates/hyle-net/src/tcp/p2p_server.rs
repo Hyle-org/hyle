@@ -27,6 +27,7 @@ pub enum P2PServerEvent<Msg: Clone> {
     NewPeer {
         name: String,
         pubkey: ValidatorPublicKey,
+        height: u64,
         da_address: String,
     },
     P2PMessage {
@@ -79,6 +80,7 @@ where
     pub connecting: HashMap<(String, Canal), HandshakeOngoing>,
     node_p2p_public_address: String,
     node_da_public_address: String,
+    pub current_height: u64,
     max_frame_length: Option<usize>,
     pub tcp_server: TcpServer<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>,
     pub peers: HashMap<ValidatorPublicKey, PeerInfo>,
@@ -111,6 +113,7 @@ where
             max_frame_length,
             node_p2p_public_address,
             node_da_public_address,
+            current_height: 0,
             tcp_server,
             peers: HashMap::new(),
             handshake_clients_tasks: JoinSet::new(),
@@ -386,6 +389,7 @@ where
                 name: v.msg.name.to_string(),
                 pubkey: v.signature.validator.clone(),
                 da_address: v.msg.da_public_address.clone(),
+                height: v.msg.current_height,
             })
         }
     }
@@ -399,12 +403,15 @@ where
         }
     }
 
+    // TODO: Make P2P server generic with this payload ? This data is 100% custom
+    /// Create a payload with data that will be transmitted during handshake
     fn create_signed_node_connection_data(
         &self,
     ) -> anyhow::Result<SignedByValidator<NodeConnectionData>> {
         let node_connection_data = NodeConnectionData {
             version: 1,
             name: self.node_id.clone(),
+            current_height: self.current_height,
             p2p_public_address: self.node_p2p_public_address.clone(),
             da_public_address: self.node_da_public_address.clone(),
         };
