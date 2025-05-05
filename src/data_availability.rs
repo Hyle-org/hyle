@@ -13,7 +13,7 @@ use codec::{codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequ
 use hyle_net::tcp::TcpEvent;
 
 use crate::{
-    bus::{BusClientSender, BusMessage},
+    bus::BusClientSender,
     consensus::ConsensusCommand,
     genesis::GenesisEvent,
     log_error,
@@ -36,8 +36,6 @@ use tracing::{debug, error, info, trace, warn};
 pub enum DataEvent {
     OrderedSignedBlock(SignedBlock),
 }
-
-impl BusMessage for DataEvent {}
 
 module_bus_client! {
 #[derive(Debug)]

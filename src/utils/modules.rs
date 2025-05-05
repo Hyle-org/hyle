@@ -102,7 +102,6 @@ struct ModuleStarter {
 }
 
 pub mod signal {
-    use crate::bus::BusMessage;
     #[derive(Clone, Debug)]
     pub struct ShutdownModule {
         pub module: String,
@@ -111,9 +110,6 @@ pub mod signal {
     pub struct ShutdownCompleted {
         pub module: String,
     }
-
-    impl BusMessage for ShutdownModule {}
-    impl BusMessage for ShutdownCompleted {}
 
     pub async fn async_receive_shutdown<T>(
         should_shutdown: &mut bool,
@@ -435,7 +431,7 @@ impl ModulesHandler {
 
 #[cfg(test)]
 mod tests {
-    use crate::bus::{dont_use_this::get_receiver, metrics::BusMetrics, BusMessage};
+    use crate::bus::{dont_use_this::get_receiver, metrics::BusMetrics};
 
     use super::*;
     use crate::bus::SharedMessageBus;
@@ -453,8 +449,6 @@ mod tests {
         bus: TestBusClient,
         _field: T,
     }
-
-    impl BusMessage for usize {}
 
     module_bus_client! {
         struct TestBusClient { sender(usize), }

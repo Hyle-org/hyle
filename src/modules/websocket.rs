@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::utils::conf::NodeWebSocketConfig;
 use crate::{
-    bus::{BusClientSender, BusMessage, SharedMessageBus},
+    bus::{BusClientSender, SharedMessageBus},
     log_warn, module_bus_client, module_handle_messages,
     utils::modules::Module,
 };
@@ -66,10 +66,6 @@ pub struct WebSocketBusClient<In: Send + Sync + Clone + 'static, Out: Send + Syn
     receiver(WsTopicMessage<Out>),
 }
 }
-
-impl<I> BusMessage for WsInMessage<I> {}
-impl<I> BusMessage for WsBroadcastMessage<I> {}
-impl<I> BusMessage for WsTopicMessage<I> {}
 
 // ---- WebSocket Module ----
 

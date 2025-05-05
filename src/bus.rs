@@ -15,9 +15,6 @@ pub const CHANNEL_CAPACITY: usize = 100000;
 
 type AnyMap = Map<dyn Any + Send + Sync>;
 
-/// Types that implement BusMessage can be sent on the bus - this is mostly for documentation purposes.
-pub trait BusMessage {}
-
 pub struct SharedMessageBus {
     channels: Arc<Mutex<AnyMap>>,
     pub metrics: BusMetrics,
@@ -38,13 +35,11 @@ impl SharedMessageBus {
         }
     }
 
-    async fn receiver<M: BusMessage + Send + Sync + Clone + 'static>(
-        &self,
-    ) -> broadcast::Receiver<M> {
+    async fn receiver<M: Send + Sync + Clone + 'static>(&self) -> broadcast::Receiver<M> {
         self.sender().await.subscribe()
     }
 
-    async fn sender<M: BusMessage + Send + Sync + Clone + 'static>(&self) -> broadcast::Sender<M> {
+    async fn sender<M: Send + Sync + Clone + 'static>(&self) -> broadcast::Sender<M> {
         self.channels
             .lock()
             .await
@@ -58,13 +53,13 @@ pub mod dont_use_this {
     use super::*;
     /// Get a sender for a specific message type.
     /// Intended for use by BusClient implementations only.
-    pub async fn get_sender<M: BusMessage + Send + Sync + Clone + 'static>(
+    pub async fn get_sender<M: Send + Sync + Clone + 'static>(
         bus: &SharedMessageBus,
     ) -> broadcast::Sender<M> {
         bus.sender::<M>().await
     }
 
-    pub async fn get_receiver<M: BusMessage + Send + Sync + Clone + 'static>(
+    pub async fn get_receiver<M: Send + Sync + Clone + 'static>(
         bus: &SharedMessageBus,
     ) -> broadcast::Receiver<M> {
         bus.receiver::<M>().await

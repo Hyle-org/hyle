@@ -12,7 +12,7 @@ use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
-    bus::{bus_client, metrics::BusMetrics, BusClientSender, BusMessage},
+    bus::{bus_client, metrics::BusMetrics, BusClientSender},
     model::{
         contract_registration::validate_contract_registration_metadata, BlobTransaction,
         CommonRunContext, Hashed, ProofTransaction, Transaction, TransactionData,
@@ -24,7 +24,6 @@ use crate::{
 pub enum RestApiMessage {
     NewTx(Transaction),
 }
-impl BusMessage for RestApiMessage {}
 
 bus_client! {
 struct RestBusClient {

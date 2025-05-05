@@ -1,7 +1,7 @@
 //! Networking layer
 
 use crate::{
-    bus::{BusClientSender, BusMessage},
+    bus::BusClientSender,
     log_warn,
     mempool::MempoolNetMessage,
     model::SharedRunContext,
@@ -29,7 +29,6 @@ pub mod network;
 pub enum P2PCommand {
     ConnectTo { peer: String },
 }
-impl BusMessage for P2PCommand {}
 module_bus_client! {
 struct P2PBusClient {
     sender(MsgWithHeader<MempoolNetMessage>),

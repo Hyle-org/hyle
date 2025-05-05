@@ -9,7 +9,7 @@ use tokio::sync::RwLock;
 use tracing::debug;
 
 use crate::{
-    bus::{BusClientSender, BusMessage},
+    bus::BusClientSender,
     log_debug, log_error,
     model::{Blob, BlobTransaction, Block, CommonRunContext, Transaction, TransactionData},
     module_bus_client, module_handle_messages,
@@ -22,8 +22,6 @@ pub struct CSIBusEvent<E> {
     #[allow(unused)]
     pub event: E,
 }
-
-impl<E> BusMessage for CSIBusEvent<E> {}
 
 module_bus_client! {
 #[derive(Debug)]

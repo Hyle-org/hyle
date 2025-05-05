@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::{
-    bus::{BusClientSender, BusMessage},
+    bus::BusClientSender,
     mempool::api::RestApiMessage,
     model::{
         Blob, BlobData, BlobTransaction, ContractName, ProofData, ProofTransaction,
@@ -36,7 +36,6 @@ pub enum RunScenario {
         injection_duration_seconds: u64,
     },
 }
-impl BusMessage for RunScenario {}
 
 pub struct MockWorkflowHandler {
     bus: MockWorkflowBusClient,

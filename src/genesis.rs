@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::{
-    bus::{bus_client, BusClientSender, BusMessage},
+    bus::{bus_client, BusClientSender},
     handle_messages,
     model::*,
     p2p::network::PeerEvent,
@@ -38,7 +38,6 @@ pub enum GenesisEvent {
     NoGenesis,
     GenesisBlock(SignedBlock),
 }
-impl BusMessage for GenesisEvent {}
 
 bus_client! {
 struct GenesisBusClient {
