@@ -179,7 +179,6 @@ impl Genesis {
 
         let signed_block = self.make_genesis_block(genesis_txs, initial_validators);
 
-        info!("OOOOOOOOOOOOOOOOOPPSSS");
         // At this point, we can setup the genesis block.
         _ = self.bus.send(GenesisEvent::GenesisBlock(signed_block));
 
