@@ -131,33 +131,23 @@ impl Genesis {
                 listen<PeerEvent> msg => {
                     match msg {
                         PeerEvent::NewPeer { name, pubkey, height, .. } => {
-                            let Some(stake) = self.config.genesis.stakers.get(&name) else {
+                            if !self.config.genesis.stakers.contains_key(&name) {
                                 continue;
-                            };
-
-                            if height.0 > 0 {
-                                heights.push((height.0, stake));
                             }
 
+                            heights.push(height.0);
+
                             info!("🌱 New peer {}({}) added to genesis", &name, &pubkey);
-                            self.peer_pubkey
-                                .insert(name.clone(), pubkey.clone());
+                            self.peer_pubkey.insert(name.clone(), pubkey.clone());
 
                             // Once we know everyone in the initial quorum, craft & process the genesis block.
                             if self.peer_pubkey.len() == self.config.genesis.stakers.len() {
-                                let stakes = heights.clone().into_iter().map(|(_h, w)| *w).sum::<u64>();
-                                let mean = heights
-                                   .clone()
-                                   .into_iter()
-                                   .map(|(h, w)| h * w)
-                                   .sum::<u64>()
-                                   .div_euclid( stakes );
+                                let height = heights
+                                   .iter()
+                                   .max()
+                                   .unwrap_or(&0);
 
-                                let enough_stake = (self.config.genesis.stakers.values().sum::<u64>() * 2).div_euclid(3);
-                                debug!("Stakes: {}", stakes);
-                                debug!("Enough stake (enough stakers ): {}", enough_stake);
-                                debug!("Mean (> 0: we skip the genesis step): {}", mean);
-                                if mean > 0 && stakes > enough_stake {
+                                if height > &0 {
                                     info!(" Skipping Genesis because peers' height are higher than 0");
                                     _ = self.bus.send(GenesisEvent::NoGenesis {});
                                     return Ok(());
