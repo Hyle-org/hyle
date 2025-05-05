@@ -99,7 +99,8 @@ impl Module for NodeStateModule {
             listen<DataEvent> block => {
                 match block {
                     DataEvent::OrderedSignedBlock(block) => {
-                        let node_state_block = self.inner.handle_signed_block(&block);
+                        // TODO: If we are in a broken state, this will likely kill the node every time.
+                        let node_state_block = self.inner.handle_signed_block(&block)?;
                         _ = log_error!(self
                             .bus
                             .send(NodeStateEvent::NewBlock(Box::new(node_state_block))), "Sending DataEvent while processing SignedBlock");

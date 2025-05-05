@@ -1059,11 +1059,12 @@ mod test {
 
         let parent_data_proposal = DataProposal::new(None, txs);
         let mut signed_block = SignedBlock::default();
+        signed_block.consensus_proposal.slot = 1;
         signed_block.data_proposals.push((
             LaneId(ValidatorPublicKey("ttt".into())),
             vec![parent_data_proposal.clone()],
         ));
-        let block = node_state.handle_signed_block(&signed_block);
+        let block = node_state.force_handle_block(&signed_block);
 
         indexer
             .handle_processed_block(block)
@@ -1209,7 +1210,7 @@ mod test {
             LaneId(ValidatorPublicKey("ttt".into())),
             vec![data_proposal],
         ));
-        let block_2 = node_state.handle_signed_block(&signed_block);
+        let block_2 = node_state.force_handle_block(&signed_block);
         let block_2_hash = block_2.hash.clone();
         indexer
             .handle_processed_block(block_2)
@@ -1294,7 +1295,7 @@ mod test {
                 }
             ])
         );
-        let all_txs = server.get("/transactions/block/0").await;
+        let all_txs = server.get("/transactions/block/1").await;
         all_txs.assert_status_ok();
         assert_json_include!(
             actual: all_txs.json::<serde_json::Value>(),
@@ -1344,7 +1345,7 @@ mod test {
             ])
         );
 
-        let proofs_by_height = server.get("/proofs/block/0").await;
+        let proofs_by_height = server.get("/proofs/block/1").await;
         proofs_by_height.assert_status_ok();
         assert_json_include!(
             actual: proofs_by_height.json::<serde_json::Value>(),

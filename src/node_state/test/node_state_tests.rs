@@ -29,10 +29,8 @@ async fn happy_path_with_tx_context() {
     hyle_output.tx_ctx = Some(ctx);
     let verified_proof_bad = new_proof_tx(&c1, &hyle_output, &blob_tx_id);
 
-    let block = state.handle_signed_block(&craft_signed_block(
-        1,
-        vec![verified_proof_bad.into(), verified_proof.into()],
-    ));
+    let block =
+        state.craft_block_and_handle(1, vec![verified_proof_bad.into(), verified_proof.into()]);
     assert_eq!(block.blob_proof_outputs.len(), 1);
     // We don't actually fail proof txs with blobs that fail
     assert_eq!(block.failed_txs.len(), 0);
@@ -89,10 +87,7 @@ async fn two_proof_for_one_blob_tx() {
 
     let verified_proof_c2 = new_proof_tx(&c2, &hyle_output_c2, &blob_tx_hash);
 
-    state.handle_signed_block(&craft_signed_block(
-        10,
-        vec![verified_proof_c1.into(), verified_proof_c2.into()],
-    ));
+    state.craft_block_and_handle(10, vec![verified_proof_c1.into(), verified_proof_c2.into()]);
 
     assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
     assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
@@ -123,7 +118,7 @@ async fn wrong_blob_index_for_contract() {
 
     let verified_proof_c1 = new_proof_tx(&c1, &hyle_output_c1, &blob_tx_hash_1);
 
-    state.handle_signed_block(&craft_signed_block(10, vec![verified_proof_c1.into()]));
+    state.craft_block_and_handle(10, vec![verified_proof_c1.into()]);
 
     // Check that we did not settle
     assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);
@@ -155,10 +150,10 @@ async fn two_proof_for_same_blob() {
 
     let verified_proof_c1 = new_proof_tx(&c1, &hyle_output_c1, &blob_tx_hash);
 
-    state.handle_signed_block(&craft_signed_block(
+    state.craft_block_and_handle(
         10,
         vec![verified_proof_c1.clone().into(), verified_proof_c1.into()],
-    ));
+    );
 
     assert_eq!(
         state
@@ -205,8 +200,7 @@ async fn two_proof_with_some_invalid_blob_proof_output() {
         .proven_blobs
         .insert(0, verified_proof.proven_blobs.first().unwrap().clone());
 
-    let block =
-        state.handle_signed_block(&craft_signed_block(5, vec![invalid_verified_proof.into()]));
+    let block = state.craft_block_and_handle(5, vec![invalid_verified_proof.into()]);
 
     // We don't fail.
     assert_eq!(block.failed_txs.len(), 0);
@@ -220,13 +214,13 @@ async fn settle_with_multiple_state_reads() {
     let c1 = ContractName::new("c1");
     let c2 = ContractName::new("c2");
 
-    state.handle_signed_block(&craft_signed_block(
+    state.craft_block_and_handle(
         10,
         vec![
             make_register_contract_tx(c1.clone()).into(),
             make_register_contract_tx(c2.clone()).into(),
         ],
-    ));
+    );
 
     let blob_tx = BlobTransaction::new(Identity::new("test@c1"), vec![new_blob(&c1.0)]);
     let mut ho = make_hyle_output(blob_tx.clone(), BlobIndex(0));
@@ -234,13 +228,13 @@ async fn settle_with_multiple_state_reads() {
     ho.state_reads
         .push((c2.clone(), StateCommitment(vec![9, 8, 7])));
 
-    let effects = state.handle_signed_block(&craft_signed_block(
+    let effects = state.craft_block_and_handle(
         11,
         vec![
             blob_tx.clone().into(),
             new_proof_tx(&c1, &ho, &blob_tx.hashed()).into(),
         ],
-    ));
+    );
 
     assert!(effects
         .transactions_events
@@ -263,10 +257,8 @@ async fn settle_with_multiple_state_reads() {
     ho.state_reads
         .push((c1.clone(), state.contracts.get(&c1).unwrap().state.clone()));
 
-    let effects = state.handle_signed_block(&craft_signed_block(
-        12,
-        vec![new_proof_tx(&c1, &ho, &blob_tx.hashed()).into()],
-    ));
+    let effects =
+        state.craft_block_and_handle(12, vec![new_proof_tx(&c1, &ho, &blob_tx.hashed()).into()]);
     assert_eq!(effects.blob_proof_outputs.len(), 1);
     assert_eq!(effects.successful_txs.len(), 1);
     assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
@@ -310,14 +302,14 @@ async fn change_same_contract_state_multiple_times_in_same_tx() {
 
     let verified_third_proof = new_proof_tx(&c1, &third_hyle_output, &blob_tx_hash);
 
-    state.handle_signed_block(&craft_signed_block(
+    state.craft_block_and_handle(
         10,
         vec![
             verified_first_proof.into(),
             verified_second_proof.into(),
             verified_third_proof.into(),
         ],
-    ));
+    );
 
     // Check that we did settled with the last state
     assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![10, 11, 12]);
@@ -373,7 +365,7 @@ async fn dead_end_in_proving_settles_still() {
         &blob_tx_hash,
     );
 
-    let block = state.handle_signed_block(&craft_signed_block(
+    let block = state.craft_block_and_handle(
         4,
         vec![
             first_proof_tx.into(),
@@ -381,7 +373,7 @@ async fn dead_end_in_proving_settles_still() {
             second_proof_tx_c.into(),
             third_proof_tx.into(),
         ],
-    ));
+    );
 
     assert_eq!(
         block
@@ -431,14 +423,14 @@ async fn duplicate_proof_with_inconsistent_state_should_never_settle() {
 
     let verified_second_proof = new_proof_tx(&c1, &second_hyle_output, &blob_tx_hash);
 
-    state.handle_signed_block(&craft_signed_block(
+    state.craft_block_and_handle(
         10,
         vec![
             verified_first_proof.into(),
             another_verified_first_proof.into(),
             verified_second_proof.into(),
         ],
-    ));
+    );
 
     // Check that we did not settled
     assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);
@@ -483,14 +475,14 @@ async fn duplicate_proof_with_inconsistent_state_should_never_settle_another() {
 
     let verified_third_proof = new_proof_tx(&c1, &third_hyle_output, &blob_tx_hash);
 
-    state.handle_signed_block(&craft_signed_block(
+    state.craft_block_and_handle(
         10,
         vec![
             verified_first_proof.into(),
             verified_second_proof.into(),
             verified_third_proof.into(),
         ],
-    ));
+    );
 
     // Check that we did not settled
     assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);
@@ -533,7 +525,7 @@ async fn test_auto_settle_next_txs_after_settle() {
     let hyle_output = make_hyle_output_with_state(tx_d.clone(), BlobIndex(0), &[13], &[14]);
     let tx_d_proof = new_proof_tx(&c1, &hyle_output, &tx_d_hash);
 
-    state.handle_signed_block(&craft_signed_block(
+    state.craft_block_and_handle(
         104,
         vec![
             register_c1.into(),
@@ -544,20 +536,14 @@ async fn test_auto_settle_next_txs_after_settle() {
             tx_d.into(),
             tx_d_proof.into(),
         ],
-    ));
+    );
 
-    state.handle_signed_block(&craft_signed_block(
-        108,
-        vec![tx_c.into(), tx_c_proof.into()],
-    ));
+    state.craft_block_and_handle(108, vec![tx_c.into(), tx_c_proof.into()]);
 
     // Now settle the first, which should auto-settle the pending ones, then the ones waiting for these.
     assert_eq!(
         state
-            .handle_signed_block(&craft_signed_block(
-                110,
-                vec![tx_a_proof_1.into(), tx_a_proof_2.into(),]
-            ))
+            .craft_block_and_handle(110, vec![tx_a_proof_1.into(), tx_a_proof_2.into(),])
             .successful_txs,
         vec![tx_a_hash, tx_b_hash, tx_d_hash, tx_c_hash]
     );
@@ -578,12 +564,10 @@ async fn test_tx_timeout_simple() {
 
     let blob_tx_hash = blob_tx.hashed();
 
-    state.handle_signed_block(&craft_signed_block(3, txs));
+    state.craft_block_and_handle(3, txs);
 
     // This should trigger the timeout
-    let timed_out_tx_hashes = state
-        .handle_signed_block(&craft_signed_block(103, vec![]))
-        .timed_out_txs;
+    let timed_out_tx_hashes = state.craft_block_and_handle(103, vec![]).timed_out_txs;
 
     // Check that the transaction has timed out
     assert!(timed_out_tx_hashes.contains(&blob_tx_hash));
@@ -606,7 +590,7 @@ async fn test_tx_no_timeout_once_settled() {
 
     let blob_tx_hash = blob_tx.hashed();
 
-    state.handle_signed_block(&crafted_block);
+    state.force_handle_block(&crafted_block);
 
     assert_eq!(
         timeouts::tests::get(&state.timeouts, &blob_tx_hash),
@@ -619,7 +603,7 @@ async fn test_tx_no_timeout_once_settled() {
     // Settle TX
     assert_eq!(
         state
-            .handle_signed_block(&craft_signed_block(105, vec![verified_first_proof.into(),],))
+            .craft_block_and_handle(105, vec![verified_first_proof.into(),])
             .successful_txs,
         vec![blob_tx_hash.clone()]
     );
@@ -632,9 +616,7 @@ async fn test_tx_no_timeout_once_settled() {
     );
 
     // Time out
-    let timed_out_tx_hashes = state
-        .handle_signed_block(&craft_signed_block(204, vec![]))
-        .timed_out_txs;
+    let timed_out_tx_hashes = state.craft_block_and_handle(204, vec![]).timed_out_txs;
 
     // Check that the transaction remains settled and cleared from the timeout map
     assert!(!timed_out_tx_hashes.contains(&blob_tx_hash));
@@ -678,7 +660,7 @@ async fn test_tx_on_timeout_settle_next_txs() {
         ],
     );
 
-    state.handle_signed_block(&crafted_block);
+    state.force_handle_block(&crafted_block);
 
     let later_crafted_block = craft_signed_block(
         108,
@@ -688,10 +670,10 @@ async fn test_tx_on_timeout_settle_next_txs() {
         ],
     );
 
-    state.handle_signed_block(&later_crafted_block);
+    state.force_handle_block(&later_crafted_block);
 
     // Time out
-    let block = state.handle_signed_block(&craft_signed_block(204, vec![]));
+    let block = state.craft_block_and_handle(204, vec![]);
 
     // Only the blocking TX should be timed out
     assert_eq!(block.timed_out_txs, vec![blocking_tx_hash]);
@@ -746,7 +728,7 @@ async fn test_tx_reset_timeout_on_tx_settlement() {
     let hyle_output = make_hyle_output(tx3.clone(), BlobIndex(0));
     let tx3_verified_proof = new_proof_tx(&c2, &hyle_output, &tx3_hash);
 
-    state.handle_signed_block(&craft_signed_block(
+    state.craft_block_and_handle(
         104,
         vec![
             register_c1.into(),
@@ -757,7 +739,7 @@ async fn test_tx_reset_timeout_on_tx_settlement() {
             tx3.into(),
             tx4.into(),
         ],
-    ));
+    );
 
     // Assert timeout only contains tx1
     assert_eq!(
@@ -769,7 +751,7 @@ async fn test_tx_reset_timeout_on_tx_settlement() {
     assert_eq!(timeouts::tests::get(&state.timeouts, &tx4_hash), None);
 
     // Time out
-    let block = state.handle_signed_block(&craft_signed_block(204, vec![]));
+    let block = state.craft_block_and_handle(204, vec![]);
 
     // Assert that only tx1 has timed out
     assert_eq!(block.timed_out_txs, vec![tx1_hash.clone()]);
@@ -789,7 +771,7 @@ async fn test_tx_reset_timeout_on_tx_settlement() {
     assert_eq!(timeouts::tests::get(&state.timeouts, &tx4_hash), None);
 
     // Tx3 settles
-    state.handle_signed_block(&craft_signed_block(250, vec![tx3_verified_proof.into()]));
+    state.craft_block_and_handle(250, vec![tx3_verified_proof.into()]);
 
     // Assert that tx3 has settled.
     assert_eq!(state.unsettled_transactions.get(&tx3_hash), None);
@@ -810,14 +792,14 @@ async fn test_duplicate_tx_timeout() {
     let register_c1 = make_register_contract_tx(c1.clone());
 
     // First register the contract
-    state.handle_signed_block(&craft_signed_block(1, vec![register_c1.into()]));
+    state.craft_block_and_handle(1, vec![register_c1.into()]);
 
     // Create a transaction
     let blob_tx = BlobTransaction::new(Identity::new("test@c1"), vec![new_blob(&c1.0)]);
     let blob_tx_hash = blob_tx.hashed();
 
     // Submit the same transaction multiple times in different blocks
-    state.handle_signed_block(&craft_signed_block(2, vec![blob_tx.clone().into()]));
+    state.craft_block_and_handle(2, vec![blob_tx.clone().into()]);
 
     // Sanity check for timeout
     assert_eq!(
@@ -825,8 +807,8 @@ async fn test_duplicate_tx_timeout() {
         Some(BlockHeight(2) + BlockHeight(100))
     );
 
-    state.handle_signed_block(&craft_signed_block(3, vec![blob_tx.clone().into()]));
-    let block = state.handle_signed_block(&craft_signed_block(4, vec![blob_tx.clone().into()]));
+    state.craft_block_and_handle(3, vec![blob_tx.clone().into()]);
+    let block = state.craft_block_and_handle(4, vec![blob_tx.clone().into()]);
 
     assert!(block.failed_txs.is_empty());
     assert!(block.successful_txs.is_empty());
@@ -842,7 +824,7 @@ async fn test_duplicate_tx_timeout() {
     );
 
     // Time out the transaction
-    let block = state.handle_signed_block(&craft_signed_block(102, vec![]));
+    let block = state.craft_block_and_handle(102, vec![]);
 
     // Verify the transaction was timed out
     assert_eq!(block.timed_out_txs, vec![blob_tx_hash.clone()]);
@@ -850,7 +832,7 @@ async fn test_duplicate_tx_timeout() {
     assert_eq!(timeouts::tests::get(&state.timeouts, &blob_tx_hash), None);
 
     // Submit the same transaction again after timeout
-    state.handle_signed_block(&craft_signed_block(103, vec![blob_tx.clone().into()]));
+    state.craft_block_and_handle(103, vec![blob_tx.clone().into()]);
 
     // Verify it's treated as a new transaction
     assert_eq!(state.unsettled_transactions.len(), 1);

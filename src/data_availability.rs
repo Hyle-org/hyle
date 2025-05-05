@@ -489,15 +489,19 @@ pub mod tests {
             block: SignedBlock,
             tcp_server: &mut DaTcpServer,
         ) {
-            let full_block = self.node_state.handle_signed_block(&block);
+            _ = log_error!(
+                self.da.handle_signed_block(block.clone(), tcp_server).await,
+                "Handling Signed Block"
+            );
+            // TODO: we use this in autobahn_testing, but it'd be cleaner to separate it.
+            let Ok(full_block) = self.node_state.handle_signed_block(&block) else {
+                tracing::warn!("Error while handling signed block {}", block.hashed());
+                return;
+            };
             _ = log_error!(
                 self.node_state_bus
                     .send(NodeStateEvent::NewBlock(Box::new(full_block))),
                 "Sending NodeState event"
-            );
-            _ = log_error!(
-                self.da.handle_signed_block(block, tcp_server).await,
-                "Handling Signed Block"
             );
         }
     }
