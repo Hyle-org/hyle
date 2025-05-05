@@ -64,9 +64,13 @@ turmoil_simple!(501..=520, 10, setup_basic);
 turmoil_simple!(501..=520, 4, setup_drops);
 turmoil_simple!(521..=540, 10, setup_drops);
 
+turmoil_simple!(521..=540, 10, setup_late_host_at_first_handshake);
+
+
 async fn setup_basic_host(
     peer: String,
     peers: Vec<String>,
+    connect_to_others: bool,
     _seed: u64,
 ) -> Result<(), Box<dyn Error>> {
     let crypto = BlstCrypto::new(peer.clone().as_str())?;
@@ -85,8 +89,10 @@ async fn setup_basic_host(
 
     tracing::info!("All other peers {:?}", all_other_peers);
 
-    for peer in all_other_peers.clone() {
-        let _ = p2p.try_start_connection(format!("{}:{}", peer.clone(), 9090), Canal::new("A"));
+    if connect_to_others {
+        for peer in all_other_peers.clone() {
+            let _ = p2p.try_start_connection(format!("{}:{}", peer.clone(), 9090), Canal::new("A"));
+        }
     }
 
     let mut interval = tokio::time::interval(Duration::from_millis(100));
@@ -116,7 +122,32 @@ pub fn setup_basic(peers: Vec<String>, sim: &mut Sim<'_>, seed: u64) -> anyhow::
         let peer_clone = peer.clone();
         let peers_clone = peers.clone();
         sim.client(peer.clone(), async move {
-            setup_basic_host(peer_clone, peers_clone, seed).await
+            setup_basic_host(peer_clone, peers_clone, true, seed).await
+        })
+    }
+
+    sim.run()
+        .map_err(|e| anyhow::anyhow!("Simulation error {}", e.to_string()))?;
+
+    Ok(())
+}
+
+pub fn setup_late_host_at_first_handshake(peers: Vec<String>, sim: &mut Sim<'_>, seed: u64) -> anyhow::Result<()> {
+    tracing::info!("Starting simulation with peers {:?}", peers.clone());
+    let mut rng = StdRng::seed_from_u64(seed); 
+    let late_host = peers.get((rng.next_u64() as usize) % peers.len()).unwrap();
+    
+    for peer in peers.clone().into_iter() {
+        let peer_clone = peer.clone();
+        let peers_clone = peers.clone();
+        let late_clone = late_host.clone();
+        sim.client(peer.clone(), async move {
+            if peer_clone == *late_clone {
+                tokio::time::sleep(Duration::from_secs(15)).await;
+                setup_basic_host(peer_clone, peers_clone, false, seed).await
+            } else {
+                setup_basic_host(peer_clone, peers_clone, true, seed).await
+            }
         })
     }
 
