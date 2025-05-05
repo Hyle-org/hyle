@@ -344,7 +344,6 @@ impl E2ECtx {
             .nodes
             .iter()
             .inspect(|node| {
-                tracing::warn!("totoro {:?}", node.conf.id);
                 if node.conf.id.contains("indexer") {
                     post_indexer = true;
                 }
