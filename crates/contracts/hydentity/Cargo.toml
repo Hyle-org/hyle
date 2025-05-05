@@ -36,7 +36,6 @@ client-sdk = { workspace = true, features = [
   "risc0",
   "indexer",
 ], optional = true }
-sha2 = "=0.10.8" # precompile patched at workspace root
 
 [dev-dependencies]
 # Activate client in examples.

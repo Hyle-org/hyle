@@ -2,16 +2,12 @@ use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use erc20::ERC20;
-
+use sdk::sha2::{Digest, Sha256};
+use sdk::utils::parse_calldata;
 use sdk::{Blob, BlobData, BlobIndex, Calldata, ContractAction, ContractName, StructuredBlobData};
 use sdk::{RunResult, ZkContract};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-
-#[cfg(feature = "impl")]
-use sdk::utils::parse_calldata;
-#[cfg(feature = "impl")]
-use sha2::{Digest, Sha256};
 
 extern crate alloc;
 
@@ -25,7 +21,6 @@ pub mod erc20;
 pub const TOTAL_SUPPLY: u128 = 100_000_000_000;
 pub const FAUCET_ID: &str = "faucet@hydentity";
 
-#[cfg(feature = "impl")]
 impl ZkContract for Hyllar {
     fn execute(&mut self, calldata: &Calldata) -> RunResult {
         let (action, execution_ctx) = parse_calldata::<HyllarAction>(calldata)?;
@@ -110,7 +105,6 @@ impl Hyllar {
     }
 }
 
-#[cfg(feature = "impl")]
 impl ERC20 for Hyllar {
     fn total_supply(&self) -> Result<u128, String> {
         Ok(self.total_supply)

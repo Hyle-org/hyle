@@ -5,8 +5,8 @@ use sdk::{utils::parse_raw_calldata, Blob, Calldata, ContractAction, ContractNam
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+use sdk::sha2::{Digest, Sha256};
 use sdk::{RunResult, ZkContract};
-use sha2::{Digest, Sha256};
 
 #[cfg(feature = "client")]
 pub mod client;

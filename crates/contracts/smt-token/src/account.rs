@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::merkle_utils::SHA256Hasher;
+use sdk::sha2::{Digest, Sha256};
 use sdk::Identity;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use sparse_merkle_tree::{default_store::DefaultStore, traits::Value, SparseMerkleTree, H256};
 
 use crate::{FAUCET_ID, TOTAL_SUPPLY};

@@ -14,7 +14,10 @@ serde = { version = "1.0", default-features = false, features = [
   "derive",
   "alloc",
 ] }
-sha2 = "=0.10.8" # precompile patched at workspace root
+risc0-sha2 = { git = "https://github.com/risc0/RustCrypto-hashes", package = "sha2", tag = "sha2-v0.10.8-risczero.0", optional = true }
+sp1-sha2 = { git = "https://github.com/sp1-patches/RustCrypto-hashes", package = "sha2", tag = "patch-sha2-0.10.8-sp1-4.0.0", optional = true }
+sha2 = { package = "sha2", version = "0.10.8" }
+
 borsh = "1.5.6"
 tracing = { version = "0.1", optional = true }
 
@@ -24,8 +27,8 @@ risc0-zkvm = { version = "2.0.0", default-features = false, optional = true }
 sp1-zkvm = { version = "4.2.0", optional = true }
 
 [features]
-risc0 = ["dep:risc0-zkvm"]
-sp1 = ["dep:sp1-zkvm"]
+risc0 = ["dep:risc0-zkvm", "dep:risc0-sha2"]
+sp1 = ["dep:sp1-zkvm", "dep:sp1-sha2"]
 smt = ["dep:sparse-merkle-tree"]
 tracing = ["dep:tracing"]
 full-model = ["hyle-model/full"]
