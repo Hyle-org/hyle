@@ -319,7 +319,6 @@ impl Consensus {
             .requests
             .insert(received_msg.clone())
         {
-            // self.metrics.timeout_request("already_processed");
             info!("Timeout has already been processed");
             return Ok(());
         }

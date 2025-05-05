@@ -56,7 +56,14 @@ impl Module for DAListener {
             metrics: NodeStateMetrics::global(ctx.common.config.id.clone(), "da_listener"),
         };
 
-        let start_block = ctx.start_block.unwrap_or(node_state.current_height);
+        let start_block = ctx.start_block.unwrap_or(
+            // Annoying edge case: on startup this will be 0, but we do want to process block 0.
+            // Otherwise, we've already processed the block so we don't actually need that.
+            match node_state.current_height {
+                BlockHeight(0) => BlockHeight(0),
+                _ => node_state.current_height + 1,
+            },
+        );
 
         let bus = DAListenerBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
 
@@ -127,7 +134,7 @@ impl DAListener {
                 block.consensus_proposal.slot,
                 block.consensus_proposal.hashed()
             );
-            let block = self.node_state.handle_signed_block(&block);
+            let block = self.node_state.handle_signed_block(&block)?;
             debug!("📦 Handled block outputs: {:?}", block);
 
             self.bus.send(NodeStateEvent::NewBlock(Box::new(block)))?;

@@ -39,7 +39,7 @@ impl Blocks {
         Ok(())
     }
 
-    pub fn get(&mut self, block_hash: &ConsensusProposalHash) -> Result<Option<SignedBlock>> {
+    pub fn get(&self, block_hash: &ConsensusProposalHash) -> Result<Option<SignedBlock>> {
         Ok(self.data.get(block_hash).cloned())
     }
 
@@ -59,8 +59,8 @@ impl Blocks {
         &self,
         min: BlockHeight,
         max: BlockHeight,
-    ) -> Box<dyn Iterator<Item = Result<SignedBlock>> + '_> {
-        // Items are in order but we don't know wher they are. Binary search.
+    ) -> Box<dyn Iterator<Item = Result<ConsensusProposalHash>> + '_> {
+        // Items are in order but we don't know where they are. Binary search.
         let Ok(min) = self
             .data
             .binary_search_by(|_, block| block.height().0.cmp(&min.0))
@@ -76,6 +76,6 @@ impl Blocks {
         let Some(iter) = self.data.get_range(min..max + 1) else {
             return Box::new(::std::iter::empty());
         };
-        Box::new(iter.values().map(|block| Ok(block.clone())))
+        Box::new(iter.values().map(|block| Ok(block.hashed().clone())))
     }
 }

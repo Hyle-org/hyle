@@ -80,19 +80,19 @@ async fn test_recursion() {
         .map(|x| {
             (
                 x.0,
-                risc0_zkvm::serde::from_slice::<HyleOutput, _>(&x.1).unwrap(),
+                risc0_zkvm::serde::from_slice::<Vec<HyleOutput>, _>(&x.1).unwrap(),
             )
         })
         .collect::<Vec<_>>();
 
     assert_eq!(outputs.first().unwrap().0, hyle_contracts::HYDENTITY_ID,);
     assert_eq!(
-        String::from_utf8(outputs.first().unwrap().1.program_outputs.clone()).unwrap(),
+        String::from_utf8(outputs.first().unwrap().1[0].program_outputs.clone()).unwrap(),
         "Successfully registered identity for account: bob@hydentity:f08bf16792a8efe265e37068568042c25aa6e2c3df0d0cb3c5eed7c78abc7348"
     );
     assert_eq!(outputs.last().unwrap().0, hyle_contracts::HYDENTITY_ID,);
     assert_eq!(
-        String::from_utf8(outputs.last().unwrap().1.program_outputs.clone()).unwrap(),
+        String::from_utf8(outputs.last().unwrap().1[0].program_outputs.clone()).unwrap(),
         "Successfully registered identity for account: alice@hydentity:8333a333420eb181556e8e021a7b682dc1fa58a2560547938eb3c11bc74ecdbd"
     );
 

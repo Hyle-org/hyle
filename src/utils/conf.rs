@@ -44,6 +44,8 @@ pub struct P2pConf {
     pub public_address: String,
     /// Port to listen for incoming connections
     pub server_port: u16,
+    /// Max frame length
+    pub max_frame_length: usize,
     /// IPs of peers to connect to
     pub peers: Vec<String>,
     /// Time in milliseconds between pings to peers
@@ -59,6 +61,22 @@ pub enum P2pMode {
     /// Run a limited node that subscribes to another one for DA
     #[default]
     None,
+}
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct NodeWebSocketConfig {
+    /// Wether the WebSocket server is enabled
+    pub enabled: bool,
+    /// The port number to bind the WebSocket server to
+    pub server_port: u16,
+    /// The endpoint path for WebSocket connections
+    pub ws_path: String,
+    /// The endpoint path for health checks
+    pub health_path: String,
+    /// The interval at which to check for new peers
+    pub peer_check_interval: u64,
+    /// List of events to stream on the websocket
+    pub events: Vec<String>,
 }
 
 pub type SharedConf = Arc<Conf>;
@@ -87,6 +105,8 @@ pub struct Conf {
     pub da_public_address: String,
     /// Server port for the DA API
     pub da_server_port: u16,
+    /// Server port for the DA API
+    pub da_max_frame_length: usize,
 
     pub run_rest_server: bool,
     /// Server port for the REST API
@@ -104,6 +124,9 @@ pub struct Conf {
     pub database_url: String,
     /// When running only the indexer, the address of the DA server to connect to
     pub da_read_from: String,
+
+    /// Websocket configuration
+    pub websocket: NodeWebSocketConfig,
 }
 
 impl Conf {
@@ -133,6 +156,11 @@ impl Conf {
             .set_override_option("run_indexer", run_indexer)?
             .build()?
             .try_deserialize()?;
+        // Mostly for convenience, ignore ourself from the peers list
+        conf.p2p
+            .peers
+            .retain(|peer| peer != &conf.p2p.public_address);
+
         if conf.consensus.solo {
             conf.genesis.stakers.insert(
                 conf.id.clone(),

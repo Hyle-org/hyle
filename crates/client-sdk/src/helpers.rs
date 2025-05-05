@@ -1,9 +1,10 @@
 use std::pin::Pin;
 
 use anyhow::Result;
+use borsh::BorshSerialize;
 use sdk::{
     Calldata, ContractName, HyleOutput, ProgramId, ProofData, RegisterContractAction,
-    StateCommitment, Verifier,
+    StateCommitment, TimeoutWindow, Verifier,
 };
 
 use crate::transaction_builder::ProvableBlobTx;
@@ -14,6 +15,7 @@ pub fn register_hyle_contract(
     verifier: Verifier,
     program_id: ProgramId,
     state_commitment: StateCommitment,
+    timeout_window: Option<TimeoutWindow>,
 ) -> anyhow::Result<()> {
     builder.add_action(
         "hyle".into(),
@@ -22,6 +24,7 @@ pub fn register_hyle_contract(
             verifier,
             program_id,
             state_commitment,
+            timeout_window,
         },
         None,
         None,
@@ -30,16 +33,18 @@ pub fn register_hyle_contract(
     Ok(())
 }
 
-pub trait ClientSdkProver {
+pub trait ClientSdkProver<T: BorshSerialize + Send> {
     fn prove(
         &self,
         commitment_metadata: Vec<u8>,
-        calldata: Calldata,
+        calldata: T,
     ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>>;
 }
 
 #[cfg(feature = "risc0")]
 pub mod risc0 {
+
+    use borsh::BorshSerialize;
 
     use super::*;
 
@@ -50,10 +55,10 @@ pub mod risc0 {
         pub fn new(binary: &'a [u8]) -> Self {
             Self { binary }
         }
-        pub async fn prove(
+        pub async fn prove<T: BorshSerialize>(
             &self,
             commitment_metadata: Vec<u8>,
-            calldata: Calldata,
+            calldata: T,
         ) -> Result<ProofData> {
             let explicit = std::env::var("RISC0_PROVER").unwrap_or_default();
             let receipt = match explicit.to_lowercase().as_str() {
@@ -81,11 +86,11 @@ pub mod risc0 {
         }
     }
 
-    impl ClientSdkProver for Risc0Prover<'_> {
+    impl<T: BorshSerialize + Send + 'static> ClientSdkProver<T> for Risc0Prover<'_> {
         fn prove(
             &self,
             commitment_metadata: Vec<u8>,
-            calldata: Calldata,
+            calldata: T,
         ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
             Box::pin(self.prove(commitment_metadata, calldata))
         }
@@ -116,10 +121,10 @@ pub mod sp1 {
             Ok(sdk::ProgramId(serde_json::to_vec(&self.vk)?))
         }
 
-        pub async fn prove(
+        pub async fn prove<T: BorshSerialize>(
             &self,
             commitment_metadata: Vec<u8>,
-            calldata: Calldata,
+            calldata: T,
         ) -> Result<ProofData> {
             // Setup the inputs.
             let mut stdin = SP1Stdin::new();
@@ -144,11 +149,11 @@ pub mod sp1 {
         }
     }
 
-    impl ClientSdkProver for SP1Prover {
+    impl<T: BorshSerialize + Send + 'static> ClientSdkProver<T> for SP1Prover {
         fn prove(
             &self,
             commitment_metadata: Vec<u8>,
-            calldata: Calldata,
+            calldata: T,
         ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
             Box::pin(self.prove(commitment_metadata, calldata))
         }
@@ -156,19 +161,73 @@ pub mod sp1 {
 }
 
 pub mod test {
+    use crate::transaction_builder::TxExecutorHandler;
+
     use super::*;
 
-    pub struct TestProver {}
+    /// Generates valid proofs for the 'test' verifier using the TxExecutor
+    pub struct TxExecutorTestProver<C: TxExecutorHandler> {
+        contract: std::sync::Arc<std::sync::Mutex<C>>,
+    }
 
-    impl ClientSdkProver for TestProver {
+    impl<C: TxExecutorHandler> TxExecutorTestProver<C> {
+        pub fn new(contract: C) -> Self {
+            Self {
+                contract: std::sync::Arc::new(std::sync::Mutex::new(contract)),
+            }
+        }
+    }
+
+    impl<C: TxExecutorHandler> ClientSdkProver<Vec<Calldata>> for TxExecutorTestProver<C> {
+        fn prove(
+            &self,
+            _commitment_metadata: Vec<u8>,
+            calldatas: Vec<Calldata>,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>>
+        {
+            let hos = calldatas
+                .iter()
+                .map(|calldata| self.contract.lock().unwrap().handle(calldata))
+                .collect::<Result<Vec<_>, String>>();
+            Box::pin(async move {
+                match hos {
+                    Ok(hos) => Ok(ProofData(borsh::to_vec(&hos).unwrap())),
+                    Err(e) => Err(anyhow::anyhow!(e)),
+                }
+            })
+        }
+    }
+
+    pub struct MockProver {}
+
+    impl ClientSdkProver<Calldata> for MockProver {
         fn prove(
             &self,
             commitment_metadata: Vec<u8>,
             calldata: Calldata,
         ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
             Box::pin(async move {
-                let hyle_output = test::execute(commitment_metadata, calldata)?;
-                Ok(ProofData(borsh::to_vec(&vec![hyle_output])?))
+                let hyle_output = execute(commitment_metadata.clone(), calldata.clone())?;
+                Ok(ProofData(
+                    borsh::to_vec(&hyle_output).expect("Failed to encode proof"),
+                ))
+            })
+        }
+    }
+
+    impl ClientSdkProver<Vec<Calldata>> for MockProver {
+        fn prove(
+            &self,
+            commitment_metadata: Vec<u8>,
+            calldata: Vec<Calldata>,
+        ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
+            Box::pin(async move {
+                let mut proofs = Vec::new();
+                for call in calldata {
+                    let hyle_output = test::execute(commitment_metadata.clone(), call)?;
+                    proofs.push(hyle_output);
+                }
+                Ok(ProofData(borsh::to_vec(&proofs)?))
             })
         }
     }

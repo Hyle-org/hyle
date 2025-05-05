@@ -31,6 +31,7 @@ fn make_register_blob_action(
             program_id: ProgramId(vec![1, 2, 3]),
             state_commitment,
             contract_name,
+            ..Default::default()
         }
         .as_blob("hyle".into(), None, None)],
     )
@@ -70,6 +71,7 @@ async fn test_full_settlement_flow() -> Result<()> {
             program_id: ProgramId(vec![1, 2, 3]),
             state_commitment: StateCommitment(vec![7, 7, 7]),
             contract_name: "c2.hyle".into(),
+            timeout_window: None,
         })
         .await
         .unwrap();
@@ -192,6 +194,7 @@ async fn test_tx_settlement_duplicates() -> Result<()> {
             program_id: ProgramId(vec![1, 2, 3]),
             state_commitment: StateCommitment(vec![7, 7, 7]),
             contract_name: "c2.hyle".into(),
+            timeout_window: None,
         })
         .await
         .unwrap();
@@ -375,6 +378,7 @@ async fn test_contract_upgrade() -> Result<()> {
             program_id: ProgramId(vec![7, 7, 7]),
             state_commitment: StateCommitment(vec![3, 3, 3]),
             contract_name: "c1.hyle".into(),
+            ..Default::default()
         }
         .as_blob("c1.hyle".into(), None, None)],
     );
@@ -391,6 +395,7 @@ async fn test_contract_upgrade() -> Result<()> {
             // The state commitment is ignored during the update phase.
             state_commitment: StateCommitment(vec![3, 3, 3]),
             contract_name: "c1.hyle".into(),
+            ..Default::default()
         }));
 
     let proof_update = ProofTransaction {

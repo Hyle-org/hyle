@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use hyle_model::{
     ContractName, DataProposalHash, DataSized, LaneBytesSize, LaneId, ProgramId,
     RegisterContractAction, StructuredBlobData, ValidatorPublicKey, Verifier,
@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tracing::{debug, trace, warn};
 
 use crate::{
-    mempool::{InternalMempoolEvent, MempoolNetMessage},
+    mempool::{MempoolNetMessage, ProcessedDPEvent},
     model::{BlobProofOutput, DataProposal, Hashed, Transaction, TransactionData},
 };
 
@@ -20,10 +20,10 @@ use super::{
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DataProposalVerdict {
+    Process,
     Empty,
     Wait,
     Vote,
-    Process,
     Refuse,
 }
 
@@ -31,20 +31,88 @@ impl super::Mempool {
     pub(super) fn on_data_proposal(
         &mut self,
         lane_id: &LaneId,
+        received_hash: DataProposalHash,
         data_proposal: DataProposal,
     ) -> Result<()> {
         let lane_id = lane_id.clone();
+
+        debug!(
+            "Received DataProposal {:?} (unchecked) on lane {} ({} txs)",
+            received_hash,
+            lane_id,
+            data_proposal.txs.len(),
+        );
+
+        self.metrics.add_received_dp(&lane_id);
+
+        // Check if we have a cached response to this DP hash (we can safely trust the hash here)
+        // TODO: if we are currently hashing the same DP we'll still re-hash it
+        // but this requires a signed header to quickly process the message.
+        match self
+            .cached_dp_votes
+            .get(&(lane_id.clone(), received_hash.clone()))
+        {
+            // Ignore
+            Some(
+                DataProposalVerdict::Empty
+                | DataProposalVerdict::Refuse
+                | DataProposalVerdict::Process,
+            ) => {
+                debug!(
+                    "Ignoring DataProposal {:?} on lane {} (cached verdict)",
+                    received_hash, lane_id
+                );
+                return Ok(());
+            }
+            Some(DataProposalVerdict::Vote) => {
+                // Resend our vote
+                // First fetch the lane size, if we somehow don't have it ignore.
+                if let Ok(lane_size) = self.lanes.get_lane_size_at(&lane_id, &received_hash) {
+                    debug!(
+                        "Resending vote for DataProposal {:?} on lane {}",
+                        received_hash, lane_id
+                    );
+                    return self.send_vote(
+                        self.get_lane_operator(&lane_id),
+                        received_hash,
+                        lane_size,
+                    );
+                }
+            }
+            _ => {}
+        }
+
         // This is annoying to run in tests because we don't have the event loop setup, so go synchronous.
         #[cfg(test)]
-        self.on_hashed_data_proposal(&lane_id, data_proposal.clone())?;
+        {
+            // We must verify the hash
+            if data_proposal.hashed() != received_hash {
+                bail!(
+                    "Received DataProposal with wrong hash: expected {:?}, got {:?}",
+                    received_hash,
+                    data_proposal.hashed()
+                );
+            }
+            self.on_hashed_data_proposal(&lane_id, data_proposal.clone())?;
+        }
         #[cfg(not(test))]
-        self.running_tasks.spawn_blocking(move || {
-            data_proposal.hashed();
-            Ok(InternalMempoolEvent::OnHashedDataProposal((
-                lane_id,
-                data_proposal,
-            )))
-        });
+        self.inner.processing_dps.spawn_on(
+            async move {
+                // We must verify the hash
+                if data_proposal.hashed() != received_hash {
+                    bail!(
+                        "Received DataProposal with wrong hash: expected {:?}, got {:?}",
+                        received_hash,
+                        data_proposal.hashed()
+                    );
+                }
+                Ok(ProcessedDPEvent::OnHashedDataProposal((
+                    lane_id,
+                    data_proposal,
+                )))
+            },
+            self.inner.long_tasks_runtime.handle(),
+        );
         Ok(())
     }
 
@@ -54,14 +122,20 @@ impl super::Mempool {
         mut data_proposal: DataProposal,
     ) -> Result<()> {
         debug!(
-            "Received DataProposal {:?} on lane {} ({} txs, {})",
+            "Hashing done for DataProposal {:?} on lane {} ({} txs, {})",
             data_proposal.hashed(),
             lane_id,
             data_proposal.txs.len(),
             data_proposal.estimate_size()
         );
+        self.metrics.add_hashed_dp(lane_id);
+
         let data_proposal_hash = data_proposal.hashed();
         let (verdict, lane_size) = self.get_verdict(lane_id, &data_proposal)?;
+        self.cached_dp_votes.insert(
+            (lane_id.clone(), data_proposal_hash.clone()),
+            verdict.clone(),
+        );
         match verdict {
             DataProposalVerdict::Empty => {
                 warn!(
@@ -83,14 +157,17 @@ impl super::Mempool {
                 trace!("Further processing for DataProposal");
                 let kc = self.known_contracts.clone();
                 let lane_id = lane_id.clone();
-                self.running_tasks.spawn_blocking(move || {
-                    let decision = Self::process_data_proposal(&mut data_proposal, kc);
-                    Ok(InternalMempoolEvent::OnProcessedDataProposal((
-                        lane_id,
-                        decision,
-                        data_proposal,
-                    )))
-                });
+                self.inner.processing_dps.spawn_on(
+                    async move {
+                        let decision = Self::process_data_proposal(&mut data_proposal, kc);
+                        Ok(ProcessedDPEvent::OnProcessedDataProposal((
+                            lane_id,
+                            decision,
+                            data_proposal,
+                        )))
+                    },
+                    self.inner.long_tasks_runtime.handle(),
+                );
             }
             DataProposalVerdict::Wait => {
                 // Push the data proposal in the waiting list
@@ -118,6 +195,11 @@ impl super::Mempool {
             lane_id,
             data_proposal.txs.len()
         );
+
+        self.metrics.add_processed_dp(&lane_id);
+
+        self.cached_dp_votes
+            .insert((lane_id.clone(), data_proposal.hashed()), verdict.clone());
         match verdict {
             DataProposalVerdict::Empty => {
                 unreachable!("Empty DataProposal should never be processed");
@@ -360,11 +442,11 @@ impl super::Mempool {
         size: LaneBytesSize,
     ) -> Result<()> {
         self.metrics
-            .add_proposal_vote(self.crypto.validator_pubkey(), validator);
+            .add_dp_vote(self.crypto.validator_pubkey(), validator);
         debug!("🗳️ Sending vote for DataProposal {data_proposal_hash} to {validator} (lane size: {size})");
         self.send_net_message(
             validator.clone(),
-            MempoolNetMessage::DataVote(data_proposal_hash, size),
+            MempoolNetMessage::DataVote(self.crypto.sign((data_proposal_hash, size))?),
         )?;
         Ok(())
     }
@@ -373,9 +455,12 @@ impl super::Mempool {
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::mempool::{
-        test::{make_register_contract_tx, MempoolTestCtx},
-        MempoolNetMessage,
+    use crate::{
+        mempool::{
+            test::{make_register_contract_tx, MempoolTestCtx},
+            MempoolNetMessage,
+        },
+        p2p::network::HeaderSigner,
     };
     use hyle_crypto::BlstCrypto;
     use hyle_model::{DataProposalHash, SignedByValidator};
@@ -448,17 +533,18 @@ pub mod test {
             &[make_register_contract_tx(ContractName::new("test1"))],
         );
         let size = LaneBytesSize(data_proposal.estimate_size() as u64);
+        let hash = data_proposal.hashed();
 
-        let signed_msg = ctx
-            .mempool
-            .crypto
-            .sign(MempoolNetMessage::DataProposal(data_proposal.clone()))?;
+        let signed_msg =
+            ctx.mempool
+                .crypto
+                .sign_msg_with_header(MempoolNetMessage::DataProposal(
+                    hash.clone(),
+                    data_proposal.clone(),
+                ))?;
 
         ctx.mempool
-            .handle_net_message(SignedByValidator {
-                msg: MempoolNetMessage::DataProposal(data_proposal.clone()),
-                signature: signed_msg.signature,
-            })
+            .handle_net_message(signed_msg)
             .expect("should handle net message");
 
         ctx.handle_processed_data_proposals().await;
@@ -468,8 +554,11 @@ pub mod test {
             .assert_send(&ctx.mempool.crypto.validator_pubkey().clone(), "DataVote")
             .msg
         {
-            MempoolNetMessage::DataVote(data_vote, voted_size) => {
-                assert_eq!(data_vote, data_proposal.hashed());
+            MempoolNetMessage::DataVote(SignedByValidator {
+                msg: (data_vote, voted_size),
+                ..
+            }) => {
+                assert_eq!(data_vote, hash);
                 assert_eq!(size, voted_size);
             }
             _ => panic!("Expected DataProposal message"),

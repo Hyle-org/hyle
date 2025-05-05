@@ -8,6 +8,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use hyle_model::api::NetworkStats;
 use sqlx::Row;
 use utoipa::OpenApi;
 
@@ -24,6 +25,157 @@ pub struct BlockPagination {
 #[openapi(paths(get_blocks))]
 pub(super) struct IndexerAPI;
 
+#[derive(sqlx::FromRow, Debug)]
+pub struct Point<T = i64> {
+    pub x: i64,
+    pub y: Option<T>,
+}
+
+#[utoipa::path(
+    get,
+    tag = "Indexer",
+    path = "/stats",
+    responses(
+        (status = OK, body = NetworkStats)
+    )
+)]
+pub async fn get_stats(
+    State(state): State<IndexerApiState>,
+) -> Result<Json<NetworkStats>, StatusCode> {
+    let total_transactions = log_error!(
+        sqlx::query_scalar("SELECT count(*) as txs FROM transactions")
+            .fetch_optional(&state.db)
+            .await,
+        "Failed to fetch stats"
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .unwrap_or(0);
+
+    let total_contracts = log_error!(
+        sqlx::query_scalar("SELECT count(*) as contracts FROM contracts")
+            .fetch_optional(&state.db)
+            .await,
+        "Failed to fetch stats"
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .unwrap_or(0);
+
+    let txs_last_day = log_error!(
+        sqlx::query_scalar(
+            "
+            SELECT count(*) as txs FROM transactions
+            LEFT JOIN blocks b ON transactions.block_hash = b.hash
+            WHERE b.timestamp > now() - interval '1 day'
+            OR b.timestamp IS NULL
+            "
+        )
+        .fetch_optional(&state.db)
+        .await,
+        "Failed to fetch stats"
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .unwrap_or(0);
+
+    let contracts_last_day = log_error!(
+        sqlx::query_scalar(
+            "
+            SELECT count(*) as contracts FROM contracts
+            LEFT JOIN transactions t ON contracts.tx_hash = t.tx_hash
+            LEFT JOIN blocks b ON t.block_hash = b.hash
+            WHERE b.timestamp > now() - interval '1 day'
+            OR b.timestamp IS NULL
+            "
+        )
+        .fetch_optional(&state.db)
+        .await,
+        "Failed to fetch stats"
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .unwrap_or(0);
+
+    // graph is number of txs per hour for the last 6 hours
+    let graph_tx_volume = log_error!(
+        sqlx::query_as::<_, Point>(
+            "
+            WITH hours AS (
+                SELECT generate_series(
+                    date_trunc('hour', now()) - interval '5 hours',
+                    date_trunc('hour', now()),
+                    interval '1 hour'
+                ) AS x
+            )
+            SELECT 
+                extract(epoch from h.x)::bigint AS x,
+                count(t.*)::bigint AS y
+            FROM hours h
+            LEFT JOIN blocks b ON date_trunc('hour', b.timestamp) = h.x
+            LEFT JOIN transactions t ON t.block_hash = b.hash
+            GROUP BY h.x
+            ORDER BY h.x;
+            "
+        )
+        .fetch_all(&state.db)
+        .await,
+        "Failed to fetch tx stats"
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let graph_tx_volume = graph_tx_volume
+        .into_iter()
+        .map(|point| (point.x, point.y.unwrap_or(0)))
+        .collect::<Vec<(i64, i64)>>();
+
+    let graph_block_time = log_error!(
+        sqlx::query_as::<_, Point<f64>>(
+            "
+            WITH hours AS (
+                SELECT generate_series(
+                    date_trunc('hour', now()) - interval '5 hours',
+                    date_trunc('hour', now()),
+                    interval '1 hour'
+                ) AS hour_start
+            ),
+            block_deltas AS (
+                SELECT
+                    b.timestamp AS current_ts,
+                    bp.timestamp AS parent_ts,
+                    b.timestamp - bp.timestamp AS delta,
+                    date_trunc('hour', b.timestamp) AS bucket
+                FROM blocks b
+                JOIN blocks bp ON b.parent_hash = bp.hash
+                WHERE b.timestamp > now() - interval '6 hours'
+                AND bp.height > 0
+            )
+            SELECT
+                extract(epoch from h.hour_start)::bigint AS x,
+                AVG(EXTRACT(EPOCH FROM bd.delta))::float8 AS y
+            FROM hours h
+            LEFT JOIN block_deltas bd ON bd.bucket = h.hour_start
+            GROUP BY h.hour_start
+            ORDER BY h.hour_start;
+            "
+        )
+        .fetch_all(&state.db)
+        .await,
+        "Failed to fetch block stats"
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let graph_block_time = graph_block_time
+        .into_iter()
+        .map(|point| (point.x, point.y.unwrap_or(0.)))
+        .collect::<Vec<(i64, f64)>>();
+
+    Ok(Json(NetworkStats {
+        total_transactions,
+        txs_last_day,
+        total_contracts,
+        contracts_last_day,
+        graph_tx_volume,
+        graph_block_time,
+    }))
+}
+
 #[utoipa::path(
     get,
     tag = "Indexer",
@@ -36,7 +188,7 @@ pub async fn get_blocks(
     Query(pagination): Query<BlockPagination>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<APIBlock>>, StatusCode> {
-    let blocks = match pagination.start_block {
+    let blocks = log_error!(match pagination.start_block {
         Some(start_block) => sqlx::query_as::<_, BlockDb>(
             "SELECT * FROM blocks WHERE height <= $1 and height > $2 ORDER BY height DESC LIMIT $3",
         )
@@ -48,7 +200,8 @@ pub async fn get_blocks(
     }
     .fetch_all(&state.db)
     .await
-    .map(|db| db.into_iter().map(Into::<APIBlock>::into).collect())
+    .map(|db| db.into_iter().map(Into::<APIBlock>::into).collect()),
+    "Failed to fetch blocks")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(blocks))
@@ -65,11 +218,14 @@ pub async fn get_blocks(
 pub async fn get_last_block(
     State(state): State<IndexerApiState>,
 ) -> Result<Json<APIBlock>, StatusCode> {
-    let block = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks ORDER BY height DESC LIMIT 1")
-        .fetch_optional(&state.db)
-        .await
-        .map(|db| db.map(Into::<APIBlock>::into))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let block = log_error!(
+        sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks ORDER BY height DESC LIMIT 1")
+            .fetch_optional(&state.db)
+            .await
+            .map(|db| db.map(Into::<APIBlock>::into)),
+        "Failed to fetch last block"
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match block {
         Some(block) => Ok(Json(block)),
@@ -92,12 +248,15 @@ pub async fn get_block(
     Path(height): Path<i64>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<APIBlock>, StatusCode> {
-    let block = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks WHERE height = $1")
-        .bind(height)
-        .fetch_optional(&state.db)
-        .await
-        .map(|db| db.map(Into::<APIBlock>::into))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let block = log_error!(
+        sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks WHERE height = $1")
+            .bind(height)
+            .fetch_optional(&state.db)
+            .await
+            .map(|db| db.map(Into::<APIBlock>::into)),
+        "Failed to fetch block by height"
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match block {
         Some(block) => Ok(Json(block)),
@@ -120,12 +279,15 @@ pub async fn get_block_by_hash(
     Path(hash): Path<String>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<APIBlock>, StatusCode> {
-    let block = sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks WHERE hash = $1")
-        .bind(hash)
-        .fetch_optional(&state.db)
-        .await
-        .map(|db| db.map(Into::<APIBlock>::into))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let block = log_error!(
+        sqlx::query_as::<_, BlockDb>("SELECT * FROM blocks WHERE hash = $1")
+            .bind(hash)
+            .fetch_optional(&state.db)
+            .await
+            .map(|db| db.map(Into::<APIBlock>::into)),
+        "Failed to fetch block by hash"
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match block {
         Some(block) => Ok(Json(block)),
@@ -145,35 +307,38 @@ pub async fn get_transactions(
     Query(pagination): Query<BlockPagination>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<APITransaction>>, StatusCode> {
-    let transactions = match pagination.start_block {
-        Some(start_block) => sqlx::query_as::<_, TransactionDb>(
-            r#"
-            SELECT t.*
+    let transactions = log_error!(
+        match pagination.start_block {
+            Some(start_block) => sqlx::query_as::<_, TransactionDb>(
+                r#"
+            SELECT t.*, b.timestamp
             FROM transactions t
             LEFT JOIN blocks b ON t.block_hash = b.hash
             WHERE b.height <= $1 and b.height > $2 AND t.transaction_type = 'blob_transaction'
             ORDER BY b.height DESC, t.index DESC
             LIMIT $3
             "#,
-        )
-        .bind(start_block)
-        .bind(start_block - pagination.nb_results.unwrap_or(10)) // Fine if this goes negative
-        .bind(pagination.nb_results.unwrap_or(10)),
-        None => sqlx::query_as::<_, TransactionDb>(
-            r#"
-            SELECT t.*
+            )
+            .bind(start_block)
+            .bind(start_block - pagination.nb_results.unwrap_or(10)) // Fine if this goes negative
+            .bind(pagination.nb_results.unwrap_or(10)),
+            None => sqlx::query_as::<_, TransactionDb>(
+                r#"
+            SELECT t.*, b.timestamp
             FROM transactions t
             LEFT JOIN blocks b ON t.block_hash = b.hash
             WHERE t.transaction_type = 'blob_transaction'
             ORDER BY b.height DESC, t.index DESC
             LIMIT $1
             "#,
-        )
-        .bind(pagination.nb_results.unwrap_or(10)),
-    }
-    .fetch_all(&state.db)
-    .await
-    .map(|db| db.into_iter().map(Into::<APITransaction>::into).collect())
+            )
+            .bind(pagination.nb_results.unwrap_or(10)),
+        }
+        .fetch_all(&state.db)
+        .await
+        .map(|db| db.into_iter().map(Into::<APITransaction>::into).collect()),
+        "Failed to fetch transactions"
+    )
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(transactions))
@@ -195,10 +360,10 @@ pub async fn get_transactions_by_contract(
     Query(pagination): Query<BlockPagination>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<APITransaction>>, StatusCode> {
-    let transactions = match pagination.start_block {
+    let transactions = log_error!(match pagination.start_block {
         Some(start_block) => sqlx::query_as::<_, TransactionDb>(
             r#"
-            SELECT t.*
+            SELECT t.* , bl.timestamp
             FROM transactions t
             JOIN blobs b ON t.tx_hash = b.tx_hash
             LEFT JOIN blocks bl ON t.block_hash = bl.hash
@@ -213,9 +378,10 @@ pub async fn get_transactions_by_contract(
         .bind(pagination.nb_results.unwrap_or(10)),
         None => sqlx::query_as::<_, TransactionDb>(
             r#"
-            SELECT t.*
+            SELECT t.*, bl.timestamp
             FROM transactions t
             JOIN blobs b ON t.tx_hash = b.tx_hash AND t.parent_dp_hash = b.parent_dp_hash
+            LEFT JOIN blocks bl ON t.block_hash = bl.hash
             WHERE b.contract_name = $1 AND t.transaction_type = 'blob_transaction'
             ORDER BY t.block_hash DESC, t.index DESC
             LIMIT $2
@@ -226,11 +392,10 @@ pub async fn get_transactions_by_contract(
     }
     .fetch_all(&state.db)
     .await
-    .map(|db| db.into_iter().map(Into::<APITransaction>::into).collect())
+    .map(|db| db.into_iter().map(Into::<APITransaction>::into).collect()),
+    "Failed to fetch transactions by contract")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // This could return 404 if the contract doesn't exist,
-    // but not done for now as it would take an extra query
     Ok(Json(transactions))
 }
 
@@ -249,19 +414,22 @@ pub async fn get_transactions_by_height(
     Path(height): Path<i64>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<APITransaction>>, StatusCode> {
-    let transactions = sqlx::query_as::<_, TransactionDb>(
-        r#"
-        SELECT t.*
+    let transactions = log_error!(
+        sqlx::query_as::<_, TransactionDb>(
+            r#"
+        SELECT t.*, b.timestamp
         FROM transactions t
         JOIN blocks b ON t.block_hash = b.hash
         WHERE b.height = $1 AND t.transaction_type = 'blob_transaction'
         ORDER BY t.index DESC
         "#,
+        )
+        .bind(height)
+        .fetch_all(&state.db)
+        .await
+        .map(|db| db.into_iter().map(Into::<APITransaction>::into).collect()),
+        "Failed to fetch transactions by height"
     )
-    .bind(height)
-    .fetch_all(&state.db)
-    .await
-    .map(|db| db.into_iter().map(Into::<APITransaction>::into).collect())
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(transactions))
@@ -284,8 +452,9 @@ pub async fn get_transaction_with_hash(
 ) -> Result<Json<APITransaction>, StatusCode> {
     let transaction = log_error!(sqlx::query_as::<_, TransactionDb>(
         r#"
-        SELECT tx_hash, version, transaction_type, transaction_status, parent_dp_hash, block_hash, index
+        SELECT tx_hash, version, transaction_type, transaction_status, parent_dp_hash, block_hash, index, b.timestamp
         FROM transactions
+        LEFT JOIN blocks b ON transactions.block_hash = b.hash
         WHERE tx_hash = $1 AND transaction_type = 'blob_transaction'
         ORDER BY index DESC
         "#,
@@ -294,7 +463,7 @@ pub async fn get_transaction_with_hash(
     .fetch_optional(&state.db)
     .await
     .map(|db| db.map(Into::<APITransaction>::into)),
-    "Select transaction")
+    "Failed to fetch transaction by hash")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match transaction {
@@ -331,7 +500,7 @@ pub async fn get_transaction_events(
         .bind(tx_hash)
         .fetch_all(&state.db)
         .await,
-        "Failed to fetch transactions with blobs"
+        "Failed to fetch transaction events"
     )
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -409,7 +578,7 @@ pub async fn get_blob_transactions_by_contract(
     )
     .bind(contract_name.clone())
     .fetch_all(&state.db)
-    .await, "Failed to fetch transactions with blobs")
+    .await, "Failed to fetch blob transactions by contract")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let transactions: Result<Vec<TransactionWithBlobs>, anyhow::Error> = rows
@@ -474,8 +643,7 @@ pub async fn get_blobs_by_tx_hash(
     Path(tx_hash): Path<String>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<APIBlob>>, StatusCode> {
-    // TODO: Order transaction ?
-    let blobs = sqlx::query_as::<_, BlobDb>(
+    let blobs = log_error!(sqlx::query_as::<_, BlobDb>(
         r#"
         SELECT blobs.*, array_remove(ARRAY_AGG(blob_proof_outputs.hyle_output), NULL) AS proof_outputs
         FROM blobs
@@ -489,11 +657,10 @@ pub async fn get_blobs_by_tx_hash(
     .bind(tx_hash)
     .fetch_all(&state.db)
     .await
-    .map(|db| db.into_iter().map(Into::<APIBlob>::into).collect())
+    .map(|db| db.into_iter().map(Into::<APIBlob>::into).collect()),
+    "Failed to fetch blobs by tx hash")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // This could return 404 if the transaction doesn't exist,
-    // but not done for now as it would take an extra query
     Ok(Json(blobs))
 }
 
@@ -513,7 +680,7 @@ pub async fn get_blob(
     Path((tx_hash, blob_index)): Path<(String, i32)>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<APIBlob>, StatusCode> {
-    let blob = sqlx::query_as::<_, BlobDb>(
+    let blob = log_error!(sqlx::query_as::<_, BlobDb>(
         r#"
         SELECT blobs.*, array_remove(ARRAY_AGG(blob_proof_outputs.hyle_output), NULL) AS proof_outputs
         FROM blobs
@@ -528,7 +695,8 @@ pub async fn get_blob(
     .bind(blob_index)
     .fetch_optional(&state.db)
     .await
-    .map(|db| db.map(Into::<APIBlob>::into))
+    .map(|db| db.map(Into::<APIBlob>::into)),
+    "Failed to fetch blob")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match blob {
@@ -548,11 +716,14 @@ pub async fn get_blob(
 pub async fn list_contracts(
     State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<APIContract>>, StatusCode> {
-    let contract = sqlx::query_as::<_, ContractDb>("SELECT * FROM contracts")
-        .fetch_all(&state.db)
-        .await
-        .map(|db| db.into_iter().map(Into::<APIContract>::into).collect())
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let contract = log_error!(
+        sqlx::query_as::<_, ContractDb>("SELECT * FROM contracts")
+            .fetch_all(&state.db)
+            .await
+            .map(|db| db.into_iter().map(Into::<APIContract>::into).collect()),
+        "Failed to fetch contracts"
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(contract))
 }
@@ -572,13 +743,15 @@ pub async fn get_contract(
     Path(contract_name): Path<String>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<APIContract>, StatusCode> {
-    let contract =
+    let contract = log_error!(
         sqlx::query_as::<_, ContractDb>("SELECT * FROM contracts WHERE contract_name = $1")
             .bind(contract_name)
             .fetch_optional(&state.db)
             .await
-            .map(|db| db.map(Into::<APIContract>::into))
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            .map(|db| db.map(Into::<APIContract>::into)),
+        "Failed to fetch contract"
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match contract {
         Some(contract) => Ok(Json(contract)),
@@ -602,18 +775,21 @@ pub async fn get_contract_state_by_height(
     Path((contract_name, height)): Path<(String, i64)>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<APIContractState>, StatusCode> {
-    let contract = sqlx::query_as::<_, ContractStateDb>(
-        r#"
+    let contract = log_error!(
+        sqlx::query_as::<_, ContractStateDb>(
+            r#"
         SELECT cs.*
         FROM contract_state cs
         JOIN blocks b ON cs.block_hash = b.hash
         WHERE contract_name = $1 AND height = $2"#,
+        )
+        .bind(contract_name)
+        .bind(height)
+        .fetch_optional(&state.db)
+        .await
+        .map(|db| db.map(Into::<APIContractState>::into)),
+        "Failed to fetch contract state by height"
     )
-    .bind(contract_name)
-    .bind(height)
-    .fetch_optional(&state.db)
-    .await
-    .map(|db| db.map(Into::<APIContractState>::into))
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match contract {
@@ -634,35 +810,38 @@ pub async fn get_proofs(
     Query(pagination): Query<BlockPagination>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<APITransaction>>, StatusCode> {
-    let transactions = match pagination.start_block {
-        Some(start_block) => sqlx::query_as::<_, TransactionDb>(
-            r#"
-            SELECT t.*
+    let transactions = log_error!(
+        match pagination.start_block {
+            Some(start_block) => sqlx::query_as::<_, TransactionDb>(
+                r#"
+            SELECT t.*, b.timestamp
             FROM transactions t
             LEFT JOIN blocks b ON t.block_hash = b.hash
             WHERE b.height <= $1 and b.height > $2 AND t.transaction_type = 'proof_transaction'
             ORDER BY b.height DESC, t.index DESC
             LIMIT $3
             "#,
-        )
-        .bind(start_block)
-        .bind(start_block - pagination.nb_results.unwrap_or(10)) // Fine if this goes negative
-        .bind(pagination.nb_results.unwrap_or(10)),
-        None => sqlx::query_as::<_, TransactionDb>(
-            r#"
-            SELECT t.*
+            )
+            .bind(start_block)
+            .bind(start_block - pagination.nb_results.unwrap_or(10)) // Fine if this goes negative
+            .bind(pagination.nb_results.unwrap_or(10)),
+            None => sqlx::query_as::<_, TransactionDb>(
+                r#"
+            SELECT t.*, b.timestamp
             FROM transactions t
             LEFT JOIN blocks b ON t.block_hash = b.hash
             WHERE t.transaction_type = 'proof_transaction'
             ORDER BY b.height DESC, t.index DESC
             LIMIT $1
             "#,
-        )
-        .bind(pagination.nb_results.unwrap_or(10)),
-    }
-    .fetch_all(&state.db)
-    .await
-    .map(|db| db.into_iter().map(Into::<APITransaction>::into).collect())
+            )
+            .bind(pagination.nb_results.unwrap_or(10)),
+        }
+        .fetch_all(&state.db)
+        .await
+        .map(|db| db.into_iter().map(Into::<APITransaction>::into).collect()),
+        "Failed to fetch proofs"
+    )
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(transactions))
@@ -683,19 +862,22 @@ pub async fn get_proofs_by_height(
     Path(height): Path<i64>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<APITransaction>>, StatusCode> {
-    let transactions = sqlx::query_as::<_, TransactionDb>(
-        r#"
-        SELECT t.*
+    let transactions = log_error!(
+        sqlx::query_as::<_, TransactionDb>(
+            r#"
+        SELECT t.*, b.timestamp
         FROM transactions t
         JOIN blocks b ON t.block_hash = b.hash
         WHERE b.height = $1 AND t.transaction_type = 'proof_transaction'
         ORDER BY t.index DESC
         "#,
+        )
+        .bind(height)
+        .fetch_all(&state.db)
+        .await
+        .map(|db| db.into_iter().map(Into::<APITransaction>::into).collect()),
+        "Failed to fetch proofs by height"
     )
-    .bind(height)
-    .fetch_all(&state.db)
-    .await
-    .map(|db| db.into_iter().map(Into::<APITransaction>::into).collect())
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(transactions))
@@ -718,8 +900,9 @@ pub async fn get_proof_with_hash(
 ) -> Result<Json<APITransaction>, StatusCode> {
     let transaction = log_error!(sqlx::query_as::<_, TransactionDb>(
         r#"
-        SELECT tx_hash, version, transaction_type, transaction_status, parent_dp_hash, block_hash, index
+        SELECT tx_hash, version, transaction_type, transaction_status, parent_dp_hash, block_hash, index, b.timestamp
         FROM transactions
+        LEFT JOIN blocks b ON transactions.block_hash = b.hash
         WHERE tx_hash = $1 AND transaction_type = 'proof_transaction'
         ORDER BY index DESC
         "#,
@@ -728,7 +911,7 @@ pub async fn get_proof_with_hash(
     .fetch_optional(&state.db)
     .await
     .map(|db| db.map(Into::<APITransaction>::into)),
-    "Select transaction")
+    "Failed to fetch proof by hash")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match transaction {

@@ -16,7 +16,7 @@ jobs:
           - crate: hyle
             features: sp1
           - crate: hyle-client-sdk
-            features: rest,indexer,risc0,sp1
+            features: rest,indexer,risc0,sp1,turmoil
           - crate: hyle-contract-sdk
             features: sp1
           - crate: hyle-contract-sdk
@@ -27,8 +27,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/install@cargo-docs-rs
 
       - name: Compile crate '${{ matrix.crate }}' with no default features
         run: cargo build -p ${{ matrix.crate }} --no-default-features
@@ -36,12 +36,13 @@ jobs:
       - name: Compile crate '${{ matrix.crate }}' with default features
         run: cargo build -p ${{ matrix.crate }}
 
-      - name: Build doc for crate '${{ matrix.crate }}'
-        run: cargo doc -p ${{ matrix.crate }}
-
       - name: Compile crate '${{ matrix.crate }}' with specific features
         if: matrix.features != ''
         run: cargo build -p ${{ matrix.crate }} --features ${{ matrix.features }}
+      
+      - name: Build doc for crate '${{ matrix.crate }}'
+        if: matrix.crate != 'hyle-noir-tools'
+        run: cargo docs-rs -p ${{ matrix.crate }}
 
   list-crates:
     runs-on: ubuntu-latest

@@ -105,8 +105,11 @@ impl DataAvailability {
             self.config.da_server_port
         );
 
-        let mut server: DaTcpServer =
-            codec_data_availability::start_server(self.config.da_server_port).await?;
+        let mut server: DaTcpServer = codec_data_availability::start_server_with_opts(
+            self.config.da_server_port,
+            Some(self.config.da_max_frame_length),
+        )
+        .await?;
 
         let (catchup_block_sender, mut catchup_block_receiver) =
             tokio::sync::mpsc::channel::<SignedBlock>(100);
@@ -370,7 +373,7 @@ impl DataAvailability {
                     .map_or(start_height, |block| block.height())
                     + 1,
             )
-            .filter_map(|block| block.map(|b| b.hashed()).ok())
+            .filter_map(|item| item.ok())
             .collect();
         processed_block_hashes.reverse();
 
@@ -486,15 +489,19 @@ pub mod tests {
             block: SignedBlock,
             tcp_server: &mut DaTcpServer,
         ) {
-            let full_block = self.node_state.handle_signed_block(&block);
+            _ = log_error!(
+                self.da.handle_signed_block(block.clone(), tcp_server).await,
+                "Handling Signed Block"
+            );
+            // TODO: we use this in autobahn_testing, but it'd be cleaner to separate it.
+            let Ok(full_block) = self.node_state.handle_signed_block(&block) else {
+                tracing::warn!("Error while handling signed block {}", block.hashed());
+                return;
+            };
             _ = log_error!(
                 self.node_state_bus
                     .send(NodeStateEvent::NewBlock(Box::new(full_block))),
                 "Sending NodeState event"
-            );
-            _ = log_error!(
-                self.da.handle_signed_block(block, tcp_server).await,
-                "Handling Signed Block"
             );
         }
     }

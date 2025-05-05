@@ -110,6 +110,7 @@ pub enum Ticket {
     Genesis,
     CommitQC(QuorumCertificate),
     TimeoutQC(QuorumCertificate, TCKind),
+    /// Technical value used internally that should never be used to start a slot
     ForcedCommitQc(QuorumCertificate),
 }
 

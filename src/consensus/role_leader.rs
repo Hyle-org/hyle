@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::{
     bus::command_response::CmdRespClient,
-    consensus::StateTag,
+    consensus::{ConsensusCommand, StateTag},
     mempool::QueryNewCut,
     model::{
         ConsensusNetMessage, ConsensusProposalHash, Hashed, SignedByValidator, Ticket,
@@ -13,6 +13,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_model::{utils::TimestampMs, ConsensusProposal, ConsensusStakingAction};
 use staking::state::MIN_STAKE;
+use tokio::sync::broadcast;
 use tracing::{debug, error, trace};
 
 use super::Consensus;
@@ -34,7 +35,11 @@ pub struct LeaderState {
 }
 
 impl Consensus {
-    pub(super) async fn start_round(&mut self, current_timestamp: TimestampMs) -> Result<()> {
+    pub(super) async fn start_round(
+        &mut self,
+        current_timestamp: TimestampMs,
+        may_delay: bool,
+    ) -> Result<()> {
         if !matches!(self.bft_round_state.leader.step, Step::StartNewSlot) {
             bail!(
                 "Cannot start a new slot while in step {:?}",
@@ -64,25 +69,6 @@ impl Consensus {
         if self.bft_round_state.current_proposal.slot == self.bft_round_state.slot {
             debug!("♻️ Starting new view with the same ConsensusProposal as previous views")
         } else {
-            // TODO: keep candidates around?
-            let mut new_validators_to_bond = std::mem::take(&mut self.validator_candidates);
-            new_validators_to_bond.retain(|v| {
-                self.bft_round_state
-                    .staking
-                    .get_stake(&v.pubkey)
-                    .unwrap_or(0)
-                    > MIN_STAKE
-                    && !self.bft_round_state.staking.is_bonded(&v.pubkey)
-            });
-
-            debug!(
-                "🚀 Starting new slot {} (view {}) with {} existing validators and {} candidates",
-                self.bft_round_state.slot,
-                self.bft_round_state.view,
-                self.bft_round_state.staking.bonded().len(),
-                new_validators_to_bond.len()
-            );
-
             // Creates ConsensusProposal
             // Query new cut to Mempool
             trace!(
@@ -98,16 +84,60 @@ impl Consensus {
             .await
             .context("Timeout while querying Mempool")
             {
-                Ok(Ok(cut)) => cut,
+                Ok(Ok(cut)) => {
+                    // If the cut is the same as before (and we didn't time out), then check if we should delay.
+                    if may_delay
+                        && !matches!(ticket, Ticket::TimeoutQC(..))
+                        && cut == self.bft_round_state.parent_cut
+                    {
+                        debug!("⏳ Delaying slot start");
+                        self.bft_round_state.leader.pending_ticket = Some(ticket);
+                        let command_sender = crate::utils::static_type_map::Pick::<
+                            broadcast::Sender<ConsensusCommand>,
+                        >::get(&self.bus)
+                        .clone();
+                        let interval = self.config.consensus.slot_duration;
+                        tokio::spawn(async move {
+                            tokio::time::sleep(interval).await;
+                            let _ = command_sender.send(ConsensusCommand::StartNewSlot(false));
+                        });
+                        return Ok(());
+                    }
+                    cut
+                }
                 Ok(Err(err)) | Err(err) => {
                     // In case of an error, we reuse the last cut to avoid being considered byzantine
+                    // (we also never delay because we already delayed by at least slot_duration)
                     error!(
                         "Could not get a new cut from Mempool {:?}. Reusing previous one...",
                         err
                     );
-                    self.bft_round_state.last_cut_seen.clone()
+                    self.bft_round_state.parent_cut.clone()
                 }
             };
+
+            // TODO: keep candidates around?
+            let mut new_validators_to_bond = std::mem::take(&mut self.validator_candidates);
+            new_validators_to_bond.retain(|v| {
+                self.bft_round_state
+                    .staking
+                    .get_stake(&v.pubkey)
+                    .unwrap_or(0)
+                    > MIN_STAKE
+                    && !self.bft_round_state.staking.is_bonded(&v.pubkey)
+            });
+
+            debug!(
+                "🚀 Starting new slot {} (view {}) with {} existing validators and {} candidates. Cut: {:?}",
+                self.bft_round_state.slot,
+                self.bft_round_state.view,
+                self.bft_round_state.staking.bonded().len(),
+                new_validators_to_bond.len(),
+                cut.iter()
+                    .map(|tx| format!("{}:{}({})", tx.0, tx.1, tx.2))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            );
 
             let mut staking_actions: Vec<ConsensusStakingAction> = new_validators_to_bond
                 .into_iter()
@@ -123,7 +153,6 @@ impl Consensus {
             }
 
             // Start Consensus with following cut
-            self.bft_round_state.last_cut_seen = cut.clone();
             self.bft_round_state.current_proposal = ConsensusProposal {
                 slot: self.bft_round_state.slot,
                 cut,
@@ -142,7 +171,7 @@ impl Consensus {
         );
         self.follower_state().buffered_prepares.push(prepare);
 
-        self.metrics.start_new_round("consensus_proposal");
+        self.metrics.start_new_round(self.bft_round_state.slot);
 
         // Verifies that to-be-built block is large enough (?)
 
@@ -190,7 +219,6 @@ impl Consensus {
         // Verify that the PrepareVote is for the correct proposal.
         // This also checks slot/view as those are part of the hash.
         if consensus_proposal_hash != self.bft_round_state.current_proposal.hashed() {
-            self.metrics.prepare_vote_error("invalid_proposal_hash");
             bail!("PrepareVote has not received valid consensus proposal hash");
         }
 
@@ -211,8 +239,6 @@ impl Consensus {
             .staking
             .compute_voting_power(&validated_votes);
         let voting_power = votes_power + self.get_own_voting_power();
-
-        self.metrics.prepare_votes_gauge(voting_power as u64); // TODO risky cast
 
         // Waits for at least n-f = 2f+1 matching PrepareVote messages
         let f = self.bft_round_state.staking.compute_f();
@@ -237,8 +263,6 @@ impl Consensus {
                 ConsensusNetMessage::PrepareVote(proposal_hash_hint.clone()),
                 aggregates,
             )?;
-
-            self.metrics.prepare_votes_aggregation();
 
             // Process the Confirm message locally, then send it to peers.
             self.bft_round_state.leader.step = Step::ConfirmAck;
@@ -287,7 +311,6 @@ impl Consensus {
 
         // Verify that the ConfirmAck is for the correct proposal
         if consensus_proposal_hash != self.bft_round_state.current_proposal.hashed() {
-            self.metrics.confirm_ack_error("invalid_proposal_hash");
             debug!(
                 sender = %msg.signature.validator,
                 "Got {} expected {}",
@@ -299,7 +322,6 @@ impl Consensus {
 
         // Save ConfirmAck. Ends if the message already has been processed
         if !self.store.bft_round_state.leader.confirm_ack.insert(msg) {
-            self.metrics.confirm_ack("already_processed");
             trace!("ConfirmAck has already been processed");
 
             return Ok(());
@@ -331,8 +353,6 @@ impl Consensus {
             self.bft_round_state.staking.total_bond()
         );
 
-        self.metrics.confirmed_ack_gauge(voting_power as u64); // TODO risky cast
-
         if voting_power > 2 * f {
             // Get all signatures received and change ValidatorPublicKey for ValidatorPubKey
             let aggregates: &Vec<&SignedByValidator<ConsensusNetMessage>> =
@@ -343,8 +363,6 @@ impl Consensus {
                 ConsensusNetMessage::ConfirmAck(self.bft_round_state.current_proposal.hashed()),
                 aggregates,
             )?;
-
-            self.metrics.confirm_ack_commit_aggregate();
 
             // Buffers the *Commit* Quorum Cerficiate
             let commit_quorum_certificate = commit_signed_aggregation.signature;

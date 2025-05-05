@@ -77,6 +77,7 @@ unwrap_used = "warn"
 expect_used = "warn"
 unused_result_ok = "warn"
 indexing_slicing = "warn"
+undocumented_unsafe_blocks = "warn"
 
 [dependencies]
 # Public dependencies
@@ -111,7 +112,7 @@ tracing = "0.1"
 
 anymap = { version = "0.12.1" }
 assertables = { version = "9.5.2" }
-axum = { version = "0.8.3", features = ["ws", "macros"] }
+axum = { version = "0.8.4", features = ["ws", "macros"] }
 axum-otel-metrics = { version = "0.10.0" }
 bytes = { version = "1.10.0" }
 clap = { version = "4.5.37", features = ["derive"] }
@@ -132,7 +133,7 @@ sqlx = { version = "0.8.4", features = [
   "migrate",
   "chrono",
 ] }
-syn = { version = "2.0.100" }
+syn = { version = "2.0.101" }
 tokio = { version = "1.44.2", features = ["full", "tracing"] }
 tokio-util = { version = "0.7.14" }
 tower-http = { version = "0.6.2", features = ["trace", "cors"] }
@@ -141,14 +142,14 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
   "fmt",
   "json",
 ] }
-fjall = { version = "2.9.0" }
+fjall = { version = "2.10.0" }
 
 dhat = { version = "0.3.3", optional = true }
 utoipa = { version = "5.3.1", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "9.0.0", features = ["axum"] }
 utoipa-axum = { version = "0.2.0" }
 testcontainers-modules = { version = "0.11.6", features = ["postgres"] }
-toml = "0.8.20"
+toml = "0.8.22"
 
 # We force zip version here as later version is not compatible with utoipa-swagger-ui
 zip = "=2.3.0"
@@ -181,7 +182,7 @@ tokio-stream = "0.1.17"
 tempfile = "3.19.1"
 assert-json-diff = "2.0.2"
 risc0-recursion = { workspace = true }
-risc0-zkvm = { version = "2.0.0", default-features = false, features = [
+risc0-zkvm = { version = "2.0.2", default-features = false, features = [
   "client",
 ] }
 signal-child = "1.0.6"

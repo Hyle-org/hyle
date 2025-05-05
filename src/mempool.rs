@@ -8,7 +8,9 @@ use crate::{
     model::*,
     module_handle_messages,
     node_state::module::NodeStateEvent,
-    p2p::network::OutboundMessage,
+    p2p::network::{
+        HeaderSignableData, HeaderSigner, IntoHeaderSignableData, MsgWithHeader, OutboundMessage,
+    },
     utils::{
         conf::{P2pMode, SharedConf},
         modules::{module_bus_client, Module},
@@ -23,6 +25,7 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::tcp_client::TcpServerMessage;
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
 use hyle_crypto::{BlstCrypto, SharedBlstCrypto};
+use hyle_net::clock::TimestampMsClock;
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
@@ -80,7 +83,7 @@ struct MempoolBusClient {
     sender(OutboundMessage),
     sender(MempoolBlockEvent),
     sender(MempoolStatusEvent),
-    receiver(SignedByValidator<MempoolNetMessage>),
+    receiver(MsgWithHeader<MempoolNetMessage>),
     receiver(RestApiMessage),
     receiver(TcpServerMessage),
     receiver(ConsensusEvent),
@@ -90,7 +93,7 @@ struct MempoolBusClient {
 }
 }
 
-type PodaSignatures = Vec<SignedByValidator<MempoolNetMessage>>;
+type UnaggregatedPoDA = Vec<ValidatorDAG>;
 
 #[derive(Default, BorshSerialize, BorshDeserialize)]
 pub struct MempoolStore {
@@ -102,8 +105,20 @@ pub struct MempoolStore {
     #[borsh(skip)]
     notify_new_tx_to_process: tokio::sync::Notify,
     waiting_dissemination_txs: Vec<Transaction>,
+    #[borsh(skip)]
+    own_data_proposal_in_preparation: JoinSet<(DataProposalHash, DataProposal)>,
     buffered_proposals: BTreeMap<LaneId, Vec<DataProposal>>,
-    buffered_podas: BTreeMap<LaneId, BTreeMap<DataProposalHash, Vec<PodaSignatures>>>,
+    buffered_podas: BTreeMap<LaneId, BTreeMap<DataProposalHash, Vec<UnaggregatedPoDA>>>,
+
+    // verify_tx.rs
+    #[borsh(skip)]
+    processing_dps: JoinSet<Result<ProcessedDPEvent>>,
+    #[borsh(skip)]
+    cached_dp_votes: HashMap<(LaneId, DataProposalHash), DataProposalVerdict>,
+
+    // Dedicated thread pool for data proposal and tx hashing
+    #[borsh(skip)]
+    long_tasks_runtime: LongTasksRuntime,
 
     // block_construction.rs
     blocks_under_contruction: VecDeque<BlockUnderConstruction>,
@@ -120,10 +135,54 @@ pub struct MempoolStore {
     known_contracts: Arc<std::sync::RwLock<KnownContracts>>,
 }
 
+pub struct LongTasksRuntime(std::mem::ManuallyDrop<tokio::runtime::Runtime>);
+impl Default for LongTasksRuntime {
+    fn default() -> Self {
+        Self(std::mem::ManuallyDrop::new(
+            #[allow(clippy::expect_used, reason = "Fails at startup, is OK")]
+            tokio::runtime::Builder::new_multi_thread()
+                // Limit the number of threads arbitrarily to lower the maximal impact on the whole node
+                .worker_threads(3)
+                .thread_name("mempool-hashing")
+                .build()
+                .expect("Failed to create hashing runtime"),
+        ))
+    }
+}
+
+impl Drop for LongTasksRuntime {
+    fn drop(&mut self) {
+        // Shut down the hashing runtime.
+        // TODO: serialize?
+        // Safety: We'll manually drop the runtime below and it won't be double-dropped as we use ManuallyDrop.
+        let rt = unsafe { std::mem::ManuallyDrop::take(&mut self.0) };
+        // This has to be done outside the current runtime.
+        tokio::task::spawn_blocking(move || {
+            #[cfg(test)]
+            rt.shutdown_timeout(Duration::from_millis(10));
+            #[cfg(not(test))]
+            rt.shutdown_timeout(Duration::from_secs(10));
+        });
+    }
+}
+
+impl Deref for LongTasksRuntime {
+    type Target = tokio::runtime::Runtime;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for LongTasksRuntime {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 pub struct Mempool {
     bus: MempoolBusClient,
     file: Option<PathBuf>,
-    running_tasks: JoinSet<Result<InternalMempoolEvent>>,
     conf: SharedConf,
     crypto: SharedBlstCrypto,
     metrics: MempoolMetrics,
@@ -157,12 +216,17 @@ impl DerefMut for Mempool {
     IntoStaticStr,
 )]
 pub enum MempoolNetMessage {
-    DataProposal(DataProposal),
-    DataVote(DataProposalHash, LaneBytesSize), // New lane size with this DP
-    PoDAUpdate(DataProposalHash, Vec<SignedByValidator<MempoolNetMessage>>),
+    DataProposal(DataProposalHash, DataProposal),
+    DataVote(ValidatorDAG),
+    PoDAUpdate(DataProposalHash, Vec<ValidatorDAG>),
     SyncRequest(Option<DataProposalHash>, Option<DataProposalHash>),
     SyncReply(Vec<(LaneEntryMetadata, DataProposal)>),
 }
+
+/// Validator Data Availability Guarantee
+/// This is a signed message that contains the hash of the data proposal and the size of the lane (DP included)
+/// It acts as proof the validator committed to making this DP available.
+pub type ValidatorDAG = SignedByValidator<(DataProposalHash, LaneBytesSize)>;
 
 impl Display for MempoolNetMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -175,12 +239,42 @@ impl BusMessage for MempoolNetMessage {}
 impl BusMessage for MempoolBlockEvent {}
 impl BusMessage for MempoolStatusEvent {}
 
+impl IntoHeaderSignableData for MempoolNetMessage {
+    fn to_header_signable_data(&self) -> HeaderSignableData {
+        match self {
+            // We get away with only signing the hash - verification must check the hash is correct
+            MempoolNetMessage::DataProposal(hash, _) => {
+                HeaderSignableData(hash.0.clone().into_bytes())
+            }
+            MempoolNetMessage::DataVote(vdag) => {
+                HeaderSignableData(borsh::to_vec(&vdag.msg).unwrap_or_default())
+            }
+            MempoolNetMessage::PoDAUpdate(_, vdags) => {
+                HeaderSignableData(borsh::to_vec(&vdags).unwrap_or_default())
+            }
+            MempoolNetMessage::SyncRequest(from, to) => HeaderSignableData(
+                [from.clone(), to.clone()]
+                    .map(|h| h.unwrap_or_default().0.into_bytes())
+                    .concat(),
+            ),
+            MempoolNetMessage::SyncReply(entries) => {
+                let mut hash = vec![];
+                for (metadata, data_proposal) in entries.iter() {
+                    hash.push(borsh::to_vec(&metadata).unwrap_or_default());
+                    hash.push(data_proposal.hashed().0.into_bytes());
+                }
+                HeaderSignableData(hash.concat())
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub enum InternalMempoolEvent {
+pub enum ProcessedDPEvent {
     OnHashedDataProposal((LaneId, DataProposal)),
     OnProcessedDataProposal((LaneId, DataProposalVerdict, DataProposal)),
 }
-impl BusMessage for InternalMempoolEvent {}
+impl BusMessage for ProcessedDPEvent {}
 
 impl Module for Mempool {
     type Context = SharedRunContext;
@@ -229,7 +323,6 @@ impl Module for Mempool {
             bus,
             file: Some(ctx.common.config.data_directory.clone()),
             conf: ctx.common.config.clone(),
-            running_tasks: JoinSet::new(),
             metrics,
             crypto: Arc::clone(&ctx.node.crypto),
             lanes: LanesStorage::new(&ctx.common.config.data_directory, lanes_tip)?,
@@ -249,16 +342,19 @@ impl Mempool {
             self.conf.consensus.slot_duration / 2,
             Duration::from_millis(500),
         );
-        let mut interval = tokio::time::interval(tick_interval);
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut new_dp_timer = tokio::time::interval(tick_interval);
+        let mut disseminate_timer = tokio::time::interval(Duration::from_secs(3));
+        new_dp_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        disseminate_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
         // TODO: Recompute optimistic node_state for contract registrations.
         module_handle_messages! {
             on_bus self.bus,
             delay_shutdown_until {
-                self.running_tasks.is_empty()
+                // TODO: serialize these somehow?
+                self.processing_dps.is_empty() && self.processing_txs.is_empty() && self.own_data_proposal_in_preparation.is_empty()
             },
-            listen<SignedByValidator<MempoolNetMessage>> cmd => {
+            listen<MsgWithHeader<MempoolNetMessage>> cmd => {
                 let _ = log_error!(self.handle_net_message(cmd), "Handling MempoolNetMessage in Mempool");
             }
             listen<RestApiMessage> cmd => {
@@ -285,8 +381,8 @@ impl Mempool {
             command_response<QueryNewCut, Cut> staking => {
                 self.handle_querynewcut(staking)
             }
-            Some(event) = self.running_tasks.join_next() => {
-                if let Ok(event) = log_error!(event, "Processing InternalMempoolEvent from Blocker Joinset") {
+            Some(event) = self.inner.processing_dps.join_next() => {
+                if let Ok(event) = log_error!(event, "Processing DPs from JoinSet") {
                     if let Ok(event) = log_error!(event, "Error in running task") {
                         let _ = log_error!(self.handle_internal_event(event),
                             "Handling InternalMempoolEvent in Mempool");
@@ -326,8 +422,20 @@ impl Mempool {
                     }
                 }
             }
-            _ = interval.tick() => {
-                let _ = log_error!(self.handle_data_proposal_management(), "Creating Data Proposal on tick");
+            Some(own_dp) = self.inner.own_data_proposal_in_preparation.join_next() => {
+                // Fatal here, if we loose the dp in the join next error, it's lost
+                if let Ok((own_dp_hash, own_dp)) = log_error!(own_dp, "Getting result for data proposal preparation from joinset"){
+                    _ = log_error!(self.resume_new_data_proposal(own_dp, own_dp_hash), "Resuming own data proposal creation");
+                    disseminate_timer.reset();
+                }
+            }
+            _ = new_dp_timer.tick() => {
+                _  = log_error!(self.prepare_new_data_proposal(), "Try preparing a new data proposal on tick");
+            }
+            _ = disseminate_timer.tick() => {
+                if let Ok(true) = log_error!(self.disseminate_data_proposals(None), "Disseminate data proposals on tick") {
+                    disseminate_timer.reset();
+                }
             }
         };
 
@@ -375,40 +483,39 @@ impl Mempool {
 
     /// Creates a cut with local material on QueryNewCut message reception (from consensus)
     fn handle_querynewcut(&mut self, staking: &mut QueryNewCut) -> Result<Cut> {
-        self.metrics.add_new_cut(staking);
+        self.metrics.query_new_cut(staking);
         let previous_cut = self
             .last_ccp
             .as_ref()
             .map(|ccp| ccp.consensus_proposal.cut.clone())
             .unwrap_or_default();
 
-        let lane_last_cut: HashMap<LaneId, (DataProposalHash, PoDA)> = previous_cut
-            .iter()
-            .map(|(lid, dp, _, poda)| (lid.clone(), (dp.clone(), poda.clone())))
-            .collect();
-
         // For each lane, we get the last CAR and put it in the cut
         let mut cut: Cut = vec![];
         for lane_id in self.lanes.get_lane_ids() {
+            let previous_entry = previous_cut
+                .iter()
+                .find(|(lane_id_, _, _, _)| lane_id_ == lane_id);
             if let Some((dp_hash, cumul_size, poda)) =
                 self.lanes
-                    .get_latest_car(lane_id, &staking.0, lane_last_cut.get(lane_id))?
+                    .get_latest_car(lane_id, &staking.0, previous_entry)?
             {
                 cut.push((lane_id.clone(), dp_hash, cumul_size, poda));
+            } else if let Some(lane) = previous_entry {
+                cut.push(lane.clone());
             }
         }
         Ok(cut)
     }
 
-    fn handle_internal_event(&mut self, event: InternalMempoolEvent) -> Result<()> {
+    fn handle_internal_event(&mut self, event: ProcessedDPEvent) -> Result<()> {
         match event {
-            InternalMempoolEvent::OnHashedDataProposal((lane_id, data_proposal)) => self
+            ProcessedDPEvent::OnHashedDataProposal((lane_id, data_proposal)) => self
                 .on_hashed_data_proposal(&lane_id, data_proposal)
                 .context("Hashing data proposal"),
-            InternalMempoolEvent::OnProcessedDataProposal((lane_id, verdict, data_proposal)) => {
-                self.on_processed_data_proposal(lane_id, verdict, data_proposal)
-                    .context("Processing data proposal")
-            }
+            ProcessedDPEvent::OnProcessedDataProposal((lane_id, verdict, data_proposal)) => self
+                .on_processed_data_proposal(lane_id, verdict, data_proposal)
+                .context("Processing data proposal"),
         }
     }
 
@@ -440,15 +547,22 @@ impl Mempool {
         }
     }
 
-    fn handle_net_message(&mut self, msg: SignedByValidator<MempoolNetMessage>) -> Result<()> {
-        let result = BlstCrypto::verify(&msg)?;
-
+    fn handle_net_message(&mut self, msg: MsgWithHeader<MempoolNetMessage>) -> Result<()> {
+        // Ignore messages that seem incorrectly timestamped (1h ahead or back)
+        if msg.header.msg.timestamp.abs_diff(TimestampMsClock::now().0) > 3_600_000 {
+            bail!("Message timestamp too far from current time");
+        }
+        let result = BlstCrypto::verify(&msg.header)?;
         if !result {
-            self.metrics.signature_error("mempool");
             bail!("Invalid signature for message {:?}", msg);
         }
 
-        let validator = &msg.signature.validator;
+        // Verify the message matches the signed data
+        if msg.header.msg.hash != msg.msg.to_header_signable_data() {
+            bail!("Invalid signed hash for message {:?}", msg);
+        }
+
+        let validator = &msg.header.signature.validator;
         // TODO: adapt can_rejoin test to emit a stake tx before turning on the joining node
         // if !self.validators.contains(validator) {
         //     bail!(
@@ -459,12 +573,12 @@ impl Mempool {
         // }
 
         match msg.msg {
-            MempoolNetMessage::DataProposal(data_proposal) => {
+            MempoolNetMessage::DataProposal(data_proposal_hash, data_proposal) => {
                 let lane_id = self.get_lane(validator);
-                self.on_data_proposal(&lane_id, data_proposal)?;
+                self.on_data_proposal(&lane_id, data_proposal_hash, data_proposal)?;
             }
-            MempoolNetMessage::DataVote(ref data_proposal_hash, _) => {
-                self.on_data_vote(&msg, data_proposal_hash.clone())?;
+            MempoolNetMessage::DataVote(vdag) => {
+                self.on_data_vote(vdag)?;
             }
             MempoolNetMessage::PoDAUpdate(data_proposal_hash, signatures) => {
                 let lane_id = self.get_lane(validator);
@@ -497,8 +611,7 @@ impl Mempool {
 
         // Ensure all lane entries are signed by the validator.
         if missing_entries.iter().any(|(metadata, data_proposal)| {
-            let expected_message =
-                MempoolNetMessage::DataVote(data_proposal.hashed(), metadata.cumul_size);
+            let expected_message = (data_proposal.hashed(), metadata.cumul_size);
 
             !metadata
                 .signatures
@@ -549,7 +662,7 @@ impl Mempool {
             if self.lanes.contains(lane_id, &wp.hashed()) {
                 continue;
             }
-            self.on_data_proposal(lane_id, std::mem::take(wp))
+            self.on_data_proposal(lane_id, wp.hashed(), std::mem::take(wp))
                 .context("Consuming waiting data proposal")?;
         }
 
@@ -597,25 +710,25 @@ impl Mempool {
         &mut self,
         lane_id: &LaneId,
         data_proposal_hash: &DataProposalHash,
-        signatures: Vec<SignedByValidator<MempoolNetMessage>>,
+        podas: Vec<ValidatorDAG>,
     ) -> Result<()> {
         debug!(
             "Received {} signatures for DataProposal {} of lane {}",
-            signatures.len(),
+            podas.len(),
             data_proposal_hash,
             lane_id
         );
 
         if log_warn!(
             self.lanes
-                .add_signatures(lane_id, data_proposal_hash, signatures.clone()),
+                .add_signatures(lane_id, data_proposal_hash, podas.clone()),
             "PodaUpdate"
         )
         .is_err()
         {
             info!(
                 "Buffering poda of {} signatures for DP: {}",
-                signatures.len(),
+                podas.len(),
                 data_proposal_hash
             );
 
@@ -627,7 +740,7 @@ impl Mempool {
                 .entry(data_proposal_hash.clone())
                 .or_default();
 
-            lane.push(signatures);
+            lane.push(podas);
         }
 
         Ok(())
@@ -685,12 +798,13 @@ impl Mempool {
 
     #[inline(always)]
     fn broadcast_net_message(&mut self, net_message: MempoolNetMessage) -> Result<()> {
-        let signed_msg = self.sign_net_message(net_message)?;
-        let enum_variant_name: &'static str = (&signed_msg.msg).into();
+        let enum_variant_name: &'static str = (&net_message).into();
         let error_msg =
             format!("Broadcasting MempoolNetMessage::{enum_variant_name} msg on the bus");
         self.bus
-            .send(OutboundMessage::broadcast(signed_msg))
+            .send(OutboundMessage::broadcast(
+                self.crypto.sign_msg_with_header(net_message)?,
+            ))
             .context(error_msg)?;
         Ok(())
     }
@@ -701,14 +815,16 @@ impl Mempool {
         only_for: HashSet<ValidatorPublicKey>,
         net_message: MempoolNetMessage,
     ) -> Result<()> {
-        let signed_msg = self.sign_net_message(net_message)?;
-        let enum_variant_name: &'static str = (&signed_msg.msg).into();
+        let enum_variant_name: &'static str = (&net_message).into();
         let error_msg = format!(
             "Broadcasting MempoolNetMessage::{} msg only for: {:?} on the bus",
             enum_variant_name, only_for
         );
         self.bus
-            .send(OutboundMessage::broadcast_only_for(only_for, signed_msg))
+            .send(OutboundMessage::broadcast_only_for(
+                only_for,
+                self.crypto.sign_msg_with_header(net_message)?,
+            ))
             .context(error_msg)?;
         Ok(())
     }
@@ -719,21 +835,16 @@ impl Mempool {
         to: ValidatorPublicKey,
         net_message: MempoolNetMessage,
     ) -> Result<()> {
-        let signed_msg = self.sign_net_message(net_message)?;
-        let enum_variant_name: &'static str = (&signed_msg.msg).into();
+        let enum_variant_name: &'static str = (&net_message).into();
         let error_msg = format!("Sending MempoolNetMessage::{enum_variant_name} msg on the bus");
         _ = self
             .bus
-            .send(OutboundMessage::send(to, signed_msg))
+            .send(OutboundMessage::send(
+                to,
+                self.crypto.sign_msg_with_header(net_message)?,
+            ))
             .context(error_msg)?;
         Ok(())
-    }
-
-    pub fn sign_net_message(
-        &self,
-        msg: MempoolNetMessage,
-    ) -> Result<SignedByValidator<MempoolNetMessage>> {
-        self.crypto.sign(msg)
     }
 }
 
@@ -745,13 +856,16 @@ pub mod test {
     use core::panic;
 
     use super::*;
-    use crate::bus::dont_use_this::get_receiver;
     use crate::bus::metrics::BusMetrics;
     use crate::bus::SharedMessageBus;
     use crate::model;
     use crate::p2p::network::NetMessage;
+    use crate::{
+        bus::dont_use_this::get_receiver,
+        p2p::network::{HeaderSigner, MsgWithHeader},
+    };
     use anyhow::Result;
-    use assertables::assert_ok;
+    use assertables::{assert_err, assert_ok};
     use hyle_contract_sdk::StateCommitment;
     use tokio::sync::broadcast::Receiver;
     use utils::TimestampMs;
@@ -775,7 +889,6 @@ pub mod test {
                 bus,
                 file: None,
                 conf: SharedConf::default(),
-                running_tasks: JoinSet::new(),
                 crypto: Arc::new(crypto),
                 metrics: MempoolMetrics::global("id".to_string()),
                 lanes,
@@ -839,20 +952,36 @@ pub mod test {
             self.mempool.crypto.sign(data)
         }
 
+        pub fn create_net_message(
+            &self,
+            msg: MempoolNetMessage,
+        ) -> Result<MsgWithHeader<MempoolNetMessage>> {
+            self.mempool.crypto.sign_msg_with_header(msg)
+        }
+
         pub fn gen_cut(&mut self, staking: &Staking) -> Cut {
             self.mempool
                 .handle_querynewcut(&mut QueryNewCut(staking.clone()))
                 .unwrap()
         }
 
-        pub fn timer_tick(&mut self) -> Result<()> {
-            self.mempool.handle_data_proposal_management()
+        pub async fn timer_tick(&mut self) -> Result<bool> {
+            let Ok(true) = self.mempool.prepare_new_data_proposal() else {
+                return self.mempool.disseminate_data_proposals(None);
+            };
+
+            let (dp_hash, dp) = self
+                .mempool
+                .own_data_proposal_in_preparation
+                .join_next()
+                .await
+                .context("join next data proposal in preparation")??;
+
+            Ok(self.mempool.resume_new_data_proposal(dp, dp_hash)?
+                || self.mempool.disseminate_data_proposals(None)?)
         }
 
-        pub fn handle_poda_update(
-            &mut self,
-            net_message: Signed<MempoolNetMessage, ValidatorSignature>,
-        ) {
+        pub fn handle_poda_update(&mut self, net_message: MsgWithHeader<MempoolNetMessage>) {
             self.mempool
                 .handle_net_message(net_message)
                 .expect("fail to handle net message");
@@ -861,7 +990,8 @@ pub mod test {
         pub async fn handle_processed_data_proposals(&mut self) {
             let event = self
                 .mempool
-                .running_tasks
+                .inner
+                .processing_dps
                 .join_next()
                 .await
                 .expect("No event received")
@@ -873,10 +1003,7 @@ pub mod test {
         }
 
         #[track_caller]
-        pub fn assert_broadcast(
-            &mut self,
-            description: &str,
-        ) -> SignedByValidator<MempoolNetMessage> {
+        pub fn assert_broadcast(&mut self, description: &str) -> MsgWithHeader<MempoolNetMessage> {
             #[allow(clippy::expect_fun_call)]
             let rec = self
                 .out_receiver
@@ -909,7 +1036,7 @@ pub mod test {
         pub fn assert_broadcast_only_for(
             &mut self,
             description: &str,
-        ) -> SignedByValidator<MempoolNetMessage> {
+        ) -> MsgWithHeader<MempoolNetMessage> {
             #[allow(clippy::expect_fun_call)]
             let rec = self
                 .out_receiver
@@ -943,7 +1070,7 @@ pub mod test {
             &mut self,
             to: &ValidatorPublicKey,
             description: &str,
-        ) -> SignedByValidator<MempoolNetMessage> {
+        ) -> MsgWithHeader<MempoolNetMessage> {
             #[allow(clippy::expect_fun_call)]
             let rec = self
                 .out_receiver
@@ -990,7 +1117,7 @@ pub mod test {
         }
 
         #[track_caller]
-        pub fn handle_msg(&mut self, msg: &SignedByValidator<MempoolNetMessage>, _err: &str) {
+        pub fn handle_msg(&mut self, msg: &MsgWithHeader<MempoolNetMessage>, _err: &str) {
             debug!("📥 {} Handling message: {:?}", self.name, msg);
             self.mempool
                 .handle_net_message(msg.clone())
@@ -1139,6 +1266,14 @@ pub mod test {
         }
     }
 
+    pub fn create_data_vote(
+        crypto: &BlstCrypto,
+        hash: DataProposalHash,
+        size: LaneBytesSize,
+    ) -> Result<MempoolNetMessage> {
+        Ok(MempoolNetMessage::DataVote(crypto.sign((hash, size))?))
+    }
+
     pub fn make_register_contract_tx(name: ContractName) -> Transaction {
         BlobTransaction::new(
             "hyle@hyle",
@@ -1147,10 +1282,44 @@ pub mod test {
                 program_id: ProgramId(vec![]),
                 state_commitment: StateCommitment(vec![0, 1, 2, 3]),
                 contract_name: name,
+                timeout_window: None,
             }
             .as_blob("hyle".into(), None, None)],
         )
         .into()
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_invalid_net_messages() -> Result<()> {
+        let mut ctx = MempoolTestCtx::new("mempool").await;
+        let crypto2 = BlstCrypto::new("2").unwrap();
+        ctx.add_trusted_validator(crypto2.validator_pubkey());
+
+        // Test message with timestamp too far in future
+        let mut bad_time_msg =
+            crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(None, None))?;
+        bad_time_msg.header.msg.timestamp = TimestampMsClock::now().0 + 7200000; // 2h in future
+        assert_err!(ctx.mempool.handle_net_message(bad_time_msg.clone()));
+
+        // Test message with timestamp too far in past
+        let mut bad_time_msg =
+            crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(None, None))?;
+        bad_time_msg.header.msg.timestamp = TimestampMsClock::now().0 - 7200000; // 2h in future
+        assert_err!(ctx.mempool.handle_net_message(bad_time_msg.clone()));
+
+        // Test message with bad signature
+        let mut bad_sig_msg =
+            crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(None, None))?;
+        bad_sig_msg.header.signature.signature.0 = vec![0, 1, 2, 3]; // Invalid signature bytes
+        assert_err!(ctx.mempool.handle_net_message(bad_sig_msg.clone()));
+
+        // Test message with mismatched hash
+        let mut bad_hash_msg =
+            crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(None, None))?;
+        bad_hash_msg.header.msg.hash = HeaderSignableData(vec![9, 9, 9]); // Wrong hash
+        assert_err!(ctx.mempool.handle_net_message(bad_hash_msg.clone()));
+
+        Ok(())
     }
 
     #[test_log::test(tokio::test)]
@@ -1196,7 +1365,7 @@ pub mod test {
         let crypto2 = BlstCrypto::new("2").unwrap();
         ctx.add_trusted_validator(crypto2.validator_pubkey());
 
-        let signed_msg = crypto2.sign(MempoolNetMessage::SyncRequest(
+        let signed_msg = crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(
             None,
             Some(data_proposal.hashed()),
         ))?;
@@ -1232,15 +1401,12 @@ pub mod test {
         ctx.add_trusted_validator(crypto2.validator_pubkey());
 
         // First: the message is from crypto2, but the DP is not signed correctly
-        let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![(
+        let signed_msg = crypto2.sign_msg_with_header(MempoolNetMessage::SyncReply(vec![(
             LaneEntryMetadata {
                 parent_data_proposal_hash: None,
                 cumul_size,
                 signatures: vec![crypto3
-                    .sign(MempoolNetMessage::DataVote(
-                        data_proposal.hashed(),
-                        cumul_size,
-                    ))
+                    .sign((data_proposal.hashed(), cumul_size))
                     .expect("should sign")],
             },
             data_proposal.clone(),
@@ -1256,15 +1422,12 @@ pub mod test {
         );
 
         // Second: the message is NOT from crypto2, but the DP is signed by crypto2
-        let signed_msg = crypto3.sign(MempoolNetMessage::SyncReply(vec![(
+        let signed_msg = crypto3.sign_msg_with_header(MempoolNetMessage::SyncReply(vec![(
             LaneEntryMetadata {
                 parent_data_proposal_hash: None,
                 cumul_size,
                 signatures: vec![crypto2
-                    .sign(MempoolNetMessage::DataVote(
-                        data_proposal.hashed(),
-                        cumul_size,
-                    ))
+                    .sign((data_proposal.hashed(), cumul_size))
                     .expect("should sign")],
             },
             data_proposal.clone(),
@@ -1281,15 +1444,12 @@ pub mod test {
         );
 
         // Third: the message is from crypto2, the signature is from crypto2, but the message is wrong
-        let signed_msg = crypto3.sign(MempoolNetMessage::SyncReply(vec![(
+        let signed_msg = crypto3.sign_msg_with_header(MempoolNetMessage::SyncReply(vec![(
             LaneEntryMetadata {
                 parent_data_proposal_hash: None,
                 cumul_size,
                 signatures: vec![crypto2
-                    .sign(MempoolNetMessage::DataVote(
-                        DataProposalHash("non_existent".to_owned()),
-                        cumul_size,
-                    ))
+                    .sign((DataProposalHash("non_existent".to_owned()), cumul_size))
                     .expect("should sign")],
             },
             data_proposal.clone(),
@@ -1306,15 +1466,12 @@ pub mod test {
         );
 
         // Fourth: the message is from crypto2, the signature is from crypto2, but the size is wrong
-        let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![(
+        let signed_msg = crypto2.sign_msg_with_header(MempoolNetMessage::SyncReply(vec![(
             LaneEntryMetadata {
                 parent_data_proposal_hash: None,
                 cumul_size: LaneBytesSize(0),
                 signatures: vec![crypto2
-                    .sign(MempoolNetMessage::DataVote(
-                        data_proposal.hashed(),
-                        cumul_size,
-                    ))
+                    .sign((data_proposal.hashed(), cumul_size))
                     .expect("should sign")],
             },
             data_proposal.clone(),
@@ -1335,16 +1492,13 @@ pub mod test {
             Some(DataProposalHash("incorrect".to_owned())),
             vec![make_register_contract_tx(ContractName::new("test1"))],
         );
-        let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![
+        let signed_msg = crypto2.sign_msg_with_header(MempoolNetMessage::SyncReply(vec![
             (
                 LaneEntryMetadata {
                     parent_data_proposal_hash: None,
                     cumul_size,
                     signatures: vec![crypto2
-                        .sign(MempoolNetMessage::DataVote(
-                            data_proposal.hashed(),
-                            cumul_size,
-                        ))
+                        .sign((data_proposal.hashed(), cumul_size))
                         .expect("should sign")],
                 },
                 data_proposal.clone(),
@@ -1354,10 +1508,7 @@ pub mod test {
                     parent_data_proposal_hash: Some(DataProposalHash("incorrect".to_owned())),
                     cumul_size,
                     signatures: vec![crypto2
-                        .sign(MempoolNetMessage::DataVote(
-                            incorrect_parent.hashed(),
-                            cumul_size,
-                        ))
+                        .sign((incorrect_parent.hashed(), cumul_size))
                         .expect("should sign")],
                 },
                 incorrect_parent.clone(),
@@ -1372,15 +1523,12 @@ pub mod test {
         );
 
         // Final case: message is correct
-        let signed_msg = crypto2.sign(MempoolNetMessage::SyncReply(vec![(
+        let signed_msg = crypto2.sign_msg_with_header(MempoolNetMessage::SyncReply(vec![(
             LaneEntryMetadata {
                 parent_data_proposal_hash: None,
                 cumul_size,
                 signatures: vec![crypto2
-                    .sign(MempoolNetMessage::DataVote(
-                        data_proposal.hashed(),
-                        cumul_size,
-                    ))
+                    .sign((data_proposal.hashed(), cumul_size))
                     .expect("should sign")],
             },
             data_proposal.clone(),

@@ -106,10 +106,9 @@ mod e2e_hyllar {
         Ok(ctx)
     }
 
-    #[ignore = "need new_single_with_indexer"]
     #[test_log::test(tokio::test)]
     async fn hyllar_single_node() -> Result<()> {
-        let ctx = E2ECtx::new_single(500).await?;
+        let ctx = E2ECtx::new_single_with_indexer(500).await?;
         scenario_hyllar(ctx).await?;
         Ok(())
     }

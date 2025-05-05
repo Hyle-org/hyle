@@ -146,6 +146,7 @@ async fn scenario_lane_manager_outside_consensus(mut ctx: E2ECtx, delegate: bool
             program_id: ProgramId(vec![1, 2, 3]),
             state_commitment: StateCommitment(vec![1, 2, 3]),
             contract_name: ContractName::new("test"),
+            timeout_window: None,
         })
         .await?;
 

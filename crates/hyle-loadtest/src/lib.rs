@@ -2,7 +2,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
 use client_sdk::helpers::risc0::Risc0Prover;
-use client_sdk::helpers::test::TestProver;
+use client_sdk::helpers::test::{MockProver, TxExecutorTestProver};
 use client_sdk::rest_client::NodeApiHttpClient;
 use client_sdk::tcp_client::{codec_tcp_server, TcpServerMessage};
 use client_sdk::transaction_builder::{
@@ -11,11 +11,11 @@ use client_sdk::transaction_builder::{
 use client_sdk::{contract_states, transaction_builder};
 use hydentity::client::tx_executor_handler::{register_identity, verify_identity};
 use hydentity::Hydentity;
-use hyle_contract_sdk::Identity;
-use hyle_contract_sdk::TxHash;
-use hyle_contract_sdk::{Blob, BlobData, ContractAction, RegisterContractAction};
-use hyle_contract_sdk::{BlobTransaction, Transaction};
-use hyle_contract_sdk::{Calldata, ContractName, HyleOutput, ZkContract};
+use hyle_contract_sdk::{
+    Blob, BlobData, BlobTransaction, Calldata, ContractAction, ContractName, Hashed, HyleOutput,
+    Identity, RegisterContractAction, StateCommitment, TimeoutWindow, Transaction, TxHash,
+    ZkContract,
+};
 use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF};
 use hyllar::client::tx_executor_handler::transfer;
 use hyllar::erc20::ERC20;
@@ -140,6 +140,7 @@ pub async fn setup(hyllar: Hyllar, url: String, verifier: String) -> Result<()> 
             verifier: verifier.into(),
             program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
             state_commitment: hyllar.commit(),
+            timeout_window: Some(TimeoutWindow::default()),
         }
         .as_blob("hyle".into(), None, None)],
     );
@@ -229,7 +230,7 @@ pub async fn generate_proof_txs(users: u32, state: States) -> Result<Vec<Transac
         .collect::<Vec<_>>();
     for chunk in user_chunks {
         let mut ctx = TxExecutorBuilder::new(state.clone())
-            .with_prover("hyllar_test".into(), TestProver {})
+            .with_prover("hyllar_test".into(), MockProver {})
             .build();
         tasks.spawn(async move {
             let mut local_proof_txs = vec![];
@@ -408,7 +409,7 @@ pub async fn send_transaction<S: StateUpdater>(
     tx_hash
 }
 
-pub async fn long_running_test(node_url: String) -> Result<()> {
+pub async fn long_running_test(node_url: String, use_test_verifier: bool) -> Result<()> {
     loop {
         let mut client = NodeApiHttpClient::new(node_url.clone())?;
         client.api_key = Some("KEY_LOADTEST".to_string());
@@ -420,25 +421,32 @@ pub async fn long_running_test(node_url: String) -> Result<()> {
         let rand = get_current_timestamp_ms() % 100000;
         let random_hyllar_contract: ContractName = format!("hyllar_{}", rand).into();
         let random_hydentity_contract: ContractName = format!("hydentity_{}", rand).into();
+
+        let verifier = match use_test_verifier {
+            true => hyle_contract_sdk::Verifier("test".to_string()),
+            false => hyle_contract_sdk::Verifier("risc0-1".to_string()),
+        };
         let tx = BlobTransaction::new(
             Identity::new("hyle@hyle"),
             vec![
                 RegisterContractAction {
                     contract_name: random_hyllar_contract.clone(),
-                    verifier: hyle_contract_sdk::Verifier("risc0-1".to_string()),
+                    verifier: verifier.clone(),
                     program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
                     state_commitment: Hyllar::custom(format!(
                         "faucet@{}",
                         random_hydentity_contract
                     ))
                     .commit(),
+                    timeout_window: None,
                 }
                 .as_blob("hyle".into(), None, None),
                 RegisterContractAction {
                     contract_name: random_hydentity_contract.clone(),
-                    verifier: hyle_contract_sdk::Verifier("risc0-1".to_string()),
+                    verifier: verifier.clone(),
                     program_id: hyle_contracts::HYDENTITY_ID.to_vec().into(),
                     state_commitment: Hydentity::default().commit(),
+                    timeout_window: None,
                 }
                 .as_blob("hyle".into(), None, None),
             ],
@@ -455,16 +463,34 @@ pub async fn long_running_test(node_url: String) -> Result<()> {
             hydentity_name: random_hydentity_contract.clone(),
             hyllar: Hyllar::custom(format!("faucet@{}", random_hydentity_contract)),
             hyllar_name: random_hyllar_contract.clone(),
-        })
-        // Replace prover binaries for non-reproducible mode.
-        .with_prover(
-            random_hydentity_contract.clone(),
-            Risc0Prover::new(HYDENTITY_ELF),
-        )
-        .with_prover(random_hyllar_contract.clone(), Risc0Prover::new(HYLLAR_ELF))
-        .build();
+        });
+        if use_test_verifier {
+            tx_ctx = tx_ctx
+                .with_prover(
+                    random_hydentity_contract.clone(),
+                    TxExecutorTestProver::new(Hydentity::default()),
+                )
+                .with_prover(
+                    random_hyllar_contract.clone(),
+                    TxExecutorTestProver::new(Hyllar::custom(format!(
+                        "faucet@{}",
+                        random_hydentity_contract
+                    ))),
+                );
+        } else {
+            // Replace prover binaries for non-reproducible mode.
+            tx_ctx = tx_ctx
+                .with_prover(
+                    random_hydentity_contract.clone(),
+                    Risc0Prover::new(HYDENTITY_ELF),
+                )
+                .with_prover(random_hyllar_contract.clone(), Risc0Prover::new(HYLLAR_ELF));
+        }
+        let mut tx_ctx = tx_ctx.build();
 
         let ident = Identity(format!("faucet@{}", random_hydentity_contract.0));
+
+        tracing::warn!("Register state {:?}", tx_ctx.hydentity);
 
         // Register faucet identity
         let mut transaction = ProvableBlobTx::new(ident.clone());
@@ -476,6 +502,9 @@ pub async fn long_running_test(node_url: String) -> Result<()> {
         );
 
         let tx_hash = send_transaction(&client, transaction, &mut tx_ctx).await;
+
+        tracing::warn!("Register state {:?}", tx_ctx.hydentity);
+
         tracing::info!("Register TX Hash: {}", tx_hash);
 
         for i in 1..rand_iterations {
@@ -610,29 +639,67 @@ pub async fn long_running_test(node_url: String) -> Result<()> {
 }
 
 pub async fn send_massive_blob(users: u32, url: String) -> Result<()> {
-    let ident = Identity::new("test3@hydentity");
+    let tx = BlobTransaction::new(
+        Identity::new("hyle@hyle"),
+        vec![RegisterContractAction {
+            contract_name: "massive_blob_test".into(),
+            verifier: "test".into(),
+            program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
+            state_commitment: StateCommitment(vec![1]),
+            timeout_window: Some(TimeoutWindow::Timeout(hyle_contract_sdk::BlockHeight(2))),
+        }
+        .as_blob("hyle".into(), None, None)],
+    );
 
-    let mut data = vec![];
+    let mut client = codec_tcp_server::connect("loadtest_client".to_string(), url.clone())
+        .await
+        .unwrap();
+    client
+        .send(TcpServerMessage::NewTx(tx.into()))
+        .await
+        .unwrap();
 
-    for i in 0..6000000 {
-        data.push(i as u8);
-    }
+    let ident = Identity::new("test3@massive_blob_test");
+
+    info!("Generating massive blob transactions");
 
     let mut txs = vec![];
 
+    let mut compressible_data = Vec::with_capacity(6_000_000);
+    compressible_data.resize(6_000_000, 0xf0);
+
+    let mut uncompressible_data: Vec<u64> = vec![0; 6_000_000 / 8];
+    let mut rng = rand::rng();
+    rng.fill(uncompressible_data.as_mut_slice());
+
     for i in 0..users {
-        let mut user_data = data.clone();
-        user_data.extend_from_slice(&i.to_be_bytes());
+        // Alternate between easily compressible and random data
+        let data = if i % 2 == 0 {
+            // Need blobs to be different
+            compressible_data[..6_000_000 - i as usize].to_vec()
+        } else {
+            // Take the random data and xor it
+            uncompressible_data
+                .iter()
+                .map(|x| x ^ (i as u64))
+                .collect::<Vec<u64>>()
+                .into_iter()
+                .flat_map(|x| x.to_le_bytes())
+                .collect::<Vec<u8>>()
+        };
         let tx = BlobTransaction::new(
             ident.clone(),
             vec![Blob {
-                contract_name: "hydentity".into(),
-                data: BlobData(user_data),
+                contract_name: "massive_blob_test".into(),
+                data: BlobData(data),
             }],
         );
+        info!("Generated blob transaction {i}/{users} : {:?}", tx.hashed());
         let msg: Transaction = tx.into();
         txs.push(msg);
     }
+
+    info!("Sending data");
 
     let mut client = codec_tcp_server::connect("loadtest-massive-client".to_string(), url)
         .await

@@ -67,7 +67,7 @@ where
     {
         // TODO/FIXME: Concurrent writes can happen, and an older state can override a newer one
         // Example:
-        // State 1 starts creating a tmp file data.state1.tmp
+        // State 1 starts creating a tmp file data.state1.tmp
         // State 2 starts creating a tmp file data.state2.tmp
         // rename data.state2.tmp into store (atomic override)
         // renemae data.state1.tmp into
@@ -147,6 +147,7 @@ pub mod signal {
 macro_rules! module_handle_messages {
     (on_bus $bus:expr, delay_shutdown_until  $lay_shutdow_until:block, $($rest:tt)*) => {
         {
+            // Safety: this is disjoint.
             let mut shutdown_receiver = unsafe { &mut *$crate::utils::static_type_map::Pick::<tokio::sync::broadcast::Receiver<$crate::utils::modules::signal::ShutdownModule>>::splitting_get_mut(&mut $bus) };
             let mut should_shutdown = false;
             $crate::handle_messages! {
@@ -159,11 +160,14 @@ macro_rules! module_handle_messages {
                     }
                 }
             }
+            tracing::info!("Event loop listening to {} has stopped", stringify!($bus));
             should_shutdown
         }
+
     };
     (on_bus $bus:expr, $($rest:tt)*) => {
         {
+            // Safety: this is disjoint.
             let mut shutdown_receiver = unsafe { &mut *$crate::utils::static_type_map::Pick::<tokio::sync::broadcast::Receiver<$crate::utils::modules::signal::ShutdownModule>>::splitting_get_mut(&mut $bus) };
             let mut should_shutdown = false;
             $crate::handle_messages! {
@@ -173,6 +177,7 @@ macro_rules! module_handle_messages {
                     break;
                 }
             }
+            tracing::info!("Event loop listening to {} has stopped", stringify!($bus));
             should_shutdown
         }
     };
@@ -182,14 +187,14 @@ macro_rules! module_handle_messages {
 macro_rules! module_bus_client {
     (
         $(#[$meta:meta])*
-        $pub:vis struct $name:ident {
+        $pub:vis struct $name:ident $(< $( $lt:tt $( : $clt:tt $(+ $dlt:tt )* )? ),+ >)? {
             $(sender($sender:ty),)*
             $(receiver($receiver:ty),)*
         }
     ) => {
         $crate::bus::bus_client!{
             $(#[$meta])*
-            $pub struct $name {
+            $pub struct $name $(< $( $lt $( : $clt $(+ $dlt )* )? ),+ >)? {
                 $(sender($sender),)*
                 $(receiver($receiver),)*
                 receiver($crate::utils::modules::signal::ShutdownModule),

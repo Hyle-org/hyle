@@ -200,7 +200,11 @@ pub struct BlobData(pub Vec<u8>);
 
 impl std::fmt::Debug for BlobData {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "BlobData({})", hex::encode(&self.0))
+        if self.0.len() > 20 {
+            write!(f, "BlobData({}...)", hex::encode(&self.0[..20]))
+        } else {
+            write!(f, "BlobData({})", hex::encode(&self.0))
+        }
     }
 }
 
@@ -532,9 +536,7 @@ impl Hashed<ProofDataHash> for ProofData {
     }
 }
 
-#[derive(
-    Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize,
-)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 /// Enum for various side-effects blobs can have on the chain.
 /// This is implemented as an enum for easier forward compatibility.
@@ -546,16 +548,7 @@ pub enum OnchainEffect {
 /// This struct has to be the zkvm committed output. It will be used by
 /// hyle node to verify & settle the blob transaction.
 #[derive(
-    Default,
-    Serialize,
-    Deserialize,
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Hash,
-    BorshSerialize,
-    BorshDeserialize,
+    Default, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize,
 )]
 #[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 pub struct HyleOutput {
@@ -757,15 +750,37 @@ impl Add<BlockHeight> for BlockHeight {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
+pub enum TimeoutWindow {
+    NoTimeout,
+    Timeout(BlockHeight),
+}
+
+impl Default for TimeoutWindow {
+    fn default() -> Self {
+        TimeoutWindow::Timeout(BlockHeight(100))
+    }
+}
+
 #[derive(
     Debug, Serialize, Deserialize, Default, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize,
 )]
+#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
 /// Used as a blob action to register a contract.
 pub struct RegisterContractAction {
+    /// Verifier to use for transactions sent to this new contract.
     pub verifier: Verifier,
+    /// Other verifier data, such as a Risc0 program ID or noir public key.
+    /// Transactions sent to this contract will have to match this program ID.
     pub program_id: ProgramId,
+    /// Initial state commitment of the contract to register.
     pub state_commitment: StateCommitment,
+    /// Name of the contract to register.
     pub contract_name: ContractName,
+    /// Optionally set the timeout window for the contract.
+    /// If the contract exists, the timeout window will be unchanged, otherwise, the default value will be used.
+    pub timeout_window: Option<TimeoutWindow>,
 }
 
 #[cfg(feature = "full")]
@@ -778,6 +793,12 @@ impl Hashed<TxHash> for RegisterContractAction {
         hasher.update(self.program_id.0.clone());
         hasher.update(self.state_commitment.0.clone());
         hasher.update(self.contract_name.0.clone());
+        if let Some(timeout_window) = &self.timeout_window {
+            match timeout_window {
+                TimeoutWindow::NoTimeout => hasher.update(0u8.to_le_bytes()),
+                TimeoutWindow::Timeout(bh) => hasher.update(bh.0.to_le_bytes()),
+            }
+        }
         let hash_bytes = hasher.finalize();
         TxHash(hex::encode(hash_bytes))
     }
@@ -830,40 +851,7 @@ impl ContractAction for DeleteContractAction {
 /// Used by the Hylé node to recognize contract registration.
 /// Simply output this struct in your HyleOutput registered_contracts.
 /// See uuid-tld for examples.
-#[derive(
-    Default,
-    Serialize,
-    Deserialize,
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    Hash,
-    BorshSerialize,
-    BorshDeserialize,
-)]
-#[cfg_attr(feature = "full", derive(utoipa::ToSchema))]
-pub struct RegisterContractEffect {
-    pub verifier: Verifier,
-    pub program_id: ProgramId,
-    pub state_commitment: StateCommitment,
-    pub contract_name: ContractName,
-}
-
-#[cfg(feature = "full")]
-impl Hashed<TxHash> for RegisterContractEffect {
-    fn hashed(&self) -> TxHash {
-        use sha3::{Digest, Sha3_256};
-
-        let mut hasher = Sha3_256::new();
-        hasher.update(self.verifier.0.clone());
-        hasher.update(self.program_id.0.clone());
-        hasher.update(self.state_commitment.0.clone());
-        hasher.update(self.contract_name.0.clone());
-        let hash_bytes = hasher.finalize();
-        TxHash(hex::encode(hash_bytes))
-    }
-}
+pub type RegisterContractEffect = RegisterContractAction;
 
 #[cfg(feature = "full")]
 pub mod base64_field {

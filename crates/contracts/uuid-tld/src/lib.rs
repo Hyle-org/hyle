@@ -7,7 +7,7 @@ use sdk::{
     info,
     utils::{parse_calldata, parse_raw_calldata},
     Blob, BlobData, BlobIndex, Calldata, ContractAction, ContractName, OnchainEffect,
-    RegisterContractAction, RegisterContractEffect, RunResult, ZkContract,
+    RegisterContractAction, RunResult, ZkContract,
 };
 use uuid::Uuid;
 
@@ -73,12 +73,7 @@ impl ZkContract for UuidTld {
             return Ok((
                 format!("registered {} ({})", uuid, uuid.as_u128()),
                 exec_ctx,
-                vec![OnchainEffect::RegisterContract(RegisterContractEffect {
-                    contract_name: action.contract_name,
-                    verifier: action.verifier,
-                    program_id: action.program_id,
-                    state_commitment: action.state_commitment,
-                })],
+                vec![OnchainEffect::RegisterContract(action)],
             ));
         }
 
@@ -197,6 +192,7 @@ mod test {
             verifier: "test".into(),
             program_id: ProgramId(vec![1, 2, 3]),
             state_commitment: StateCommitment(vec![0, 1, 2, 3]),
+            ..Default::default()
         };
 
         let contract_input = make_calldata(register_action.clone(), "toto@test");
@@ -221,6 +217,7 @@ mod test {
             verifier: "test".into(),
             program_id: ProgramId(vec![1, 2, 3]),
             state_commitment: StateCommitment(vec![0, 1, 2, 3]),
+            ..Default::default()
         };
 
         let contract_input = make_calldata(register_action, "toto@test");

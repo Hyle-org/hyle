@@ -2,24 +2,16 @@ pub mod p2p_server;
 pub mod tcp_client;
 pub mod tcp_server;
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::fmt::Display;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytes::BytesMut;
-use futures::stream::SplitSink;
+use sdk::hyle_model_utils::TimestampMs;
 use tcp_client::TcpClient;
 use tokio::task::JoinHandle;
-use tokio_util::codec::{Decoder, Encoder, Framed, LengthDelimitedCodec};
+use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 
-use crate::net::TcpStream;
 use anyhow::Result;
-
-pub fn get_current_timestamp() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards")
-        .as_secs()
-}
 
 #[derive(Debug, Clone, BorshDeserialize, BorshSerialize, PartialEq)]
 pub enum TcpMessage<Data: Clone> {
@@ -35,8 +27,37 @@ pub enum P2PTcpMessage<Data: Clone> {
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub enum Handshake {
-    Hello((sdk::SignedByValidator<NodeConnectionData>, u128)),
-    Verack((sdk::SignedByValidator<NodeConnectionData>, u128)),
+    Hello(
+        (
+            Canal,
+            sdk::SignedByValidator<NodeConnectionData>,
+            TimestampMs,
+        ),
+    ),
+    Verack(
+        (
+            Canal,
+            sdk::SignedByValidator<NodeConnectionData>,
+            TimestampMs,
+        ),
+    ),
+}
+
+#[derive(
+    Default, Debug, Clone, BorshSerialize, BorshDeserialize, Hash, PartialEq, Eq, PartialOrd, Ord,
+)]
+pub struct Canal(String);
+
+impl Canal {
+    pub fn new<T: Into<String>>(t: T) -> Canal {
+        Canal(t.into())
+    }
+}
+
+impl Display for Canal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
@@ -56,6 +77,7 @@ pub enum TcpEvent<Data: Clone> {
     Closed { dest: String },
 }
 
+#[derive(Debug)]
 pub enum P2PTcpEvent<Codec, Msg>
 where
     Msg: Clone + std::fmt::Debug,
@@ -65,7 +87,12 @@ where
     <Codec as Encoder<P2PTcpMessage<Msg>>>::Error: std::fmt::Debug + Send,
 {
     TcpEvent(TcpEvent<P2PTcpMessage<Msg>>),
-    HandShakeTcpClient(TcpClient<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>),
+    HandShakeTcpClient(
+        String,
+        TcpClient<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>,
+        Canal,
+    ),
+    PingPeers,
 }
 
 // A Generic Codec to unwrap/wrap with TcpMessage<T>
@@ -153,20 +180,20 @@ where
     }
 }
 
-/// A socket we can send data to
+/// A socket abstraction to send a receive data
 #[derive(Debug)]
-struct SocketStream<Codec, In, Out>
+struct SocketStream<Out>
 where
-    In: Clone,
     Out: Clone + std::fmt::Debug,
-    Codec: Decoder<Item = In> + Encoder<Out> + Default,
 {
     /// Last timestamp we received a ping from the peer.
-    last_ping: u64,
+    last_ping: TimestampMs,
     /// Sender to stream data to the peer
-    sender: SplitSink<Framed<TcpStream, TcpMessageCodec<Codec>>, TcpMessage<Out>>,
+    sender: tokio::sync::mpsc::Sender<TcpMessage<Out>>,
+    /// Handle to abort the sending side of the stream
+    abort_sender_task: JoinHandle<()>,
     /// Handle to abort the receiving side of the stream
-    abort: JoinHandle<()>,
+    abort_receiver_task: JoinHandle<()>,
 }
 
 #[macro_export]
@@ -235,6 +262,9 @@ macro_rules! tcp_client_server {
             }
             pub async fn connect<Id: std::fmt::Display, A: $crate::net::ToSocketAddrs + std::fmt::Display>(id: Id, addr: A) -> Result<Client> {
                 $crate::tcp::tcp_client::TcpClient::<ClientCodec, $req, $res>::connect(id, addr).await
+            }
+            pub async fn connect_with_opts<Id: std::fmt::Display, A: $crate::net::ToSocketAddrs + std::fmt::Display>(id: Id, max_frame_length: Option<usize>, addr: A) -> Result<Client> {
+                $crate::tcp::tcp_client::TcpClient::<ClientCodec, $req, $res>::connect_with_opts(id, max_frame_length, addr).await
             }
         }
         }
