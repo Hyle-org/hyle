@@ -1,8 +1,8 @@
 use hyllar::HyllarAction;
-use sdk::sha2::{Digest, Sha256};
 use sdk::{
     utils::parse_calldata, BlobIndex, Calldata, IndexedBlobs, RunResult, StakingAction, ZkContract,
 };
+use sha2::{Digest, Sha256};
 use state::Staking;
 
 #[cfg(feature = "client")]

@@ -1,7 +1,6 @@
 use alloc::string::String;
 use hyle_model::{verifiers::Secp256k1Blob, BlobIndex, Calldata, ContractName};
-
-use crate::sha2::{Digest, Sha256};
+use sha2::{Digest, Sha256};
 
 /// This struct allows to check the existence of a secp256k1 blob in the calldata.
 /// It will check:

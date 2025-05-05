@@ -93,7 +93,7 @@ hyle-model = { workspace = true, default-features = false, features = [
 ] }
 hyle-crypto = { workspace = true }
 hydentity = { workspace = true, features = ["client"] }
-hyllar = { workspace = true, features = ["client"] }
+hyllar = { workspace = true, features = ["client", "impl"] }
 smt-token = { workspace = true, features = ["client"] }
 risc0-recursion = { workspace = true }
 hyle-verifiers = { workspace = true }
@@ -157,6 +157,9 @@ serde_with = "3.12.0"
 seq-macro = "0.3.6"
 [package.metadata.cargo-machete]
 ignored = ["zip"]
+
+[patch.crates-io]
+sha2 = { git = "https://github.com/risc0/RustCrypto-hashes", tag = "sha2-v0.10.8-risczero.0" }
 
 [dev-dependencies]
 amm = { workspace = true, features = ["client"] }

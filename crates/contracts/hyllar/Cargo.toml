@@ -26,7 +26,7 @@ serde = { version = "1.0", default-features = false, features = [
   "alloc",
 ] }
 anyhow = "1.0.98"
-sha2 = "=0.10.8" # precompile patched at workspace root
+sha2 = { version = "=0.10.8", optional = true } # precompile patched at workspace root
 borsh = { version = "1.5.6", features = ["derive"] }
 serde_with = "3.12.0"
 
@@ -51,9 +51,10 @@ risc0-zkvm = { version = "2.0.0", default-features = false, features = [
 mockall = "0.13.0"
 
 [features]
-default = []
-client = ["dep:client-sdk"]
-risc0 = ["dep:risc0-zkvm", "sdk/risc0"]
+default = ["impl"]
+impl = ["dep:sha2"]                             # feature to disable impl dependencies for sp1 contracts
+client = ["dep:client-sdk", "impl"]
+risc0 = ["dep:risc0-zkvm", "sdk/risc0", "impl"]
 
 [package.metadata.docs.rs]
 features = ["client"]

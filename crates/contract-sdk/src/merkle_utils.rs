@@ -2,8 +2,8 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use crate::sha2::{Digest, Sha256};
 use borsh::{BorshDeserialize, BorshSerialize};
+use sha2::{Digest, Sha256};
 use sparse_merkle_tree::{merge::MergeValue, traits::Hasher, MerkleProof, H256};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
