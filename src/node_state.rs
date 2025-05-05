@@ -835,7 +835,20 @@ impl NodeState {
                         .get_next_unsettled_tx(&contract_name)
                         .cloned()
                     {
-                        self.unsettled_transactions.remove(&tx_hash);
+                        if let Some(popped_tx) = self.unsettled_transactions.remove(&tx_hash) {
+                            debug!("⏳ Timeout tx {} (from contract deletion)", &tx_hash);
+                            block_under_construction
+                                .transactions_events
+                                .entry(tx_hash.clone())
+                                .or_default()
+                                .push(TransactionStateEvent::TimedOut);
+                            block_under_construction
+                                .dp_parent_hashes
+                                .insert(tx_hash.clone(), popped_tx.parent_dp_hash);
+                            block_under_construction
+                                .lane_ids
+                                .insert(tx_hash, popped_tx.tx_context.lane_id);
+                        }
                     }
 
                     block_under_construction
