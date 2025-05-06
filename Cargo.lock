@@ -2864,7 +2864,6 @@ dependencies = [
  "seq-macro",
  "serde",
  "serde_json",
- "serde_with",
  "sha3",
  "signal-child",
  "sqlx",
@@ -2877,11 +2876,9 @@ dependencies = [
  "tokio-tungstenite",
  "tokio-util",
  "toml",
- "tower-http",
  "tracing",
  "utoipa",
  "utoipa-axum",
- "utoipa-swagger-ui",
  "zip",
 ]
 
