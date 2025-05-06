@@ -114,6 +114,7 @@ where
         let mut tasks = vec![];
 
         for (name, socket) in self.sockets.iter_mut() {
+            debug!(" - to {}", name);
             tasks.push(
                 socket
                     .sender
@@ -150,7 +151,8 @@ where
         // Send the message to all targets concurrently and wait for them to finish
         let all_sent = {
             let mut tasks = vec![];
-            for (name, socket) in self.sockets.iter_mut() {
+            for (name, socket) in self.sockets.iter_mut().filter(|s| socket_addrs.contains(s.0)) {
+                debug!(" - to {}", name);
                 tasks.push(
                     socket
                         .sender

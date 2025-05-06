@@ -354,7 +354,9 @@ where
         let local_pubkey = self.crypto.validator_pubkey().clone();
         
         if let Some(peer_socket) = self.get_socket_mut(&canal, &peer_pubkey) {
-            let peer_addr_to_drop = if peer_socket.timestamp < timestamp || local_pubkey.cmp(&peer_pubkey) == Ordering::Less {
+            let peer_addr_to_drop = if peer_socket.timestamp < timestamp || {
+                peer_socket.timestamp == timestamp &&
+                    local_pubkey.cmp(&peer_pubkey) == Ordering::Less } {
                 debug!(
                     "Local peer {}/{} ({}): dropping socket {} in favor of more recent one {}",
                     v.msg.p2p_public_address, canal, peer_pubkey, peer_socket.socket_addr, dest
@@ -620,16 +622,13 @@ where
         msg: Msg,
         canal: Canal,
     ) -> HashMap<ValidatorPublicKey, anyhow::Error> {
-        let peer_addr_to_pubkey: HashMap<String, (Canal, ValidatorPublicKey)> = self
+        let peer_addr_to_pubkey: HashMap<String, ValidatorPublicKey> = self
             .peers
             .iter()
-            .flat_map(|(pubkey, peer)| {
-                peer.canals
-                    .iter()
-                    .filter(|(_canal, _socket)| _canal == &&canal)
-                    .map(|(_canal, socket)| {
-                        (socket.socket_addr.clone(), (_canal.clone(), pubkey.clone()))
-                    })
+            .filter_map(|(pubkey, peer)| {
+                peer.canals.get(&canal).map(|socket| {
+                    (socket.socket_addr.clone(), pubkey.clone())
+                })
             })
             .collect();
 
@@ -642,10 +641,10 @@ where
             .await;
 
         HashMap::from_iter(res.into_iter().filter_map(|(k, v)| {
-            peer_addr_to_pubkey.get(&k).map(|(_canal, pubkey)| {
+            peer_addr_to_pubkey.get(&k).map(|pubkey| {
                 error!("Error sending message to {} during broadcast: {}", k, v);
-                if let Err(e) = self.try_start_connection_for_peer(pubkey, _canal.clone()) {
-                    warn!("Problem when triggering re-handshake after message sending error with peer {}/{}: {}", pubkey, _canal, e);
+                if let Err(e) = self.try_start_connection_for_peer(pubkey, canal.clone()) {
+                    warn!("Problem when triggering re-handshake after message sending error with peer {}/{}: {}", pubkey, canal, e);
                 }
                 (pubkey.clone(), v)
             })
@@ -658,16 +657,17 @@ where
         canal: Canal,
         msg: Msg,
     ) -> HashMap<ValidatorPublicKey, anyhow::Error> {
-        let peer_addr_to_pubkey: HashMap<String, (Canal, ValidatorPublicKey)> = self
+        let peer_addr_to_pubkey: HashMap<String, ValidatorPublicKey> = self
             .peers
             .iter()
-            .flat_map(|(pubkey, peer)| {
-                peer.canals
-                    .iter()
-                    .filter(|(_canal, _socket)| _canal == &&canal && only_for.contains(pubkey))
-                    .map(|(_canal, socket)| {
-                        (socket.socket_addr.clone(), (_canal.clone(), pubkey.clone()))
+            .filter_map(|(pubkey, peer)| {
+                if only_for.contains(pubkey) {
+                    peer.canals.get(&canal).map(|socket| {
+                        (socket.socket_addr.clone(), pubkey.clone())
                     })
+                } else {
+                    None
+                }
             })
             .collect();
 
@@ -680,7 +680,7 @@ where
             .await;
 
         HashMap::from_iter(res.into_iter().filter_map(|(k, v)| {
-            peer_addr_to_pubkey.get(&k).map(|(canal, pubkey)| {
+            peer_addr_to_pubkey.get(&k).map(|pubkey| {
                 error!("Error sending message to {} during broadcast: {}", k, v);
                 if let Err(e) = self.try_start_connection_for_peer(pubkey, canal.clone()) {
                     warn!("Problem when triggering re-handshake after message sending error with peer {}/{}: {}", pubkey, canal, e);
@@ -693,7 +693,7 @@ where
 
 #[cfg(test)]
 pub mod tests {
-    use std::collections::HashSet;
+    use std::{collections::HashSet, time::Duration};
 
     use anyhow::Result;
     use borsh::{BorshDeserialize, BorshSerialize};
@@ -1014,6 +1014,11 @@ pub mod tests {
         // Canal A (1 -> 2)
         p2p_server1.broadcast(TestMessage("blabla".to_string()), Canal::new("A")).await;
 
+        dbg!(&p2p_server1.peers);
+        dbg!(&p2p_server2.peers);
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        
         let evt = receive_event(&mut p2p_server2, "Should be a TestMessage event").await?;
 
         assert!(matches!(evt,
