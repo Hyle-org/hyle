@@ -6,7 +6,7 @@ use crate::{
 };
 use anyhow::{Context, Error, Result};
 use hyle_crypto::SharedBlstCrypto;
-use hyle_model::{BlockHeight, ConsensusNetMessage, NodeStateEvent, SignedByValidator, ValidatorPublicKey};
+use hyle_model::{BlockHeight, ConsensusNetMessage, NodeStateEvent, ValidatorPublicKey};
 use hyle_modules::{
     log_warn, module_handle_messages,
     modules::{module_bus_client, Module},
@@ -29,7 +29,7 @@ pub enum P2PCommand {
 module_bus_client! {
 struct P2PBusClient {
     sender(MsgWithHeader<MempoolNetMessage>),
-    sender(SignedByValidator<ConsensusNetMessage>),
+    sender(MsgWithHeader<ConsensusNetMessage>),
     sender(PeerEvent),
     receiver(P2PCommand),
     receiver(NodeStateEvent),
@@ -76,8 +76,7 @@ impl P2P {
             self.config.p2p.public_address.clone(),
             self.config.da_public_address.clone(),
         )
-            .await?;
-
+        .await?;
 
         info!(
             "📡  Starting P2P module, listening on {}",
@@ -172,7 +171,7 @@ impl P2P {
                     .context("Receiving mempool net message")?;
             }
             NetMessage::ConsensusMessage(consensus_msg) => {
-                trace!("Received new consensus net message {}", consensus_msg);
+                trace!("Received new consensus net message {:?}", consensus_msg);
                 self.bus
                     .send(consensus_msg)
                     .context("Receiving consensus net message")?;

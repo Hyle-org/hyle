@@ -4,14 +4,14 @@ use crate::{
     bus::command_response::CmdRespClient,
     consensus::{ConsensusCommand, StateTag},
     mempool::QueryNewCut,
-    model::{
-        ConsensusNetMessage, ConsensusProposalHash, Hashed, SignedByValidator, Ticket,
-        ValidatorPublicKey,
-    },
+    model::{ConsensusNetMessage, Hashed, Ticket, ValidatorPublicKey},
 };
 use anyhow::{anyhow, bail, Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_model::{utils::TimestampMs, ConsensusProposal, ConsensusStakingAction};
+use hyle_model::{
+    utils::TimestampMs, ConfirmAck, ConfirmAckMarker, ConsensusProposal, ConsensusStakingAction,
+    PrepareVote, PrepareVoteMarker, QuorumCertificate,
+};
 use staking::state::MIN_STAKE;
 use tokio::sync::broadcast;
 use tracing::{debug, error, trace};
@@ -29,8 +29,8 @@ pub enum Step {
 #[derive(BorshSerialize, BorshDeserialize, Default)]
 pub struct LeaderState {
     pub(super) step: Step,
-    pub(super) prepare_votes: HashSet<SignedByValidator<ConsensusNetMessage>>,
-    pub(super) confirm_ack: HashSet<SignedByValidator<ConsensusNetMessage>>,
+    pub(super) prepare_votes: HashSet<PrepareVote>,
+    pub(super) confirm_ack: HashSet<ConfirmAck>,
     pub(super) pending_ticket: Option<Ticket>,
 }
 
@@ -121,10 +121,13 @@ impl Consensus {
             new_validators_to_bond.retain(|v| {
                 self.bft_round_state
                     .staking
-                    .get_stake(&v.pubkey)
+                    .get_stake(&v.signature.validator)
                     .unwrap_or(0)
                     > MIN_STAKE
-                    && !self.bft_round_state.staking.is_bonded(&v.pubkey)
+                    && !self
+                        .bft_round_state
+                        .staking
+                        .is_bonded(&v.signature.validator)
             });
 
             debug!(
@@ -193,23 +196,19 @@ impl Consensus {
         matches!(self.bft_round_state.state_tag, StateTag::Leader)
     }
 
-    pub(super) fn on_prepare_vote(
-        &mut self,
-        msg: SignedByValidator<ConsensusNetMessage>,
-        consensus_proposal_hash: ConsensusProposalHash,
-    ) -> Result<()> {
+    pub(super) fn on_prepare_vote(&mut self, prepare_vote: PrepareVote) -> Result<()> {
         if !matches!(self.bft_round_state.state_tag, StateTag::Leader) {
             debug!(
-                sender = %msg.signature.validator,
-                proposal_hash = %consensus_proposal_hash,
+                sender = %prepare_vote.signature.validator,
+                proposal_hash = %prepare_vote.msg.0,
                 "PrepareVote received while not leader. Ignoring."
             );
             return Ok(());
         }
         if !matches!(self.bft_round_state.leader.step, Step::PrepareVote) {
             debug!(
-                proposal_hash = %consensus_proposal_hash,
-                sender = %msg.signature.validator,
+                proposal_hash = %prepare_vote.msg.0,
+                sender = %prepare_vote.signature.validator,
                 "PrepareVote received at wrong step (step = {:?})",
                 self.bft_round_state.leader.step
             );
@@ -218,12 +217,16 @@ impl Consensus {
 
         // Verify that the PrepareVote is for the correct proposal.
         // This also checks slot/view as those are part of the hash.
-        if consensus_proposal_hash != self.bft_round_state.current_proposal.hashed() {
+        if prepare_vote.msg.0 != self.bft_round_state.current_proposal.hashed() {
             bail!("PrepareVote has not received valid consensus proposal hash");
         }
 
         // Save vote message
-        self.store.bft_round_state.leader.prepare_votes.insert(msg);
+        self.store
+            .bft_round_state
+            .leader
+            .prepare_votes
+            .insert(prepare_vote);
 
         // Get matching vote count
         let validated_votes = self
@@ -254,15 +257,14 @@ impl Consensus {
 
         if voting_power > 2 * f {
             // Get all received signatures
-            let aggregates: &Vec<&SignedByValidator<ConsensusNetMessage>> =
+            let aggregates: &Vec<&PrepareVote> =
                 &self.bft_round_state.leader.prepare_votes.iter().collect();
 
             let proposal_hash_hint = self.bft_round_state.current_proposal.hashed();
             // Aggregates them into a *Prepare* Quorum Certificate
-            let prepvote_signed_aggregation = self.crypto.sign_aggregate(
-                ConsensusNetMessage::PrepareVote(proposal_hash_hint.clone()),
-                aggregates,
-            )?;
+            let prepvote_signed_aggregation = self
+                .crypto
+                .sign_aggregate((proposal_hash_hint.clone(), PrepareVoteMarker), aggregates)?;
 
             // Process the Confirm message locally, then send it to peers.
             self.bft_round_state.leader.step = Step::ConfirmAck;
@@ -276,7 +278,7 @@ impl Consensus {
                 self.bft_round_state.slot
             );
             self.broadcast_net_message(ConsensusNetMessage::Confirm(
-                prepvote_signed_aggregation.signature,
+                QuorumCertificate(prepvote_signed_aggregation.signature, PrepareVoteMarker),
                 proposal_hash_hint,
             ))?;
         }
@@ -285,15 +287,11 @@ impl Consensus {
         Ok(())
     }
 
-    pub(super) fn on_confirm_ack(
-        &mut self,
-        msg: SignedByValidator<ConsensusNetMessage>,
-        consensus_proposal_hash: ConsensusProposalHash,
-    ) -> Result<()> {
+    pub(super) fn on_confirm_ack(&mut self, confirm_ack: ConfirmAck) -> Result<()> {
         if !matches!(self.bft_round_state.state_tag, StateTag::Leader) {
             debug!(
-                proposal_hash = %consensus_proposal_hash,
-                sender = %msg.signature.validator,
+                proposal_hash = %confirm_ack.msg.0,
+                sender = %confirm_ack.signature.validator,
                 "ConfirmAck received while not leader"
             );
             return Ok(());
@@ -301,8 +299,8 @@ impl Consensus {
 
         if !matches!(self.bft_round_state.leader.step, Step::ConfirmAck) {
             debug!(
-                proposal_hash = %consensus_proposal_hash,
-                sender = %msg.signature.validator,
+                proposal_hash = %confirm_ack.msg.0,
+                sender = %confirm_ack.signature.validator,
                 "ConfirmAck received at wrong step (step ={:?})",
                 self.bft_round_state.leader.step
             );
@@ -310,18 +308,24 @@ impl Consensus {
         }
 
         // Verify that the ConfirmAck is for the correct proposal
-        if consensus_proposal_hash != self.bft_round_state.current_proposal.hashed() {
+        if confirm_ack.msg.0 != self.bft_round_state.current_proposal.hashed() {
             debug!(
-                sender = %msg.signature.validator,
+                sender = %confirm_ack.signature.validator,
                 "Got {} expected {}",
-                consensus_proposal_hash,
+                confirm_ack.msg.0,
                 self.bft_round_state.current_proposal.hashed()
             );
             bail!("ConfirmAck got invalid consensus proposal hash");
         }
 
         // Save ConfirmAck. Ends if the message already has been processed
-        if !self.store.bft_round_state.leader.confirm_ack.insert(msg) {
+        if !self
+            .store
+            .bft_round_state
+            .leader
+            .confirm_ack
+            .insert(confirm_ack.clone())
+        {
             trace!("ConfirmAck has already been processed");
 
             return Ok(());
@@ -355,26 +359,30 @@ impl Consensus {
 
         if voting_power > 2 * f {
             // Get all signatures received and change ValidatorPublicKey for ValidatorPubKey
-            let aggregates: &Vec<&SignedByValidator<ConsensusNetMessage>> =
+            let aggregates: &Vec<&ConfirmAck> =
                 &self.bft_round_state.leader.confirm_ack.iter().collect();
 
             // Aggregates them into a *Commit* Quorum Certificate
             let commit_signed_aggregation = self.crypto.sign_aggregate(
-                ConsensusNetMessage::ConfirmAck(self.bft_round_state.current_proposal.hashed()),
+                (
+                    self.bft_round_state.current_proposal.hashed(),
+                    ConfirmAckMarker,
+                ),
                 aggregates,
             )?;
 
-            // Buffers the *Commit* Quorum Cerficiate
-            let commit_quorum_certificate = commit_signed_aggregation.signature;
+            // Buffers the *Commit* Quorum Certificate
+            let commit_quorum_certificate =
+                QuorumCertificate(commit_signed_aggregation.signature, ConfirmAckMarker);
 
             // Broadcast the *Commit* Quorum Certificate to all validators
             self.broadcast_net_message(ConsensusNetMessage::Commit(
                 commit_quorum_certificate.clone(),
-                consensus_proposal_hash,
+                confirm_ack.msg.0,
             ))?;
 
             // Process the same locally.
-            self.verify_commit_quorum_certificate_againt_current_proposal(
+            self.verify_commit_quorum_certificate_against_current_proposal(
                 &commit_quorum_certificate,
             )?;
             self.emit_commit_event(&commit_quorum_certificate)?;

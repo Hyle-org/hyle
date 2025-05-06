@@ -548,17 +548,13 @@ impl Genesis {
                 staking_actions: initial_validators
                     .iter()
                     .map(|v| {
-                        NewValidatorCandidate {
-                            pubkey: v.clone(),
-                            msg: SignedByValidator {
-                                msg: ConsensusNetMessage::ValidatorCandidacy(ValidatorCandidacy {
-                                    pubkey: v.clone(),
-                                    peer_address: "".into(),
-                                }),
-                                signature: ValidatorSignature {
-                                    signature: Signature("".into()),
-                                    validator: v.clone(),
-                                },
+                        SignedByValidator {
+                            msg: ValidatorCandidacy {
+                                peer_address: "".into(),
+                            },
+                            signature: ValidatorSignature {
+                                signature: Signature("".into()),
+                                validator: v.clone(),
                             },
                         }
                         .into()
