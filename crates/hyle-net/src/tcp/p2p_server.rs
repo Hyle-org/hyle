@@ -1147,6 +1147,20 @@ pub mod tests {
             "Expected Tcp Error message"
         );
 
+        p2p_server1.broadcast(TestMessage("test".to_string()), Canal::new("A")).await;
+
+
+        // FIX TEST
+
+
+        
+        // Server1 waits for TcpClient to reconnect
+        receive_and_handle_event!(
+            &mut p2p_server1,
+            P2PTcpEvent::HandShakeTcpClient(_, _, _),
+            "Expected HandShake TCP Client connection"
+        );
+
         // Server1 waits for TcpClient to reconnect
         receive_and_handle_event!(
             &mut p2p_server1,
