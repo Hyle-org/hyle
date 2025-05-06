@@ -1,7 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-    time::Duration,
+    cmp::Ordering, collections::{HashMap, HashSet}, sync::Arc, time::Duration
 };
 
 use anyhow::{bail, Context};
@@ -274,12 +272,12 @@ where
         // TODO: investigate how to properly handle this case
         // The connection has been closed by peer. We remove the peer and try to reconnect.
         self.tcp_server.drop_peer_stream(dest.clone());
-        if let Some((canal, info, _)) = self.get_peer_by_socket_addr(&dest) {
-            self.start_connection_task(
-                info.node_connection_data.p2p_public_address.clone(),
-                canal.clone(),
-            )
-        }
+        // if let Some((canal, info, _)) = self.get_peer_by_socket_addr(&dest) {
+        //     self.start_connection_task(
+        //         info.node_connection_data.p2p_public_address.clone(),
+        //         canal.clone(),
+        //     )
+        // }
     }
 
     async fn handle_handshake(
@@ -352,8 +350,11 @@ where
     ) -> Option<P2PServerEvent<Msg>> {
         let peer_pubkey = v.signature.validator.clone();
 
+        // in case timestamps are equal -_-
+        let local_pubkey = self.crypto.validator_pubkey().clone();
+        
         if let Some(peer_socket) = self.get_socket_mut(&canal, &peer_pubkey) {
-            let peer_addr_to_drop = if peer_socket.timestamp < timestamp {
+            let peer_addr_to_drop = if peer_socket.timestamp < timestamp || local_pubkey.cmp(&peer_pubkey) == Ordering::Less {
                 debug!(
                     "Local peer {}/{} ({}): dropping socket {} in favor of more recent one {}",
                     v.msg.p2p_public_address, canal, peer_pubkey, peer_socket.socket_addr, dest
@@ -710,7 +711,7 @@ pub mod tests {
         addr.port()
     }
     // Simple message type for testing
-    #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+    #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq, PartialOrd, Ord)]
     pub struct TestMessage(String);
 
     p2p_server_mod! {
@@ -776,7 +777,7 @@ pub mod tests {
         error_msg: &str,
     ) -> Result<P2PTcpEvent<p2p_server_test::codec_tcp::ServerCodec, TestMessage>> {
         loop {
-            let timeout_duration = std::time::Duration::from_millis(50);
+            let timeout_duration = std::time::Duration::from_millis(100);
 
             match tokio::time::timeout(timeout_duration, p2p_server.listen_next()).await {
                 Ok(event) => match event {
@@ -1005,6 +1006,94 @@ pub mod tests {
         assert_eq!(p1_peer_key.0, p2p_server2.crypto.validator_pubkey().0);
         assert_eq!(p2_peer_key.0, p2p_server1.crypto.validator_pubkey().0);
 
+        _ = receive_event(&mut p2p_server2, "Should be a Closed event").await;
+        _ = receive_event(&mut p2p_server1, "Should be a Closed event").await;
+        _ = receive_event(&mut p2p_server2, "Should be a Closed event").await;
+        _ = receive_event(&mut p2p_server1, "Should be a Closed event").await;
+
+        // Canal A (1 -> 2)
+        p2p_server1.broadcast(TestMessage("blabla".to_string()), Canal::new("A")).await;
+
+        let evt = receive_event(&mut p2p_server2, "Should be a TestMessage event").await?;
+
+        assert!(matches!(evt,
+            P2PTcpEvent::TcpEvent(TcpEvent::Message {
+                dest: _,
+                data: P2PTcpMessage::Data(_)
+            }),
+        ));
+
+        let P2PTcpEvent::TcpEvent(TcpEvent::Message {
+            dest: _,
+            data: P2PTcpMessage::Data(data)
+        }) = evt else {
+            panic!("test");
+        };
+
+        assert_eq!(data, TestMessage("blabla".to_string()));
+
+        // Canal B (1 -> 2)
+        p2p_server1.broadcast(TestMessage("blabla2".to_string()), Canal::new("B")).await;
+
+        let evt = receive_event(&mut p2p_server2, "Should be a TestMessage event").await?;
+        
+        assert!(matches!(evt,
+            P2PTcpEvent::TcpEvent(TcpEvent::Message {
+                dest: _,
+                data: P2PTcpMessage::Data(_)
+            }),
+        ));
+
+        let P2PTcpEvent::TcpEvent(TcpEvent::Message {
+            dest: _,
+            data: P2PTcpMessage::Data(data)
+        }) = evt else {
+            panic!("test");
+        };
+
+        assert_eq!(data, TestMessage("blabla2".to_string()));
+
+        // Canal A (2 -> 1)
+        p2p_server2.broadcast(TestMessage("babal".to_string()), Canal::new("A")).await;
+
+        let evt = receive_event(&mut p2p_server1, "Should be a TestMessage event").await?;
+        
+        assert!(matches!(evt,
+            P2PTcpEvent::TcpEvent(TcpEvent::Message {
+                dest: _,
+                data: P2PTcpMessage::Data(_)
+            }),
+        ));
+
+        let P2PTcpEvent::TcpEvent(TcpEvent::Message {
+            dest: _,
+            data: P2PTcpMessage::Data(data)
+        }) = evt else {
+            panic!("test");
+        };
+
+        assert_eq!(data, TestMessage("babal".to_string()));
+
+        // Canal B (2 -> 1)
+        p2p_server2.broadcast(TestMessage("babal2".to_string()), Canal::new("B")).await;
+
+        let evt = receive_event(&mut p2p_server1, "Should be a TestMessage event").await?;
+        
+        assert!(matches!(evt,
+            P2PTcpEvent::TcpEvent(TcpEvent::Message {
+                dest: _,
+                data: P2PTcpMessage::Data(_)
+            }),
+        ));
+
+        let P2PTcpEvent::TcpEvent(TcpEvent::Message {
+            dest: _,
+            data: P2PTcpMessage::Data(data)
+        }) = evt else {
+            panic!("test");
+        };
+
+        assert_eq!(data, TestMessage("babal2".to_string()));
         Ok(())
     }
 
