@@ -126,12 +126,34 @@ pub struct MsgHeader {
     pub hash: HeaderSignableData,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
 pub struct MsgWithHeader<T: IntoHeaderSignableData> {
     pub header: SignedByValidator<MsgHeader>,
     pub msg: T,
 }
 
+impl<T: IntoHeaderSignableData + std::fmt::Debug> std::fmt::Debug for MsgWithHeader<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MsgWithHeader")
+            .field("header", &{
+                format!(
+                    "MsgHeader {{ timestamp: {}, hash: {}, }}",
+                    self.header.msg.timestamp,
+                    match &self.header.msg.hash.0.len() {
+                        0 => "empty".to_string(),
+                        ..12 => hex::encode(&self.header.msg.hash.0),
+                        _ => format!("{}...", {
+                            let mut hash = hex::encode(&self.header.msg.hash.0);
+                            hash.truncate(12);
+                            hash
+                        }),
+                    }
+                )
+            })
+            .field("msg", &self.msg)
+            .finish()
+    }
+}
 pub trait HeaderSigner {
     fn sign_msg_with_header<T: IntoHeaderSignableData>(
         &self,
