@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    bus::{BusClientSender, BusMessage},
+    bus::BusClientSender,
     model::CommonRunContext,
     utils::{
         conf::SharedConf,

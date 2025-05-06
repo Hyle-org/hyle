@@ -1,13 +1,12 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::{
-    bus::{bus_client, BusClientSender, BusMessage},
     model::*,
     p2p::network::PeerEvent,
     utils::{conf::SharedConf, modules::Module},
 };
 use anyhow::{Error, Result};
-use client_sdk::handle_messages;
+use client_sdk::{bus::BusClientSender, bus_client, handle_messages};
 use client_sdk::{
     contract_states,
     helpers::register_hyle_contract,
@@ -38,7 +37,6 @@ pub enum GenesisEvent {
     NoGenesis,
     GenesisBlock(SignedBlock),
 }
-impl BusMessage for GenesisEvent {}
 
 bus_client! {
 struct GenesisBusClient {

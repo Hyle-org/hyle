@@ -10,7 +10,7 @@ use tracing::{debug, trace};
 
 use super::verifiers::{verify_proof, verify_recursive_proof};
 use super::{api::RestApiMessage, storage::Storage};
-use super::{KnownContracts, MempoolNetMessage};
+use super::{KnownContracts, MempoolNetMessage, ValidatorDAG};
 
 impl super::Mempool {
     fn get_last_data_prop_hash_in_own_lane(&self) -> Option<DataProposalHash> {
@@ -21,14 +21,11 @@ impl super::Mempool {
         LaneId(self.crypto.validator_pubkey().clone())
     }
 
-    pub(super) fn on_data_vote(
-        &mut self,
-        msg: &SignedByValidator<MempoolNetMessage>,
-        data_proposal_hash: DataProposalHash,
-    ) -> Result<()> {
+    pub(super) fn on_data_vote(&mut self, vdag: ValidatorDAG) -> Result<()> {
         self.metrics.on_data_vote.add(1, &[]);
 
-        let validator = &msg.signature.validator;
+        let validator = vdag.signature.validator.clone();
+        let data_proposal_hash = vdag.msg.0.clone();
         debug!(
             "Vote from {} on own lane {}, dp {}",
             validator,
@@ -37,11 +34,9 @@ impl super::Mempool {
         );
         let lane_id = self.own_lane_id();
 
-        let signatures = self.lanes.add_signatures(
-            &lane_id,
-            &data_proposal_hash,
-            std::iter::once(msg.clone()),
-        )?;
+        let signatures =
+            self.lanes
+                .add_signatures(&lane_id, &data_proposal_hash, std::iter::once(vdag))?;
 
         // Compute voting power of all signers to check if the DataProposal received enough votes
         let validators: Vec<ValidatorPublicKey> = signatures
@@ -51,7 +46,7 @@ impl super::Mempool {
         let old_voting_power = self.staking.compute_voting_power(
             validators
                 .iter()
-                .filter(|v| *v != validator)
+                .filter(|v| *v != &validator)
                 .cloned()
                 .collect::<Vec<_>>()
                 .as_slice(),
@@ -72,16 +67,33 @@ impl super::Mempool {
         Ok(())
     }
 
-    pub(super) fn create_new_data_proposals(&mut self) -> Result<bool> {
-        trace!("🐣 Create new data proposals");
-
-        let Some(dp) = self.create_new_dp_if_pending()? else {
+    pub(super) fn prepare_new_data_proposal(&mut self) -> Result<bool> {
+        trace!("🐣 Prepare new owned data proposal");
+        let Some(dp) = self.init_dp_preparation_if_pending()? else {
             return Ok(false);
         };
 
+        let handle = self.inner.long_tasks_runtime.handle();
+
+        self.inner
+            .own_data_proposal_in_preparation
+            .spawn_on(async move { (dp.hashed(), dp) }, handle);
+
+        Ok(true)
+    }
+
+    pub(super) fn resume_new_data_proposal(
+        &mut self,
+        data_proposal: DataProposal,
+        data_proposal_hash: DataProposalHash,
+    ) -> Result<bool> {
+        trace!("🐣 Create new data proposal");
+
+        self.register_new_data_proposal(data_proposal)?;
+
         // TODO: when we have a smarter system, we should probably not trigger this here
         // to make the event loop more efficient.
-        self.disseminate_data_proposals(Some(dp))
+        self.disseminate_data_proposals(Some(data_proposal_hash))
     }
 
     /// If only_dp_with_hash is Some, only disseminate the DP with the specified hash. If None, disseminate any pending DPs.
@@ -193,12 +205,13 @@ impl super::Mempool {
         Ok(false)
     }
 
-    /// Creates and saves a new DataProposal if there are pending transactions
-    fn create_new_dp_if_pending(&mut self) -> Result<Option<DataProposalHash>> {
+    /// Inits DataProposal preparation if there are pending transactions
+    fn init_dp_preparation_if_pending(&mut self) -> Result<Option<DataProposal>> {
         self.metrics
             .snapshot_pending_tx(self.waiting_dissemination_txs.len());
-
-        if self.waiting_dissemination_txs.is_empty() {
+        if self.waiting_dissemination_txs.is_empty()
+            || !self.own_data_proposal_in_preparation.is_empty()
+        {
             return Ok(None);
         }
 
@@ -225,12 +238,16 @@ impl super::Mempool {
             self.waiting_dissemination_txs.len()
         );
 
-        let validator_key = self.crypto.validator_pubkey().clone();
-
         // Create new data proposal
         let data_proposal =
             DataProposal::new(self.get_last_data_prop_hash_in_own_lane(), collected_txs);
 
+        Ok(Some(data_proposal))
+    }
+
+    /// Register and do effects locally on own lane with prepared data proposal
+    fn register_new_data_proposal(&mut self, data_proposal: DataProposal) -> Result<()> {
+        let validator_key = self.crypto.validator_pubkey().clone();
         debug!(
             "Creating new DataProposal in local lane ({}) with {} transactions (parent: {:?})",
             validator_key,
@@ -239,9 +256,10 @@ impl super::Mempool {
         );
 
         // TODO: handle this differently
-        let parent_data_proposal_hash = self
-            .get_last_data_prop_hash_in_own_lane()
-            .unwrap_or(DataProposalHash(self.crypto.validator_pubkey().to_string()));
+        let parent_data_proposal_hash = data_proposal
+            .parent_data_proposal_hash
+            .clone()
+            .unwrap_or(DataProposalHash(validator_key.to_string()));
 
         let txs_metadatas = data_proposal
             .txs
@@ -249,10 +267,9 @@ impl super::Mempool {
             .map(|tx| tx.metadata(parent_data_proposal_hash.clone()))
             .collect();
 
-        let dp_hash = data_proposal.hashed();
         self.bus
             .send(MempoolStatusEvent::DataProposalCreated {
-                data_proposal_hash: dp_hash.clone(),
+                data_proposal_hash: data_proposal.hashed(),
                 txs_metadatas,
             })
             .context("Sending MempoolStatusEvent DataProposalCreated")?;
@@ -262,7 +279,7 @@ impl super::Mempool {
         self.lanes
             .store_data_proposal(&self.crypto, &self.own_lane_id(), data_proposal)?;
 
-        Ok(Some(dp_hash))
+        Ok(())
     }
 
     pub(super) fn handle_api_message(&mut self, command: RestApiMessage) -> Result<()> {
@@ -431,7 +448,8 @@ pub mod test {
 
     use super::*;
     use crate::{
-        mempool::storage::LaneEntryMetadata, tests::autobahn_testing::assert_chanmsg_matches,
+        mempool::storage::LaneEntryMetadata, p2p::network::HeaderSigner,
+        tests::autobahn_testing::assert_chanmsg_matches,
     };
     use anyhow::Result;
     use hyle_crypto::BlstCrypto;
@@ -455,7 +473,7 @@ pub mod test {
             }
         );
 
-        ctx.timer_tick()?;
+        ctx.timer_tick().await?;
 
         let dp_hash = ctx
             .mempool
@@ -483,7 +501,7 @@ pub mod test {
         );
 
         // Timer again with no txs
-        ctx.timer_tick()?;
+        ctx.timer_tick().await?;
 
         assert_eq!(
             ctx.mempool.get_last_data_prop_hash_in_own_lane().unwrap(),
@@ -509,7 +527,7 @@ pub mod test {
         let register_tx = make_register_contract_tx(ContractName::new("test1"));
         let dp = ctx.create_data_proposal(None, &[register_tx]);
         ctx.process_new_data_proposal(dp)?;
-        ctx.timer_tick()?;
+        ctx.timer_tick().await?;
 
         let data_proposal = match ctx.assert_broadcast("DataProposal").msg {
             MempoolNetMessage::DataProposal(_, dp) => dp,
@@ -518,12 +536,12 @@ pub mod test {
         let size = LaneBytesSize(data_proposal.estimate_size() as u64);
 
         // Simulate receiving votes from other validators
-        let signed_msg2 =
-            crypto2.sign(MempoolNetMessage::DataVote(data_proposal.hashed(), size))?;
-        let signed_msg3 =
-            crypto3.sign(MempoolNetMessage::DataVote(data_proposal.hashed(), size))?;
-        ctx.mempool.handle_net_message(signed_msg2)?;
-        ctx.mempool.handle_net_message(signed_msg3)?;
+        let signed_msg2 = create_data_vote(&crypto2, data_proposal.hashed(), size)?;
+        let signed_msg3 = create_data_vote(&crypto3, data_proposal.hashed(), size)?;
+        ctx.mempool
+            .handle_net_message(crypto2.sign_msg_with_header(signed_msg2)?)?;
+        ctx.mempool
+            .handle_net_message(crypto3.sign_msg_with_header(signed_msg3)?)?;
 
         // Assert that PoDAUpdate message is broadcasted
         match ctx.assert_broadcast("PoDAUpdate").msg {
@@ -548,14 +566,10 @@ pub mod test {
         let size = LaneBytesSize(data_proposal.estimate_size() as u64);
 
         let temp_crypto = BlstCrypto::new("temp_crypto").unwrap();
-        let signed_msg =
-            temp_crypto.sign(MempoolNetMessage::DataVote(data_proposal.hashed(), size))?;
+        let signed_msg = create_data_vote(&temp_crypto, data_proposal.hashed(), size)?;
         assert!(ctx
             .mempool
-            .handle_net_message(SignedByValidator {
-                msg: MempoolNetMessage::DataVote(data_proposal.hashed(), size),
-                signature: signed_msg.signature,
-            })
+            .handle_net_message(temp_crypto.sign_msg_with_header(signed_msg)?)
             .is_err());
 
         Ok(())
@@ -578,13 +592,10 @@ pub mod test {
         let crypto2 = BlstCrypto::new("2").unwrap();
         ctx.add_trusted_validator(crypto2.validator_pubkey());
 
-        let signed_msg = crypto2.sign(MempoolNetMessage::DataVote(
-            data_proposal_hash.clone(),
-            size,
-        ))?;
+        let signed_msg = create_data_vote(&crypto2, data_proposal_hash, size)?;
 
         ctx.mempool
-            .handle_net_message(signed_msg)
+            .handle_net_message(crypto2.sign_msg_with_header(signed_msg)?)
             .expect("should handle net message");
 
         // Assert that we added the vote to the signatures
@@ -603,12 +614,16 @@ pub mod test {
         let crypto2 = BlstCrypto::new("2").unwrap();
         ctx.add_trusted_validator(crypto2.validator_pubkey());
 
-        let signed_msg = crypto2.sign(MempoolNetMessage::DataVote(
+        let signed_msg = create_data_vote(
+            &crypto2,
             DataProposalHash("non_existent".to_owned()),
             LaneBytesSize(0),
-        ))?;
+        )?;
 
-        assert!(ctx.mempool.handle_net_message(signed_msg).is_err());
+        assert!(ctx
+            .mempool
+            .handle_net_message(crypto2.sign_msg_with_header(signed_msg)?)
+            .is_err());
         Ok(())
     }
 }

@@ -7,10 +7,10 @@ use serde::Serialize;
 
 use crate::{
     bus::{BusClientSender, SharedMessageBus},
-    module_bus_client, module_handle_messages,
     modules::websocket::WsTopicMessage,
     node_state::module::NodeStateEvent,
 };
+use client_sdk::{module_bus_client, module_handle_messages};
 
 use super::modules::Module;
 

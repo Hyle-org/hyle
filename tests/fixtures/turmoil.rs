@@ -11,6 +11,7 @@ use hyle::{entrypoint::main_process, utils::conf::Conf};
 use hyle_crypto::BlstCrypto;
 use hyle_net::net::Sim;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
+use tempfile::TempDir;
 use tokio::sync::Mutex;
 use tracing::info;
 
@@ -18,12 +19,12 @@ use anyhow::Result;
 
 use crate::fixtures::test_helpers::ConfMaker;
 #[derive(Clone)]
-pub struct TurmoilNodeProcess {
+pub struct TurmoilHost {
     pub conf: Conf,
     pub client: NodeApiHttpClient,
 }
 
-impl TurmoilNodeProcess {
+impl TurmoilHost {
     pub async fn start(&self) -> anyhow::Result<()> {
         let crypto = Arc::new(BlstCrypto::new(&self.conf.id).context("Creating crypto")?);
 
@@ -32,11 +33,11 @@ impl TurmoilNodeProcess {
         Ok(())
     }
 
-    pub fn from(conf: &Conf) -> TurmoilNodeProcess {
+    pub fn from(conf: &Conf) -> TurmoilHost {
         let client =
             NodeApiHttpClient::new(format!("http://{}:{}", conf.id, &conf.rest_server_port))
                 .expect("Creating client");
-        TurmoilNodeProcess {
+        TurmoilHost {
             conf: conf.clone(),
             client: client.with_retry(3, Duration::from_millis(1000)),
         }
@@ -45,14 +46,15 @@ impl TurmoilNodeProcess {
 
 #[derive(Clone)]
 pub struct TurmoilCtx {
-    pub nodes: Vec<TurmoilNodeProcess>,
+    pub nodes: Vec<TurmoilHost>,
+    folder: Arc<TempDir>,
     slot_duration: Duration,
     seed: u64,
     pub rng: StdRng,
 }
 
 impl TurmoilCtx {
-    pub fn build_conf(seed: u64, i: usize) -> Conf {
+    pub fn build_conf(temp_dir: &TempDir, i: usize) -> Conf {
         let mut node_conf = Conf {
             id: format!("node-{}", i),
             ..ConfMaker::default().default
@@ -60,22 +62,29 @@ impl TurmoilCtx {
 
         node_conf.da_public_address = format!("{}:{}", node_conf.id, node_conf.da_server_port);
         node_conf.p2p.public_address = format!("{}:{}", node_conf.id, node_conf.p2p.server_port);
-        node_conf.data_directory.pop();
-        node_conf
-            .data_directory
-            .push(format!("data_{}_{}", seed, node_conf.id));
+        node_conf.data_directory = temp_dir.path().into();
+        node_conf.data_directory.push(node_conf.id.clone());
         node_conf
     }
 
-    fn build_nodes(count: usize, slot_duration: Duration, seed: u64) -> Vec<TurmoilNodeProcess> {
+    fn build_nodes(
+        count: usize,
+        slot_duration: Duration,
+        seed: u64,
+    ) -> (TempDir, Vec<TurmoilHost>) {
         let mut nodes = Vec::new();
         let mut peers = Vec::new();
         let mut confs = Vec::new();
         let mut genesis_stakers = std::collections::HashMap::new();
 
+        let temp_dir = tempfile::Builder::new()
+            .prefix(seed.to_string().as_str())
+            .prefix("hyle-turmoil")
+            .tempdir()
+            .unwrap();
+
         for i in 0..count {
-            let mut node_conf = Self::build_conf(seed, i + 1);
-            _ = std::fs::remove_dir_all(&node_conf.data_directory);
+            let mut node_conf = Self::build_conf(&temp_dir, i + 1);
             node_conf.consensus.slot_duration = slot_duration;
             node_conf.p2p.peers = peers.clone();
             genesis_stakers.insert(node_conf.id.clone(), 100);
@@ -85,11 +94,12 @@ impl TurmoilCtx {
 
         for node_conf in confs.iter_mut() {
             node_conf.genesis.stakers = genesis_stakers.clone();
-            let node = TurmoilNodeProcess::from(node_conf);
+            let node = TurmoilHost::from(node_conf);
             nodes.push(node);
         }
-        nodes
+        (temp_dir, nodes)
     }
+
     pub fn new_multi(
         count: usize,
         slot_duration_ms: u64,
@@ -102,7 +112,7 @@ impl TurmoilCtx {
 
         let slot_duration = Duration::from_millis(slot_duration_ms);
 
-        let nodes = Self::build_nodes(count, slot_duration, seed);
+        let (temp, nodes) = Self::build_nodes(count, slot_duration, seed);
 
         _ = Self::setup_simulation(nodes.as_slice(), sim);
 
@@ -110,6 +120,7 @@ impl TurmoilCtx {
 
         Ok(TurmoilCtx {
             nodes,
+            folder: Arc::new(temp),
             slot_duration: Duration::from_millis(slot_duration_ms),
             seed,
             rng,
@@ -117,7 +128,7 @@ impl TurmoilCtx {
     }
 
     pub fn add_node_to_simulation(&mut self, sim: &mut Sim<'_>) -> Result<NodeApiHttpClient> {
-        let mut node_conf = Self::build_conf(self.seed, self.nodes.len() + 1);
+        let mut node_conf = Self::build_conf(&self.folder, self.nodes.len() + 1);
         node_conf.consensus.slot_duration = self.slot_duration;
         node_conf.p2p.peers = self
             .nodes
@@ -125,7 +136,7 @@ impl TurmoilCtx {
             .map(|node| format!("{}:{}", node.conf.id, node.conf.p2p.server_port))
             .collect();
 
-        let node = TurmoilNodeProcess::from(&node_conf);
+        let node = TurmoilHost::from(&node_conf);
 
         _ = Self::setup_simulation(&[node.clone()], sim);
 
@@ -133,7 +144,7 @@ impl TurmoilCtx {
         Ok(self.nodes.last().unwrap().client.clone())
     }
 
-    fn setup_simulation(nodes: &[TurmoilNodeProcess], sim: &mut Sim<'_>) -> anyhow::Result<()> {
+    fn setup_simulation(nodes: &[TurmoilHost], sim: &mut Sim<'_>) -> anyhow::Result<()> {
         let mut nodes = nodes.to_vec();
         nodes.reverse();
 
@@ -174,15 +185,6 @@ impl TurmoilCtx {
 
             sim.host(id, f);
         }
-        Ok(())
-    }
-
-    pub fn clean(&self) -> Result<()> {
-        // Cleaning
-        for node in self.nodes.iter() {
-            _ = std::fs::remove_dir_all(node.conf.data_directory.clone());
-        }
-
         Ok(())
     }
 

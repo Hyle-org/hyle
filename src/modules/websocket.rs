@@ -2,10 +2,7 @@ use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 
 use crate::utils::conf::NodeWebSocketConfig;
-use crate::{
-    bus::{BusClientSender, BusMessage, SharedMessageBus},
-    utils::modules::Module,
-};
+use crate::utils::modules::Module;
 use anyhow::{anyhow, Context, Error, Result};
 use axum::extract::ConnectInfo;
 use axum::{
@@ -18,6 +15,7 @@ use axum::{
     routing::get,
     Router,
 };
+use client_sdk::bus::{BusClientSender, SharedMessageBus};
 use client_sdk::{log_warn, module_bus_client, module_handle_messages};
 use futures::{
     sink::SinkExt,
@@ -66,10 +64,6 @@ pub struct WebSocketBusClient<In: Send + Sync + Clone + 'static, Out: Send + Syn
     receiver(WsTopicMessage<Out>),
 }
 }
-
-impl<I> BusMessage for WsInMessage<I> {}
-impl<I> BusMessage for WsBroadcastMessage<I> {}
-impl<I> BusMessage for WsTopicMessage<I> {}
 
 // ---- WebSocket Module ----
 

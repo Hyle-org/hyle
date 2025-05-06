@@ -1,9 +1,10 @@
-use crate::bus::BusMessage;
 use crate::mempool::MempoolNetMessage;
 use crate::model::ValidatorPublicKey;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
+use hyle_crypto::BlstCrypto;
 use hyle_model::{ConsensusNetMessage, SignedByValidator};
+use hyle_net::clock::TimestampMsClock;
 use hyle_net::tcp::P2PTcpMessage;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -47,16 +48,13 @@ pub enum PeerEvent {
     },
 }
 
-impl BusMessage for PeerEvent {}
-impl BusMessage for OutboundMessage {}
-
 impl Display for NetMessage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let enum_variant: &'static str = self.into();
         match self {
             NetMessage::MempoolMessage(msg) => {
                 _ = write!(f, "NetMessage::{} ", enum_variant);
-                write!(f, "{}", msg)
+                write!(f, "{} (sent at {})", msg.msg, msg.header.msg.timestamp)
             }
             NetMessage::ConsensusMessage(msg) => {
                 _ = write!(f, "NetMessage::{} ", enum_variant);
@@ -82,7 +80,7 @@ impl Display for NetMessage {
     reason = "TODO: consider if we should refactor this"
 )]
 pub enum NetMessage {
-    MempoolMessage(SignedByValidator<MempoolNetMessage>),
+    MempoolMessage(MsgWithHeader<MempoolNetMessage>),
     ConsensusMessage(SignedByValidator<ConsensusNetMessage>),
 }
 
@@ -97,8 +95,8 @@ impl From<NetMessage> for P2PTcpMessage<NetMessage> {
     }
 }
 
-impl From<SignedByValidator<MempoolNetMessage>> for NetMessage {
-    fn from(msg: SignedByValidator<MempoolNetMessage>) -> Self {
+impl From<MsgWithHeader<MempoolNetMessage>> for NetMessage {
+    fn from(msg: MsgWithHeader<MempoolNetMessage>) -> Self {
         NetMessage::MempoolMessage(msg)
     }
 }
@@ -112,5 +110,48 @@ impl From<SignedByValidator<ConsensusNetMessage>> for NetMessage {
 impl NetMessage {
     pub fn to_binary(&self) -> anyhow::Result<Vec<u8>> {
         borsh::to_vec(self).context("Could not serialize NetMessage")
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
+pub struct HeaderSignableData(pub Vec<u8>);
+
+// Can't be regular Into as I don't want to take ownership
+pub trait IntoHeaderSignableData {
+    fn to_header_signable_data(&self) -> HeaderSignableData;
+}
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
+pub struct MsgHeader {
+    pub timestamp: u128,
+    pub hash: HeaderSignableData,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
+pub struct MsgWithHeader<T: IntoHeaderSignableData> {
+    pub header: SignedByValidator<MsgHeader>,
+    pub msg: T,
+}
+
+pub trait HeaderSigner {
+    fn sign_msg_with_header<T: IntoHeaderSignableData>(
+        &self,
+        msg: T,
+    ) -> anyhow::Result<MsgWithHeader<T>>;
+}
+
+impl HeaderSigner for BlstCrypto {
+    fn sign_msg_with_header<T: IntoHeaderSignableData>(
+        &self,
+        msg: T,
+    ) -> anyhow::Result<MsgWithHeader<T>> {
+        let header = MsgHeader {
+            timestamp: TimestampMsClock::now().0,
+            hash: msg.to_header_signable_data(),
+        };
+        let signature = self.sign(header)?;
+        Ok(MsgWithHeader::<T> {
+            msg,
+            header: signature,
+        })
     }
 }

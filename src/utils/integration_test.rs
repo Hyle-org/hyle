@@ -20,7 +20,6 @@ use crate::genesis::{Genesis, GenesisEvent};
 use crate::indexer::Indexer;
 use crate::mempool::Mempool;
 use crate::model::{CommonRunContext, NodeRunContext, SharedRunContext};
-use crate::module_handle_messages;
 use crate::node_state::module::{NodeStateEvent, NodeStateModule};
 use crate::p2p::P2P;
 use crate::rest::{RestApi, RestApiRunContext};
@@ -28,6 +27,7 @@ use crate::single_node_consensus::SingleNodeConsensus;
 use crate::tcp_server::TcpServer;
 use crate::utils::conf::Conf;
 use crate::utils::modules::ModulesHandler;
+use client_sdk::module_handle_messages;
 use hyle_crypto::BlstCrypto;
 
 use super::modules::{module_bus_client, Module};

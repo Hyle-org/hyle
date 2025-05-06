@@ -1,14 +1,10 @@
 use std::{fmt::Debug, sync::Arc};
 
-use crate::{
-    bus::{BusClientSender, BusMessage},
-    model::CommonRunContext,
-    node_state::module::NodeStateEvent,
-    utils::modules::Module,
-};
+use crate::{model::CommonRunContext, node_state::module::NodeStateEvent, utils::modules::Module};
 use anyhow::{anyhow, Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::{
+    bus::BusClientSender,
     helpers::{risc0::Risc0Prover, ClientSdkProver},
     log_error, module_bus_client, module_handle_messages,
     rest_client::NodeApiHttpClient,
@@ -101,8 +97,6 @@ pub enum AutoProverEvent<Contract> {
     /// proof will be generated & sent to the node
     SuccessTx(TxHash, Contract),
 }
-
-impl<Contract> BusMessage for AutoProverEvent<Contract> {}
 
 impl<Contract> Module for AutoProver<Contract>
 where

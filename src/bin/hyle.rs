@@ -1,10 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use hyle::{
-    entrypoint::RunPg,
-    log_error,
-    utils::{conf, logger::setup_tracing},
-};
+use client_sdk::{log_error, utils::logger::setup_tracing};
+use hyle::{entrypoint::RunPg, utils::conf};
 use hyle_crypto::BlstCrypto;
 use std::sync::Arc;
 use tracing::info;
@@ -51,7 +48,7 @@ async fn main() -> Result<()> {
     let pubkey = Some(crypto.validator_pubkey().clone());
 
     setup_tracing(
-        &config,
+        &config.log_format,
         format!(
             "{}({})",
             config.id.clone(),

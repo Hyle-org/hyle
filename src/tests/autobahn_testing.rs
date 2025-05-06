@@ -176,7 +176,7 @@ macro_rules! disseminate {
         $owner
             .process_new_data_proposal(dp.clone())
             .unwrap();
-        $owner.timer_tick().unwrap();
+        $owner.timer_tick().await.unwrap();
 
         let dp_msg = broadcast! {
             description: "Disseminate DataProposal",
@@ -273,13 +273,13 @@ use crate::bus::{bus_client, SharedMessageBus};
 use crate::consensus::test::ConsensusTestCtx;
 use crate::consensus::ConsensusEvent;
 use crate::data_availability::codec::codec_data_availability;
-use crate::handle_messages;
 use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
-use crate::mempool::{MempoolNetMessage, QueryNewCut};
+use crate::mempool::{MempoolNetMessage, QueryNewCut, ValidatorDAG};
 use crate::model::*;
 use crate::node_state::module::NodeStateEvent;
 use crate::p2p::network::OutboundMessage;
 use crate::p2p::P2PCommand;
+use client_sdk::handle_messages;
 use hyle_crypto::BlstCrypto;
 use tracing::info;
 
@@ -376,22 +376,19 @@ fn create_poda(
     data_proposal_hash: DataProposalHash,
     line_size: LaneBytesSize,
     nodes: &[&AutobahnTestCtx],
-) -> hyle_crypto::Signed<MempoolNetMessage, AggregateSignature> {
-    let msg = MempoolNetMessage::DataVote(data_proposal_hash, line_size);
-    let mut signed_messages: Vec<Signed<MempoolNetMessage, ValidatorSignature>> = nodes
+) -> hyle_crypto::Signed<(DataProposalHash, LaneBytesSize), AggregateSignature> {
+    let mut signed_messages: Vec<ValidatorDAG> = nodes
         .iter()
         .map(|node| {
             node.mempool_ctx
-                .mempool
-                .sign_net_message(msg.clone())
+                .sign_data((data_proposal_hash.clone(), line_size))
                 .unwrap()
         })
         .collect();
     signed_messages.sort_by(|a, b| a.signature.cmp(&b.signature));
 
-    let aggregates: Vec<&hyle_crypto::Signed<MempoolNetMessage, ValidatorSignature>> =
-        signed_messages.iter().collect();
-    BlstCrypto::aggregate(msg, &aggregates).unwrap()
+    let aggregates: Vec<&ValidatorDAG> = signed_messages.iter().collect();
+    BlstCrypto::aggregate((data_proposal_hash.clone(), line_size), &aggregates).unwrap()
 }
 
 #[test_log::test(tokio::test)]
@@ -408,7 +405,7 @@ async fn autobahn_basic_flow() {
         .mempool_ctx
         .process_new_data_proposal(dp.clone())
         .unwrap();
-    node1.mempool_ctx.timer_tick().unwrap();
+    node1.mempool_ctx.timer_tick().await.unwrap();
 
     broadcast! {
         description: "Disseminate Tx",
@@ -538,7 +535,7 @@ async fn mempool_broadcast_multiple_data_proposals() {
         .mempool_ctx
         .process_new_data_proposal(dp.clone())
         .unwrap();
-    node1.mempool_ctx.timer_tick().unwrap();
+    node1.mempool_ctx.timer_tick().await.unwrap();
 
     broadcast! {
         description: "Disseminate Tx",
@@ -579,7 +576,7 @@ async fn mempool_broadcast_multiple_data_proposals() {
         .mempool_ctx
         .process_new_data_proposal(dp.clone())
         .unwrap();
-    node1.mempool_ctx.timer_tick().unwrap();
+    node1.mempool_ctx.timer_tick().await.unwrap();
 
     broadcast! {
         description: "Disseminate Tx",
@@ -619,7 +616,7 @@ async fn mempool_podaupdate_too_early() {
         .mempool_ctx
         .process_new_data_proposal(dp.clone())
         .unwrap();
-    node1.mempool_ctx.timer_tick().unwrap();
+    node1.mempool_ctx.timer_tick().await.unwrap();
 
     let dp_msg = broadcast! {
         description: "Disseminate Tx",
@@ -871,7 +868,7 @@ async fn mempool_fail_to_vote_on_fork() {
         .mempool_ctx
         .process_new_data_proposal(dp1.clone())
         .unwrap();
-    node1.mempool_ctx.timer_tick().unwrap();
+    node1.mempool_ctx.timer_tick().await.unwrap();
 
     let dp1_check;
 
@@ -918,7 +915,7 @@ async fn mempool_fail_to_vote_on_fork() {
         .mempool_ctx
         .process_new_data_proposal(dp2.clone())
         .unwrap();
-    node1.mempool_ctx.timer_tick().unwrap();
+    node1.mempool_ctx.timer_tick().await.unwrap();
 
     broadcast! {
         description: "Disseminate Tx",
@@ -951,7 +948,7 @@ async fn mempool_fail_to_vote_on_fork() {
 
     let data_proposal_fork_3 = node1
         .mempool_ctx
-        .sign_data(MempoolNetMessage::DataProposal(
+        .create_net_message(MempoolNetMessage::DataProposal(
             dp_fork_3.hashed(),
             dp_fork_3.clone(),
         ))
@@ -2074,7 +2071,7 @@ async fn autobahn_commit_byzantine_across_views_attempts() {
         .mempool_ctx
         .process_new_data_proposal(dp.clone())
         .unwrap();
-    node1.mempool_ctx.timer_tick().unwrap();
+    node1.mempool_ctx.timer_tick().await.unwrap();
 
     node1
         .start_round_with_cut_from_mempool(TimestampMs(2000))

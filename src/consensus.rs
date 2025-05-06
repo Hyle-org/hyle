@@ -5,7 +5,7 @@ use crate::model::*;
 use crate::node_state::module::NodeStateEvent;
 use crate::utils::modules::module_bus_client;
 use crate::{
-    bus::{command_response::Query, BusMessage},
+    bus::command_response::Query,
     genesis::GenesisEvent,
     mempool::QueryNewCut,
     model::{Cut, Hashed, ValidatorPublicKey},
@@ -30,8 +30,6 @@ use std::ops::DerefMut;
 use std::time::Duration;
 use std::{collections::HashMap, default::Default, path::PathBuf};
 use tokio::time::interval;
-#[cfg(not(test))]
-use tokio::{sync::broadcast, time::sleep};
 use tracing::{debug, info, trace, warn};
 
 pub mod api;
@@ -49,7 +47,7 @@ pub mod role_timeout;
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ConsensusCommand {
     TimeoutTick,
-    StartNewSlot,
+    StartNewSlot(bool),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, BorshSerialize, BorshDeserialize)]
@@ -69,9 +67,6 @@ pub struct QueryConsensusInfo {}
 
 #[derive(Clone)]
 pub struct QueryConsensusStakingState {}
-
-impl BusMessage for ConsensusCommand {}
-impl BusMessage for ConsensusEvent {}
 
 module_bus_client! {
 struct ConsensusBusClient {
@@ -95,11 +90,12 @@ pub struct BFTRoundState {
     staking: Staking,
     slot: Slot,
     view: View,
+    // TODO: should we just store parent proposal
     parent_hash: ConsensusProposalHash,
     parent_timestamp: TimestampMs,
+    parent_cut: Cut,
 
     current_proposal: ConsensusProposal,
-    last_cut_seen: Cut,
 
     leader: LeaderState,
     follower: FollowerState,
@@ -215,6 +211,7 @@ impl Consensus {
                 self.bft_round_state.parent_hash = self.bft_round_state.current_proposal.hashed();
                 self.bft_round_state.parent_timestamp =
                     self.bft_round_state.current_proposal.timestamp.clone();
+                self.bft_round_state.parent_cut = self.bft_round_state.current_proposal.cut.clone();
 
                 // Store the last commited QC to avoid issues when parsing Commit messages before Prepare
                 self.bft_round_state.follower.buffered_quorum_certificate = match ticket {
@@ -310,41 +307,6 @@ impl Consensus {
 
     fn is_part_of_consensus(&self, pubkey: &ValidatorPublicKey) -> bool {
         self.bft_round_state.staking.is_bonded(pubkey)
-    }
-
-    fn delay_start_new_round(&mut self, ticket: Ticket) -> Result<(), Error> {
-        if !matches!(self.bft_round_state.state_tag, StateTag::Leader) {
-            bail!(
-                "Cannot delay start new round while in state {:?}",
-                self.bft_round_state.state_tag
-            );
-        }
-        self.bft_round_state.leader.pending_ticket = Some(ticket);
-        #[cfg(not(test))]
-        {
-            let command_sender = client_sdk::utils::static_type_map::Pick::<
-                broadcast::Sender<ConsensusCommand>,
-            >::get(&self.bus)
-            .clone();
-            let interval = self.config.consensus.slot_duration;
-            tokio::spawn(async move {
-                debug!(
-                    "⏱️  Sleeping {} milliseconds before starting a new slot",
-                    interval.as_millis()
-                );
-                sleep(interval).await;
-
-                _ = log_error!(
-                    command_sender.send(ConsensusCommand::StartNewSlot),
-                    "Cannot send StartNewSlot message over channel"
-                );
-            });
-            Ok(())
-        }
-        #[cfg(test)]
-        {
-            Ok(())
-        }
     }
 
     fn get_own_voting_power(&self) -> u128 {
@@ -529,10 +491,15 @@ impl Consensus {
         self.apply_ticket(ticket.clone())?;
 
         // Decide what to do at the beginning of the next round
-        if self.is_round_leader() && self.has_no_buffered_children() {
+        if self.is_round_leader()
+            && self.has_no_buffered_children()
+            && !matches!(ticket, Ticket::ForcedCommitQc(..))
+        {
             // Setup our ticket for the next round
             // Send Prepare message to all validators
-            self.delay_start_new_round(ticket)
+            self.bft_round_state.leader.pending_ticket = Some(ticket);
+            self.bus.send(ConsensusCommand::StartNewSlot(true))?;
+            Ok(())
         } else if self.is_part_of_consensus(self.crypto.validator_pubkey()) {
             Ok(())
         } else if self
@@ -654,8 +621,8 @@ impl Consensus {
     async fn handle_command(&mut self, msg: ConsensusCommand) -> Result<()> {
         match msg {
             ConsensusCommand::TimeoutTick => self.on_timeout_tick(),
-            ConsensusCommand::StartNewSlot => {
-                self.start_round(TimestampMsClock::now()).await?;
+            ConsensusCommand::StartNewSlot(may_delay) => {
+                self.start_round(TimestampMsClock::now(), may_delay).await?;
                 Ok(())
             }
         }
@@ -766,7 +733,8 @@ impl Consensus {
         }
 
         if self.is_round_leader() {
-            self.delay_start_new_round(Ticket::Genesis)?;
+            self.bft_round_state.leader.pending_ticket = Some(Ticket::Genesis);
+            self.bus.send(ConsensusCommand::StartNewSlot(true))?;
         }
         self.start().await
     }
@@ -1124,14 +1092,14 @@ pub mod test {
 
         pub async fn start_round(&mut self) {
             self.consensus
-                .start_round(TimestampMsClock::now())
+                .start_round(TimestampMsClock::now(), false)
                 .await
                 .expect("Failed to start slot");
         }
 
         pub async fn start_round_at(&mut self, current_timestamp: TimestampMs) {
             self.consensus
-                .start_round(current_timestamp)
+                .start_round(current_timestamp, false)
                 .await
                 .expect("Failed to start slot");
         }

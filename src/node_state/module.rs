@@ -2,7 +2,7 @@
 
 use super::metrics::NodeStateMetrics;
 use super::{NodeState, NodeStateStore};
-use crate::bus::{command_response::Query, BusClientSender, BusMessage};
+use crate::bus::{command_response::Query, BusClientSender};
 use crate::data_availability::DataEvent;
 use crate::model::Contract;
 use crate::model::{Block, BlockHeight, CommonRunContext, ContractName};
@@ -31,7 +31,6 @@ pub struct NodeStateModule {
 pub enum NodeStateEvent {
     NewBlock(Box<Block>),
 }
-impl BusMessage for NodeStateEvent {}
 
 #[derive(Clone)]
 pub struct QueryBlockHeight {}
@@ -99,7 +98,8 @@ impl Module for NodeStateModule {
             listen<DataEvent> block => {
                 match block {
                     DataEvent::OrderedSignedBlock(block) => {
-                        let node_state_block = self.inner.handle_signed_block(&block);
+                        // TODO: If we are in a broken state, this will likely kill the node every time.
+                        let node_state_block = self.inner.handle_signed_block(&block)?;
                         _ = log_error!(self
                             .bus
                             .send(NodeStateEvent::NewBlock(Box::new(node_state_block))), "Sending DataEvent while processing SignedBlock");

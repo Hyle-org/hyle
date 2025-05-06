@@ -1,6 +1,9 @@
 use anyhow::{anyhow, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use client_sdk::contract_indexer::{ContractHandler, ContractStateStore};
+use client_sdk::{
+    bus::BusClientSender,
+    contract_indexer::{ContractHandler, ContractStateStore},
+};
 use hyle_contract_sdk::{BlobIndex, ContractName, TxId};
 use hyle_model::{RegisterContractEffect, TxContext, TxHash};
 use serde::Serialize;
@@ -9,7 +12,6 @@ use tokio::sync::RwLock;
 use tracing::debug;
 
 use crate::{
-    bus::{BusClientSender, BusMessage},
     model::{Blob, BlobTransaction, Block, CommonRunContext, Transaction, TransactionData},
     node_state::module::NodeStateEvent,
     utils::{conf::Conf, modules::Module},
@@ -21,8 +23,6 @@ pub struct CSIBusEvent<E> {
     #[allow(unused)]
     pub event: E,
 }
-
-impl<E> BusMessage for CSIBusEvent<E> {}
 
 module_bus_client! {
 #[derive(Debug)]
@@ -473,7 +473,9 @@ mod tests {
             metrics: NodeStateMetrics::global("test".to_string(), "test"),
             store: NodeStateStore::default(),
         };
-        let block = node_state.handle_signed_block(&SignedBlock::default());
+        let block = node_state
+            .handle_signed_block(&SignedBlock::default())
+            .unwrap();
 
         let event = NodeStateEvent::NewBlock(Box::new(block));
 

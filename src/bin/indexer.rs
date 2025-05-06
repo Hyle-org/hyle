@@ -1,12 +1,9 @@
 use anyhow::{Context, Result};
 use clap::Parser;
+use client_sdk::{log_error, utils::logger::setup_tracing};
 use hyle::{
     entrypoint::RunPg,
-    log_error,
-    utils::{
-        conf::{self, P2pMode},
-        logger::setup_tracing,
-    },
+    utils::conf::{self, P2pMode},
 };
 
 #[derive(Parser, Debug)]
@@ -40,7 +37,7 @@ async fn main() -> Result<()> {
     // The indexer binary skips the TCP server
     config.run_tcp_server = false;
 
-    setup_tracing(&config, format!("{}(nopkey)", config.id.clone()))?;
+    setup_tracing(&config.log_format, format!("{}(nopkey)", config.id.clone()))?;
 
     let _pg = if args.pg {
         Some(RunPg::new(&mut config).await?)

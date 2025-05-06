@@ -12,8 +12,9 @@ use client_sdk::{contract_states, transaction_builder};
 use hydentity::client::tx_executor_handler::{register_identity, verify_identity};
 use hydentity::Hydentity;
 use hyle_contract_sdk::{
-    Blob, BlobData, BlobTransaction, Calldata, ContractAction, ContractName, HyleOutput, Identity,
-    RegisterContractAction, TimeoutWindow, Transaction, TxHash, ZkContract,
+    Blob, BlobData, BlobTransaction, Calldata, ContractAction, ContractName, Hashed, HyleOutput,
+    Identity, RegisterContractAction, StateCommitment, TimeoutWindow, Transaction, TxHash,
+    ZkContract,
 };
 use hyle_contracts::{HYDENTITY_ELF, HYLLAR_ELF};
 use hyllar::client::tx_executor_handler::transfer;
@@ -638,29 +639,67 @@ pub async fn long_running_test(node_url: String, use_test_verifier: bool) -> Res
 }
 
 pub async fn send_massive_blob(users: u32, url: String) -> Result<()> {
-    let ident = Identity::new("test3@hydentity");
+    let tx = BlobTransaction::new(
+        Identity::new("hyle@hyle"),
+        vec![RegisterContractAction {
+            contract_name: "massive_blob_test".into(),
+            verifier: "test".into(),
+            program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
+            state_commitment: StateCommitment(vec![1]),
+            timeout_window: Some(TimeoutWindow::Timeout(hyle_contract_sdk::BlockHeight(2))),
+        }
+        .as_blob("hyle".into(), None, None)],
+    );
 
-    let mut data = vec![];
+    let mut client = codec_tcp_server::connect("loadtest_client".to_string(), url.clone())
+        .await
+        .unwrap();
+    client
+        .send(TcpServerMessage::NewTx(tx.into()))
+        .await
+        .unwrap();
 
-    for i in 0..6000000 {
-        data.push(i as u8);
-    }
+    let ident = Identity::new("test3@massive_blob_test");
+
+    info!("Generating massive blob transactions");
 
     let mut txs = vec![];
 
+    let mut compressible_data = Vec::with_capacity(6_000_000);
+    compressible_data.resize(6_000_000, 0xf0);
+
+    let mut uncompressible_data: Vec<u64> = vec![0; 6_000_000 / 8];
+    let mut rng = rand::rng();
+    rng.fill(uncompressible_data.as_mut_slice());
+
     for i in 0..users {
-        let mut user_data = data.clone();
-        user_data.extend_from_slice(&i.to_be_bytes());
+        // Alternate between easily compressible and random data
+        let data = if i % 2 == 0 {
+            // Need blobs to be different
+            compressible_data[..6_000_000 - i as usize].to_vec()
+        } else {
+            // Take the random data and xor it
+            uncompressible_data
+                .iter()
+                .map(|x| x ^ (i as u64))
+                .collect::<Vec<u64>>()
+                .into_iter()
+                .flat_map(|x| x.to_le_bytes())
+                .collect::<Vec<u8>>()
+        };
         let tx = BlobTransaction::new(
             ident.clone(),
             vec![Blob {
-                contract_name: "hydentity".into(),
-                data: BlobData(user_data),
+                contract_name: "massive_blob_test".into(),
+                data: BlobData(data),
             }],
         );
+        info!("Generated blob transaction {i}/{users} : {:?}", tx.hashed());
         let msg: Transaction = tx.into();
         txs.push(msg);
     }
+
+    info!("Sending data");
 
     let mut client = codec_tcp_server::connect("loadtest-massive-client".to_string(), url)
         .await

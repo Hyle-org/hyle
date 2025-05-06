@@ -10,9 +10,7 @@ use std::{
 
 use crate::{
     bus::{bus_client, BusClientSender, SharedMessageBus},
-    // genesis::Genesis,
-    handle_messages,
-    log_error,
+    handle_messages, log_error,
 };
 use anyhow::{bail, Error, Result};
 use futures::future::select_all;
@@ -103,7 +101,6 @@ struct ModuleStarter {
 }
 
 pub mod signal {
-    use crate::bus::BusMessage;
     #[derive(Clone, Debug)]
     pub struct ShutdownModule {
         pub module: String,
@@ -112,9 +109,6 @@ pub mod signal {
     pub struct ShutdownCompleted {
         pub module: String,
     }
-
-    impl BusMessage for ShutdownModule {}
-    impl BusMessage for ShutdownCompleted {}
 
     pub async fn async_receive_shutdown<T>(
         should_shutdown: &mut bool,
@@ -161,8 +155,10 @@ macro_rules! module_handle_messages {
                     }
                 }
             }
+            tracing::info!("Event loop listening to {} has stopped", stringify!($bus));
             should_shutdown
         }
+
     };
     (on_bus $bus:expr, $($rest:tt)*) => {
         {
@@ -176,6 +172,7 @@ macro_rules! module_handle_messages {
                     break;
                 }
             }
+            tracing::info!("Event loop listening to {} has stopped", stringify!($bus));
             should_shutdown
         }
     };
@@ -233,8 +230,7 @@ impl ModulesHandler {
     }
 
     fn long_running_module(module_name: &str) -> bool {
-        // ![std::any::type_name::<Genesis>()].contains(&module_name)
-        true // TODO
+        !["hyle::genesis::Genesis"].contains(&module_name)
     }
 
     pub async fn start_modules(&mut self) -> Result<()> {
@@ -434,7 +430,7 @@ impl ModulesHandler {
 
 #[cfg(test)]
 mod tests {
-    use crate::bus::{dont_use_this::get_receiver, metrics::BusMetrics, BusMessage};
+    use crate::bus::{dont_use_this::get_receiver, metrics::BusMetrics};
 
     use super::*;
     use crate::bus::SharedMessageBus;
@@ -452,8 +448,6 @@ mod tests {
         bus: TestBusClient,
         _field: T,
     }
-
-    impl BusMessage for usize {}
 
     module_bus_client! {
         struct TestBusClient { sender(usize), }

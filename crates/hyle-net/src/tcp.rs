@@ -2,22 +2,16 @@ pub mod p2p_server;
 pub mod tcp_client;
 pub mod tcp_server;
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::fmt::Display;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use bytes::BytesMut;
+use sdk::hyle_model_utils::TimestampMs;
 use tcp_client::TcpClient;
 use tokio::task::JoinHandle;
 use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 
 use anyhow::Result;
-
-pub fn get_current_timestamp() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards")
-        .as_secs()
-}
 
 #[derive(Debug, Clone, BorshDeserialize, BorshSerialize, PartialEq)]
 pub enum TcpMessage<Data: Clone> {
@@ -33,8 +27,20 @@ pub enum P2PTcpMessage<Data: Clone> {
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
 pub enum Handshake {
-    Hello((Canal, sdk::SignedByValidator<NodeConnectionData>, u128)),
-    Verack((Canal, sdk::SignedByValidator<NodeConnectionData>, u128)),
+    Hello(
+        (
+            Canal,
+            sdk::SignedByValidator<NodeConnectionData>,
+            TimestampMs,
+        ),
+    ),
+    Verack(
+        (
+            Canal,
+            sdk::SignedByValidator<NodeConnectionData>,
+            TimestampMs,
+        ),
+    ),
 }
 
 #[derive(
@@ -45,6 +51,12 @@ pub struct Canal(String);
 impl Canal {
     pub fn new<T: Into<String>>(t: T) -> Canal {
         Canal(t.into())
+    }
+}
+
+impl Display for Canal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -76,6 +88,7 @@ where
 {
     TcpEvent(TcpEvent<P2PTcpMessage<Msg>>),
     HandShakeTcpClient(
+        String,
         TcpClient<Codec, P2PTcpMessage<Msg>, P2PTcpMessage<Msg>>,
         Canal,
     ),
@@ -174,7 +187,7 @@ where
     Out: Clone + std::fmt::Debug,
 {
     /// Last timestamp we received a ping from the peer.
-    last_ping: u64,
+    last_ping: TimestampMs,
     /// Sender to stream data to the peer
     sender: tokio::sync::mpsc::Sender<TcpMessage<Out>>,
     /// Handle to abort the sending side of the stream

@@ -13,7 +13,7 @@ use codec::{codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequ
 use hyle_net::tcp::TcpEvent;
 
 use crate::{
-    bus::{BusClientSender, BusMessage},
+    bus::BusClientSender,
     consensus::ConsensusCommand,
     genesis::GenesisEvent,
     model::*,
@@ -35,8 +35,6 @@ use tracing::{debug, error, info, trace, warn};
 pub enum DataEvent {
     OrderedSignedBlock(SignedBlock),
 }
-
-impl BusMessage for DataEvent {}
 
 module_bus_client! {
 #[derive(Debug)]
@@ -372,7 +370,7 @@ impl DataAvailability {
                     .map_or(start_height, |block| block.height())
                     + 1,
             )
-            .filter_map(|block| block.map(|b| b.hashed()).ok())
+            .filter_map(|item| item.ok())
             .collect();
         processed_block_hashes.reverse();
 
@@ -488,15 +486,19 @@ pub mod tests {
             block: SignedBlock,
             tcp_server: &mut DaTcpServer,
         ) {
-            let full_block = self.node_state.handle_signed_block(&block);
+            _ = log_error!(
+                self.da.handle_signed_block(block.clone(), tcp_server).await,
+                "Handling Signed Block"
+            );
+            // TODO: we use this in autobahn_testing, but it'd be cleaner to separate it.
+            let Ok(full_block) = self.node_state.handle_signed_block(&block) else {
+                tracing::warn!("Error while handling signed block {}", block.hashed());
+                return;
+            };
             _ = log_error!(
                 self.node_state_bus
                     .send(NodeStateEvent::NewBlock(Box::new(full_block))),
                 "Sending NodeState event"
-            );
-            _ = log_error!(
-                self.da.handle_signed_block(block, tcp_server).await,
-                "Handling Signed Block"
             );
         }
     }
