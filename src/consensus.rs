@@ -6,7 +6,7 @@ use crate::module_handle_messages;
 use crate::node_state::module::NodeStateEvent;
 use crate::utils::modules::module_bus_client;
 use crate::{
-    bus::{command_response::Query, BusMessage},
+    bus::command_response::Query,
     genesis::GenesisEvent,
     log_error,
     mempool::QueryNewCut,
@@ -68,12 +68,6 @@ pub struct QueryConsensusInfo {}
 
 #[derive(Clone)]
 pub struct QueryConsensusStakingState {}
-
-impl BusMessage for ConsensusCommand {}
-impl BusMessage for ConsensusEvent {}
-impl BusMessage for ConsensusNetMessage {}
-
-impl<T> BusMessage for SignedByValidator<T> where T: BorshSerialize + BusMessage {}
 
 module_bus_client! {
 struct ConsensusBusClient {

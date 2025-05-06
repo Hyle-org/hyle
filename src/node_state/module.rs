@@ -2,7 +2,7 @@
 
 use super::metrics::NodeStateMetrics;
 use super::{NodeState, NodeStateStore};
-use crate::bus::{command_response::Query, BusClientSender, BusMessage};
+use crate::bus::{command_response::Query, BusClientSender};
 use crate::data_availability::DataEvent;
 use crate::log_error;
 use crate::model::Contract;
@@ -31,7 +31,6 @@ pub struct NodeStateModule {
 pub enum NodeStateEvent {
     NewBlock(Box<Block>),
 }
-impl BusMessage for NodeStateEvent {}
 
 #[derive(Clone)]
 pub struct QueryBlockHeight {}

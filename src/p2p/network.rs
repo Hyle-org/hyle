@@ -1,4 +1,3 @@
-use crate::bus::BusMessage;
 use crate::mempool::MempoolNetMessage;
 use crate::model::ValidatorPublicKey;
 use anyhow::Context;
@@ -49,9 +48,6 @@ pub enum PeerEvent {
     },
 }
 
-impl BusMessage for PeerEvent {}
-impl BusMessage for OutboundMessage {}
-
 impl Display for NetMessage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let enum_variant: &'static str = self.into();
@@ -67,8 +63,6 @@ impl Display for NetMessage {
         }
     }
 }
-
-impl<T: BusMessage + IntoHeaderSignableData> BusMessage for MsgWithHeader<T> {}
 
 #[derive(
     Debug,

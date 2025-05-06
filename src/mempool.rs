@@ -1,7 +1,7 @@
 //! Mempool logic & pending transaction management.
 
 use crate::{
-    bus::{command_response::Query, BusClientSender, BusMessage},
+    bus::{command_response::Query, BusClientSender},
     consensus::{CommittedConsensusProposal, ConsensusEvent},
     genesis::GenesisEvent,
     log_error, log_warn,
@@ -235,10 +235,6 @@ impl Display for MempoolNetMessage {
     }
 }
 
-impl BusMessage for MempoolNetMessage {}
-impl BusMessage for MempoolBlockEvent {}
-impl BusMessage for MempoolStatusEvent {}
-
 impl IntoHeaderSignableData for MempoolNetMessage {
     fn to_header_signable_data(&self) -> HeaderSignableData {
         match self {
@@ -274,7 +270,6 @@ pub enum ProcessedDPEvent {
     OnHashedDataProposal((LaneId, DataProposal)),
     OnProcessedDataProposal((LaneId, DataProposalVerdict, DataProposal)),
 }
-impl BusMessage for ProcessedDPEvent {}
 
 impl Module for Mempool {
     type Context = SharedRunContext;
