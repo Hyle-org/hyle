@@ -115,10 +115,10 @@ impl super::Mempool {
             .get_pending_entries_in_lane(&self.own_lane_id(), last_cut)?;
 
         for (entry_metadata, dp_hash) in entries {
-            // If only_dp_with_hash is Some, we only disseminate that one, so break and exit in all other cases.
+            // If only_dp_with_hash is Some, we only disseminate that one, skip all others.
             if let Some(ref only_dp_with_hash) = only_dp_with_hash {
                 if &dp_hash != only_dp_with_hash {
-                    break;
+                    continue;
                 }
             }
             let Some(data_proposal) = self.lanes.get_dp_by_hash(&self.own_lane_id(), &dp_hash)?

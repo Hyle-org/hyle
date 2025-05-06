@@ -337,7 +337,10 @@ impl Mempool {
             Duration::from_millis(500),
         );
         let mut new_dp_timer = tokio::time::interval(tick_interval);
-        let mut disseminate_timer = tokio::time::interval(Duration::from_secs(3));
+        // We always disseminate new data proposals, so we can run the re-dissemination timer
+        // infrequently, as it will only be useful if we had a network issue that lead
+        // to a PoDA not being created.
+        let mut disseminate_timer = tokio::time::interval(Duration::from_secs(15));
         new_dp_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         disseminate_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
