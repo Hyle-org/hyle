@@ -1,7 +1,6 @@
 //! Index system for historical data.
 
 mod api;
-pub mod contract_state_indexer;
 
 use crate::model::*;
 use crate::node_state::module::NodeStateEvent;

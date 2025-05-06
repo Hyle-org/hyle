@@ -21,6 +21,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, info, trace};
 
 pub mod bus_ws_connector;
+pub mod contract_state_indexer;
 pub mod da_listener;
 pub mod prover;
 pub mod websocket;

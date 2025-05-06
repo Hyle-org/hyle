@@ -5,10 +5,7 @@ use crate::{
     consensus::Consensus,
     data_availability::DataAvailability,
     genesis::Genesis,
-    indexer::{
-        contract_state_indexer::{ContractStateIndexer, ContractStateIndexerCtx},
-        Indexer,
-    },
+    indexer::Indexer,
     mempool::Mempool,
     model::{api::NodeInfo, CommonRunContext, NodeRunContext, SharedRunContext},
     node_state::module::NodeStateModule,
@@ -29,6 +26,7 @@ use hydentity::Hydentity;
 use hyle_crypto::SharedBlstCrypto;
 use hyle_modules::modules::{
     bus_ws_connector::{NodeWebsocketConnector, NodeWebsocketConnectorCtx, WebsocketOutEvent},
+    contract_state_indexer::{ContractStateIndexer, ContractStateIndexerCtx},
     da_listener::{DAListener, DAListenerCtx},
     websocket::{WebSocketModule, WebSocketModuleCtx},
 };
