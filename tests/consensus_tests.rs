@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use client_sdk::log_error;
+use hyle_modules::log_error;
 
 use anyhow::Result;
 use fixtures::ctx::E2ECtx;

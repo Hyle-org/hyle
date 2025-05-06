@@ -23,7 +23,8 @@ impl Timeouts {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test"))]
+#[allow(unused)]
 pub mod tests {
     use super::*;
 
