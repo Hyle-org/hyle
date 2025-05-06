@@ -7,10 +7,8 @@ use fjall::{
 use hyle_model::LaneId;
 use tracing::info;
 
-use crate::{
-    log_warn,
-    model::{DataProposal, DataProposalHash, Hashed},
-};
+use crate::model::{DataProposal, DataProposalHash, Hashed};
+use hyle_modules::log_warn;
 
 use super::{
     storage::{CanBePutOnTop, LaneEntryMetadata, Storage},

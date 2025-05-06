@@ -273,7 +273,6 @@ use crate::bus::{bus_client, SharedMessageBus};
 use crate::consensus::test::ConsensusTestCtx;
 use crate::consensus::ConsensusEvent;
 use crate::data_availability::codec::codec_data_availability;
-use crate::handle_messages;
 use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
 use crate::mempool::{MempoolNetMessage, QueryNewCut, ValidatorDAG};
 use crate::model::*;
@@ -281,6 +280,7 @@ use crate::node_state::module::NodeStateEvent;
 use crate::p2p::network::OutboundMessage;
 use crate::p2p::P2PCommand;
 use hyle_crypto::BlstCrypto;
+use hyle_modules::handle_messages;
 use tracing::info;
 
 bus_client!(
@@ -347,8 +347,6 @@ impl AutobahnTestCtx {
 
         let mut autobahn_client_bus =
             AutobahnBusClient::new_from_bus(self.shared_bus.new_handle()).await;
-
-        use crate::bus::command_response::*;
 
         tokio::spawn(async move {
             handle_messages! {

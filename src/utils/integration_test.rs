@@ -10,6 +10,7 @@ use axum::Router;
 use client_sdk::rest_client::NodeApiHttpClient;
 use hyle_model::api::NodeInfo;
 use hyle_model::TxHash;
+use hyle_modules::modules::ModulesHandler;
 use tracing::info;
 
 use crate::bus::metrics::BusMetrics;
@@ -20,17 +21,15 @@ use crate::genesis::{Genesis, GenesisEvent};
 use crate::indexer::Indexer;
 use crate::mempool::Mempool;
 use crate::model::{CommonRunContext, NodeRunContext, SharedRunContext};
-use crate::module_handle_messages;
 use crate::node_state::module::{NodeStateEvent, NodeStateModule};
 use crate::p2p::P2P;
 use crate::rest::{RestApi, RestApiRunContext};
 use crate::single_node_consensus::SingleNodeConsensus;
 use crate::tcp_server::TcpServer;
 use crate::utils::conf::Conf;
-use crate::utils::modules::ModulesHandler;
 use hyle_crypto::BlstCrypto;
 
-use super::modules::{module_bus_client, Module};
+use hyle_modules::{module_bus_client, module_handle_messages, modules::Module};
 
 // Assume that we can reuse the OS-provided port.
 pub async fn find_available_port() -> u16 {

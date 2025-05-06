@@ -8,7 +8,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY .cargo/config.toml .cargo/config.toml
 COPY src ./src
 COPY crates ./crates
-RUN cargo build --bin hyle --bin indexer --bin hyle-loadtest --release -F node_local_proving -F sp1
+RUN cargo build --bin hyle --bin indexer --bin hyle-loadtest --release -F node_local_proving -F sp1 -F risc0
 
 # RUNNER
 FROM $ALPINE_IMAGE 

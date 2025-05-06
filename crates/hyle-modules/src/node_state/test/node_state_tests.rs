@@ -1,5 +1,5 @@
 use assertables::assert_err;
-use hyle_model::utils::TimestampMs;
+use sdk::hyle_model_utils::TimestampMs;
 
 use super::*;
 

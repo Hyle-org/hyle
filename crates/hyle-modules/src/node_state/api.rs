@@ -5,8 +5,8 @@ use axum::{
     response::IntoResponse,
     Json, Router,
 };
-use hyle_contract_sdk::ContractName;
-use hyle_model::UnsettledBlobTransaction;
+use client_sdk::contract_indexer::AppError;
+use sdk::*;
 use tracing::error;
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -17,9 +17,8 @@ use crate::{
         command_response::{CmdRespClient, Query},
         metrics::BusMetrics,
     },
-    model::{BlockHeight, CommonRunContext, Contract},
+    modules::CommonRunContext,
     node_state::module::{QueryBlockHeight, QueryUnsettledTx},
-    rest::AppError,
 };
 
 bus_client! {
@@ -103,7 +102,7 @@ pub async fn get_unsettled_tx(
 ) -> Result<impl IntoResponse, AppError> {
     match state
         .bus
-        .request(QueryUnsettledTx(hyle_model::TxHash(blob_tx_hash)))
+        .request(QueryUnsettledTx(TxHash(blob_tx_hash)))
         .await
     {
         Ok(tx_context) => Ok(Json(tx_context)),

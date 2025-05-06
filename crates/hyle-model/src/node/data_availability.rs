@@ -5,6 +5,11 @@ use utoipa::ToSchema;
 
 use crate::*;
 
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
+pub enum DataEvent {
+    OrderedSignedBlock(SignedBlock),
+}
+
 #[derive(
     Default, Debug, Clone, Serialize, Deserialize, ToSchema, BorshSerialize, BorshDeserialize,
 )]
@@ -144,4 +149,9 @@ pub enum TransactionStateEvent {
     Settled,
     SettledAsFailed,
     TimedOut,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize)]
+pub enum NodeStateEvent {
+    NewBlock(Box<Block>),
 }

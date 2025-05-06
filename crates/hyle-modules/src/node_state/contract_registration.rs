@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
-use hyle_model::{ContractName, ProgramId, StateCommitment, Verifier};
+use sdk::{ContractName, ProgramId, StateCommitment, Verifier};
 
-use crate::mempool::verifiers::validate_program_id;
+use hyle_verifiers::validate_program_id;
 
 /// Check that the new contract name is:
 /// - a valid subdomain of the owner contract name.
@@ -73,9 +73,9 @@ pub fn validate_contract_registration_metadata(
 
 #[cfg(test)]
 mod test {
-    use hyle_model::StateCommitment;
+    use sdk::StateCommitment;
 
-    use crate::model::contract_registration::validate_state_commitment_size;
+    use crate::node_state::contract_registration::validate_state_commitment_size;
 
     use super::validate_contract_name_registration;
 

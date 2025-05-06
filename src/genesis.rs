@@ -1,12 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use crate::{
-    bus::{bus_client, BusClientSender},
-    handle_messages,
-    model::*,
-    p2p::network::PeerEvent,
-    utils::{conf::SharedConf, modules::Module},
-};
+use crate::{model::*, p2p::network::PeerEvent, utils::conf::SharedConf};
 use anyhow::{Error, Result};
 use client_sdk::{
     contract_states,
@@ -23,6 +17,7 @@ use hyle_contract_sdk::{
     Blob, Calldata, ContractName, Identity, ProgramId, StateCommitment, ZkContract,
 };
 use hyle_crypto::SharedBlstCrypto;
+use hyle_modules::{bus::BusClientSender, bus_client, handle_messages, modules::Module};
 use hyllar::{client::tx_executor_handler::transfer, Hyllar, FAUCET_ID};
 use serde::{Deserialize, Serialize};
 use staking::{

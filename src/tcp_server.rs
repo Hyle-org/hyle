@@ -1,18 +1,13 @@
 use std::sync::Arc;
 
-use crate::{
-    bus::BusClientSender,
-    log_error,
-    model::CommonRunContext,
-    module_handle_messages,
-    utils::{
-        conf::SharedConf,
-        modules::{module_bus_client, Module},
-    },
-};
+use crate::{bus::BusClientSender, model::CommonRunContext, utils::conf::SharedConf};
 
 use anyhow::Result;
 use client_sdk::tcp_client::{codec_tcp_server, TcpServerMessage};
+use hyle_modules::{
+    log_error, module_handle_messages,
+    modules::{module_bus_client, Module},
+};
 use hyle_net::tcp::TcpEvent;
 use tracing::info;
 

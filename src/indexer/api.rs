@@ -12,8 +12,8 @@ use hyle_model::api::NetworkStats;
 use sqlx::Row;
 use utoipa::OpenApi;
 
-use crate::log_error;
 use crate::model::*;
+use hyle_modules::log_error;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct BlockPagination {
