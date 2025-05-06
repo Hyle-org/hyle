@@ -11,7 +11,6 @@ use crate::{
     },
     utils::{
         conf::{P2pMode, SharedConf},
-        modules::{module_bus_client, Module},
         serialize::arc_rwlock_borsh,
     },
 };
@@ -20,9 +19,11 @@ use api::RestApiMessage;
 use block_construction::BlockUnderConstruction;
 use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::tcp_client::TcpServerMessage;
-use client_sdk::{log_error, log_warn, module_handle_messages};
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
 use hyle_crypto::{BlstCrypto, SharedBlstCrypto};
+use hyle_modules::{
+    log_error, log_warn, module_bus_client, module_handle_messages, modules::Module,
+};
 use hyle_net::clock::TimestampMsClock;
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
@@ -845,6 +846,7 @@ impl Mempool {
 pub mod test {
 
     mod async_data_proposals;
+    mod native_verifier_test;
 
     use core::panic;
 

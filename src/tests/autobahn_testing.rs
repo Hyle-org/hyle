@@ -279,8 +279,8 @@ use crate::model::*;
 use crate::node_state::module::NodeStateEvent;
 use crate::p2p::network::OutboundMessage;
 use crate::p2p::P2PCommand;
-use client_sdk::handle_messages;
 use hyle_crypto::BlstCrypto;
+use hyle_modules::handle_messages;
 use tracing::info;
 
 bus_client!(
@@ -347,8 +347,6 @@ impl AutobahnTestCtx {
 
         let mut autobahn_client_bus =
             AutobahnBusClient::new_from_bus(self.shared_bus.new_handle()).await;
-
-        use crate::bus::command_response::*;
 
         tokio::spawn(async move {
             handle_messages! {

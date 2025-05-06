@@ -2835,6 +2835,7 @@ dependencies = [
  "hyle-hydentity",
  "hyle-hyllar",
  "hyle-model",
+ "hyle-modules",
  "hyle-net",
  "hyle-risc0-recursion",
  "hyle-smt-token",
@@ -2928,6 +2929,8 @@ dependencies = [
  "serde_json",
  "sp1-sdk",
  "syn 2.0.101",
+ "tempfile",
+ "test-log",
  "tokio",
  "tracing",
  "tracing-subscriber 0.3.19",
@@ -3054,6 +3057,44 @@ dependencies = [
  "strum 0.27.1",
  "strum_macros 0.27.1",
  "utoipa",
+]
+
+[[package]]
+name = "hyle-modules"
+version = "0.13.0-rc.4"
+dependencies = [
+ "anyhow",
+ "anymap",
+ "assertables",
+ "axum 0.8.4",
+ "borsh",
+ "bytes",
+ "config",
+ "futures",
+ "hex",
+ "hyle-client-sdk",
+ "hyle-contract-sdk",
+ "hyle-crypto",
+ "hyle-net",
+ "hyle-verifiers",
+ "opentelemetry",
+ "paste",
+ "quote",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "sha3",
+ "strum_macros 0.27.1",
+ "syn 2.0.101",
+ "tempfile",
+ "test-log",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber 0.3.19",
+ "utoipa",
+ "utoipa-axum",
 ]
 
 [[package]]

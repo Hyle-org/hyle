@@ -28,6 +28,15 @@ pub fn verify(
     }
 }
 
+pub fn validate_program_id(verifier: &Verifier, program_id: &ProgramId) -> Result<(), Error> {
+    match verifier.0.as_str() {
+        hyle_model::verifiers::RISC0_1 => risc0_1::validate_program_id(program_id),
+        #[cfg(feature = "sp1")]
+        hyle_model::verifiers::SP1_4 => sp1_4::validate_program_id(program_id),
+        _ => Ok(()),
+    }
+}
+
 pub mod risc0_1 {
     use super::*;
 

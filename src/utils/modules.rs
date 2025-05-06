@@ -1,1 +1,1 @@
-pub use client_sdk::modules::*;
+pub use hyle_modules::modules::*;

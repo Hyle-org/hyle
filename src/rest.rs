@@ -12,19 +12,17 @@ use axum::{
     Json,
 };
 use axum_otel_metrics::HttpMetricsLayer;
-use client_sdk::log_error;
-use client_sdk::module_handle_messages;
 use hyle_model::api::*;
 use hyle_model::*;
+use hyle_modules::{
+    bus::SharedMessageBus, log_error, module_bus_client, module_handle_messages, modules::Module,
+};
 use prometheus::{Encoder, Registry, TextEncoder};
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
-
-use crate::utils::modules::Module;
-use crate::{bus::SharedMessageBus, utils::modules::module_bus_client};
 
 pub use client_sdk::contract_indexer::AppError;
 pub use client_sdk::rest_client as client;
@@ -226,23 +224,15 @@ impl Clone for RouterState {
 mod tests {
     use super::*;
     use crate::{
-        bus::bus_client,
-        data_availability::DataAvailability,
-        genesis::Genesis,
-        mempool::api::RestApiMessage,
-        model::SharedRunContext,
-        node_state::module::NodeStateModule,
-        p2p::P2P,
-        single_node_consensus::SingleNodeConsensus,
-        tcp_server::TcpServer,
-        utils::{
-            integration_test::NodeIntegrationCtxBuilder,
-            modules::{signal::ShutdownModule, Module},
-        },
+        bus::bus_client, data_availability::DataAvailability, genesis::Genesis,
+        mempool::api::RestApiMessage, model::SharedRunContext, node_state::module::NodeStateModule,
+        p2p::P2P, single_node_consensus::SingleNodeConsensus, tcp_server::TcpServer,
+        utils::integration_test::NodeIntegrationCtxBuilder,
     };
     use anyhow::Result;
     use client_sdk::rest_client::NodeApiHttpClient;
     use hyle_model::BlobTransaction;
+    use hyle_modules::modules::{signal::ShutdownModule, Module};
     use std::time::Duration;
 
     bus_client! {

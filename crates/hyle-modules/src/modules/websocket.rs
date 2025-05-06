@@ -1,8 +1,10 @@
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 
+use crate::bus::{BusClientSender, SharedMessageBus};
+use crate::modules::Module;
 use crate::utils::conf::NodeWebSocketConfig;
-use crate::utils::modules::Module;
+use crate::{log_warn, module_bus_client, module_handle_messages};
 use anyhow::{anyhow, Context, Error, Result};
 use axum::extract::ConnectInfo;
 use axum::{
@@ -15,8 +17,6 @@ use axum::{
     routing::get,
     Router,
 };
-use client_sdk::bus::{BusClientSender, SharedMessageBus};
-use client_sdk::{log_warn, module_bus_client, module_handle_messages};
 use futures::{
     sink::SinkExt,
     stream::{SplitSink, SplitStream, StreamExt},

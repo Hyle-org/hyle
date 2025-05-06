@@ -7,12 +7,10 @@ use crate::{
     genesis::Genesis,
     indexer::{
         contract_state_indexer::{ContractStateIndexer, ContractStateIndexerCtx},
-        da_listener::{DAListener, DAListenerCtx},
         Indexer,
     },
     mempool::Mempool,
     model::{api::NodeInfo, CommonRunContext, NodeRunContext, SharedRunContext},
-    modules::websocket::{WebSocketModule, WebSocketModuleCtx},
     node_state::module::NodeStateModule,
     p2p::P2P,
     rest::{ApiDoc, RestApi, RestApiRunContext},
@@ -20,7 +18,6 @@ use crate::{
     tcp_server::TcpServer,
     tools::mock_workflow::MockWorkflowHandler,
     utils::{
-        bus_ws_connector::{NodeWebsocketConnector, NodeWebsocketConnectorCtx, WebsocketOutEvent},
         conf::{self, P2pMode},
         modules::ModulesHandler,
     },
@@ -30,6 +27,11 @@ use axum::Router;
 use axum_otel_metrics::HttpMetricsLayerBuilder;
 use hydentity::Hydentity;
 use hyle_crypto::SharedBlstCrypto;
+use hyle_modules::modules::{
+    bus_ws_connector::{NodeWebsocketConnector, NodeWebsocketConnectorCtx, WebsocketOutEvent},
+    da_listener::{DAListener, DAListenerCtx},
+    websocket::{WebSocketModule, WebSocketModuleCtx},
+};
 use hyllar::Hyllar;
 use prometheus::Registry;
 use std::{

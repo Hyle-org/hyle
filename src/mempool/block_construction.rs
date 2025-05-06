@@ -1,5 +1,5 @@
 use crate::{bus::BusClientSender, consensus::CommittedConsensusProposal, model::*};
-use client_sdk::log_error;
+use hyle_modules::log_error;
 
 use super::storage::Storage;
 use anyhow::{Context, Result};

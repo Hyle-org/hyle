@@ -13,7 +13,7 @@ use sqlx::Row;
 use utoipa::OpenApi;
 
 use crate::model::*;
-use client_sdk::log_error;
+use hyle_modules::log_error;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct BlockPagination {

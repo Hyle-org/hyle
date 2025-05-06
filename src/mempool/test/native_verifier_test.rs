@@ -3,7 +3,7 @@ use std::time::Duration;
 use anyhow::Result;
 use assertables::assert_ok;
 use hyle_crypto::BlstCrypto;
-use hyle_model::{Blob, BlobTransaction, ContractName, Hashed, Identity};
+use hyle_model::{Blob, BlobTransaction, ContractName, Hashed, Identity, NodeStateEvent};
 use sha3::Digest;
 use tracing::info;
 
@@ -14,8 +14,6 @@ use crate::{
     rest::RestApi,
     utils::integration_test::NodeIntegrationCtxBuilder,
 };
-
-use super::module::NodeStateEvent;
 
 bus_client! {
     struct Client {

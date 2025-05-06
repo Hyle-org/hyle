@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
-use crate::model::BlockHeight;
 use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_model::TxHash;
+use sdk::{BlockHeight, TxHash};
 
 #[derive(Default, Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct Timeouts {
@@ -26,8 +25,6 @@ impl Timeouts {
 
 #[cfg(test)]
 pub mod tests {
-    use hyle_model::TxHash;
-
     use super::*;
 
     fn list_timeouts(t: &Timeouts, at: BlockHeight) -> Option<&Vec<TxHash>> {

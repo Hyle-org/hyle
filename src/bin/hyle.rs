@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use client_sdk::{log_error, utils::logger::setup_tracing};
 use hyle::{entrypoint::RunPg, utils::conf};
 use hyle_crypto::BlstCrypto;
+use hyle_modules::{log_error, utils::logger::setup_tracing};
 use std::sync::Arc;
 use tracing::info;
 

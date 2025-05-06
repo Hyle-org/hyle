@@ -1,17 +1,15 @@
-use std::{fmt::Debug, sync::Arc};
+use std::{fmt::Debug, path::PathBuf, sync::Arc};
 
-use crate::{model::CommonRunContext, node_state::module::NodeStateEvent, utils::modules::Module};
+use crate::bus::{BusClientSender, SharedMessageBus};
+use crate::{log_error, module_bus_client, module_handle_messages, modules::Module};
 use anyhow::{anyhow, Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::{
-    bus::BusClientSender,
-    helpers::{risc0::Risc0Prover, ClientSdkProver},
-    log_error, module_bus_client, module_handle_messages,
-    rest_client::NodeApiHttpClient,
+    helpers::ClientSdkProver, rest_client::NodeApiHttpClient,
     transaction_builder::TxExecutorHandler,
 };
-use hyle_model::{
-    BlobIndex, BlobTransaction, Block, BlockHeight, Calldata, ContractName, Hashed,
+use sdk::{
+    BlobIndex, BlobTransaction, Block, BlockHeight, Calldata, ContractName, Hashed, NodeStateEvent,
     ProofTransaction, TransactionData, TxContext, TxHash, HYLE_TESTNET_CHAIN_ID,
 };
 use tracing::{debug, error, info, warn};
@@ -47,7 +45,8 @@ pub struct AutoProverBusClient<Contract: Send + Sync + Clone + 'static> {
 }
 
 pub struct AutoProverCtx {
-    pub common: Arc<CommonRunContext>,
+    pub bus: SharedMessageBus,
+    pub data_directory: PathBuf,
     pub start_height: BlockHeight,
     pub prover: Arc<dyn ClientSdkProver<Vec<Calldata>> + Send + Sync>,
     pub contract_name: ContractName,
@@ -55,16 +54,19 @@ pub struct AutoProverCtx {
 }
 
 impl AutoProverCtx {
+    #[cfg(feature = "risc0")]
     pub fn risc0(
-        common: Arc<CommonRunContext>,
+        bus: SharedMessageBus,
+        data_directory: PathBuf,
         elf: &'static [u8],
         contract_name: ContractName,
         node: Arc<NodeApiHttpClient>,
     ) -> Self {
         Self {
-            common,
+            bus,
+            data_directory,
             start_height: BlockHeight(0),
-            prover: Arc::new(Risc0Prover::new(elf)),
+            prover: Arc::new(client_sdk::helpers::risc0::Risc0Prover::new(elf)),
             contract_name,
             node,
         }
@@ -72,14 +74,16 @@ impl AutoProverCtx {
 
     #[cfg(feature = "sp1")]
     pub fn sp1(
-        common: Arc<CommonRunContext>,
+        bus: SharedMessageBus,
+        data_directory: PathBuf,
         elf: &'static [u8],
         contract_name: ContractName,
         start_height: BlockHeight,
         node: Arc<NodeApiHttpClient>,
     ) -> Self {
         Self {
-            common,
+            bus,
+            data_directory,
             start_height,
             prover: Arc::new(client_sdk::helpers::sp1::SP1Prover::new(elf)),
             contract_name,
@@ -106,11 +110,9 @@ where
     type Context = Arc<AutoProverCtx>;
 
     async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus = AutoProverBusClient::<Contract>::new_from_bus(ctx.common.bus.new_handle()).await;
+        let bus = AutoProverBusClient::<Contract>::new_from_bus(ctx.bus.new_handle()).await;
 
         let file = ctx
-            .common
-            .config
             .data_directory
             .join(format!("autoprover_{}.bin", ctx.contract_name).as_str());
 

@@ -1,22 +1,21 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use hyle_model::Hashed;
+use sdk::{BlockHeight, Hashed};
 use tracing::{debug, info};
 
 use crate::{
     bus::BusClientSender,
-    data_availability::codec::{
-        codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequest,
-    },
-    model::{BlockHeight, CommonRunContext},
+    modules::{module_bus_client, Module},
     node_state::{metrics::NodeStateMetrics, module::NodeStateEvent, NodeState, NodeStateStore},
     utils::{
         conf::SharedConf,
-        modules::{module_bus_client, Module},
+        da_codec::{codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequest},
     },
 };
-use client_sdk::{log_error, module_handle_messages};
+use crate::{log_error, module_handle_messages};
+
+use super::CommonRunContext;
 
 module_bus_client! {
 #[derive(Debug)]

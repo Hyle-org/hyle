@@ -17,6 +17,7 @@ members = [
   "crates/hyle-crypto",
   "crates/hyle-verifiers",
   "crates/noir-tools",
+  "crates/hyle-modules",
 ]
 default-members = [
   "crates/contracts",
@@ -25,6 +26,7 @@ default-members = [
   "crates/hyle-model",
   "crates/hyle-crypto",
   "crates/hyle-net",
+  "crates/hyle-modules",
   ".",
 ]
 resolver = "2"
@@ -54,6 +56,7 @@ staking = { version = "0.13.0-rc.4", default-features = false, path = "crates/co
 amm = { version = "0.13.0-rc.4", default-features = false, path = "crates/contracts/amm", package = "hyle-amm" }
 uuid-tld = { version = "0.13.0-rc.4", default-features = false, path = "crates/contracts/uuid-tld", package = "hyle-uuid-tld" }
 hyle-contracts = { version = "0.13.0-rc.4", default-features = false, path = "crates/contracts", package = "hyle-contracts" }
+hyle-modules = { version = "0.13.0-rc.4", default-features = false, path = "crates/hyle-modules", package = "hyle-modules" }
 
 [package]
 name = "hyle"
@@ -98,6 +101,7 @@ smt-token = { workspace = true, features = ["client"] }
 risc0-recursion = { workspace = true }
 hyle-verifiers = { workspace = true }
 hyle-contracts = { workspace = true }
+hyle-modules = { workspace = true }
 
 
 anyhow = "1.0.98"
@@ -111,7 +115,7 @@ strum_macros = "0.27.1"
 tracing = "0.1"
 
 assertables = { version = "9.5.2" }
-axum = { version = "0.8.4", features = ["ws", "macros"] }
+axum = { version = "0.8.4", features = ["macros"] }
 axum-otel-metrics = { version = "0.10.0" }
 bytes = { version = "1.10.0" }
 clap = { version = "4.5.37", features = ["derive"] }

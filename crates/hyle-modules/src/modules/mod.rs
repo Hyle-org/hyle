@@ -9,14 +9,28 @@ use std::{
 };
 
 use crate::{
-    bus::{bus_client, BusClientSender, SharedMessageBus},
-    handle_messages, log_error,
+    bus::{BusClientSender, SharedMessageBus},
+    bus_client, handle_messages, log_error,
+    utils::conf::SharedConf,
 };
 use anyhow::{bail, Error, Result};
+use axum::Router;
 use futures::future::select_all;
 use rand::{distributions::Alphanumeric, Rng};
 use tokio::task::JoinHandle;
 use tracing::{debug, info, trace};
+
+pub mod bus_ws_connector;
+pub mod da_listener;
+pub mod prover;
+pub mod websocket;
+
+pub struct CommonRunContext {
+    pub config: SharedConf,
+    pub bus: SharedMessageBus,
+    pub router: std::sync::Mutex<Option<Router>>,
+    pub openapi: std::sync::Mutex<utoipa::openapi::OpenApi>,
+}
 
 /// Module trait to define startup dependencies
 pub trait Module

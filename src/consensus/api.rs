@@ -2,6 +2,7 @@ use anyhow::anyhow;
 use axum::{debug_handler, extract::State, http::StatusCode, response::IntoResponse, Json, Router};
 use client_sdk::contract_indexer::AppError;
 use hyle_model::api::APIStaking;
+use hyle_modules::modules::CommonRunContext;
 use staking::state::Staking;
 use tracing::error;
 use utoipa::OpenApi;
@@ -13,7 +14,7 @@ use crate::{
         command_response::{CmdRespClient, Query},
         metrics::BusMetrics,
     },
-    model::{CommonRunContext, ConsensusInfo},
+    model::ConsensusInfo,
 };
 
 use super::{QueryConsensusInfo, QueryConsensusStakingState};
@@ -104,7 +105,7 @@ pub async fn get_consensus_staking_state(
 
 impl Clone for RouterState {
     fn clone(&self) -> Self {
-        use client_sdk::utils::static_type_map::Pick;
+        use hyle_modules::utils::static_type_map::Pick;
         Self {
             bus: RestBusClient::new(
                 Pick::<BusMetrics>::get(&self.bus).clone(),

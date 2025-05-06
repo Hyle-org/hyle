@@ -2,22 +2,21 @@
 
 use crate::bus::BusClientSender;
 use crate::model::*;
-use crate::node_state::module::NodeStateEvent;
-use crate::utils::modules::module_bus_client;
 use crate::{
     bus::command_response::Query,
     genesis::GenesisEvent,
     mempool::QueryNewCut,
     model::{Cut, Hashed, ValidatorPublicKey},
     p2p::{network::OutboundMessage, P2PCommand},
-    utils::{conf::SharedConf, modules::Module},
+    utils::conf::SharedConf,
 };
 use anyhow::{anyhow, bail, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use client_sdk::{log_error, module_handle_messages};
 use hyle_crypto::BlstCrypto;
 use hyle_crypto::SharedBlstCrypto;
 use hyle_model::utils::TimestampMs;
+use hyle_modules::node_state::module::NodeStateEvent;
+use hyle_modules::{log_error, module_bus_client, module_handle_messages, modules::Module};
 use hyle_net::clock::TimestampMsClock;
 use metrics::ConsensusMetrics;
 use role_follower::FollowerState;
@@ -801,11 +800,10 @@ pub mod test {
     use crate::{
         bus::{bus_client, command_response::CmdRespClient},
         model::Block,
-        node_state::module::NodeStateModule,
         rest::RestApi,
         utils::integration_test::NodeIntegrationCtxBuilder,
     };
-    use client_sdk::handle_messages;
+    use hyle_modules::{handle_messages, node_state::module::NodeStateModule};
     use std::sync::Arc;
 
     use super::*;

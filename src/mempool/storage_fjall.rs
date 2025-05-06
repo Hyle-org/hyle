@@ -8,7 +8,7 @@ use hyle_model::LaneId;
 use tracing::info;
 
 use crate::model::{DataProposal, DataProposalHash, Hashed};
-use client_sdk::log_warn;
+use hyle_modules::log_warn;
 
 use super::{
     storage::{CanBePutOnTop, LaneEntryMetadata, Storage},

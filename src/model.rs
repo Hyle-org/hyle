@@ -1,25 +1,16 @@
 //! Various data structures
 
-use crate::bus::SharedMessageBus;
-use crate::utils::conf::SharedConf;
-use axum::Router;
 use hyle_crypto::SharedBlstCrypto;
 use std::sync::Arc;
 
 // Re-export
 pub use hyle_model::*;
 
-pub mod contract_registration;
 mod indexer;
 
 pub use indexer::*;
 
-pub struct CommonRunContext {
-    pub config: SharedConf,
-    pub bus: SharedMessageBus,
-    pub router: std::sync::Mutex<Option<Router>>,
-    pub openapi: std::sync::Mutex<utoipa::openapi::OpenApi>,
-}
+pub use hyle_modules::modules::CommonRunContext;
 
 pub struct NodeRunContext {
     pub crypto: SharedBlstCrypto,

@@ -2,7 +2,6 @@
 
 mod api;
 pub mod contract_state_indexer;
-pub mod da_listener;
 
 use crate::model::*;
 use crate::node_state::module::NodeStateEvent;
@@ -17,14 +16,14 @@ use axum::{
     routing::get,
     Router,
 };
-use client_sdk::{
-    log_error, log_warn, module_handle_messages,
-    modules::{module_bus_client, Module},
-};
 use futures::{SinkExt, StreamExt};
 use hyle_contract_sdk::TxHash;
 use hyle_model::api::{
     BlobWithStatus, TransactionStatusDb, TransactionTypeDb, TransactionWithBlobs,
+};
+use hyle_modules::{
+    log_error, log_warn, module_handle_messages,
+    modules::{module_bus_client, Module},
 };
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use sqlx::{PgExecutor, QueryBuilder, Row};

@@ -10,10 +10,10 @@ use crate::{
     utils::modules::{module_bus_client, Module},
 };
 use anyhow::Result;
-use client_sdk::module_handle_messages;
 use client_sdk::rest_client::NodeApiHttpClient;
 use hyle_contract_sdk::{Identity, ProgramId, StateCommitment};
 use hyle_model::{ContractAction, RegisterContractAction};
+use hyle_modules::module_handle_messages;
 use hyle_net::clock::TimestampMsClock;
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
@@ -103,7 +103,7 @@ mod api {
 
     impl Clone for RouterState {
         fn clone(&self) -> Self {
-            use client_sdk::utils::static_type_map::Pick;
+            use hyle_modules::utils::static_type_map::Pick;
             Self {
                 bus: RestBusClient::new(
                     Pick::<BusMetrics>::get(&self.bus).clone(),

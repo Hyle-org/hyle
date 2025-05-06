@@ -56,12 +56,3 @@ pub fn verify_recursive_proof(
 
     Ok(outputs)
 }
-
-pub fn validate_program_id(verifier: &Verifier, program_id: &ProgramId) -> Result<()> {
-    match verifier.0.as_str() {
-        hyle_model::verifiers::RISC0_1 => hyle_verifiers::risc0_1::validate_program_id(program_id),
-        #[cfg(feature = "sp1")]
-        hyle_model::verifiers::SP1_4 => hyle_verifiers::sp1_4::validate_program_id(program_id),
-        _ => Ok(()),
-    }
-}

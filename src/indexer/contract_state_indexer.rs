@@ -1,11 +1,12 @@
 use anyhow::{anyhow, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use client_sdk::{
-    bus::BusClientSender,
-    contract_indexer::{ContractHandler, ContractStateStore},
-};
+use client_sdk::contract_indexer::{ContractHandler, ContractStateStore};
 use hyle_contract_sdk::{BlobIndex, ContractName, TxId};
 use hyle_model::{RegisterContractEffect, TxContext, TxHash};
+use hyle_modules::{
+    bus::BusClientSender, log_debug, log_error, module_bus_client, module_handle_messages,
+    modules::Module,
+};
 use serde::Serialize;
 use std::{any::TypeId, ops::Deref, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
@@ -14,9 +15,8 @@ use tracing::debug;
 use crate::{
     model::{Blob, BlobTransaction, Block, CommonRunContext, Transaction, TransactionData},
     node_state::module::NodeStateEvent,
-    utils::{conf::Conf, modules::Module},
+    utils::conf::Conf,
 };
-use client_sdk::{log_debug, log_error, module_bus_client, module_handle_messages};
 
 #[derive(Debug, Clone)]
 pub struct CSIBusEvent<E> {
