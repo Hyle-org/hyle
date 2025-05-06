@@ -201,6 +201,7 @@ pub mod sp1_4 {
         proof_bin: &ProofData,
         verification_key: &ProgramId,
     ) -> Result<Vec<HyleOutput>, Error> {
+        tracing::trace!("Setup sp1 prover client from env");
         // Setup the prover client.
         let client = ProverClient::from_env();
 
@@ -212,11 +213,12 @@ pub mod sp1_4 {
             serde_json::from_slice(&verification_key.0).context("Invalid SP1 image ID")?;
 
         // Verify the proof.
+        tracing::trace!("Verifying SP1 proof");
         client
             .verify(&proof, &vk)
             .context("SP1 proof verification failed")?;
 
-        // TODO: support multi-output proofs.
+        tracing::trace!("Extract HyleOutput");
         let hyle_outputs =
             match borsh::from_slice::<Vec<HyleOutput>>(proof.public_values.as_slice()) {
                 Ok(outputs) => outputs,
