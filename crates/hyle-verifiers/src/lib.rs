@@ -203,6 +203,11 @@ pub mod sp1_4 {
         ProverClient::from_env()
     });
 
+    pub fn init() {
+        tracing::info!("Initializing sp1 verifier");
+        let _client = &*SP1_CLIENT;
+    }
+
     pub fn verify(
         proof_bin: &ProofData,
         verification_key: &ProgramId,
