@@ -20,6 +20,7 @@ pub fn verify(
     program_id: &ProgramId,
 ) -> Result<Vec<HyleOutput>, Error> {
     match verifier.0.as_str() {
+        #[cfg(feature = "risc0")]
         hyle_model::verifiers::RISC0_1 => risc0_1::verify(proof, program_id),
         hyle_model::verifiers::NOIR => noir::verify(proof, program_id),
         #[cfg(feature = "sp1")]
@@ -30,6 +31,7 @@ pub fn verify(
 
 pub fn validate_program_id(verifier: &Verifier, program_id: &ProgramId) -> Result<(), Error> {
     match verifier.0.as_str() {
+        #[cfg(feature = "risc0")]
         hyle_model::verifiers::RISC0_1 => risc0_1::validate_program_id(program_id),
         #[cfg(feature = "sp1")]
         hyle_model::verifiers::SP1_4 => sp1_4::validate_program_id(program_id),
@@ -37,6 +39,7 @@ pub fn validate_program_id(verifier: &Verifier, program_id: &ProgramId) -> Resul
     }
 }
 
+#[cfg(feature = "risc0")]
 pub mod risc0_1 {
     use super::*;
 
@@ -288,6 +291,7 @@ mod tests {
     };
 
     use super::noir::verify as noir_proof_verifier;
+    #[cfg(feature = "risc0")]
     use super::risc0_1::validate_program_id as validate_risc0_program_id;
 
     fn load_file_as_bytes(path: &str) -> Vec<u8> {
@@ -375,6 +379,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "risc0")]
     fn test_check_risc0_program_id() {
         let valid_program_id = ProgramId(vec![0; 32]); // Assuming a valid 32-byte ID
         let invalid_program_id = ProgramId(vec![0; 31]); // Invalid length

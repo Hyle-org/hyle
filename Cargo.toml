@@ -187,10 +187,11 @@ risc0-zkvm = { version = "2.0.2", default-features = false, features = [
 signal-child = "1.0.6"
 
 [features]
-default = []
+default = ["risc0"]
 
 turmoil = ["hyle-net/turmoil", "client-sdk/turmoil"]
 
+risc0 = ["hyle-verifiers/risc0", "client-sdk/risc0"]
 sp1 = ["hyle-verifiers/sp1", "client-sdk/sp1"]
 
 # Disable dependency keyring by default, as it requires libdbus
