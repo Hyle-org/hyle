@@ -217,21 +217,21 @@ pub mod sp1_4 {
             .context("SP1 proof verification failed")?;
 
         // TODO: support multi-output proofs.
-        let hyle_output = match borsh::from_slice::<Vec<HyleOutput>>(proof.public_values.as_slice())
-        {
-            Ok(outputs) => outputs,
-            Err(_) => {
-                debug!("Failed to decode Vec<HyleOutput>, trying to decode as HyleOutput");
-                vec![
-                    borsh::from_slice::<HyleOutput>(proof.public_values.as_slice())
-                        .context("Failed to extract HyleOuput from SP1 proof")?,
-                ]
-            }
-        };
+        let hyle_outputs =
+            match borsh::from_slice::<Vec<HyleOutput>>(proof.public_values.as_slice()) {
+                Ok(outputs) => outputs,
+                Err(_) => {
+                    debug!("Failed to decode Vec<HyleOutput>, trying to decode as HyleOutput");
+                    vec![
+                        borsh::from_slice::<HyleOutput>(proof.public_values.as_slice())
+                            .context("Failed to extract HyleOuput from SP1 proof")?,
+                    ]
+                }
+            };
 
         tracing::info!("✅ SP1 proof verified.",);
 
-        Ok(vec![hyle_output])
+        Ok(hyle_outputs)
     }
 
     pub fn validate_program_id(program_id: &ProgramId) -> Result<(), Error> {

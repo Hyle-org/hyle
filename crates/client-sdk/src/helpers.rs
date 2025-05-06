@@ -99,7 +99,6 @@ pub mod risc0 {
 
 #[cfg(feature = "sp1")]
 pub mod sp1 {
-    use anyhow::Context;
     use sp1_sdk::{EnvProver, ProverClient, SP1ProvingKey, SP1Stdin, SP1VerifyingKey};
 
     use super::*;
