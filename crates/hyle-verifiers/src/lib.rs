@@ -196,14 +196,18 @@ pub mod noir {
 #[cfg(feature = "sp1")]
 pub mod sp1_4 {
     use super::*;
+    use once_cell::sync::Lazy;
+
+    static SP1_CLIENT: Lazy<sp1_sdk::EnvProver> = Lazy::new(|| {
+        tracing::trace!("Setup sp1 prover client from env");
+        ProverClient::from_env()
+    });
 
     pub fn verify(
         proof_bin: &ProofData,
         verification_key: &ProgramId,
     ) -> Result<Vec<HyleOutput>, Error> {
-        tracing::trace!("Setup sp1 prover client from env");
-        // Setup the prover client.
-        let client = ProverClient::from_env();
+        let client = &*SP1_CLIENT;
 
         let proof: SP1ProofWithPublicValues =
             bincode::deserialize(&proof_bin.0).context("Error while decoding SP1 proof.")?;
