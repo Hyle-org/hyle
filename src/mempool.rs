@@ -1,23 +1,19 @@
 //! Mempool logic & pending transaction management.
 
 use crate::{
-    bus::{command_response::Query, BusClientSender, BusMessage},
+    bus::{command_response::Query, BusClientSender},
     consensus::{CommittedConsensusProposal, ConsensusEvent},
     genesis::GenesisEvent,
-    log_error, log_warn,
     model::*,
-    module_handle_messages,
     node_state::module::NodeStateEvent,
     p2p::network::{
         HeaderSignableData, HeaderSigner, IntoHeaderSignableData, MsgWithHeader, OutboundMessage,
     },
     utils::{
         conf::{P2pMode, SharedConf},
-        modules::{module_bus_client, Module},
         serialize::arc_rwlock_borsh,
     },
 };
-
 use anyhow::{bail, Context, Result};
 use api::RestApiMessage;
 use block_construction::BlockUnderConstruction;
@@ -25,6 +21,9 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::tcp_client::TcpServerMessage;
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
 use hyle_crypto::{BlstCrypto, SharedBlstCrypto};
+use hyle_modules::{
+    log_error, log_warn, module_bus_client, module_handle_messages, modules::Module,
+};
 use hyle_net::clock::TimestampMsClock;
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
@@ -235,10 +234,6 @@ impl Display for MempoolNetMessage {
     }
 }
 
-impl BusMessage for MempoolNetMessage {}
-impl BusMessage for MempoolBlockEvent {}
-impl BusMessage for MempoolStatusEvent {}
-
 impl IntoHeaderSignableData for MempoolNetMessage {
     fn to_header_signable_data(&self) -> HeaderSignableData {
         match self {
@@ -274,7 +269,6 @@ pub enum ProcessedDPEvent {
     OnHashedDataProposal((LaneId, DataProposal)),
     OnProcessedDataProposal((LaneId, DataProposalVerdict, DataProposal)),
 }
-impl BusMessage for ProcessedDPEvent {}
 
 impl Module for Mempool {
     type Context = SharedRunContext;
@@ -852,6 +846,7 @@ impl Mempool {
 pub mod test {
 
     mod async_data_proposals;
+    mod native_verifier_test;
 
     use core::panic;
 

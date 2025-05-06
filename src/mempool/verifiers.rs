@@ -36,12 +36,13 @@ pub fn verify_recursive_proof(
     verifier: &Verifier,
     program_id: &ProgramId,
 ) -> Result<(Vec<ProgramId>, Vec<HyleOutput>)> {
-    let outputs = match verifier.0.as_str() {
+    let outputs: (Vec<ProgramId>, Vec<HyleOutput>) = match verifier.0.as_str() {
+        #[cfg(feature = "risc0")]
         hyle_model::verifiers::RISC0_1 => {
             hyle_verifiers::risc0_1::verify_recursive(proof, program_id)
         }
         _ => Err(anyhow::anyhow!(
-            "{} recursive verifier not implemented yet",
+            "{} recursive verifier not implemented yet (or feature disabled)",
             verifier
         )),
     }?;
@@ -55,13 +56,4 @@ pub fn verify_recursive_proof(
     });
 
     Ok(outputs)
-}
-
-pub fn validate_program_id(verifier: &Verifier, program_id: &ProgramId) -> Result<()> {
-    match verifier.0.as_str() {
-        hyle_model::verifiers::RISC0_1 => hyle_verifiers::risc0_1::validate_program_id(program_id),
-        #[cfg(feature = "sp1")]
-        hyle_model::verifiers::SP1_4 => hyle_verifiers::sp1_4::validate_program_id(program_id),
-        _ => Ok(()),
-    }
 }

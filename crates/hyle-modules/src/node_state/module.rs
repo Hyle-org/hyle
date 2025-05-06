@@ -2,18 +2,13 @@
 
 use super::metrics::NodeStateMetrics;
 use super::{NodeState, NodeStateStore};
-use crate::bus::{command_response::Query, BusClientSender, BusMessage};
-use crate::data_availability::DataEvent;
+use crate::bus::{command_response::Query, BusClientSender};
 use crate::log_error;
-use crate::model::Contract;
-use crate::model::{Block, BlockHeight, CommonRunContext, ContractName};
 use crate::module_handle_messages;
+use crate::modules::{module_bus_client, CommonRunContext, Module};
 use crate::utils::conf::SharedConf;
-use crate::utils::modules::{module_bus_client, Module};
 use anyhow::{Context, Result};
-use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_model::{TxHash, UnsettledBlobTransaction};
-use serde::{Deserialize, Serialize};
+use sdk::*;
 use std::sync::Arc;
 use tracing::info;
 
@@ -27,11 +22,7 @@ pub struct NodeStateModule {
     inner: NodeState,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize)]
-pub enum NodeStateEvent {
-    NewBlock(Box<Block>),
-}
-impl BusMessage for NodeStateEvent {}
+pub use sdk::NodeStateEvent;
 
 #[derive(Clone)]
 pub struct QueryBlockHeight {}

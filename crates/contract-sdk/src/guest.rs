@@ -94,14 +94,14 @@ impl GuestEnv for Risc0Env {
 pub struct SP1Env;
 
 // For coverage tests, assume risc0 if both are active
-#[cfg(all(feature = "sp1", not(feature = "risc0")))]
+#[cfg(feature = "sp1")]
 impl GuestEnv for SP1Env {
     fn log(&self, message: &str) {
         // TODO: this does nothing actually
         sp1_zkvm::io::hint(&message);
     }
 
-    fn commit(&self, output: &[HyleOutput]) {
+    fn commit(&self, output: Vec<HyleOutput>) {
         let vec = borsh::to_vec(&output).unwrap();
         sp1_zkvm::io::commit_slice(&vec);
     }

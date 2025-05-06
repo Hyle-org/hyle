@@ -2,23 +2,21 @@
 
 use crate::bus::BusClientSender;
 use crate::model::*;
-use crate::module_handle_messages;
-use crate::node_state::module::NodeStateEvent;
-use crate::utils::modules::module_bus_client;
 use crate::{
-    bus::{command_response::Query, BusMessage},
+    bus::command_response::Query,
     genesis::GenesisEvent,
-    log_error,
     mempool::QueryNewCut,
     model::{Cut, Hashed, ValidatorPublicKey},
     p2p::{network::OutboundMessage, P2PCommand},
-    utils::{conf::SharedConf, modules::Module},
+    utils::conf::SharedConf,
 };
 use anyhow::{anyhow, bail, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_crypto::BlstCrypto;
 use hyle_crypto::SharedBlstCrypto;
 use hyle_model::utils::TimestampMs;
+use hyle_modules::node_state::module::NodeStateEvent;
+use hyle_modules::{log_error, module_bus_client, module_handle_messages, modules::Module};
 use hyle_net::clock::TimestampMsClock;
 use metrics::ConsensusMetrics;
 use role_follower::FollowerState;
@@ -68,12 +66,6 @@ pub struct QueryConsensusInfo {}
 
 #[derive(Clone)]
 pub struct QueryConsensusStakingState {}
-
-impl BusMessage for ConsensusCommand {}
-impl BusMessage for ConsensusEvent {}
-impl BusMessage for ConsensusNetMessage {}
-
-impl<T> BusMessage for SignedByValidator<T> where T: BorshSerialize + BusMessage {}
 
 module_bus_client! {
 struct ConsensusBusClient {
@@ -807,12 +799,11 @@ pub mod test {
 
     use crate::{
         bus::{bus_client, command_response::CmdRespClient},
-        handle_messages,
         model::Block,
-        node_state::module::NodeStateModule,
         rest::RestApi,
         utils::integration_test::NodeIntegrationCtxBuilder,
     };
+    use hyle_modules::{handle_messages, node_state::module::NodeStateModule};
     use std::sync::Arc;
 
     use super::*;
@@ -827,7 +818,6 @@ pub mod test {
     };
     use assertables::assert_contains;
     use tokio::sync::broadcast::Receiver;
-    use tracing::error;
     use utils::TimestampMs;
 
     pub struct ConsensusTestCtx {
@@ -1176,18 +1166,17 @@ pub mod test {
                 msg: net_msg,
             } = rec
             {
-                assert_eq!(to, &dest, "Got message {:?}", net_msg);
                 if let NetMessage::ConsensusMessage(msg) = net_msg {
+                    assert_eq!(to, &dest, "Got message {:?}", msg);
                     msg
                 } else {
-                    warn!("{description}: skipping {:?}", net_msg);
+                    warn!("{description}: skipping non-consensus message, details in debug");
+                    debug!("Message is: {:?}", net_msg);
                     self.assert_send(to, description)
                 }
             } else {
-                error!(
-                    "{description}: OutboundMessage::Send message is missing, found {:?}",
-                    rec
-                );
+                warn!("{description}: Skipping broadcast message, details in debug");
+                debug!("Message is: {:?}", rec);
                 self.assert_send(to, description)
             }
         }

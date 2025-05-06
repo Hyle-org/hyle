@@ -1,19 +1,16 @@
 //! Networking layer
 
 use crate::{
-    bus::{BusClientSender, BusMessage},
-    log_warn,
-    mempool::MempoolNetMessage,
-    model::SharedRunContext,
-    module_handle_messages,
-    utils::{
-        conf::SharedConf,
-        modules::{module_bus_client, Module},
-    },
+    bus::BusClientSender, mempool::MempoolNetMessage, model::SharedRunContext,
+    utils::conf::SharedConf,
 };
 use anyhow::{Context, Error, Result};
 use hyle_crypto::SharedBlstCrypto;
 use hyle_model::{ConsensusNetMessage, SignedByValidator, ValidatorPublicKey};
+use hyle_modules::{
+    log_warn, module_handle_messages,
+    modules::{module_bus_client, Module},
+};
 use hyle_net::tcp::{
     p2p_server::{P2PServer, P2PServerEvent},
     Canal,
@@ -29,7 +26,6 @@ pub mod network;
 pub enum P2PCommand {
     ConnectTo { peer: String },
 }
-impl BusMessage for P2PCommand {}
 module_bus_client! {
 struct P2PBusClient {
     sender(MsgWithHeader<MempoolNetMessage>),

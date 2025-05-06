@@ -1,6 +1,7 @@
 use anyhow::Result;
+use hyle_modules::modules::Module;
 
-use crate::{model::SharedRunContext, utils::modules::Module};
+use crate::model::SharedRunContext;
 
 use super::{
     api, consensus_bus_client::ConsensusBusClient, metrics::ConsensusMetrics, Consensus,

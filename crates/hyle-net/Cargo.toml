@@ -38,8 +38,8 @@ opentelemetry = "0.28.0"
 rand = { version = "0.8.5", features = ["std"] }
 seq-macro = "0.3.6"
 test-log = { version = "0.2.17", features = [
-    "color",
-    "trace",
+  "color",
+  "trace",
 ], default-features = false }
 
 [features]

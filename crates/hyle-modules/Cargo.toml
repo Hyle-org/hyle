@@ -1,0 +1,69 @@
+[package]
+name = "hyle-modules"
+description = "Collection of Hyle Modules"
+license-file = { workspace = true }
+version = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+sdk = { workspace = true, default-features = false, features = ["full-model"] }
+client-sdk = { workspace = true, features = ["rest", "indexer"] }
+hyle-net = { workspace = true }
+hyle-verifiers = { workspace = true }
+
+anyhow = "1.0.98"
+borsh = "1.5.6"
+serde = "1.0"
+serde_json = { version = "1" }
+tracing = "0.1"
+strum_macros = "0.27.1"
+serde_with = "3.12.0"
+config = { version = "0.15.9", default-features = false, features = ["toml"] }
+assertables = { version = "9.5.2" }
+anymap = { version = "0.12.1" }
+syn = { version = "2.0.101" }
+quote = { version = "1.0.39" }
+rand = { version = "0.8.5" }
+futures = { version = "0.3.31" }
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+  "env-filter",
+  "fmt",
+  "json",
+] }
+paste = { version = "1.0.15" }
+hex = "0.4.3"
+bytes = { version = "1.10.0" }
+
+tokio = { version = "1.44.2", features = ["full", "tracing"] }
+tokio-util = { version = "0.7.14" }
+
+axum = { version = "0.8.4", features = ["ws"] }
+axum-otel-metrics = { version = "0.10.0" }
+
+utoipa = { version = "5.3.1" }
+utoipa-axum = { version = "0.2.0" }
+utoipa-swagger-ui = { version = "9.0.0", features = ["axum"] }
+
+tower-http = { version = "0.6.2", features = ["trace", "cors"] }
+prometheus = { version = "0.13.4" }
+opentelemetry = { version = "0.28" }
+
+test-log = { version = "0.2.17", features = [
+  "color",
+  "trace",
+], default-features = false, optional = true }
+
+[dev-dependencies]
+tempfile = "3.19.1"
+test-log = { version = "0.2.17", features = [
+  "color",
+  "trace",
+], default-features = false }
+
+[features]
+risc0 = ["client-sdk/risc0"]
+sp1 = ["client-sdk/sp1"]
+test = ["dep:test-log"]

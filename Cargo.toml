@@ -17,6 +17,7 @@ members = [
   "crates/hyle-crypto",
   "crates/hyle-verifiers",
   "crates/noir-tools",
+  "crates/hyle-modules",
 ]
 default-members = [
   "crates/contracts",
@@ -25,6 +26,7 @@ default-members = [
   "crates/hyle-model",
   "crates/hyle-crypto",
   "crates/hyle-net",
+  "crates/hyle-modules",
   ".",
 ]
 resolver = "2"
@@ -54,6 +56,7 @@ staking = { version = "0.13.0-rc.4", default-features = false, path = "crates/co
 amm = { version = "0.13.0-rc.4", default-features = false, path = "crates/contracts/amm", package = "hyle-amm" }
 uuid-tld = { version = "0.13.0-rc.4", default-features = false, path = "crates/contracts/uuid-tld", package = "hyle-uuid-tld" }
 hyle-contracts = { version = "0.13.0-rc.4", default-features = false, path = "crates/contracts", package = "hyle-contracts" }
+hyle-modules = { version = "0.13.0-rc.4", default-features = false, path = "crates/hyle-modules", package = "hyle-modules" }
 
 [package]
 name = "hyle"
@@ -98,6 +101,7 @@ smt-token = { workspace = true, features = ["client"] }
 risc0-recursion = { workspace = true }
 hyle-verifiers = { workspace = true }
 hyle-contracts = { workspace = true }
+hyle-modules = { workspace = true }
 
 
 anyhow = "1.0.98"
@@ -110,9 +114,8 @@ sha3 = "0.10.8"
 strum_macros = "0.27.1"
 tracing = "0.1"
 
-anymap = { version = "0.12.1" }
 assertables = { version = "9.5.2" }
-axum = { version = "0.8.4", features = ["ws", "macros"] }
+axum = { version = "0.8.4", features = ["macros"] }
 axum-otel-metrics = { version = "0.10.0" }
 bytes = { version = "1.10.0" }
 clap = { version = "4.5.37", features = ["derive"] }
@@ -125,7 +128,6 @@ opentelemetry-prometheus = { version = "0.28.0" }
 opentelemetry_sdk = "0.28.0"
 paste = { version = "1.0.15" }
 prometheus = { version = "0.13.4" }
-quote = { version = "1.0.39" }
 rand = { version = "0.8.5" }
 sqlx = { version = "0.8.4", features = [
   "runtime-tokio",
@@ -133,15 +135,9 @@ sqlx = { version = "0.8.4", features = [
   "migrate",
   "chrono",
 ] }
-syn = { version = "2.0.101" }
 tokio = { version = "1.44.2", features = ["full", "tracing"] }
 tokio-util = { version = "0.7.14" }
 tower-http = { version = "0.6.2", features = ["trace", "cors"] }
-tracing-subscriber = { version = "0.3", default-features = false, features = [
-  "env-filter",
-  "fmt",
-  "json",
-] }
 fjall = { version = "2.10.0" }
 
 dhat = { version = "0.3.3", optional = true }
@@ -169,6 +165,9 @@ client-sdk = { workspace = true, default-features = false, features = [
   "rest",
   "risc0",
 ] }
+hyle-modules = { workspace = true, default-features = false, features = [
+  "test",
+] }
 
 assert_cmd = "2.0.17"
 axum-test = { version = "17.2.0" }
@@ -188,11 +187,12 @@ risc0-zkvm = { version = "2.0.2", default-features = false, features = [
 signal-child = "1.0.6"
 
 [features]
-default = []
+default = ["risc0"]
 
 turmoil = ["hyle-net/turmoil", "client-sdk/turmoil"]
 
-sp1 = ["hyle-verifiers/sp1"]
+risc0 = ["hyle-verifiers/risc0", "client-sdk/risc0"]
+sp1 = ["hyle-verifiers/sp1", "client-sdk/sp1"]
 
 # Disable dependency keyring by default, as it requires libdbus
 keyring = ["hyle-crypto/keyring"]

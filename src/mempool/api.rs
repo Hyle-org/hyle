@@ -6,16 +6,16 @@ use hyle_model::{
     api::APIRegisterContract, BlockHeight, ContractAction, RegisterContractAction,
     StructuredBlobData, TimeoutWindow,
 };
+use hyle_modules::node_state::contract_registration::validate_contract_registration_metadata;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
-    bus::{bus_client, metrics::BusMetrics, BusClientSender, BusMessage},
+    bus::{bus_client, metrics::BusMetrics, BusClientSender},
     model::{
-        contract_registration::validate_contract_registration_metadata, BlobTransaction,
-        CommonRunContext, Hashed, ProofTransaction, Transaction, TransactionData,
+        BlobTransaction, CommonRunContext, Hashed, ProofTransaction, Transaction, TransactionData,
     },
     rest::AppError,
 };
@@ -24,7 +24,6 @@ use crate::{
 pub enum RestApiMessage {
     NewTx(Transaction),
 }
-impl BusMessage for RestApiMessage {}
 
 bus_client! {
 struct RestBusClient {
@@ -171,7 +170,7 @@ pub async fn register_contract(
 
 impl Clone for RouterState {
     fn clone(&self) -> Self {
-        use crate::utils::static_type_map::Pick;
+        use hyle_modules::utils::static_type_map::Pick;
         Self {
             bus: RestBusClient::new(
                 Pick::<BusMetrics>::get(&self.bus).clone(),

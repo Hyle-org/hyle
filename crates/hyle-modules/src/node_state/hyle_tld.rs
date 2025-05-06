@@ -1,6 +1,6 @@
-use crate::model::contract_registration::validate_contract_registration_metadata;
-use crate::model::*;
+use crate::node_state::contract_registration::validate_contract_registration_metadata;
 use anyhow::{bail, Result};
+use sdk::*;
 use std::collections::{BTreeMap, HashMap};
 
 use super::SideEffect;
