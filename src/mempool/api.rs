@@ -171,7 +171,7 @@ pub async fn register_contract(
 
 impl Clone for RouterState {
     fn clone(&self) -> Self {
-        use crate::utils::static_type_map::Pick;
+        use client_sdk::utils::static_type_map::Pick;
         Self {
             bus: RestBusClient::new(
                 Pick::<BusMetrics>::get(&self.bus).clone(),

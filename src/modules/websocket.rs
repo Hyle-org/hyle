@@ -4,7 +4,6 @@ use std::{collections::HashMap, sync::Arc};
 use crate::utils::conf::NodeWebSocketConfig;
 use crate::{
     bus::{BusClientSender, BusMessage, SharedMessageBus},
-    log_warn, module_bus_client, module_handle_messages,
     utils::modules::Module,
 };
 use anyhow::{anyhow, Context, Error, Result};
@@ -19,6 +18,7 @@ use axum::{
     routing::get,
     Router,
 };
+use client_sdk::{log_warn, module_bus_client, module_handle_messages};
 use futures::{
     sink::SinkExt,
     stream::{SplitSink, SplitStream, StreamExt},

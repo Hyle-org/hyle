@@ -1,4 +1,5 @@
-use crate::{bus::BusClientSender, consensus::CommittedConsensusProposal, log_error, model::*};
+use crate::{bus::BusClientSender, consensus::CommittedConsensusProposal, model::*};
+use client_sdk::log_error;
 
 use super::storage::Storage;
 use anyhow::{Context, Result};

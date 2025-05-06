@@ -2,13 +2,11 @@
 
 use crate::bus::BusClientSender;
 use crate::model::*;
-use crate::module_handle_messages;
 use crate::node_state::module::NodeStateEvent;
 use crate::utils::modules::module_bus_client;
 use crate::{
     bus::{command_response::Query, BusMessage},
     genesis::GenesisEvent,
-    log_error,
     mempool::QueryNewCut,
     model::{Cut, Hashed, ValidatorPublicKey},
     p2p::{network::OutboundMessage, P2PCommand},
@@ -16,6 +14,7 @@ use crate::{
 };
 use anyhow::{anyhow, bail, Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
+use client_sdk::{log_error, module_handle_messages};
 use hyle_crypto::BlstCrypto;
 use hyle_crypto::SharedBlstCrypto;
 use hyle_model::utils::TimestampMs;
@@ -73,9 +72,6 @@ pub struct QueryConsensusStakingState {}
 
 impl BusMessage for ConsensusCommand {}
 impl BusMessage for ConsensusEvent {}
-impl BusMessage for ConsensusNetMessage {}
-
-impl<T> BusMessage for SignedByValidator<T> where T: BorshSerialize + BusMessage {}
 
 module_bus_client! {
 struct ConsensusBusClient {
@@ -326,7 +322,7 @@ impl Consensus {
         self.bft_round_state.leader.pending_ticket = Some(ticket);
         #[cfg(not(test))]
         {
-            let command_sender = crate::utils::static_type_map::Pick::<
+            let command_sender = client_sdk::utils::static_type_map::Pick::<
                 broadcast::Sender<ConsensusCommand>,
             >::get(&self.bus)
             .clone();
@@ -836,12 +832,12 @@ pub mod test {
 
     use crate::{
         bus::{bus_client, command_response::CmdRespClient},
-        handle_messages,
         model::Block,
         node_state::module::NodeStateModule,
         rest::RestApi,
         utils::integration_test::NodeIntegrationCtxBuilder,
     };
+    use client_sdk::handle_messages;
     use std::sync::Arc;
 
     use super::*;

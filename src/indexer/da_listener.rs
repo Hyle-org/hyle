@@ -9,15 +9,14 @@ use crate::{
     data_availability::codec::{
         codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequest,
     },
-    log_error,
     model::{BlockHeight, CommonRunContext},
-    module_handle_messages,
     node_state::{metrics::NodeStateMetrics, module::NodeStateEvent, NodeState, NodeStateStore},
     utils::{
         conf::SharedConf,
         modules::{module_bus_client, Module},
     },
 };
+use client_sdk::{log_error, module_handle_messages};
 
 module_bus_client! {
 #[derive(Debug)]

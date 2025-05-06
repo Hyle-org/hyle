@@ -12,6 +12,8 @@ use axum::{
     Json,
 };
 use axum_otel_metrics::HttpMetricsLayer;
+use client_sdk::log_error;
+use client_sdk::module_handle_messages;
 use hyle_model::api::*;
 use hyle_model::*;
 use prometheus::{Encoder, Registry, TextEncoder};
@@ -21,8 +23,8 @@ use tracing::info;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use crate::{bus::SharedMessageBus, module_handle_messages, utils::modules::module_bus_client};
-use crate::{log_error, utils::modules::Module};
+use crate::utils::modules::Module;
+use crate::{bus::SharedMessageBus, utils::modules::module_bus_client};
 
 pub use client_sdk::contract_indexer::AppError;
 pub use client_sdk::rest_client as client;

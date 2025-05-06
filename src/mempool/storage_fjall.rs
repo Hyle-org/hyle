@@ -7,10 +7,8 @@ use fjall::{
 use hyle_model::{LaneId, Signed, SignedByValidator, ValidatorSignature};
 use tracing::info;
 
-use crate::{
-    log_warn,
-    model::{DataProposal, DataProposalHash, Hashed},
-};
+use crate::model::{DataProposal, DataProposalHash, Hashed};
+use client_sdk::log_warn;
 
 use super::{
     storage::{CanBePutOnTop, LaneEntryMetadata, Storage},

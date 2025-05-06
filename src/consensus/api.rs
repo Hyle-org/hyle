@@ -104,7 +104,7 @@ pub async fn get_consensus_staking_state(
 
 impl Clone for RouterState {
     fn clone(&self) -> Self {
-        use crate::utils::static_type_map::Pick;
+        use client_sdk::utils::static_type_map::Pick;
         Self {
             bus: RestBusClient::new(
                 Pick::<BusMetrics>::get(&self.bus).clone(),

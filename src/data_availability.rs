@@ -16,9 +16,7 @@ use crate::{
     bus::{BusClientSender, BusMessage},
     consensus::ConsensusCommand,
     genesis::GenesisEvent,
-    log_error,
     model::*,
-    module_handle_messages,
     p2p::network::{OutboundMessage, PeerEvent},
     utils::{
         conf::SharedConf,
@@ -27,6 +25,7 @@ use crate::{
 };
 use anyhow::{Context, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
+use client_sdk::{log_error, module_handle_messages};
 use core::str;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -429,7 +428,6 @@ pub mod tests {
     #![allow(clippy::indexing_slicing)]
 
     use crate::data_availability::codec::{codec_data_availability, DataAvailabilityRequest};
-    use crate::log_error;
     use crate::node_state::NodeState;
     use crate::{
         bus::BusClientSender,
@@ -438,6 +436,7 @@ pub mod tests {
         node_state::module::{NodeStateBusClient, NodeStateEvent},
         utils::{conf::Conf, integration_test::find_available_port},
     };
+    use client_sdk::log_error;
 
     use super::codec::DataAvailabilityEvent;
     use super::Blocks;

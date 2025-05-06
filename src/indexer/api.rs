@@ -11,8 +11,8 @@ use axum::{
 use sqlx::Row;
 use utoipa::OpenApi;
 
-use crate::log_error;
 use crate::model::*;
+use client_sdk::log_error;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct BlockPagination {

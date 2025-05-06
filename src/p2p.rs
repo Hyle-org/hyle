@@ -2,16 +2,15 @@
 
 use crate::{
     bus::{BusClientSender, BusMessage},
-    log_warn,
     mempool::MempoolNetMessage,
     model::SharedRunContext,
-    module_handle_messages,
     utils::{
         conf::SharedConf,
         modules::{module_bus_client, Module},
     },
 };
 use anyhow::{Context, Error, Result};
+use client_sdk::{log_warn, module_handle_messages};
 use hyle_crypto::SharedBlstCrypto;
 use hyle_model::{ConsensusNetMessage, SignedByValidator, ValidatorPublicKey};
 use hyle_net::tcp::{

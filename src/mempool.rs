@@ -4,9 +4,7 @@ use crate::{
     bus::{command_response::Query, BusClientSender, BusMessage},
     consensus::{CommittedConsensusProposal, ConsensusEvent},
     genesis::GenesisEvent,
-    log_error, log_warn,
     model::*,
-    module_handle_messages,
     node_state::module::NodeStateEvent,
     p2p::network::OutboundMessage,
     utils::{
@@ -15,12 +13,12 @@ use crate::{
         serialize::arc_rwlock_borsh,
     },
 };
-
 use anyhow::{bail, Context, Result};
 use api::RestApiMessage;
 use block_construction::BlockUnderConstruction;
 use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::tcp_client::TcpServerMessage;
+use client_sdk::{log_error, log_warn, module_handle_messages};
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
 use hyle_crypto::{BlstCrypto, SharedBlstCrypto};
 use metrics::MempoolMetrics;
@@ -226,8 +224,6 @@ impl Display for MempoolNetMessage {
 }
 
 impl BusMessage for MempoolNetMessage {}
-impl BusMessage for MempoolBlockEvent {}
-impl BusMessage for MempoolStatusEvent {}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ProcessedDPEvent {

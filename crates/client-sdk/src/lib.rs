@@ -1,7 +1,10 @@
+pub mod bus;
 #[cfg(feature = "indexer")]
 pub mod contract_indexer;
 pub mod helpers;
+pub mod modules;
 #[cfg(feature = "rest")]
 pub mod rest_client;
 pub mod tcp_client;
 pub mod transaction_builder;
+pub mod utils;

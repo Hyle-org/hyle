@@ -5,11 +5,7 @@ pub mod contract_state_indexer;
 pub mod da_listener;
 
 use crate::model::*;
-use crate::{
-    log_error, log_warn, module_handle_messages,
-    node_state::module::NodeStateEvent,
-    utils::modules::{module_bus_client, Module},
-};
+use crate::node_state::module::NodeStateEvent;
 use anyhow::{bail, Context, Error, Result};
 use api::IndexerAPI;
 use axum::{
@@ -20,6 +16,10 @@ use axum::{
     response::IntoResponse,
     routing::get,
     Router,
+};
+use client_sdk::{
+    log_error, log_warn, module_handle_messages,
+    modules::{module_bus_client, Module},
 };
 use futures::{SinkExt, StreamExt};
 use hyle_contract_sdk::TxHash;

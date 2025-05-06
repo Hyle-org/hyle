@@ -2,12 +2,12 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::{
     bus::{bus_client, BusClientSender, BusMessage},
-    handle_messages,
     model::*,
     p2p::network::PeerEvent,
     utils::{conf::SharedConf, modules::Module},
 };
 use anyhow::{Error, Result};
+use client_sdk::handle_messages;
 use client_sdk::{
     contract_states,
     helpers::register_hyle_contract,

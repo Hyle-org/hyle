@@ -110,7 +110,6 @@ sha3 = "0.10.8"
 strum_macros = "0.27.1"
 tracing = "0.1"
 
-anymap = { version = "0.12.1" }
 assertables = { version = "9.5.2" }
 axum = { version = "0.8.3", features = ["ws", "macros"] }
 axum-otel-metrics = { version = "0.10.0" }
@@ -125,7 +124,6 @@ opentelemetry-prometheus = { version = "0.28.0" }
 opentelemetry_sdk = "0.28.0"
 paste = { version = "1.0.15" }
 prometheus = { version = "0.13.4" }
-quote = { version = "1.0.39" }
 rand = { version = "0.8.5" }
 sqlx = { version = "0.8.4", features = [
   "runtime-tokio",
@@ -133,15 +131,9 @@ sqlx = { version = "0.8.4", features = [
   "migrate",
   "chrono",
 ] }
-syn = { version = "2.0.101" }
 tokio = { version = "1.44.2", features = ["full", "tracing"] }
 tokio-util = { version = "0.7.14" }
 tower-http = { version = "0.6.2", features = ["trace", "cors"] }
-tracing-subscriber = { version = "0.3", default-features = false, features = [
-  "env-filter",
-  "fmt",
-  "json",
-] }
 fjall = { version = "2.10.0" }
 
 dhat = { version = "0.3.3", optional = true }
@@ -192,7 +184,7 @@ default = []
 
 turmoil = ["hyle-net/turmoil", "client-sdk/turmoil"]
 
-sp1 = ["hyle-verifiers/sp1"]
+sp1 = ["hyle-verifiers/sp1", "client-sdk/sp1"]
 
 # Disable dependency keyring by default, as it requires libdbus
 keyring = ["hyle-crypto/keyring"]
