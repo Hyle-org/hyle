@@ -24,6 +24,7 @@ pub mod bus_ws_connector;
 pub mod contract_state_indexer;
 pub mod da_listener;
 pub mod prover;
+pub mod rest;
 pub mod websocket;
 
 pub struct CommonRunContext {
