@@ -364,6 +364,15 @@ impl NodeState {
 
         let mut should_try_and_settle = true;
 
+        // For now, reject blob Tx with blobs for unknown contracts.
+        if tx
+            .blobs
+            .iter()
+            .any(|blob| !self.contracts.contains_key(&blob.contract_name))
+        {
+            bail!("Blob Transaction contains blobs for unknown contracts");
+        }
+
         let blobs: Vec<UnsettledBlobMetadata> = tx
             .blobs
             .iter()
@@ -819,6 +828,28 @@ impl NodeState {
                 SideEffect::Delete(contract_name) => {
                     debug!("✏️ Delete {} contract", contract_name);
                     self.contracts.remove(&contract_name);
+
+                    // Time-out all transactions for this contract
+                    while let Some(tx_hash) = self
+                        .unsettled_transactions
+                        .get_next_unsettled_tx(&contract_name)
+                        .cloned()
+                    {
+                        if let Some(popped_tx) = self.unsettled_transactions.remove(&tx_hash) {
+                            debug!("⏳ Timeout tx {} (from contract deletion)", &tx_hash);
+                            block_under_construction
+                                .transactions_events
+                                .entry(tx_hash.clone())
+                                .or_default()
+                                .push(TransactionStateEvent::TimedOut);
+                            block_under_construction
+                                .dp_parent_hashes
+                                .insert(tx_hash.clone(), popped_tx.parent_dp_hash);
+                            block_under_construction
+                                .lane_ids
+                                .insert(tx_hash, popped_tx.tx_context.lane_id);
+                        }
+                    }
 
                     block_under_construction
                         .deleted_contracts
