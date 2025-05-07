@@ -237,6 +237,7 @@ macro_rules! assert_chanmsg_matches {
 }
 
 pub(crate) use assert_chanmsg_matches;
+use assertables::assert_matches;
 pub(crate) use broadcast;
 pub(crate) use build_tuple;
 use futures::future::join_all;
@@ -472,17 +473,20 @@ async fn autobahn_basic_flow() {
         message_matches: ConsensusNetMessage::PrepareVote(_)
     };
 
-    assert_eq!(
+    assert_matches!(
         vote2.msg,
-        ConsensusNetMessage::PrepareVote(consensus_proposal.hashed())
+        ConsensusNetMessage::PrepareVote(Signed { msg: (cp, _), .. })
+        if cp == consensus_proposal.hashed()
     );
-    assert_eq!(
+    assert_matches!(
         vote3.msg,
-        ConsensusNetMessage::PrepareVote(consensus_proposal.hashed())
+        ConsensusNetMessage::PrepareVote(Signed { msg: (cp, _), .. })
+        if cp == consensus_proposal.hashed()
     );
-    assert_eq!(
+    assert_matches!(
         vote4.msg,
-        ConsensusNetMessage::PrepareVote(consensus_proposal.hashed())
+        ConsensusNetMessage::PrepareVote(Signed { msg: (cp, _), .. })
+        if cp == consensus_proposal.hashed()
     );
 
     broadcast! {
@@ -497,17 +501,20 @@ async fn autobahn_basic_flow() {
         message_matches: ConsensusNetMessage::ConfirmAck(_)
     };
 
-    assert_eq!(
+    assert_matches!(
         vote2.msg,
-        ConsensusNetMessage::ConfirmAck(consensus_proposal.hashed())
+        ConsensusNetMessage::ConfirmAck(Signed { msg: (cp, _), .. })
+        if cp == consensus_proposal.hashed()
     );
-    assert_eq!(
+    assert_matches!(
         vote3.msg,
-        ConsensusNetMessage::ConfirmAck(consensus_proposal.hashed())
+        ConsensusNetMessage::ConfirmAck(Signed { msg: (cp, _), .. })
+        if cp == consensus_proposal.hashed()
     );
-    assert_eq!(
+    assert_matches!(
         vote4.msg,
-        ConsensusNetMessage::ConfirmAck(consensus_proposal.hashed())
+        ConsensusNetMessage::ConfirmAck(Signed { msg: (cp, _), .. })
+        if cp == consensus_proposal.hashed()
     );
 
     broadcast! {
@@ -2047,7 +2054,7 @@ async fn autobahn_commit_byzantine_across_views_attempts() {
     broadcast! {
         description: "Follower - Timeout",
         from: node2.consensus_ctx, to: [node0.consensus_ctx, node1.consensus_ctx, node3.consensus_ctx],
-        message_matches: ConsensusNetMessage::Timeout(_, TimeoutKind::PrepareQC(..))
+        message_matches: ConsensusNetMessage::Timeout((_, TimeoutKind::PrepareQC(..)))
     };
     // node 3 won't even timeout, it will process the TC directly.
 

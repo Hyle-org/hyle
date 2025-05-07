@@ -3,7 +3,7 @@ use crate::model::ValidatorPublicKey;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_crypto::BlstCrypto;
-use hyle_model::{ConsensusNetMessage, SignedByValidator};
+use hyle_model::{BlockHeight, ConsensusNetMessage, SignedByValidator};
 use hyle_net::clock::TimestampMsClock;
 use hyle_net::tcp::P2PTcpMessage;
 use serde::{Deserialize, Serialize};
@@ -45,6 +45,7 @@ pub enum PeerEvent {
         name: String,
         pubkey: ValidatorPublicKey,
         da_address: String,
+        height: BlockHeight
     },
 }
 
@@ -58,7 +59,7 @@ impl Display for NetMessage {
             }
             NetMessage::ConsensusMessage(msg) => {
                 _ = write!(f, "NetMessage::{} ", enum_variant);
-                write!(f, "{}", msg)
+                write!(f, "{} (sent at {})", msg.msg, msg.header.msg.timestamp)
             }
         }
     }
@@ -81,7 +82,7 @@ impl Display for NetMessage {
 )]
 pub enum NetMessage {
     MempoolMessage(MsgWithHeader<MempoolNetMessage>),
-    ConsensusMessage(SignedByValidator<ConsensusNetMessage>),
+    ConsensusMessage(MsgWithHeader<ConsensusNetMessage>),
 }
 
 hyle_net::p2p_server_mod! {
@@ -101,8 +102,8 @@ impl From<MsgWithHeader<MempoolNetMessage>> for NetMessage {
     }
 }
 
-impl From<SignedByValidator<ConsensusNetMessage>> for NetMessage {
-    fn from(msg: SignedByValidator<ConsensusNetMessage>) -> Self {
+impl From<MsgWithHeader<ConsensusNetMessage>> for NetMessage {
+    fn from(msg: MsgWithHeader<ConsensusNetMessage>) -> Self {
         NetMessage::ConsensusMessage(msg)
     }
 }

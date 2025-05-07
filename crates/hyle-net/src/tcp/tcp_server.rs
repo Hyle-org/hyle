@@ -74,6 +74,7 @@ where
         loop {
             tokio::select! {
                 Ok((stream, socket_addr)) = self.tcp_listener.accept() => {
+
                     let codec = match self.max_frame_length {
                         Some(len) => TcpMessageCodec::<Codec>::new(len),
                         None => TcpMessageCodec::<Codec>::default()
@@ -114,6 +115,7 @@ where
         let mut tasks = vec![];
 
         for (name, socket) in self.sockets.iter_mut() {
+            debug!(" - to {}", name);
             tasks.push(
                 socket
                     .sender
@@ -150,7 +152,8 @@ where
         // Send the message to all targets concurrently and wait for them to finish
         let all_sent = {
             let mut tasks = vec![];
-            for (name, socket) in self.sockets.iter_mut() {
+            for (name, socket) in self.sockets.iter_mut().filter(|s| socket_addrs.contains(s.0)) {
+                debug!(" - to {}", name);
                 tasks.push(
                     socket
                         .sender
@@ -388,6 +391,85 @@ pub mod tests {
             client.receiver.try_next().await.unwrap().unwrap(),
             TcpMessage::Ping
         );
+
+        Ok(())
+    }
+    
+    #[tokio::test]
+    async fn tcp_broadcast() -> Result<()> {
+        let mut server = codec_data_availability::start_server(0).await?;
+
+        let mut client1 = codec_data_availability::connect("me1".to_string(), format!("0.0.0.0:{}", server.local_addr().unwrap().port())).await?;
+        _ = tokio::time::timeout(Duration::from_millis(200), server.listen_next()).await;
+
+        let mut client2 = codec_data_availability::connect("me2".to_string(), format!("0.0.0.0:{}", server.local_addr().unwrap().port())).await?;
+        _ = tokio::time::timeout(Duration::from_millis(200), server.listen_next()).await;
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        server.broadcast(DataAvailabilityEvent::SignedBlock("test".to_string())).await;
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let res1 = client1.receiver.try_next().await;
+        assert!(res1.is_ok());
+        assert_eq!(res1.unwrap().unwrap(), TcpMessage::Data(DataAvailabilityEvent::SignedBlock("test".to_string())));
+        let res2 = client2.receiver.try_next().await;
+        assert!(res2.is_ok());
+        assert_eq!(res2.unwrap().unwrap(), TcpMessage::Data(DataAvailabilityEvent::SignedBlock("test".to_string())));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn tcp_send_parallel() -> Result<()> {
+        let mut server = codec_data_availability::start_server(0).await?;
+
+        let mut client1 = codec_data_availability::connect("me1".to_string(), format!("0.0.0.0:{}", server.local_addr().unwrap().port())).await?;
+        _ = tokio::time::timeout(Duration::from_millis(200), server.listen_next()).await;
+
+        let client1_addr = server.connected_clients().clone().first().unwrap().clone();
+
+        let mut client2 = codec_data_availability::connect("me2".to_string(), format!("0.0.0.0:{}", server.local_addr().unwrap().port())).await?;
+        _ = tokio::time::timeout(Duration::from_millis(200), server.listen_next()).await;
+        let client2_addr = server.connected_clients().clone().into_iter().filter(|addr| addr != &client1_addr).next_back().unwrap();
+        
+        server.send_parallel(vec![client2_addr.to_string()], DataAvailabilityEvent::SignedBlock("test".to_string())).await;
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let res1 = tokio::time::timeout(Duration::from_millis(200), client1.receiver.try_next()).await;
+        assert!(res1.is_err());
+
+        let res2 = client2.receiver.try_next().await;
+        assert!(res2.is_ok());
+        assert_eq!(res2.unwrap().unwrap(), TcpMessage::Data(DataAvailabilityEvent::SignedBlock("test".to_string())));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn tcp_send() -> Result<()> {
+        let mut server = codec_data_availability::start_server(0).await?;
+
+        let mut client1 = codec_data_availability::connect("me1".to_string(), format!("0.0.0.0:{}", server.local_addr().unwrap().port())).await?;
+        _ = tokio::time::timeout(Duration::from_millis(200), server.listen_next()).await;
+        let client1_addr = server.connected_clients().first().unwrap().clone();
+
+        let mut client2 = codec_data_availability::connect("me2".to_string(), format!("0.0.0.0:{}", server.local_addr().unwrap().port())).await?;
+        _ = tokio::time::timeout(Duration::from_millis(200), server.listen_next()).await;
+        let client2_addr = server.connected_clients().clone().into_iter().filter(|addr| addr != &client1_addr).next_back().unwrap();
+        
+        _ = server.send(client2_addr.to_string(), DataAvailabilityEvent::SignedBlock("test".to_string())).await;
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let res1 = tokio::time::timeout(Duration::from_millis(200), client1.receiver.try_next()).await;
+        assert!(res1.is_err());
+
+        let res2 = client2.receiver.try_next().await;
+        assert!(res2.is_ok());
+        assert_eq!(res2.unwrap().unwrap(), TcpMessage::Data(DataAvailabilityEvent::SignedBlock("test".to_string())));
 
         Ok(())
     }
