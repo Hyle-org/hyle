@@ -2,6 +2,7 @@ use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
     sync::Arc,
+    task::Poll,
     time::Duration,
 };
 
@@ -18,6 +19,7 @@ use tracing::{debug, error, info, trace, warn};
 use crate::{
     clock::TimestampMsClock,
     metrics::P2PMetrics,
+    ordered_join_set::OrderedJoinSet,
     tcp::{tcp_client::TcpClient, Handshake},
 };
 
@@ -62,6 +64,13 @@ pub struct PeerInfo {
 
 type HandShakeJoinSet<Data> = JoinSet<(String, anyhow::Result<TcpClient<Data, Data>>, Canal)>;
 
+type CanalJob = (HashSet<ValidatorPublicKey>, Result<Vec<u8>, std::io::Error>);
+type CanalJobResult = (
+    Canal,
+    HashSet<ValidatorPublicKey>,
+    Result<Vec<u8>, std::io::Error>,
+);
+
 #[derive(Debug)]
 pub enum HandshakeOngoing {
     TcpClientStartedAt(TimestampMs, AbortHandle),
@@ -90,6 +99,8 @@ where
     pub peers: HashMap<ValidatorPublicKey, PeerInfo>,
     handshake_clients_tasks: HandShakeJoinSet<P2PTcpMessage<Msg>>,
     peers_ping_ticker: Interval,
+    // Serialization of messages can take time so we offload them.
+    canal_jobs: HashMap<Canal, OrderedJoinSet<CanalJob>>,
     _phantom: std::marker::PhantomData<Msg>,
 }
 
@@ -104,6 +115,7 @@ where
         max_frame_length: Option<usize>,
         node_p2p_public_address: String,
         node_da_public_address: String,
+        canals: HashSet<Canal>,
     ) -> Result<Self, anyhow::Error> {
         Ok(Self {
             crypto,
@@ -118,12 +130,37 @@ where
             peers: HashMap::new(),
             handshake_clients_tasks: JoinSet::new(),
             peers_ping_ticker: tokio::time::interval(std::time::Duration::from_secs(2)),
+            canal_jobs: canals
+                .into_iter()
+                .map(|canal| (canal, OrderedJoinSet::new()))
+                .collect(),
             _phantom: std::marker::PhantomData,
         })
     }
 
+    fn poll_hashmap(
+        jobs: &mut HashMap<Canal, OrderedJoinSet<CanalJob>>,
+        cx: &mut std::task::Context,
+    ) -> Poll<CanalJobResult> {
+        for (canal, jobs) in jobs.iter_mut() {
+            if let Poll::Ready(Some(result)) = jobs.poll_join_next(cx) {
+                match result {
+                    Ok((p, r)) => {
+                        return Poll::Ready((canal.clone(), p, r));
+                    }
+                    Err(e) => {
+                        warn!("Error in canal jobs: {:?}", e);
+                    }
+                }
+            }
+        }
+        Poll::Pending
+    }
+
     // TODO: parse as Msg
     pub async fn listen_next(&mut self) -> P2PTcpEvent<P2PTcpMessage<Msg>> {
+        // Await either of the joinsets in the self.canal_jobs hashmap
+
         loop {
             tokio::select! {
                 Some(tcp_event) = self.tcp_server.listen_next() => {
@@ -148,6 +185,14 @@ where
                         }
                     }
                 },
+                (canal, pubkeys, data) = std::future::poll_fn(|cx| Self::poll_hashmap(&mut self.canal_jobs, cx)) => {
+                    let Ok(msg) = data else {
+                        warn!("Error in canal jobs: {:?}", data);
+                        continue
+                    };
+                    // TODO: handle errors?
+                    self.actually_send_to(pubkeys, canal, msg).await;
+                }
                 _ = self.peers_ping_ticker.tick() => {
                     return P2PTcpEvent::PingPeers;
                 }
@@ -606,6 +651,18 @@ where
         canal: Canal,
         msg: Msg,
     ) -> anyhow::Result<()> {
+        if let Some(jobs) = self.canal_jobs.get_mut(&canal) {
+            if !jobs.is_empty() {
+                jobs.spawn(async move {
+                    (
+                        HashSet::from_iter(std::iter::once(validator_pub_key)),
+                        borsh::to_vec(&P2PTcpMessage::Data(msg)),
+                    )
+                });
+                return Ok(());
+            }
+        }
+
         let (pub_addr, peer_info) = match self.peers.get(&validator_pub_key).and_then(|peer| {
             let addr = peer.node_connection_data.p2p_public_address.clone();
             peer.canals.get(&canal).map(|c| (addr, c))
@@ -641,45 +698,34 @@ where
         Ok(())
     }
 
-    pub async fn broadcast(
-        &mut self,
-        msg: Msg,
-        canal: Canal,
-    ) -> HashMap<ValidatorPublicKey, anyhow::Error> {
-        let peer_addr_to_pubkey: HashMap<String, ValidatorPublicKey> = self
-            .peers
-            .iter()
-            .filter_map(|(pubkey, peer)| {
-                peer.canals
-                    .get(&canal)
-                    .map(|socket| (socket.socket_addr.clone(), pubkey.clone()))
-            })
-            .collect();
-
-        let res = self
-            .tcp_server
-            .send_parallel(
-                peer_addr_to_pubkey.keys().cloned().collect(),
-                P2PTcpMessage::Data(msg),
-            )
-            .await;
-
-        HashMap::from_iter(res.into_iter().filter_map(|(k, v)| {
-            peer_addr_to_pubkey.get(&k).map(|pubkey| {
-                error!("Error sending message to {} during broadcast: {}", k, v);
-                if let Err(e) = self.try_start_connection_for_peer(pubkey, canal.clone()) {
-                    warn!("Problem when triggering re-handshake after message sending error with peer {}/{}: {}", pubkey, canal, e);
-                }
-                (pubkey.clone(), v)
-            })
-        }))
+    pub fn broadcast(&mut self, msg: Msg, canal: Canal) {
+        let Some(jobs) = self.canal_jobs.get_mut(&canal) else {
+            error!("Canal {:?} does not exist in P2P server", canal);
+            return;
+        };
+        let peers = self.peers.keys().cloned().collect();
+        jobs.spawn(async move { (peers, borsh::to_vec(&P2PTcpMessage::Data(msg))) });
     }
 
-    pub async fn broadcast_only_for(
+    pub fn broadcast_only_for(
         &mut self,
         only_for: &HashSet<ValidatorPublicKey>,
         canal: Canal,
         msg: Msg,
+    ) {
+        let Some(jobs) = self.canal_jobs.get_mut(&canal) else {
+            error!("Canal {:?} does not exist in P2P server", canal);
+            return;
+        };
+        let peers = only_for.clone();
+        jobs.spawn(async move { (peers, borsh::to_vec(&P2PTcpMessage::Data(msg))) });
+    }
+
+    async fn actually_send_to(
+        &mut self,
+        only_for: HashSet<ValidatorPublicKey>,
+        canal: Canal,
+        msg: Vec<u8>,
     ) -> HashMap<ValidatorPublicKey, anyhow::Error> {
         let peer_addr_to_pubkey: HashMap<String, ValidatorPublicKey> = self
             .peers
@@ -697,10 +743,7 @@ where
 
         let res = self
             .tcp_server
-            .send_parallel(
-                peer_addr_to_pubkey.keys().cloned().collect(),
-                P2PTcpMessage::Data(msg),
-            )
+            .raw_send_parallel(peer_addr_to_pubkey.keys().cloned().collect(), msg)
             .await;
 
         HashMap::from_iter(res.into_iter().filter_map(|(k, v)| {
@@ -768,7 +811,8 @@ pub mod tests {
             port1,
             None,
             format!("127.0.0.1:{port1}"),
-            "127.0.0.1:4321".into(), // send some dummy address for DA
+            "127.0.0.1:4321".into(), // send some dummy address for DA,
+            HashSet::from_iter(vec![Canal::new("A")]),
         )
         .await?;
         let p2p_server2 = P2PServer::new(
@@ -778,6 +822,7 @@ pub mod tests {
             None,
             format!("127.0.0.1:{port2}"),
             "127.0.0.1:4321".into(), // send some dummy address for DA
+            HashSet::from_iter(vec![Canal::new("A")]),
         )
         .await?;
 
@@ -1024,9 +1069,7 @@ pub mod tests {
         _ = receive_event(&mut p2p_server1, "Should be a Closed event").await;
 
         // Canal A (1 -> 2)
-        p2p_server1
-            .broadcast(TestMessage("blabla".to_string()), Canal::new("A"))
-            .await;
+        p2p_server1.broadcast(TestMessage("blabla".to_string()), Canal::new("A"));
 
         tokio::time::sleep(Duration::from_millis(100)).await;
 
@@ -1051,9 +1094,7 @@ pub mod tests {
         assert_eq!(data, TestMessage("blabla".to_string()));
 
         // Canal B (1 -> 2)
-        p2p_server1
-            .broadcast(TestMessage("blabla2".to_string()), Canal::new("B"))
-            .await;
+        p2p_server1.broadcast(TestMessage("blabla2".to_string()), Canal::new("B"));
 
         let evt = receive_event(&mut p2p_server2, "Should be a TestMessage event").await?;
 
@@ -1076,9 +1117,7 @@ pub mod tests {
         assert_eq!(data, TestMessage("blabla2".to_string()));
 
         // Canal A (2 -> 1)
-        p2p_server2
-            .broadcast(TestMessage("babal".to_string()), Canal::new("A"))
-            .await;
+        p2p_server2.broadcast(TestMessage("babal".to_string()), Canal::new("A"));
 
         let evt = receive_event(&mut p2p_server1, "Should be a TestMessage event").await?;
 
@@ -1101,9 +1140,7 @@ pub mod tests {
         assert_eq!(data, TestMessage("babal".to_string()));
 
         // Canal B (2 -> 1)
-        p2p_server2
-            .broadcast(TestMessage("babal2".to_string()), Canal::new("B"))
-            .await;
+        p2p_server2.broadcast(TestMessage("babal2".to_string()), Canal::new("B"));
 
         let evt = receive_event(&mut p2p_server1, "Should be a TestMessage event").await?;
 

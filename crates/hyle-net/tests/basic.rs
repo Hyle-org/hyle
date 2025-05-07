@@ -74,6 +74,7 @@ async fn setup_basic_host(
         None,
         format!("{}:{}", peer, 9090),
         format!("{}:{}", peer, 4141),
+        HashSet::from_iter(std::iter::once(Canal::new("A"))),
     )
     .await?;
 
@@ -169,6 +170,7 @@ async fn setup_drop_host(
         None,
         format!("{}:{}", peer, 9090),
         format!("{}:{}", peer, 4141),
+        HashSet::from_iter(std::iter::once(Canal::new("A"))),
     )
     .await?;
 
@@ -202,7 +204,7 @@ async fn setup_drop_host(
                 _ = p2p.handle_p2p_tcp_event(tcp_event).await;
             }
             _ = interval_broadcast.tick() => {
-                p2p.broadcast(Msg(10), Canal::new("A")).await;
+                p2p.broadcast(Msg(10), Canal::new("A"));
             }
         }
     }
@@ -220,6 +222,7 @@ async fn setup_drop_client(
         None,
         format!("{}:{}", peer, 9090),
         format!("{}:{}", peer, 4141),
+        HashSet::from_iter(std::iter::once(Canal::new("A"))),
     )
     .await?;
 
@@ -255,7 +258,7 @@ async fn setup_drop_client(
                 _ = p2p.handle_p2p_tcp_event(tcp_event).await;
             }
             _ = interval_broadcast.tick() => {
-                p2p.broadcast(Msg(10), Canal::new("A")).await;
+                p2p.broadcast(Msg(10), Canal::new("A"));
             }
         }
     }
