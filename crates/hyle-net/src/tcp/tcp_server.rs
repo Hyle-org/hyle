@@ -12,7 +12,7 @@ use futures::{
     FutureExt, SinkExt, StreamExt,
 };
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio_util::codec::{Decoder, Encoder, Framed};
+use tokio_util::codec::{Decoder, Encoder, Framed, FramedRead};
 
 use crate::{
     clock::TimestampMsClock,
@@ -73,11 +73,15 @@ where
     pub async fn listen_next(&mut self) -> Option<TcpEvent<Req>> {
         loop {
             tokio::select! {
-                Ok((stream, socket_addr)) = self.tcp_listener.accept() => {
+                Ok((mut stream, socket_addr)) = self.tcp_listener.accept() => {
+
+                    // let (receiver, sender) = stream.split();
+                    // let framed_receiver = Framed::
                     let codec = match self.max_frame_length {
                         Some(len) => TcpMessageCodec::<Codec>::new(len),
                         None => TcpMessageCodec::<Codec>::default()
                     };
+                    // let test = FramedRead::new(receiver, codec);
 
                     let (sender, receiver) = Framed::new(stream, codec).split();
                     self.setup_stream(sender, receiver, &socket_addr.to_string());

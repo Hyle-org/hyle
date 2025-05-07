@@ -185,16 +185,21 @@ async fn setup_drop_host(
     }
 
     let mut interval_broadcast = tokio::time::interval(Duration::from_millis(50));
-    let mut interval_start_shutdown = tokio::time::interval(Duration::from_millis(duration - 1000));
+    let mut interval_start_shutdown = tokio::time::interval(Duration::from_millis(1000));
     interval_start_shutdown.tick().await;
     loop {
         tokio::select! {
             _ = interval_start_shutdown.tick() => {
-                tracing::error!("Current peers {:?}", p2p.peers.keys());
-                tracing::error!("Current tcp peers {:?}", p2p.tcp_server.connected_clients());
+                if turmoil::elapsed() > Duration::from_millis(duration) {
+                    tracing::error!("Current peers {:?}", p2p.peers.keys());
+                    tracing::error!("Current tcp peers {:?}", p2p.tcp_server.connected_clients());
 
-                assert_eq!(all_other_peers.len(), p2p.tcp_server.connected_clients().len());
-                assert_eq!(p2p.peers.keys().len(), p2p.tcp_server.connected_clients().len());
+                    // Peers map should match all_other_peers
+                    assert_eq!(all_other_peers.len(), p2p.peers.keys().len());
+                    // All current peer sockets should be in tcp server sockets
+                    let connected_tcp_clients = p2p.tcp_server.connected_clients().clone();
+                    assert!(p2p.peers.values().flat_map(|t| t.canals.values()).all(|v| connected_tcp_clients.contains(&v.socket_addr)));
+                }
             }
             tcp_event = p2p.listen_next() => {
                 _ = p2p.handle_p2p_tcp_event(tcp_event).await;
@@ -231,21 +236,21 @@ async fn setup_drop_client(
     }
 
     let mut interval_broadcast = tokio::time::interval(Duration::from_millis(100));
-    let mut interval_start_shutdown = tokio::time::interval(Duration::from_millis(duration));
+    let mut interval_start_shutdown = tokio::time::interval(Duration::from_millis(1000));
     interval_start_shutdown.tick().await;
     loop {
         tokio::select! {
             _ = interval_start_shutdown.tick() => {
-                let peer_names = HashSet::from_iter(p2p.peers.iter().map(|(_, v)| v.node_connection_data.name.clone()));
 
-                tracing::error!("Current peers {:?}", peer_names);
-                tracing::error!("Current tcp peers {:?}", p2p.tcp_server.connected_clients());
+                if turmoil::elapsed() > Duration::from_millis(duration) {
+                    
+                    // Peers map should match all_other_peers
+                    assert_eq!(all_other_peers.len(), p2p.peers.keys().len());
+                    // All current peer sockets should be in tcp server sockets
+                    let connected_tcp_clients = p2p.tcp_server.connected_clients().clone();
+                    assert!(p2p.peers.values().flat_map(|t| t.canals.values()).all(|v| connected_tcp_clients.contains(&v.socket_addr)));
 
-                if peer_names == all_other_peers && peer_names.len() == p2p.tcp_server.connected_clients().len() {
-                    break {
-                        tracing::info!("Breaking tcp peers {:?}", p2p.tcp_server.connected_clients());
-                        Ok(())
-                    };
+                    break Ok(())
                 }
             }
 

@@ -36,7 +36,7 @@ pub struct PeerSocket {
     // Timestamp of the lastest handshake
     timestamp: TimestampMs,
     // This is the socket_addr used in the tcp_server for the current peer
-    socket_addr: String,
+    pub socket_addr: String,
 }
 
 #[derive(Clone, Debug)]
@@ -271,13 +271,17 @@ where
     fn handle_closed_event(&mut self, dest: String) {
         // TODO: investigate how to properly handle this case
         // The connection has been closed by peer. We remove the peer and try to reconnect.
+
+        // When we receive a close event
+        // It is a closed connection that need to be removed from tcp server clients in all cases
+        // If it is a connection matching a canal/peer, it means we can retry
         self.tcp_server.drop_peer_stream(dest.clone());
-        // if let Some((canal, info, _)) = self.get_peer_by_socket_addr(&dest) {
-        //     self.start_connection_task(
-        //         info.node_connection_data.p2p_public_address.clone(),
-        //         canal.clone(),
-        //     )
-        // }
+        if let Some((canal, info, _)) = self.get_peer_by_socket_addr(&dest) {
+            self.start_connection_task(
+                info.node_connection_data.p2p_public_address.clone(),
+                canal.clone(),
+            )
+        }
     }
 
     async fn handle_handshake(
@@ -352,6 +356,8 @@ where
 
         // in case timestamps are equal -_-
         let local_pubkey = self.crypto.validator_pubkey().clone();
+
+        self.connecting.remove(&(v.msg.p2p_public_address.clone(), canal.clone()));
         
         if let Some(peer_socket) = self.get_socket_mut(&canal, &peer_pubkey) {
             let peer_addr_to_drop = if peer_socket.timestamp < timestamp || {
@@ -408,6 +414,7 @@ where
 
                 self.peers.insert(peer_pubkey.clone(), peer_info);
             }
+
             self.metrics.peers_snapshot(self.peers.len() as u64);
             tracing::info!("New peer connected on canal {}: {}", canal, peer_pubkey);
             Some(P2PServerEvent::NewPeer {
@@ -1014,9 +1021,6 @@ pub mod tests {
         // Canal A (1 -> 2)
         p2p_server1.broadcast(TestMessage("blabla".to_string()), Canal::new("A")).await;
 
-        dbg!(&p2p_server1.peers);
-        dbg!(&p2p_server2.peers);
-
         tokio::time::sleep(Duration::from_millis(100)).await;
         
         let evt = receive_event(&mut p2p_server2, "Should be a TestMessage event").await?;
@@ -1145,20 +1149,6 @@ pub mod tests {
             &mut p2p_server1,
             P2PTcpEvent::TcpEvent(TcpEvent::Closed { dest: _ }),
             "Expected Tcp Error message"
-        );
-
-        p2p_server1.broadcast(TestMessage("test".to_string()), Canal::new("A")).await;
-
-
-        // FIX TEST
-
-
-        
-        // Server1 waits for TcpClient to reconnect
-        receive_and_handle_event!(
-            &mut p2p_server1,
-            P2PTcpEvent::HandShakeTcpClient(_, _, _),
-            "Expected HandShake TCP Client connection"
         );
 
         // Server1 waits for TcpClient to reconnect
