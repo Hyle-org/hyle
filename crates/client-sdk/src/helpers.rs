@@ -99,7 +99,6 @@ pub mod risc0 {
 
 #[cfg(feature = "sp1")]
 pub mod sp1 {
-    use anyhow::Context;
     use sp1_sdk::{EnvProver, ProverClient, SP1ProvingKey, SP1Stdin, SP1VerifyingKey};
 
     use super::*;
@@ -138,11 +137,6 @@ pub mod sp1 {
                 //.compressed()
                 .run()
                 .expect("failed to generate proof");
-
-            let hyle_output = borsh::from_slice::<HyleOutput>(proof.public_values.as_slice())
-                .context("Failed to extract HyleOuput from SP1 proof")?;
-
-            check_output(&hyle_output)?;
 
             let encoded_receipt = bincode::serialize(&proof)?;
             Ok(ProofData(encoded_receipt))
@@ -252,16 +246,4 @@ pub mod test {
         };
         Ok(hyle_output)
     }
-}
-
-#[cfg(feature = "sp1")]
-fn check_output(output: &HyleOutput) -> Result<()> {
-    if !output.success {
-        let program_error = std::str::from_utf8(&output.program_outputs).unwrap();
-        anyhow::bail!(
-            "\x1b[91mExecution failed ! Program output: {}\x1b[0m",
-            program_error
-        );
-    }
-    Ok(())
 }

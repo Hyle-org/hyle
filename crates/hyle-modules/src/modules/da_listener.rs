@@ -87,8 +87,9 @@ impl DAListener {
         &self,
         block_height: BlockHeight,
     ) -> Result<codec_data_availability::Client> {
-        let mut client = codec_data_availability::connect(
+        let mut client = codec_data_availability::connect_with_opts(
             "raw_da_listener".to_string(),
+            Some(1024 * 1024 * 1024),
             self.config.da_read_from.clone(),
         )
         .await?;
