@@ -3,7 +3,7 @@ use crate::model::ValidatorPublicKey;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_crypto::BlstCrypto;
-use hyle_model::{ConsensusNetMessage, SignedByValidator};
+use hyle_model::{BlockHeight, ConsensusNetMessage, SignedByValidator};
 use hyle_net::clock::TimestampMsClock;
 use hyle_net::tcp::P2PTcpMessage;
 use serde::{Deserialize, Serialize};
@@ -45,6 +45,7 @@ pub enum PeerEvent {
         name: String,
         pubkey: ValidatorPublicKey,
         da_address: String,
+        height: BlockHeight
     },
 }
 

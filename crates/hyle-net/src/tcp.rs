@@ -64,6 +64,7 @@ impl Display for Canal {
 pub struct NodeConnectionData {
     pub version: u16,
     pub name: String,
+    pub current_height: u64,
     pub p2p_public_address: String,
     pub da_public_address: String,
     // TODO: add known peers
