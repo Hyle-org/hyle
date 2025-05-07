@@ -64,6 +64,11 @@ async fn main() -> Result<()> {
         None
     };
 
+    #[cfg(feature = "sp1")]
+    {
+        hyle_verifiers::sp1_4::init();
+    }
+
     log_error!(
         hyle::entrypoint::main_process(config, Some(crypto)).await,
         "Error running hyle"
