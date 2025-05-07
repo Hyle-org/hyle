@@ -196,13 +196,23 @@ pub mod noir {
 #[cfg(feature = "sp1")]
 pub mod sp1_4 {
     use super::*;
+    use once_cell::sync::Lazy;
+
+    static SP1_CLIENT: Lazy<sp1_sdk::EnvProver> = Lazy::new(|| {
+        tracing::trace!("Setup sp1 prover client from env");
+        ProverClient::from_env()
+    });
+
+    pub fn init() {
+        tracing::info!("Initializing sp1 verifier");
+        let _client = &*SP1_CLIENT;
+    }
 
     pub fn verify(
         proof_bin: &ProofData,
         verification_key: &ProgramId,
     ) -> Result<Vec<HyleOutput>, Error> {
-        // Setup the prover client.
-        let client = ProverClient::from_env();
+        let client = &*SP1_CLIENT;
 
         let proof: SP1ProofWithPublicValues =
             bincode::deserialize(&proof_bin.0).context("Error while decoding SP1 proof.")?;
@@ -212,17 +222,27 @@ pub mod sp1_4 {
             serde_json::from_slice(&verification_key.0).context("Invalid SP1 image ID")?;
 
         // Verify the proof.
+        tracing::trace!("Verifying SP1 proof");
         client
             .verify(&proof, &vk)
             .context("SP1 proof verification failed")?;
 
-        // TODO: support multi-output proofs.
-        let hyle_output = borsh::from_slice::<HyleOutput>(proof.public_values.as_slice())
-            .context("Failed to extract HyleOuput from SP1 proof")?;
+        tracing::trace!("Extract HyleOutput");
+        let hyle_outputs =
+            match borsh::from_slice::<Vec<HyleOutput>>(proof.public_values.as_slice()) {
+                Ok(outputs) => outputs,
+                Err(_) => {
+                    debug!("Failed to decode Vec<HyleOutput>, trying to decode as HyleOutput");
+                    vec![
+                        borsh::from_slice::<HyleOutput>(proof.public_values.as_slice())
+                            .context("Failed to extract HyleOuput from SP1 proof")?,
+                    ]
+                }
+            };
 
         tracing::info!("✅ SP1 proof verified.",);
 
-        Ok(vec![hyle_output])
+        Ok(hyle_outputs)
     }
 
     pub fn validate_program_id(program_id: &ProgramId) -> Result<(), Error> {

@@ -11,6 +11,7 @@ use crate::{
     },
     utils::{
         conf::{P2pMode, SharedConf},
+        ordered_join_set::OrderedJoinSet,
         serialize::arc_rwlock_borsh,
     },
 };
@@ -37,7 +38,7 @@ use std::{
     time::Duration,
 };
 use storage::{LaneEntryMetadata, Storage};
-use tokio::task::{JoinHandle, JoinSet};
+use tokio::task::JoinSet;
 use verify_tx::DataProposalVerdict;
 // Pick one of the two implementations
 // use storage_memory::LanesStorage;
@@ -100,9 +101,7 @@ pub struct MempoolStore {
     // TODO: implement serialization, probably with a custom future that yields the unmodified Tx
     // on cancellation
     #[borsh(skip)]
-    processing_txs: VecDeque<JoinHandle<Result<Transaction>>>,
-    #[borsh(skip)]
-    notify_new_tx_to_process: tokio::sync::Notify,
+    processing_txs: OrderedJoinSet<Result<Transaction>>,
     waiting_dissemination_txs: Vec<Transaction>,
     #[borsh(skip)]
     own_data_proposal_in_preparation: JoinSet<(DataProposalHash, DataProposal)>,
@@ -111,7 +110,7 @@ pub struct MempoolStore {
 
     // verify_tx.rs
     #[borsh(skip)]
-    processing_dps: JoinSet<Result<ProcessedDPEvent>>,
+    processing_dps: OrderedJoinSet<Result<ProcessedDPEvent>>,
     #[borsh(skip)]
     cached_dp_votes: HashMap<(LaneId, DataProposalHash), DataProposalVerdict>,
 
@@ -337,7 +336,10 @@ impl Mempool {
             Duration::from_millis(500),
         );
         let mut new_dp_timer = tokio::time::interval(tick_interval);
-        let mut disseminate_timer = tokio::time::interval(Duration::from_secs(3));
+        // We always disseminate new data proposals, so we can run the re-dissemination timer
+        // infrequently, as it will only be useful if we had a network issue that lead
+        // to a PoDA not being created.
+        let mut disseminate_timer = tokio::time::interval(Duration::from_secs(15));
         new_dp_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         disseminate_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
@@ -384,29 +386,7 @@ impl Mempool {
                 }
             }
             // own_lane.rs code below
-            // This is inlined to avoid double-self mutable borrow.
-            // Essentially we just wait for a tx to appear in processing_txs.
-            tx = async {
-                loop {
-                    if self
-                        .inner.processing_txs
-                        .front()
-                        .is_some_and(|jh| jh.is_finished())
-                    {
-                        #[allow(clippy::unwrap_used, reason = "checked above")]
-                        let processing_tx = self.inner.processing_txs.pop_front().unwrap();
-                        match processing_tx.await {
-                            Err(e) => {
-                                tracing::error!("Error joining task: {:?}", e);
-                                continue;
-                            }
-                            Ok(els) => return els,
-                        }
-                    } else {
-                        self.inner.notify_new_tx_to_process.notified().await;
-                    }
-                }
-            } => {
+            Some(Ok(tx)) = self.inner.processing_txs.join_next() => {
                 match tx {
                     Ok(tx) => {
                         let _ = log_error!(self.on_new_tx(tx), "Handling tx in Mempool");
