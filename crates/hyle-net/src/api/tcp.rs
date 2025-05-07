@@ -1,3 +1,4 @@
+use crate::tcp::{tcp_client::TcpClient, tcp_server::TcpServer};
 use borsh::{BorshDeserialize, BorshSerialize};
 use sdk::Transaction;
 
@@ -8,8 +9,5 @@ pub enum TcpServerMessage {
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
 pub struct TcpServerResponse;
 
-crate::tcp_client_server! {
-    pub TcpServer,
-    request: crate::api::tcp::TcpServerMessage,
-    response: crate::api::tcp::TcpServerResponse
-}
+pub type TcpApiServer = TcpServer<TcpServerMessage, TcpServerResponse>;
+pub type TcpApiClient = TcpClient<TcpServerMessage, TcpServerResponse>;

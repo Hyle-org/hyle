@@ -15,9 +15,7 @@ use hyle_net::tcp::{
     p2p_server::{P2PServer, P2PServerEvent},
     Canal,
 };
-use network::{
-    p2p_server_consensus_mempool, MsgWithHeader, NetMessage, OutboundMessage, PeerEvent,
-};
+use network::{MsgWithHeader, NetMessage, OutboundMessage, PeerEvent};
 use tracing::{info, trace, warn};
 
 pub mod network;
@@ -68,7 +66,7 @@ impl P2P {
     }
 
     pub async fn p2p_server(&mut self) -> Result<()> {
-        let mut p2p_server = p2p_server_consensus_mempool::start_server(
+        let mut p2p_server = P2PServer::new(
             self.crypto.clone(),
             self.config.id.clone(),
             self.config.p2p.server_port,
@@ -182,10 +180,7 @@ impl P2P {
 
     async fn handle_failed_send(
         &self,
-        p2p_server: &mut P2PServer<
-            p2p_server_consensus_mempool::codec_tcp::ServerCodec,
-            NetMessage,
-        >,
+        p2p_server: &mut P2PServer<NetMessage>,
         validator_id: ValidatorPublicKey,
         _msg: NetMessage,
         error: Error,
