@@ -3209,6 +3209,7 @@ dependencies = [
  "hex",
  "hyle-crypto",
  "hyle-model",
+ "once_cell",
  "rand 0.9.1",
  "risc0-zkvm",
  "secp256k1",
