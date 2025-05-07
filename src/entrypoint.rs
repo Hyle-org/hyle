@@ -317,9 +317,9 @@ async fn common_main(
         let router = common_run_ctx
             .router
             .lock()
-            .expect("Context router should be available")
+            .expect("Context router should be available.")
             .take()
-            .expect("Context router should be available");
+            .expect("Context router should be available.");
         let openapi = common_run_ctx
             .openapi
             .lock()
