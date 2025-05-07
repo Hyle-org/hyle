@@ -33,6 +33,22 @@ fn to_tcp_message(data: &impl BorshSerialize) -> Result<TcpMessage> {
     Ok(TcpMessage::Data(Arc::new(binary)))
 }
 
+#[test]
+fn test_serialize_tcp_message() {
+    let msg = TcpMessage::Ping;
+    let bytes: Bytes = msg.try_into().unwrap();
+    assert_eq!(bytes, Bytes::from_static(b"PING"));
+
+    let data = TcpMessage::Data(Arc::new(vec![1, 2, 3]));
+    let bytes: Bytes = data.try_into().unwrap();
+    assert_eq!(bytes, Bytes::from(vec![1, 2, 3]));
+
+    let d: Vec<u8> = vec![1, 2, 3];
+    let data = to_tcp_message(&d).unwrap();
+    let bytes: Bytes = data.try_into().unwrap();
+    assert_eq!(bytes, Bytes::from(vec![3, 0, 0, 0, 1, 2, 3]));
+}
+
 #[derive(Debug, Clone, BorshDeserialize, BorshSerialize, PartialEq)]
 pub enum P2PTcpMessage<Data: BorshDeserialize + BorshSerialize> {
     Handshake(Handshake),
