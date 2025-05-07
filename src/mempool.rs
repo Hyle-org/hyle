@@ -548,7 +548,7 @@ impl Mempool {
         }
         let result = BlstCrypto::verify(&msg.header)?;
         if !result {
-            bail!("Invalid signature for message {:?}", msg);
+            bail!("Invalid header signature for message {:?}", msg);
         }
 
         // Verify the message matches the signed data

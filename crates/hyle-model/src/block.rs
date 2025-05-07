@@ -83,8 +83,9 @@ impl PartialOrd for Block {
 #[display("")]
 pub struct SignedBlock {
     pub data_proposals: Vec<(LaneId, Vec<DataProposal>)>,
-    pub certificate: AggregateSignature,
     pub consensus_proposal: ConsensusProposal,
+    // NB: this can be different for different validators
+    pub certificate: AggregateSignature,
 }
 
 impl SignedBlock {
