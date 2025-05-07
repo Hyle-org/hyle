@@ -68,6 +68,19 @@ pub async fn run_boundless(elf: &[u8], input_data: Vec<u8>) -> Result<Receipt> {
         .build()
         .await?;
 
+    let balance = boundless_client
+        .boundless_market
+        .balance_of(boundless_client.local_signer.as_ref().unwrap().address())
+        .await?;
+    info!("Wallet balance: {}", balance);
+    if balance < parse_ether("0.1")? {
+        info!("Wallet balance is low, depositing 0.1 ETH");
+        boundless_client
+            .boundless_market
+            .deposit(parse_ether("0.1")?)
+            .await?;
+    }
+
     // Encode the input and upload it to the storage provider.
     let input_builder = InputBuilder::new().write_slice(&input_data);
     tracing::info!("input builder: {:?}", input_builder);
