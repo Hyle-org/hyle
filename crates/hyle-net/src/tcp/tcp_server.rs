@@ -12,7 +12,7 @@ use futures::{
     FutureExt, SinkExt, StreamExt,
 };
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio_util::codec::{Decoder, Encoder, Framed, FramedRead};
+use tokio_util::codec::{Decoder, Encoder, Framed};
 
 use crate::{
     clock::TimestampMsClock,
@@ -73,15 +73,12 @@ where
     pub async fn listen_next(&mut self) -> Option<TcpEvent<Req>> {
         loop {
             tokio::select! {
-                Ok((mut stream, socket_addr)) = self.tcp_listener.accept() => {
+                Ok((stream, socket_addr)) = self.tcp_listener.accept() => {
 
-                    // let (receiver, sender) = stream.split();
-                    // let framed_receiver = Framed::
                     let codec = match self.max_frame_length {
                         Some(len) => TcpMessageCodec::<Codec>::new(len),
                         None => TcpMessageCodec::<Codec>::default()
                     };
-                    // let test = FramedRead::new(receiver, codec);
 
                     let (sender, receiver) = Framed::new(stream, codec).split();
                     self.setup_stream(sender, receiver, &socket_addr.to_string());
@@ -338,8 +335,7 @@ pub mod tests {
 
     use anyhow::Result;
     use borsh::{BorshDeserialize, BorshSerialize};
-    use futures::{StreamExt, TryStreamExt};
-    use tracing::info;
+    use futures::TryStreamExt;
 
     #[derive(BorshDeserialize, BorshSerialize, Clone, Debug, PartialEq, Eq)]
     pub struct DataAvailabilityRequest(pub usize);
@@ -432,11 +428,11 @@ pub mod tests {
         let mut client1 = codec_data_availability::connect("me1".to_string(), format!("0.0.0.0:{}", server.local_addr().unwrap().port())).await?;
         _ = tokio::time::timeout(Duration::from_millis(200), server.listen_next()).await;
 
-        let client1_addr = server.connected_clients().clone().get(0).unwrap().clone();
+        let client1_addr = server.connected_clients().clone().first().unwrap().clone();
 
         let mut client2 = codec_data_availability::connect("me2".to_string(), format!("0.0.0.0:{}", server.local_addr().unwrap().port())).await?;
         _ = tokio::time::timeout(Duration::from_millis(200), server.listen_next()).await;
-        let client2_addr = server.connected_clients().clone().into_iter().filter(|addr| addr != &client1_addr).last().unwrap();
+        let client2_addr = server.connected_clients().clone().into_iter().filter(|addr| addr != &client1_addr).next_back().unwrap();
         
         server.send_parallel(vec![client2_addr.to_string()], DataAvailabilityEvent::SignedBlock("test".to_string())).await;
 
@@ -458,11 +454,11 @@ pub mod tests {
 
         let mut client1 = codec_data_availability::connect("me1".to_string(), format!("0.0.0.0:{}", server.local_addr().unwrap().port())).await?;
         _ = tokio::time::timeout(Duration::from_millis(200), server.listen_next()).await;
-        let client1_addr = server.connected_clients().clone().get(0).unwrap().clone();
+        let client1_addr = server.connected_clients().first().unwrap().clone();
 
         let mut client2 = codec_data_availability::connect("me2".to_string(), format!("0.0.0.0:{}", server.local_addr().unwrap().port())).await?;
         _ = tokio::time::timeout(Duration::from_millis(200), server.listen_next()).await;
-        let client2_addr = server.connected_clients().clone().into_iter().filter(|addr| addr != &client1_addr).last().unwrap();
+        let client2_addr = server.connected_clients().clone().into_iter().filter(|addr| addr != &client1_addr).next_back().unwrap();
         
         _ = server.send(client2_addr.to_string(), DataAvailabilityEvent::SignedBlock("test".to_string())).await;
 
