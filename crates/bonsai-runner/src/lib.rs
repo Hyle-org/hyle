@@ -42,7 +42,7 @@ pub async fn run_boundless(elf: &[u8], input_data: Vec<u8>) -> Result<Receipt> {
     // TODO: gcp storage provider
     let storage_provider = BuiltinStorageProvider::from_env().await?;
 
-    storage_provider.upload_image(elf).await?;
+    let image_url = storage_provider.upload_image(elf).await?;
     info!("Uploaded image to {}", image_url);
 
     let boundless_market_address = boundless_market::alloy::primitives::Address::parse_checksummed(
