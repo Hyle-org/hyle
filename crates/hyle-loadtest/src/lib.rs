@@ -4,7 +4,7 @@ use anyhow::Result;
 use client_sdk::helpers::risc0::Risc0Prover;
 use client_sdk::helpers::test::{MockProver, TxExecutorTestProver};
 use client_sdk::rest_client::NodeApiHttpClient;
-use client_sdk::tcp_client::{codec_tcp_server, TcpServerMessage};
+use client_sdk::tcp_client::{TcpApiClient, TcpServerMessage};
 use client_sdk::transaction_builder::{
     ProvableBlobTx, StateUpdater, TxExecutor, TxExecutorBuilder, TxExecutorHandler,
 };
@@ -145,7 +145,7 @@ pub async fn setup(hyllar: Hyllar, url: String, verifier: String) -> Result<()> 
         .as_blob("hyle".into(), None, None)],
     );
 
-    let mut client = codec_tcp_server::connect("loadtest_client".to_string(), url)
+    let mut client = TcpApiClient::connect("loadtest_client".to_string(), url)
         .await
         .unwrap();
     client
@@ -315,7 +315,7 @@ pub async fn send_blob_txs(url: String, blob_txs: Vec<Transaction>) -> Result<()
         let chunk = chunk.to_vec();
         let url = url.clone();
         tasks.spawn(async move {
-            let mut client = codec_tcp_server::connect("loadtest-blob-client".to_string(), url)
+            let mut client = TcpApiClient::connect("loadtest-blob-client".to_string(), url)
                 .await
                 .unwrap();
             for blob_tx in chunk.iter() {
@@ -345,7 +345,7 @@ pub async fn send_proof_txs(url: String, proof_txs: Vec<Transaction>) -> Result<
         let chunk = chunk.to_vec();
         let url = url.clone();
         tasks.spawn(async move {
-            let mut client = codec_tcp_server::connect("loadtest-proof-client".to_string(), url)
+            let mut client = TcpApiClient::connect("loadtest-proof-client".to_string(), url)
                 .await
                 .unwrap();
             for blob_tx in chunk.iter() {
@@ -651,7 +651,7 @@ pub async fn send_massive_blob(users: u32, url: String) -> Result<()> {
         .as_blob("hyle".into(), None, None)],
     );
 
-    let mut client = codec_tcp_server::connect("loadtest_client".to_string(), url.clone())
+    let mut client = TcpApiClient::connect("loadtest_client".to_string(), url.clone())
         .await
         .unwrap();
     client
@@ -701,7 +701,7 @@ pub async fn send_massive_blob(users: u32, url: String) -> Result<()> {
 
     info!("Sending data");
 
-    let mut client = codec_tcp_server::connect("loadtest-massive-client".to_string(), url)
+    let mut client = TcpApiClient::connect("loadtest-massive-client".to_string(), url)
         .await
         .unwrap();
     for encoded_blob_tx in txs.into_iter() {
