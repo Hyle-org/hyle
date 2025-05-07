@@ -1,17 +1,14 @@
+use anyhow::{anyhow, bail, Context, Result};
+use borsh::{BorshDeserialize, BorshSerialize};
 use std::collections::HashSet;
 
 use crate::{
     bus::command_response::CmdRespClient,
-    consensus::{ConsensusCommand, StateTag},
+    consensus::*,
     mempool::QueryNewCut,
-    model::{ConsensusNetMessage, Hashed, Ticket, ValidatorPublicKey},
+    model::{Hashed, ValidatorPublicKey},
 };
-use anyhow::{anyhow, bail, Context, Result};
-use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_model::{
-    utils::TimestampMs, ConfirmAck, ConfirmAckMarker, ConsensusProposal, ConsensusStakingAction,
-    PrepareVote, PrepareVoteMarker, QuorumCertificate,
-};
+use hyle_model::{utils::TimestampMs, ConsensusProposal, ConsensusStakingAction};
 use staking::state::MIN_STAKE;
 use tokio::sync::broadcast;
 use tracing::{debug, error, trace};

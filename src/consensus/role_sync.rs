@@ -1,8 +1,8 @@
 use anyhow::Result;
-use hyle_model::{ConsensusProposalHash, ValidatorPublicKey};
 use tracing::debug;
 
-use super::{role_follower::Prepare, Consensus};
+use super::{role_follower::Prepare, *};
+use hyle_model::{ConsensusProposalHash, ValidatorPublicKey};
 
 impl Consensus {
     /// When a validator receives a sync request from another validator, it will check if it has the prepare message in its buffer.
@@ -21,7 +21,7 @@ impl Consensus {
                 proposal_hash = %proposal_hash,
                 "Sending prepare to {}", sender);
             let prepare = prepare.clone();
-            self.send_net_message(sender, hyle_model::ConsensusNetMessage::SyncReply(prepare))?;
+            self.send_net_message(sender, ConsensusNetMessage::SyncReply(prepare))?;
         };
         Ok(())
     }
