@@ -157,7 +157,6 @@ where
         Poll::Pending
     }
 
-    // TODO: parse as Msg
     pub async fn listen_next(&mut self) -> P2PTcpEvent<P2PTcpMessage<Msg>> {
         // Await either of the joinsets in the self.canal_jobs hashmap
 
