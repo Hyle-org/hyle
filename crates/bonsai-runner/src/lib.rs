@@ -31,6 +31,7 @@ pub async fn run_boundless(elf: &[u8], input_data: Vec<u8>) -> Result<Receipt> {
     let order_stream_url = std::env::var("BOUNDLESS_ORDER_STREAM_URL").ok();
     let wallet_private_key = std::env::var("BOUNDLESS_WALLET_PRIVATE_KEY").unwrap_or_default();
     let rpc_url = std::env::var("BOUNDLESS_RPC_URL").unwrap_or_default();
+    let set_verifier_addr = std::env::var("BOUNDLESS_SET_VERIFIER_ADDRESS").ok();
 
     // Creates a storage provider based on the environment variables.
     //
@@ -48,11 +49,16 @@ pub async fn run_boundless(elf: &[u8], input_data: Vec<u8>) -> Result<Receipt> {
     let order_stream_url = order_stream_url.map(|url| Url::parse(&url)).transpose()?;
     let wallet_private_key = PrivateKeySigner::from_str(&wallet_private_key)?;
     let rpc_url = Url::parse(&rpc_url)?;
+    let set_verifier_addr = boundless_market::alloy::primitives::Address::parse_checksummed(
+        set_verifier_addr.unwrap_or_default(),
+        None,
+    )?;
 
     // Create a Boundless client from the provided parameters.
     let boundless_client = ClientBuilder::new()
         .with_rpc_url(rpc_url)
         .with_boundless_market_address(boundless_market_address)
+        .with_set_verifier_address(set_verifier_addr)
         .with_order_stream_url(offchain.then_some(order_stream_url).flatten())
         .with_storage_provider(Some(storage_provider))
         .with_private_key(wallet_private_key)
