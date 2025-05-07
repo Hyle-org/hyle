@@ -59,7 +59,7 @@ impl Display for NetMessage {
             }
             NetMessage::ConsensusMessage(msg) => {
                 _ = write!(f, "NetMessage::{} ", enum_variant);
-                write!(f, "{}", msg)
+                write!(f, "{} (sent at {})", msg.msg, msg.header.msg.timestamp)
             }
         }
     }
@@ -82,7 +82,7 @@ impl Display for NetMessage {
 )]
 pub enum NetMessage {
     MempoolMessage(MsgWithHeader<MempoolNetMessage>),
-    ConsensusMessage(SignedByValidator<ConsensusNetMessage>),
+    ConsensusMessage(MsgWithHeader<ConsensusNetMessage>),
 }
 
 hyle_net::p2p_server_mod! {
@@ -102,8 +102,8 @@ impl From<MsgWithHeader<MempoolNetMessage>> for NetMessage {
     }
 }
 
-impl From<SignedByValidator<ConsensusNetMessage>> for NetMessage {
-    fn from(msg: SignedByValidator<ConsensusNetMessage>) -> Self {
+impl From<MsgWithHeader<ConsensusNetMessage>> for NetMessage {
+    fn from(msg: MsgWithHeader<ConsensusNetMessage>) -> Self {
         NetMessage::ConsensusMessage(msg)
     }
 }

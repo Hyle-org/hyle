@@ -2,12 +2,19 @@
 
 use crate::bus::BusClientSender;
 use crate::model::*;
+use crate::node_state::module::NodeStateEvent;
+use crate::p2p::network::HeaderSignableData;
+use crate::p2p::network::HeaderSigner;
+use crate::p2p::network::IntoHeaderSignableData;
 use crate::{
     bus::command_response::Query,
     genesis::GenesisEvent,
     mempool::QueryNewCut,
     model::{Cut, Hashed, ValidatorPublicKey},
-    p2p::{network::OutboundMessage, P2PCommand},
+    p2p::{
+        network::{MsgWithHeader, OutboundMessage},
+        P2PCommand,
+    },
     utils::conf::SharedConf,
 };
 use anyhow::{anyhow, bail, Context, Error, Result};
@@ -15,7 +22,6 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_crypto::BlstCrypto;
 use hyle_crypto::SharedBlstCrypto;
 use hyle_model::utils::TimestampMs;
-use hyle_modules::node_state::module::NodeStateEvent;
 use hyle_modules::{log_error, module_bus_client, module_handle_messages, modules::Module};
 use hyle_net::clock::TimestampMsClock;
 use metrics::ConsensusMetrics;
@@ -53,7 +59,8 @@ pub enum ConsensusCommand {
 pub struct CommittedConsensusProposal {
     pub staking: Staking,
     pub consensus_proposal: ConsensusProposal,
-    pub certificate: QuorumCertificate,
+    // NB: this can be different for different validators
+    pub certificate: AggregateSignature,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -77,10 +84,53 @@ sender(Query<QueryNewCut, Cut>),
 receiver(ConsensusCommand),
 receiver(GenesisEvent),
 receiver(NodeStateEvent),
-receiver(SignedByValidator<ConsensusNetMessage>),
+receiver(MsgWithHeader<ConsensusNetMessage>),
 receiver(Query<QueryConsensusInfo, ConsensusInfo>),
 receiver(Query<QueryConsensusStakingState, Staking>),
 }
+}
+
+impl IntoHeaderSignableData for ConsensusNetMessage {
+    // This signature is just for DOS / efficiency
+    fn to_header_signable_data(&self) -> HeaderSignableData {
+        HeaderSignableData(match self {
+            ConsensusNetMessage::Prepare(cp, t, v) => {
+                borsh::to_vec(&(cp.hashed(), t, v)).unwrap_or_default()
+            }
+            ConsensusNetMessage::PrepareVote(pv) => pv.msg.0.clone().0.into_bytes(),
+            ConsensusNetMessage::Confirm(qc, cph) => {
+                borsh::to_vec(&(&qc.signature, cph)).unwrap_or_default()
+            }
+            ConsensusNetMessage::ConfirmAck(ca) => ca.msg.0.clone().0.into_bytes(),
+            ConsensusNetMessage::Commit(qc, cph) => borsh::to_vec(&(qc, cph)).unwrap_or_default(),
+            ConsensusNetMessage::Timeout((SignedByValidator { signature, .. }, tk)) => match tk {
+                TimeoutKind::NilProposal(..) => borsh::to_vec(signature),
+                TimeoutKind::PrepareQC((qc, cp)) => {
+                    borsh::to_vec(&(signature, &qc.signature, cp.hashed()))
+                }
+            }
+            .unwrap_or_default(),
+            ConsensusNetMessage::TimeoutCertificate(qc, tck, s, v) => match tck {
+                TCKind::NilProposal => borsh::to_vec(&(&qc.signature, s, v)),
+                TCKind::PrepareQC((qc, cp)) => borsh::to_vec(&(&qc.signature, cp.hashed(), s, v)),
+            }
+            .unwrap_or_default(),
+            ConsensusNetMessage::ValidatorCandidacy(vc) => borsh::to_vec(vc).unwrap_or_default(),
+            ConsensusNetMessage::SyncRequest(cph) => borsh::to_vec(cph).unwrap_or_default(),
+            ConsensusNetMessage::SyncReply((pb, cp, t, v)) => borsh::to_vec(&(
+                match t {
+                    Ticket::CommitQC(qc) => Some(&qc.signature),
+                    Ticket::TimeoutQC(qc, ..) => Some(&qc.signature),
+                    _ => None,
+                },
+                pb,
+                cp.hashed(),
+                t,
+                v,
+            ))
+            .unwrap_or_default(),
+        })
+    }
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Default)]
@@ -125,7 +175,7 @@ pub struct GenesisState {
 pub struct ConsensusStore {
     bft_round_state: BFTRoundState,
     /// Validators that asked to be part of consensus
-    validator_candidates: Vec<NewValidatorCandidate>,
+    validator_candidates: Vec<SignedByValidator<ValidatorCandidacy>>,
 }
 
 pub struct Consensus {
@@ -204,7 +254,7 @@ impl Consensus {
 
         match ticket {
             // We finished the round with a committed proposal for the slot
-            Ticket::CommitQC(_) | Ticket::ForcedCommitQc(_) => {
+            Ticket::CommitQC(_) | Ticket::ForcedCommitQc => {
                 self.bft_round_state.slot += 1;
                 self.bft_round_state.view = 0;
                 self.bft_round_state.parent_hash = self.bft_round_state.current_proposal.hashed();
@@ -215,7 +265,7 @@ impl Consensus {
                 // Store the last commited QC to avoid issues when parsing Commit messages before Prepare
                 self.bft_round_state.follower.buffered_quorum_certificate = match ticket {
                     Ticket::CommitQC(qc) => Some(qc),
-                    Ticket::ForcedCommitQc(_) => None,
+                    Ticket::ForcedCommitQc => None,
                     _ => unreachable!(),
                 };
                 for action in
@@ -224,11 +274,11 @@ impl Consensus {
                     match action {
                         // Any new validators are added to the consensus and removed from candidates.
                         ConsensusStakingAction::Bond { candidate } => {
-                            debug!("🎉 New validator bonded: {}", candidate.pubkey);
+                            debug!("🎉 New validator bonded: {}", candidate.signature.validator);
                             self.store
                                 .bft_round_state
                                 .staking
-                                .bond(candidate.pubkey)
+                                .bond(candidate.signature.validator)
                                 .map_err(|e| anyhow::anyhow!(e))?;
                         }
                         ConsensusStakingAction::PayFeesForDaDi {
@@ -291,9 +341,9 @@ impl Consensus {
     }
 
     /// Verify that quorum certificate includes only validators that are part of the consensus
-    fn verify_quorum_signers_part_of_consensus(
+    fn verify_quorum_signers_part_of_consensus<T>(
         &self,
-        quorum_certificate: &QuorumCertificate,
+        quorum_certificate: &QuorumCertificate<T>,
     ) -> bool {
         quorum_certificate.validators.iter().all(|v| {
             self.bft_round_state
@@ -329,10 +379,13 @@ impl Consensus {
     ///  - the signatures are above 2f+1 voting power.
     ///
     /// This ensures that we can trust the message.
-    fn verify_quorum_certificate<T: borsh::BorshSerialize + std::fmt::Debug>(
+    fn verify_quorum_certificate<
+        T: borsh::BorshSerialize + std::fmt::Debug,
+        Marker: std::fmt::Debug,
+    >(
         &self,
         message: T,
-        quorum_certificate: &QuorumCertificate,
+        quorum_certificate: &QuorumCertificate<Marker>,
     ) -> Result<()> {
         debug!(
             "🔍 Verifying Quorum Certificate for message: {:?}, certificate: {:?}",
@@ -389,12 +442,11 @@ impl Consensus {
 
     /// Connect to all validators & ask to be part of consensus
     fn send_candidacy(&mut self) -> Result<()> {
-        let candidacy = ValidatorCandidacy {
-            pubkey: self.crypto.validator_pubkey().clone(),
+        let candidacy = self.crypto.sign(ValidatorCandidacy {
             peer_address: self.config.p2p.public_address.clone(),
-        };
+        })?;
         info!(
-            "📝 Sending candidacy message to be part of consensus.  {}",
+            "📝 Sending candidacy message to be part of consensus. {}",
             candidacy
         );
         // TODO: it would be more optimal to send this to the next leaders only.
@@ -402,22 +454,33 @@ impl Consensus {
         Ok(())
     }
 
-    fn handle_net_message(
-        &mut self,
-        msg: SignedByValidator<ConsensusNetMessage>,
-    ) -> Result<(), Error> {
-        if !BlstCrypto::verify(&msg)? {
-            bail!("Invalid signature for message {:?}", &msg);
+    fn handle_net_message(&mut self, msg: MsgWithHeader<ConsensusNetMessage>) -> Result<(), Error> {
+        // Ignore messages that seem incorrectly timestamped (1h ahead or back)
+        if msg.header.msg.timestamp.abs_diff(TimestampMsClock::now().0) > 3_600_000 {
+            bail!("Message timestamp too far from current time");
+        }
+        let result = BlstCrypto::verify(&msg.header)?;
+        if !result {
+            bail!("Invalid header signature for message {:?}", msg);
         }
 
-        // TODO: reduce cloning here.
-        let SignedByValidator::<ConsensusNetMessage> {
+        // Verify the message matches the signed data
+        if msg.header.msg.hash != msg.msg.to_header_signable_data() {
+            bail!("Invalid signed hash for message {:?}", msg);
+        }
+
+        let MsgWithHeader::<ConsensusNetMessage> {
             msg: net_message,
-            signature: ValidatorSignature {
-                validator: sender, ..
-            },
+            header:
+                SignedByValidator {
+                    signature:
+                        ValidatorSignature {
+                            validator: sender, ..
+                        },
+                    ..
+                },
             ..
-        } = msg.clone();
+        } = msg;
 
         match net_message {
             ConsensusNetMessage::Prepare(consensus_proposal, ticket, view) => {
@@ -427,11 +490,11 @@ impl Consensus {
                     self.on_prepare(sender, consensus_proposal, ticket, view)
                 )
             }
-            ConsensusNetMessage::PrepareVote(consensus_proposal_hash) => {
+            ConsensusNetMessage::PrepareVote(prepare_vote) => {
                 with_metric!(
                     self.metrics,
                     "on_prepare_vote",
-                    self.on_prepare_vote(msg, consensus_proposal_hash)
+                    self.on_prepare_vote(prepare_vote)
                 )
             }
             ConsensusNetMessage::Confirm(prepare_quorum_certificate, proposal_hash_hint) => {
@@ -441,18 +504,18 @@ impl Consensus {
                     self.on_confirm(sender, prepare_quorum_certificate, proposal_hash_hint)
                 )
             }
-            ConsensusNetMessage::ConfirmAck(consensus_proposal_hash) => {
+            ConsensusNetMessage::ConfirmAck(confirm_ack) => {
                 with_metric!(
                     self.metrics,
                     "on_confirm_ack",
-                    self.on_confirm_ack(msg, consensus_proposal_hash)
+                    self.on_confirm_ack(confirm_ack)
                 )
             }
             ConsensusNetMessage::Commit(commit_quorum_certificate, proposal_hash_hint) => {
                 self.on_commit(sender, commit_quorum_certificate, proposal_hash_hint)
             }
-            ConsensusNetMessage::Timeout(..) => {
-                with_metric!(self.metrics, "on_timeout", self.on_timeout(msg))
+            ConsensusNetMessage::Timeout((timeout, tk)) => {
+                with_metric!(self.metrics, "on_timeout", self.on_timeout(timeout, tk))
             }
             ConsensusNetMessage::TimeoutCertificate(
                 certificate_of_timeout,
@@ -470,7 +533,7 @@ impl Consensus {
                 )
             ),
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
-                self.on_validator_candidacy(msg, candidacy)
+                self.on_validator_candidacy(candidacy)
             }
             ConsensusNetMessage::SyncRequest(proposal_hash) => {
                 with_metric!(
@@ -492,7 +555,7 @@ impl Consensus {
         // Decide what to do at the beginning of the next round
         if self.is_round_leader()
             && self.has_no_buffered_children()
-            && !matches!(ticket, Ticket::ForcedCommitQc(..))
+            && !matches!(ticket, Ticket::ForcedCommitQc)
         {
             // Setup our ticket for the next round
             // Send Prepare message to all validators
@@ -518,21 +581,24 @@ impl Consensus {
         }
     }
 
-    fn verify_commit_quorum_certificate_againt_current_proposal(
+    fn verify_commit_quorum_certificate_against_current_proposal(
         &self,
-        commit_quorum_certificate: &QuorumCertificate,
+        commit_quorum_certificate: &CommitQC,
     ) -> Result<()> {
         // Check that this is a QC for ConfirmAck for the expected proposal.
         // This also checks slot/view as those are part of the hash.
         // TODO: would probably be good to make that more explicit.
         self.verify_quorum_certificate(
-            ConsensusNetMessage::ConfirmAck(self.bft_round_state.current_proposal.hashed()),
+            (
+                self.bft_round_state.current_proposal.hashed(),
+                ConfirmAckMarker,
+            ),
             commit_quorum_certificate,
         )
     }
 
     /// Emits an event that will make Mempool able to build a block
-    fn emit_commit_event(&mut self, commit_quorum_certificate: &QuorumCertificate) -> Result<()> {
+    fn emit_commit_event(&mut self, commit_quorum_certificate: &CommitQC) -> Result<()> {
         self.metrics.commit();
 
         self.bus
@@ -540,7 +606,7 @@ impl Consensus {
                 CommittedConsensusProposal {
                     staking: self.bft_round_state.staking.clone(),
                     consensus_proposal: self.bft_round_state.current_proposal.clone(),
-                    certificate: commit_quorum_certificate.clone(),
+                    certificate: commit_quorum_certificate.0.clone(),
                 },
             ))
             .context("Failed to send ConsensusEvent::CommittedConsensusProposal on the bus")?;
@@ -553,8 +619,7 @@ impl Consensus {
     /// Message received by leader & follower.
     fn on_validator_candidacy(
         &mut self,
-        msg: SignedByValidator<ConsensusNetMessage>,
-        candidacy: ValidatorCandidacy,
+        candidacy: SignedByValidator<ValidatorCandidacy>,
     ) -> Result<()> {
         info!("📝 Received candidacy message: {}", candidacy);
 
@@ -564,18 +629,26 @@ impl Consensus {
         );
 
         // Verify that the validator is not already part of the consensus
-        if self.is_part_of_consensus(&candidacy.pubkey) {
+        if self.is_part_of_consensus(&candidacy.signature.validator) {
             debug!("Validator is already part of the consensus");
             return Ok(());
         }
 
-        if self.bft_round_state.staking.is_bonded(&candidacy.pubkey) {
+        if self
+            .bft_round_state
+            .staking
+            .is_bonded(&candidacy.signature.validator)
+        {
             debug!("Validator is already bonded. Ignoring candidacy");
             return Ok(());
         }
 
         // Verify that the candidate has enough stake
-        if let Some(stake) = self.bft_round_state.staking.get_stake(&candidacy.pubkey) {
+        if let Some(stake) = self
+            .bft_round_state
+            .staking
+            .get_stake(&candidacy.signature.validator)
+        {
             if stake < staking::state::MIN_STAKE {
                 bail!("🛑 Candidate validator does not have enough stake to be part of consensus");
             }
@@ -584,10 +657,7 @@ impl Consensus {
         }
 
         // Add validator to consensus candidates
-        self.validator_candidates.push(NewValidatorCandidate {
-            pubkey: candidacy.pubkey,
-            msg,
-        });
+        self.validator_candidates.push(candidacy);
         Ok(())
     }
 
@@ -755,8 +825,8 @@ impl Consensus {
             listen<ConsensusCommand> cmd => {
                 let _ = log_error!(self.handle_command(cmd).await, "Error while handling consensus command");
             }
-            listen<SignedByValidator<ConsensusNetMessage>> cmd => {
-                let _ = log_error!(self.handle_net_message(cmd), "Consensus message failed");
+            listen<MsgWithHeader<ConsensusNetMessage>> msg => {
+                let _ = log_error!(self.handle_net_message(msg), "Consensus message failed");
             }
             command_response<QueryConsensusInfo, ConsensusInfo> _ => {
                 let slot = self.bft_round_state.slot;
@@ -785,9 +855,9 @@ impl Consensus {
     fn sign_net_message(
         &self,
         msg: ConsensusNetMessage,
-    ) -> Result<SignedByValidator<ConsensusNetMessage>> {
+    ) -> Result<MsgWithHeader<ConsensusNetMessage>> {
         trace!("🔏 Signing message: {}", msg);
-        self.crypto.sign(msg)
+        self.crypto.sign_msg_with_header(msg)
     }
 }
 
@@ -993,7 +1063,7 @@ pub mod test {
             view: u64,
         ) {
             // TODO: write a real one?
-            let commit_qc = AggregateSignature::default();
+            let commit_qc = QuorumCertificate(AggregateSignature::default(), ConfirmAckMarker);
 
             for (index, node) in nodes.iter_mut().enumerate() {
                 node.consensus.bft_round_state.slot = slot;
@@ -1015,20 +1085,13 @@ pub mod test {
         }
 
         #[track_caller]
-        pub(crate) fn handle_msg(
-            &mut self,
-            msg: &SignedByValidator<ConsensusNetMessage>,
-            err: &str,
-        ) {
+        pub(crate) fn handle_msg(&mut self, msg: &MsgWithHeader<ConsensusNetMessage>, err: &str) {
             debug!("📥 {} Handling message: {:?}", self.name, msg);
             self.consensus.handle_net_message(msg.clone()).expect(err);
         }
 
         #[track_caller]
-        pub(crate) fn handle_msg_err(
-            &mut self,
-            msg: &SignedByValidator<ConsensusNetMessage>,
-        ) -> Error {
+        pub(crate) fn handle_msg_err(&mut self, msg: &MsgWithHeader<ConsensusNetMessage>) -> Error {
             debug!("📥 {} Handling message expecting err: {:?}", self.name, msg);
             let err = self.consensus.handle_net_message(msg.clone()).unwrap_err();
             info!("Expected error: {:#}", err);
@@ -1105,7 +1168,7 @@ pub mod test {
         pub(crate) fn assert_broadcast(
             &mut self,
             description: &str,
-        ) -> SignedByValidator<ConsensusNetMessage> {
+        ) -> MsgWithHeader<ConsensusNetMessage> {
             #[allow(clippy::expect_fun_call)]
             let rec = self
                 .out_receiver
@@ -1155,7 +1218,7 @@ pub mod test {
             &mut self,
             to: &ValidatorPublicKey,
             description: &str,
-        ) -> SignedByValidator<ConsensusNetMessage> {
+        ) -> MsgWithHeader<ConsensusNetMessage> {
             #[allow(clippy::expect_fun_call)]
             let rec = self
                 .out_receiver
@@ -1256,9 +1319,9 @@ pub mod test {
         send! {
             description: "Follower - PrepareVote",
             from: [
-                node2; ConsensusNetMessage::PrepareVote(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); },
-                node3; ConsensusNetMessage::PrepareVote(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); },
-                node4; ConsensusNetMessage::PrepareVote(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); }
+                node2; ConsensusNetMessage::PrepareVote(Signed { msg: (cp_hash, _), .. }) => { assert_eq!(cp_hash, cp_round_hash); },
+                node3; ConsensusNetMessage::PrepareVote(Signed { msg: (cp_hash, _), .. }) => { assert_eq!(cp_hash, cp_round_hash); },
+                node4; ConsensusNetMessage::PrepareVote(Signed { msg: (cp_hash, _), .. }) => { assert_eq!(cp_hash, cp_round_hash); }
             ], to: node1
         };
 
@@ -1271,9 +1334,9 @@ pub mod test {
         send! {
             description: "Follower - Confirm Ack",
             from: [
-                node2; ConsensusNetMessage::ConfirmAck(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); },
-                node3; ConsensusNetMessage::ConfirmAck(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); },
-                node4; ConsensusNetMessage::ConfirmAck(cp_hash) => { assert_eq!(cp_hash, cp_round_hash); }
+                node2; ConsensusNetMessage::ConfirmAck(Signed { msg: (cp_hash, _), .. }) => { assert_eq!(cp_hash, cp_round_hash); },
+                node3; ConsensusNetMessage::ConfirmAck(Signed { msg: (cp_hash, _), .. }) => { assert_eq!(cp_hash, cp_round_hash); },
+                node4; ConsensusNetMessage::ConfirmAck(Signed { msg: (cp_hash, _), .. }) => { assert_eq!(cp_hash, cp_round_hash); }
             ], to: node1
         };
 
@@ -1846,7 +1909,7 @@ pub mod test {
         broadcast! {
             description: "Follower - Timeout",
             from: node3, to: [node4],
-            message_matches: ConsensusNetMessage::Timeout(signed_slot_view, _) => {
+            message_matches: ConsensusNetMessage::Timeout((signed_slot_view, _)) => {
                 assert_eq!(signed_slot_view.msg.0, 1);
                 assert_eq!(signed_slot_view.msg.1, 0);
             }
@@ -1878,7 +1941,7 @@ pub mod test {
         broadcast! {
             description: "Follower - Timeout",
             from: node3, to: [node1, node2],
-            message_matches: ConsensusNetMessage::Timeout(signed_slot_view, _) => {
+            message_matches: ConsensusNetMessage::Timeout((signed_slot_view, _)) => {
                 assert_eq!(signed_slot_view.msg.0, 1);
                 assert_eq!(signed_slot_view.msg.1, 0);
             }
@@ -1890,7 +1953,7 @@ pub mod test {
         broadcast! {
             description: "Follower - Timeout",
             from: node4, to: [node1],
-            message_matches: ConsensusNetMessage::Timeout(signed_slot_view, _) => {
+            message_matches: ConsensusNetMessage::Timeout((signed_slot_view, _)) => {
                 assert_eq!(signed_slot_view.msg.0, 1);
                 assert_eq!(signed_slot_view.msg.1, 0);
             }
@@ -1901,7 +1964,7 @@ pub mod test {
         broadcast! {
             description: "Follower - Timeout",
             from: node1, to: [node2],
-            message_matches: ConsensusNetMessage::Timeout(signed_slot_view, _) => {
+            message_matches: ConsensusNetMessage::Timeout((signed_slot_view, _)) => {
                 assert_eq!(signed_slot_view.msg.0, 1);
                 assert_eq!(signed_slot_view.msg.1, 0);
             }
@@ -1961,7 +2024,7 @@ pub mod test {
         broadcast! {
             description: "Follower - Timeout",
             from: node4, to: [node2, node3, node5],
-            message_matches: ConsensusNetMessage::Timeout(signed_slot_view, _) => {
+            message_matches: ConsensusNetMessage::Timeout((signed_slot_view, _)) => {
                 assert_eq!(signed_slot_view.msg.0, 1);
                 assert_eq!(signed_slot_view.msg.1, 0);
             }
@@ -2028,7 +2091,7 @@ pub mod test {
         broadcast! {
             description: "Follower - Timeout",
             from: node3, to: [node4, node5, node6, node7],
-            message_matches: ConsensusNetMessage::Timeout(signed_slot_view, _) => {
+            message_matches: ConsensusNetMessage::Timeout((signed_slot_view, _)) => {
                 assert_eq!(signed_slot_view.msg.0, 1);
                 assert_eq!(signed_slot_view.msg.1, 0);
             }
