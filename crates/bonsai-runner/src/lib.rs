@@ -11,7 +11,7 @@ use boundless_market::{
     client::ClientBuilder,
     contracts::{Input, Offer, Predicate, ProofRequestBuilder, Requirements},
     input::InputBuilder,
-    storage::BuiltinStorageProvider,
+    storage::{BuiltinStorageProvider, StorageProvider},
 };
 use risc0_zkvm::{compute_image_id, default_executor, sha::Digestible, Receipt};
 use tracing::info;
@@ -42,6 +42,9 @@ pub async fn run_boundless(elf: &[u8], input_data: Vec<u8>) -> Result<Receipt> {
     // TODO: gcp storage provider
     let storage_provider = BuiltinStorageProvider::from_env().await?;
 
+    storage_provider.upload_image(elf).await?;
+    info!("Uploaded image to {}", image_url);
+
     let boundless_market_address = boundless_market::alloy::primitives::Address::parse_checksummed(
         boundless_market_address,
         None,
@@ -64,9 +67,6 @@ pub async fn run_boundless(elf: &[u8], input_data: Vec<u8>) -> Result<Receipt> {
         .with_private_key(wallet_private_key)
         .build()
         .await?;
-
-    let image_url = boundless_client.upload_image(elf).await?;
-    info!("Uploaded image to {}", image_url);
 
     // Encode the input and upload it to the storage provider.
     let input_builder = InputBuilder::new().write_slice(&input_data);
