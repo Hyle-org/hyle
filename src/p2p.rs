@@ -1,5 +1,7 @@
 //! Networking layer
 
+use std::collections::HashSet;
+
 use crate::{
     bus::BusClientSender, consensus::ConsensusNetMessage, mempool::MempoolNetMessage,
     model::SharedRunContext, utils::conf::SharedConf,
@@ -73,6 +75,7 @@ impl P2P {
             Some(self.config.p2p.max_frame_length),
             self.config.p2p.public_address.clone(),
             self.config.da_public_address.clone(),
+            HashSet::from_iter(vec![Canal::new("mempool"), Canal::new("consensus")]),
         )
         .await?;
 
@@ -115,25 +118,11 @@ impl P2P {
                     }
                     OutboundMessage::BroadcastMessage(message) => {
                         let canal = Self::choose_canal(&message);
-                        for (failed_peer, error) in p2p_server.broadcast(message.clone(), canal).await {
-                            self.handle_failed_send(
-                                &mut p2p_server,
-                                failed_peer,
-                                message.clone(),
-                                error,
-                            ).await;
-                        }
+                        p2p_server.broadcast(message.clone(), canal)
                     }
                     OutboundMessage::BroadcastMessageOnlyFor(only_for, message) => {
                         let canal = Self::choose_canal(&message);
-                        for (failed_peer, error) in p2p_server.broadcast_only_for(&only_for, canal, message.clone()).await {
-                            self.handle_failed_send(
-                                &mut p2p_server,
-                                failed_peer,
-                                message.clone(),
-                                error,
-                            ).await;
-                        }
+                        p2p_server.broadcast_only_for(&only_for, canal, message.clone())
                     }
                 };
             }

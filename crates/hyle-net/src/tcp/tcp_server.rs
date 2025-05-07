@@ -32,8 +32,8 @@ where
 {
     tcp_listener: TcpListener,
     max_frame_length: Option<usize>,
-    pool_sender: Sender<TcpEvent<Arc<Vec<u8>>>>,
-    pool_receiver: Receiver<TcpEvent<Arc<Vec<u8>>>>,
+    pool_sender: Sender<Box<TcpEvent<Req>>>,
+    pool_receiver: Receiver<Box<TcpEvent<Req>>>,
     ping_sender: Sender<String>,
     ping_receiver: Receiver<String>,
     sockets: HashMap<String, SocketStream>,
@@ -42,7 +42,7 @@ where
 
 impl<Req, Res> TcpServer<Req, Res>
 where
-    Req: BorshSerialize + BorshDeserialize + std::fmt::Debug,
+    Req: BorshSerialize + BorshDeserialize + std::fmt::Debug + Send + 'static,
     Res: BorshSerialize + BorshDeserialize + std::fmt::Debug,
 {
     pub async fn start(port: u16, pool_name: &str) -> anyhow::Result<Self> {
@@ -93,24 +93,7 @@ where
                     }
                 }
                 message = self.pool_receiver.recv() => {
-                    return message.map(|msg| {
-                        match msg {
-                            TcpEvent::Message { data, dest } => {
-                                let data = borsh::from_slice(&data).unwrap();
-                                TcpEvent::Message { data, dest }
-                            },
-                            // TODO: transmute I guess
-                            TcpEvent::Error { dest, error } => {
-                                TcpEvent::Error {
-                                    dest,
-                                    error
-                                }
-                            }
-                            TcpEvent::Closed { dest } => {
-                                TcpEvent::Closed { dest }
-                            }
-                        }
-                    })
+                    return message.map(|message| *message);
                 }
             }
         }
@@ -167,10 +150,10 @@ where
         }))
     }
 
-    pub async fn send_parallel(
+    pub async fn raw_send_parallel(
         &mut self,
         socket_addrs: Vec<String>,
-        msg: Res,
+        msg: Vec<u8>,
     ) -> HashMap<String, anyhow::Error> {
         debug!("Broadcasting msg {:?} to all", msg);
 
@@ -183,12 +166,7 @@ where
 
         // Send the message to all targets concurrently and wait for them to finish
         let all_sent = {
-            let Ok(binary_data) = to_tcp_message(&msg) else {
-                return socket_addrs
-                    .into_iter()
-                    .map(|addr| (addr, anyhow::anyhow!("Failed to serialize message")))
-                    .collect();
-            };
+            let message = TcpMessage::Data(Arc::new(msg));
             let mut tasks = vec![];
             for (name, socket) in self
                 .sockets
@@ -199,7 +177,7 @@ where
                 tasks.push(
                     socket
                         .sender
-                        .send(binary_data.clone())
+                        .send(message.clone())
                         .map(|res| (name.clone(), res)),
                 );
             }
@@ -275,27 +253,31 @@ where
         // If the stream is closed, we also assume the task is to be aborted.
         let abort_receiver_task = tokio::spawn(async move {
             loop {
-                match receiver
-                    .next()
-                    .await
-                    .map(|x| x.map(|d| borsh::from_slice(&d)))
-                {
-                    Some(Ok(Ok(TcpMessage::Ping))) => {
-                        _ = ping_sender.send(cloned_socket_addr.clone()).await;
+                match receiver.next().await {
+                    Some(Ok(bytes)) => {
+                        if *bytes == *b"PING" {
+                            _ = ping_sender.send(cloned_socket_addr.clone()).await;
+                        } else {
+                            debug!(
+                                "Received data from socket {}: {:?}",
+                                cloned_socket_addr, bytes
+                            );
+                            let _ = pool_sender
+                                .send(Box::new(match borsh::from_slice(&bytes) {
+                                    Ok(data) => TcpEvent::Message {
+                                        dest: cloned_socket_addr.clone(),
+                                        data,
+                                    },
+                                    Err(io) => TcpEvent::Error {
+                                        dest: cloned_socket_addr.clone(),
+                                        error: io.to_string(),
+                                    },
+                                }))
+                                .await;
+                        }
                     }
-                    Some(Ok(Ok(TcpMessage::Data(data)))) => {
-                        debug!(
-                            "Received data from socket {}: {:?}",
-                            cloned_socket_addr, data
-                        );
-                        _ = pool_sender
-                            .send(TcpEvent::Message {
-                                dest: cloned_socket_addr.clone(),
-                                data,
-                            })
-                            .await;
-                    }
-                    Some(Err(err)) | Some(Ok(Err(err))) => {
+
+                    Some(Err(err)) => {
                         if err.kind() == ErrorKind::InvalidData {
                             error!("Received invalid data in socket {cloned_socket_addr} event loop: {err}",);
                         } else {
@@ -307,10 +289,10 @@ where
                             );
                             // Send an event indicating the connection is closed due to an error
                             _ = pool_sender
-                                .send(TcpEvent::Error {
+                                .send(Box::new(TcpEvent::Error {
                                     dest: cloned_socket_addr.clone(),
                                     error: err.to_string(),
-                                })
+                                }))
                                 .await;
                             break;
                         }
@@ -320,9 +302,9 @@ where
                         warn!("Socket {} closed", cloned_socket_addr);
                         // Send an event indicating the connection is closed
                         _ = pool_sender
-                            .send(TcpEvent::Closed {
+                            .send(Box::new(TcpEvent::Closed {
                                 dest: cloned_socket_addr.clone(),
-                            })
+                            }))
                             .await;
                         break;
                     }
@@ -522,9 +504,9 @@ pub mod tests {
             .unwrap();
 
         server
-            .send_parallel(
+            .raw_send_parallel(
                 vec![client2_addr.to_string()],
-                DataAvailabilityEvent::SignedBlock("test".to_string()),
+                borsh::to_vec(&DataAvailabilityEvent::SignedBlock("test".to_string())).unwrap(),
             )
             .await;
 
