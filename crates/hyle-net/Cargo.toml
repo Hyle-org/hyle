@@ -32,13 +32,14 @@ hyper-util = "0.1.10"
 serde = "1.0.219"
 axum = "0.8.3"
 tower-service = "0.3.3"
+opentelemetry = "0.28.0"
 
 [dev-dependencies]
 rand = { version = "0.8.5", features = ["std"] }
 seq-macro = "0.3.6"
 test-log = { version = "0.2.17", features = [
-    "color",
-    "trace",
+  "color",
+  "trace",
 ], default-features = false }
 
 [features]

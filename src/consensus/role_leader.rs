@@ -92,7 +92,7 @@ impl Consensus {
                     {
                         debug!("⏳ Delaying slot start");
                         self.bft_round_state.leader.pending_ticket = Some(ticket);
-                        let command_sender = crate::utils::static_type_map::Pick::<
+                        let command_sender = hyle_modules::utils::static_type_map::Pick::<
                             broadcast::Sender<ConsensusCommand>,
                         >::get(&self.bus)
                         .clone();

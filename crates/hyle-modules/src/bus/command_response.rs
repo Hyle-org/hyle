@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::BusMessage;
 use anyhow::bail;
 use anyhow::Result;
 use opentelemetry::InstrumentationScope;
@@ -32,7 +31,6 @@ pub struct InnerQuery<Type, Answer> {
     pub callback: tokio::sync::oneshot::Sender<Result<Answer>>,
     pub data: Type,
 }
-impl<Cmd, Res> BusMessage for Query<Cmd, Res> {}
 impl<Cmd, Res> InnerQuery<Cmd, Res> {
     pub fn answer(self, data: Res) -> Result<()> {
         self.callback

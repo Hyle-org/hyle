@@ -1,19 +1,19 @@
 use std::time::Duration;
 
 use crate::{
-    bus::{BusClientSender, BusMessage},
+    bus::BusClientSender,
     mempool::api::RestApiMessage,
     model::{
         Blob, BlobData, BlobTransaction, ContractName, ProofData, ProofTransaction,
         SharedRunContext, Transaction,
     },
-    module_handle_messages,
     utils::modules::{module_bus_client, Module},
 };
 use anyhow::Result;
 use client_sdk::rest_client::NodeApiHttpClient;
 use hyle_contract_sdk::{Identity, ProgramId, StateCommitment};
 use hyle_model::{ContractAction, RegisterContractAction};
+use hyle_modules::module_handle_messages;
 use hyle_net::clock::TimestampMsClock;
 use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
@@ -36,7 +36,6 @@ pub enum RunScenario {
         injection_duration_seconds: u64,
     },
 }
-impl BusMessage for RunScenario {}
 
 pub struct MockWorkflowHandler {
     bus: MockWorkflowBusClient,
@@ -104,7 +103,7 @@ mod api {
 
     impl Clone for RouterState {
         fn clone(&self) -> Self {
-            use crate::utils::static_type_map::Pick;
+            use hyle_modules::utils::static_type_map::Pick;
             Self {
                 bus: RestBusClient::new(
                     Pick::<BusMetrics>::get(&self.bus).clone(),

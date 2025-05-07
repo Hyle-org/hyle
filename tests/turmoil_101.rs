@@ -7,11 +7,11 @@ mod fixtures;
 use std::time::Duration;
 
 use fixtures::turmoil::TurmoilHost;
-use hyle::log_error;
 use hyle_model::{
     BlobTransaction, ContractAction, ContractName, ProgramId, RegisterContractAction,
     StateCommitment,
 };
+use hyle_modules::log_error;
 use hyle_net::net::Sim;
 use rand::{rngs::StdRng, SeedableRng};
 
