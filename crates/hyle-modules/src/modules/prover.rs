@@ -365,22 +365,47 @@ where
         let prover = self.ctx.prover.clone();
         let contract_name = self.ctx.contract_name.clone();
         tokio::task::spawn(async move {
-            match prover.prove(commitment_metadata, calldatas).await {
-                Ok(proof) => {
-                    let tx = ProofTransaction {
-                        contract_name: contract_name.clone(),
-                        proof,
-                    };
-                    let _ = log_error!(
-                        node_client.send_tx_proof(&tx).await,
-                        "failed to send proof to node"
-                    );
-                    info!("✅ Proved {len} txs");
-                }
-                Err(e) => {
-                    error!("Error proving tx: {:?}", e);
-                }
-            };
+            let mut retries = 0;
+            const MAX_RETRIES: u32 = 30;
+
+            loop {
+                match prover
+                    .prove(commitment_metadata.clone(), calldatas.clone())
+                    .await
+                {
+                    Ok(proof) => {
+                        let tx = ProofTransaction {
+                            contract_name: contract_name.clone(),
+                            proof,
+                        };
+                        let _ = log_error!(
+                            node_client.send_tx_proof(&tx).await,
+                            "failed to send proof to node"
+                        );
+                        info!("✅ Proved {len} txs");
+                        break;
+                    }
+                    Err(e) => {
+                        let should_retry =
+                            e.to_string().contains("SessionCreateErr") && retries < MAX_RETRIES;
+                        if should_retry {
+                            warn!(
+                                "Session creation error, retrying ({}/{})",
+                                retries, MAX_RETRIES
+                            );
+                            retries += 1;
+                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                            warn!(
+                                "Session creation error, retrying ({}/{})",
+                                retries, MAX_RETRIES
+                            );
+                            continue;
+                        }
+                        error!("Error proving tx: {:?}", e);
+                        break;
+                    }
+                };
+            }
         });
         Ok(())
     }
