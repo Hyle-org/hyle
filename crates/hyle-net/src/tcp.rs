@@ -21,12 +21,9 @@ impl TryFrom<TcpMessage> for Bytes {
     type Error = anyhow::Error;
     fn try_from(message: TcpMessage) -> Result<Self> {
         match message {
+            // This is an untagged enum, if you send exactly "PING", it'll be treated as a ping.
             TcpMessage::Ping => Ok(Bytes::from_static(b"PING")),
-            TcpMessage::Data(_) => {
-                // TODO: this is a bit inefficient.
-                let binary = borsh::to_vec(&message)?;
-                Ok(Bytes::from_owner(binary))
-            }
+            TcpMessage::Data(data) => Ok(Bytes::copy_from_slice(data.as_ref())),
         }
     }
 }

@@ -11,7 +11,6 @@ use crate::{
     },
     utils::{
         conf::{P2pMode, SharedConf},
-        ordered_join_set::OrderedJoinSet,
         serialize::arc_rwlock_borsh,
     },
 };
@@ -25,7 +24,7 @@ use hyle_crypto::{BlstCrypto, SharedBlstCrypto};
 use hyle_modules::{
     log_error, log_warn, module_bus_client, module_handle_messages, modules::Module,
 };
-use hyle_net::clock::TimestampMsClock;
+use hyle_net::{clock::TimestampMsClock, ordered_join_set::OrderedJoinSet};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
