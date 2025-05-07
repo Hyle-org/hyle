@@ -163,7 +163,9 @@ impl NodeState {
                 .staking_actions
                 .iter()
                 .filter_map(|v| match v {
-                    ConsensusStakingAction::Bond { candidate } => Some(candidate.pubkey.clone()),
+                    ConsensusStakingAction::Bond { candidate } => {
+                        Some(candidate.signature.validator.clone())
+                    }
                     _ => None,
                 })
                 .collect(),

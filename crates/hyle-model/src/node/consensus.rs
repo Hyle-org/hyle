@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, ops::Deref};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -38,25 +38,8 @@ pub struct ConsensusInfo {
     PartialOrd,
 )]
 pub struct ValidatorCandidacy {
-    pub pubkey: ValidatorPublicKey,
+    // No need to store a specific pubkeey as it will be part of the signature of this message.
     pub peer_address: String,
-}
-
-#[derive(
-    Debug,
-    Clone,
-    Serialize,
-    Deserialize,
-    BorshSerialize,
-    BorshDeserialize,
-    PartialEq,
-    Eq,
-    Ord,
-    PartialOrd,
-)]
-pub struct NewValidatorCandidate {
-    pub pubkey: ValidatorPublicKey, // TODO: possible optim: the pubkey is already present in the msg,
-    pub msg: SignedByValidator<ConsensusNetMessage>,
 }
 
 #[derive(
@@ -74,7 +57,33 @@ pub struct NewValidatorCandidate {
 )]
 pub struct QuorumCertificateHash(pub Vec<u8>);
 
-pub type QuorumCertificate = AggregateSignature;
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    BorshSerialize,
+    BorshDeserialize,
+    PartialEq,
+    Eq,
+    Ord,
+    PartialOrd,
+    Hash,
+)]
+// Wrapper type with a marker to avoid confusion
+pub struct QuorumCertificate<T>(pub AggregateSignature, pub T);
+
+pub type PrepareQC = QuorumCertificate<PrepareVoteMarker>;
+pub type CommitQC = QuorumCertificate<ConfirmAckMarker>;
+pub type TimeoutQC = QuorumCertificate<ConsensusTimeoutMarker>;
+
+impl<T> Deref for QuorumCertificate<T> {
+    type Target = AggregateSignature;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 #[derive(
     Debug,
@@ -88,7 +97,7 @@ pub type QuorumCertificate = AggregateSignature;
     Ord,
     PartialOrd,
 )]
-pub struct TimeoutCertificate(ConsensusProposalHash, QuorumCertificate);
+pub struct TimeoutCertificate(ConsensusProposalHash, TimeoutQC);
 
 // A Ticket is necessary to send a valid prepare
 #[derive(
@@ -108,10 +117,10 @@ pub struct TimeoutCertificate(ConsensusProposalHash, QuorumCertificate);
 pub enum Ticket {
     // Special value for the initial Cut, needed because we don't have a quorum certificate for the genesis block.
     Genesis,
-    CommitQC(QuorumCertificate),
-    TimeoutQC(QuorumCertificate, TCKind),
+    CommitQC(CommitQC),
+    TimeoutQC(TimeoutQC, TCKind),
     /// Technical value used internally that should never be used to start a slot
-    ForcedCommitQc(QuorumCertificate),
+    ForcedCommitQc,
 }
 
 #[cfg(feature = "sqlx")]
@@ -179,7 +188,9 @@ impl Hashed<ConsensusProposalHash> for ConsensusProposal {
             hasher.update(hash.0.as_bytes());
         });
         self.staking_actions.iter().for_each(|val| match val {
-            ConsensusStakingAction::Bond { candidate } => hasher.update(&candidate.pubkey.0),
+            ConsensusStakingAction::Bond { candidate } => {
+                hasher.update(&candidate.signature.validator.0)
+            }
             ConsensusStakingAction::PayFeesForDaDi {
                 lane_id,
                 cumul_size,
@@ -218,7 +229,7 @@ pub enum ConsensusStakingAction {
     Bond {
         // Boxed to reduce size of the enum
         // cf https://rust-lang.github.io/rust-clippy/master/index.html#large_enum_variant
-        candidate: Box<NewValidatorCandidate>,
+        candidate: Box<SignedByValidator<ValidatorCandidacy>>,
     },
 
     /// DaDi = Data Dissemination
@@ -228,8 +239,8 @@ pub enum ConsensusStakingAction {
     },
 }
 
-impl From<NewValidatorCandidate> for ConsensusStakingAction {
-    fn from(val: NewValidatorCandidate) -> Self {
+impl From<SignedByValidator<ValidatorCandidacy>> for ConsensusStakingAction {
+    fn from(val: SignedByValidator<ValidatorCandidacy>) -> Self {
         ConsensusStakingAction::Bond {
             candidate: Box::new(val),
         }
@@ -252,7 +263,7 @@ impl From<NewValidatorCandidate> for ConsensusStakingAction {
 )]
 pub enum TCKind {
     NilProposal,
-    PrepareQC((QuorumCertificate, ConsensusProposal)),
+    PrepareQC((PrepareQC, ConsensusProposal)),
 }
 
 #[derive(
@@ -274,9 +285,82 @@ pub enum TCKind {
 /// To handle these two cases, we need specific data on top of the regular timeout message.
 pub enum TimeoutKind {
     /// Sign a different message to signify 'nil proposal' for aggregation
-    NilProposal(SignedByValidator<(Slot, View, ConsensusProposalHash, ())>),
+    NilProposal(SignedByValidator<(Slot, View, ConsensusProposalHash, ConsensusTimeoutMarker)>),
     /// Resending the prepare QC & matching proposal (for convenience for the leader to repropose)
-    PrepareQC((QuorumCertificate, ConsensusProposal)),
+    PrepareQC((PrepareQC, ConsensusProposal)),
+}
+
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    BorshSerialize,
+    BorshDeserialize,
+    PartialEq,
+    Eq,
+    Hash,
+    Ord,
+    PartialOrd,
+)]
+pub struct PrepareVoteMarker;
+pub type PrepareVote = SignedByValidator<(ConsensusProposalHash, PrepareVoteMarker)>;
+
+impl From<PrepareVote> for ConsensusNetMessage {
+    fn from(vote: PrepareVote) -> Self {
+        ConsensusNetMessage::PrepareVote(vote)
+    }
+}
+
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    BorshSerialize,
+    BorshDeserialize,
+    PartialEq,
+    Eq,
+    Hash,
+    Ord,
+    PartialOrd,
+)]
+pub struct ConfirmAckMarker;
+pub type ConfirmAck = SignedByValidator<(ConsensusProposalHash, ConfirmAckMarker)>;
+
+impl From<ConfirmAck> for ConsensusNetMessage {
+    fn from(vote: ConfirmAck) -> Self {
+        ConsensusNetMessage::ConfirmAck(vote)
+    }
+}
+
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Clone,
+    BorshSerialize,
+    BorshDeserialize,
+    PartialEq,
+    Eq,
+    Hash,
+    Ord,
+    PartialOrd,
+)]
+pub struct ConsensusTimeoutMarker;
+
+/// This first message will be used in the TC to generate a proof of timeout
+/// Here we add the parent hash purely to avoid replay attacks
+/// The TimeoutKind is used to pick a specific TC type
+pub type ConsensusTimeout = (
+    SignedByValidator<(Slot, View, ConsensusProposalHash, ConsensusTimeoutMarker)>,
+    TimeoutKind,
+);
+
+impl From<ConsensusTimeout> for ConsensusNetMessage {
+    fn from(timeout: ConsensusTimeout) -> Self {
+        ConsensusNetMessage::Timeout(timeout)
+    }
 }
 
 #[derive(
@@ -295,28 +379,18 @@ pub enum TimeoutKind {
 )]
 pub enum ConsensusNetMessage {
     Prepare(ConsensusProposal, Ticket, View),
-    PrepareVote(ConsensusProposalHash),
-    Confirm(QuorumCertificate, ConsensusProposalHash),
-    ConfirmAck(ConsensusProposalHash),
-    Commit(QuorumCertificate, ConsensusProposalHash),
-    /// We do signature aggregation, so we would need everyone to send the same PQC.
-    /// To work around that, send two signatures for now.
-    /// To successfully send a nil certificate, we need a proof of 2f+1 nil timeouts, so we can't really avoid the double-signature.
-    /// TODO:but we could avoid signing the top-level message
-    Timeout(
-        /// Here we add the parent hash purely to avoid replay attacks
-        /// This first message will be used if the TC to generate a proof of timeout
-        SignedByValidator<(Slot, View, ConsensusProposalHash)>,
-        /// The second data is sued to pick a specific TC type
-        TimeoutKind,
-    ),
-    TimeoutCertificate(QuorumCertificate, TCKind, Slot, View),
-    ValidatorCandidacy(ValidatorCandidacy),
+    PrepareVote(PrepareVote),
+    Confirm(PrepareQC, ConsensusProposalHash),
+    ConfirmAck(ConfirmAck),
+    Commit(CommitQC, ConsensusProposalHash),
+    Timeout(ConsensusTimeout),
+    TimeoutCertificate(TimeoutQC, TCKind, Slot, View),
+    ValidatorCandidacy(SignedByValidator<ValidatorCandidacy>),
     SyncRequest(ConsensusProposalHash),
     SyncReply((ValidatorPublicKey, ConsensusProposal, Ticket, View)),
 }
 
-impl Hashed<QuorumCertificateHash> for QuorumCertificate {
+impl<T> Hashed<QuorumCertificateHash> for QuorumCertificate<T> {
     fn hashed(&self) -> QuorumCertificateHash {
         let mut hasher = Sha3_256::new();
         hasher.update(self.signature.0.clone());
@@ -328,9 +402,9 @@ impl Hashed<QuorumCertificateHash> for QuorumCertificate {
     }
 }
 
-impl Display for ValidatorCandidacy {
+impl Display for SignedByValidator<ValidatorCandidacy> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Pubkey: {}", self.pubkey)
+        write!(f, "Pubkey: {}", self.signature.validator)
     }
 }
 
@@ -382,7 +456,7 @@ impl Display for ConsensusNetMessage {
                 )
             }
             ConsensusNetMessage::PrepareVote(cphash) => {
-                write!(f, "{} (CP hash: {})", enum_variant, cphash)
+                write!(f, "{} (CP hash: {})", enum_variant, cphash.msg.0)
             }
             ConsensusNetMessage::Confirm(cert, cphash) => {
                 _ = writeln!(f, "{} (CP hash: {})", enum_variant, cphash);
@@ -393,7 +467,7 @@ impl Display for ConsensusNetMessage {
                 write!(f, "")
             }
             ConsensusNetMessage::ConfirmAck(cphash, ..) => {
-                write!(f, "{} (CP hash: {})", enum_variant, cphash)
+                write!(f, "{} (CP hash: {})", enum_variant, cphash.msg.0)
             }
             ConsensusNetMessage::Commit(cert, cphash) => {
                 _ = writeln!(f, "{} (CP hash: {})", enum_variant, cphash);
@@ -407,7 +481,7 @@ impl Display for ConsensusNetMessage {
             ConsensusNetMessage::ValidatorCandidacy(candidacy) => {
                 write!(f, "{} (Candidacy {})", enum_variant, candidacy)
             }
-            ConsensusNetMessage::Timeout(signed_slot_view, tk) => {
+            ConsensusNetMessage::Timeout((signed_slot_view, tk)) => {
                 _ = writeln!(
                     f,
                     "{} - Slot: {} View: {}",
@@ -492,14 +566,13 @@ mod tests {
                 LaneBytesSize(1),
                 AggregateSignature::default(),
             )],
-            staking_actions: vec![NewValidatorCandidate {
-                pubkey: ValidatorPublicKey(vec![1, 2, 3]),
-                msg: SignedByValidator {
-                    msg: ConsensusNetMessage::PrepareVote(ConsensusProposalHash("".to_string())),
-                    signature: ValidatorSignature {
-                        signature: Signature(vec![1, 2, 3]),
-                        validator: ValidatorPublicKey(vec![1, 2, 3]),
-                    },
+            staking_actions: vec![SignedByValidator::<ValidatorCandidacy> {
+                msg: ValidatorCandidacy {
+                    peer_address: "peer".to_string(),
+                },
+                signature: ValidatorSignature {
+                    signature: Signature(vec![1, 2, 3]),
+                    validator: ValidatorPublicKey(vec![1, 2, 3]),
                 },
             }
             .into()],
@@ -517,22 +590,34 @@ mod tests {
                     validators: vec![ValidatorPublicKey(vec![1, 2, 3])],
                 },
             )],
-            staking_actions: vec![NewValidatorCandidate {
-                pubkey: ValidatorPublicKey(vec![1, 2, 3]),
-                msg: SignedByValidator {
-                    msg: ConsensusNetMessage::PrepareVote(ConsensusProposalHash(
-                        "differebt".to_string(),
-                    )),
-                    signature: ValidatorSignature {
-                        signature: Signature(vec![]),
-                        validator: ValidatorPublicKey(vec![]),
-                    },
+            staking_actions: vec![SignedByValidator::<ValidatorCandidacy> {
+                msg: ValidatorCandidacy {
+                    peer_address: "different".to_string(),
+                },
+                signature: ValidatorSignature {
+                    signature: Signature(vec![3, 4, 5]),
+                    validator: ValidatorPublicKey(vec![3, 4, 5]),
                 },
             }
             .into()],
             timestamp: TimestampMs(1),
             parent_hash: ConsensusProposalHash("parent".to_string()),
         };
+        assert_ne!(a.hashed(), b.hashed());
+        if let ConsensusStakingAction::Bond { candidate: a } =
+            b.staking_actions.first_mut().unwrap()
+        {
+            a.msg.peer_address = "peer".to_string()
+        }
+        assert_ne!(a.hashed(), b.hashed());
+        if let ConsensusStakingAction::Bond { candidate: a } =
+            b.staking_actions.first_mut().unwrap()
+        {
+            a.signature = ValidatorSignature {
+                signature: Signature(vec![1, 2, 3]),
+                validator: ValidatorPublicKey(vec![1, 2, 3]),
+            };
+        }
         assert_eq!(a.hashed(), b.hashed());
         a.timestamp = TimestampMs(2);
         assert_ne!(a.hashed(), b.hashed());
