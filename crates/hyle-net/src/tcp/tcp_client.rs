@@ -112,22 +112,17 @@ where
 
     pub async fn recv(&mut self) -> Option<Res> {
         loop {
-            match self
-                .receiver
-                .next()
-                .await
-                .map(|x| x.map(|x| borsh::from_slice(&x)))
-            {
-                Some(Ok(Ok(TcpMessage::Data(data)))) => {
-                    // Interesting message
-                    match borsh::from_slice(&data) {
-                        Ok(data) => {
-                            trace!("Some data for client {}", self.id);
-                            return Some(data);
-                        }
-                        Err(e) => {
-                            warn!("Error while deserializing data: {:#}", e);
-                            return None;
+            match self.receiver.next().await {
+                Some(Ok(bytes)) => {
+                    if *bytes == *b"PING" {
+                        trace!("Ping received for client {}", self.id);
+                    } else {
+                        match borsh::from_slice(&bytes) {
+                            Ok(data) => return Some(data),
+                            Err(io) => {
+                                warn!("Error while deserializing data: {:#}", io);
+                                return None;
+                            }
                         }
                     }
                 }
@@ -136,12 +131,9 @@ where
                     warn!("End of stream for client {}", self.id);
                     return None;
                 }
-                Some(Err(e)) | Some(Ok(Err(e))) => {
+                Some(Err(e)) => {
                     warn!("Error while streaming data from peer: {:#}", e);
                     return None;
-                }
-                Some(Ok(Ok(TcpMessage::Ping))) => {
-                    trace!("Ping received for client {}", self.id);
                 }
             }
         }

@@ -597,21 +597,21 @@ pub mod tests {
 
         // Send data to server
         // A vec will be prefixed with 4 bytes (u32) containing the size of the payload
-        // We also serialize 4 bytes to know it's a data payload.
-        // Here we reach 99 bytes < 100
-        client.send(vec![0b_0; 91]).await?;
+        // Here we reach 100 bytes <= 100
+        client.send(vec![0b_0; 96]).await?;
 
         let data = match server.listen_next().await.unwrap() {
             TcpEvent::Message { data, .. } => data,
             _ => panic!("Expected a Message event"),
         };
 
-        assert_eq!(data.len(), 91);
+        assert_eq!(data.len(), 96);
         assert!(server.pool_receiver.try_recv().is_err());
 
         // Send data to server
-        // Here we reach 100 bytes, it should explode the limit
-        let sent = client.send(vec![0b_0; 92]).await;
+        // Here we reach 101 bytes, it should explode the limit
+        let sent = client.send(vec![0b_0; 97]).await;
+        tracing::warn!("Sent: {:?}", sent);
         assert!(sent.is_err_and(|e| e.to_string().contains("frame size too big")));
 
         let mut client_relaxed = BytesClient::connect(
@@ -621,16 +621,16 @@ pub mod tests {
         .await?;
 
         // Should be ok server side
-        client_relaxed.send(vec![0b_0; 91]).await?;
+        client_relaxed.send(vec![0b_0; 96]).await?;
 
         let data = match server.listen_next().await.unwrap() {
             TcpEvent::Message { data, .. } => data,
             _ => panic!("Expected a Message event"),
         };
-        assert_eq!(data.len(), 91);
+        assert_eq!(data.len(), 96);
 
         // Should explode server side
-        client_relaxed.send(vec![0b_0; 92]).await?;
+        client_relaxed.send(vec![0b_0; 97]).await?;
 
         let received_data = server.listen_next().await;
         assert!(received_data.is_some_and(|tcp_event| matches!(tcp_event, TcpEvent::Closed { .. })));

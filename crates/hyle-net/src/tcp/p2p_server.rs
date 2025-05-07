@@ -811,7 +811,7 @@ pub mod tests {
             None,
             format!("127.0.0.1:{port1}"),
             "127.0.0.1:4321".into(), // send some dummy address for DA,
-            HashSet::from_iter(vec![Canal::new("A")]),
+            HashSet::from_iter(vec![Canal::new("A"), Canal::new("B")]),
         )
         .await?;
         let p2p_server2 = P2PServer::new(
@@ -821,7 +821,7 @@ pub mod tests {
             None,
             format!("127.0.0.1:{port2}"),
             "127.0.0.1:4321".into(), // send some dummy address for DA
-            HashSet::from_iter(vec![Canal::new("A")]),
+            HashSet::from_iter(vec![Canal::new("A"), Canal::new("B")]),
         )
         .await?;
 
@@ -922,6 +922,7 @@ pub mod tests {
 
         Ok(())
     }
+
     #[test_log::test(tokio::test)]
     async fn p2p_server_multi_canal_handshake() -> Result<()> {
         let ((port1, mut p2p_server1), (port2, mut p2p_server2)) = setup_p2p_server_pair().await?;
@@ -1069,8 +1070,10 @@ pub mod tests {
 
         // Canal A (1 -> 2)
         p2p_server1.broadcast(TestMessage("blabla".to_string()), Canal::new("A"));
+        // Process the waiting job.
+        p2p_server1.listen_next().await;
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
 
         let evt = receive_event(&mut p2p_server2, "Should be a TestMessage event").await?;
 
@@ -1094,6 +1097,10 @@ pub mod tests {
 
         // Canal B (1 -> 2)
         p2p_server1.broadcast(TestMessage("blabla2".to_string()), Canal::new("B"));
+        // Process the waiting job.
+        p2p_server1.listen_next().await;
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
 
         let evt = receive_event(&mut p2p_server2, "Should be a TestMessage event").await?;
 
@@ -1117,6 +1124,10 @@ pub mod tests {
 
         // Canal A (2 -> 1)
         p2p_server2.broadcast(TestMessage("babal".to_string()), Canal::new("A"));
+        // Process the waiting job.
+        p2p_server2.listen_next().await;
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
 
         let evt = receive_event(&mut p2p_server1, "Should be a TestMessage event").await?;
 
@@ -1140,6 +1151,10 @@ pub mod tests {
 
         // Canal B (2 -> 1)
         p2p_server2.broadcast(TestMessage("babal2".to_string()), Canal::new("B"));
+        // Process the waiting job.
+        p2p_server2.listen_next().await;
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
 
         let evt = receive_event(&mut p2p_server1, "Should be a TestMessage event").await?;
 
