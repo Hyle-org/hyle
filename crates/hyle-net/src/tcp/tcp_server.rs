@@ -3,53 +3,56 @@ use std::{
     io::ErrorKind,
     marker::PhantomData,
     net::{Ipv4Addr, SocketAddr},
+    sync::Arc,
 };
 
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
+use bytes::Bytes;
 use futures::{
     stream::{SplitSink, SplitStream},
     FutureExt, SinkExt, StreamExt,
 };
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio_util::codec::{Decoder, Encoder, Framed};
+use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use crate::{
     clock::TimestampMsClock,
     net::{TcpListener, TcpStream},
-    tcp::{TcpMessage, TcpMessageCodec},
+    tcp::{to_tcp_message, TcpMessage},
 };
 use tracing::{debug, error, trace, warn};
 
 use super::{tcp_client::TcpClient, SocketStream, TcpEvent};
 
-pub struct TcpServer<Codec, Req: Clone + std::fmt::Debug, Res: Clone + std::fmt::Debug> {
+pub struct TcpServer<Req, Res>
+where
+    Res: BorshSerialize + std::fmt::Debug,
+    Req: BorshDeserialize + std::fmt::Debug,
+{
     tcp_listener: TcpListener,
     max_frame_length: Option<usize>,
-    pool_sender: Sender<TcpEvent<Req>>,
-    pool_receiver: Receiver<TcpEvent<Req>>,
+    pool_sender: Sender<TcpEvent<Arc<Vec<u8>>>>,
+    pool_receiver: Receiver<TcpEvent<Arc<Vec<u8>>>>,
     ping_sender: Sender<String>,
     ping_receiver: Receiver<String>,
-    sockets: HashMap<String, SocketStream<Res>>,
-    _codec: std::marker::PhantomData<Codec>,
+    sockets: HashMap<String, SocketStream>,
+    _marker: PhantomData<(Req, Res)>,
 }
 
-impl<Codec, Req, Res> TcpServer<Codec, Req, Res>
+impl<Req, Res> TcpServer<Req, Res>
 where
-    Codec: Decoder<Item = Req> + Encoder<Res> + Default + Send + 'static,
-    <Codec as Decoder>::Error: std::fmt::Debug + Send,
-    <Codec as Encoder<Res>>::Error: std::fmt::Debug + Send,
-    Req: BorshDeserialize + Clone + Send + 'static + std::fmt::Debug,
-    Res: BorshSerialize + Clone + Send + 'static + std::fmt::Debug,
+    Req: BorshSerialize + BorshDeserialize + std::fmt::Debug,
+    Res: BorshSerialize + BorshDeserialize + std::fmt::Debug,
 {
-    pub async fn start(port: u16, pool_name: String) -> anyhow::Result<Self> {
+    pub async fn start(port: u16, pool_name: &str) -> anyhow::Result<Self> {
         Self::start_with_opts(port, None, pool_name).await
     }
 
     pub async fn start_with_opts(
         port: u16,
         max_frame_length: Option<usize>,
-        pool_name: String,
+        pool_name: &str,
     ) -> anyhow::Result<Self> {
         let tcp_listener = TcpListener::bind(&(Ipv4Addr::UNSPECIFIED, port)).await?;
         let (pool_sender, pool_receiver) = tokio::sync::mpsc::channel(100);
@@ -58,7 +61,7 @@ where
             "Starting TcpConnectionPool {}, listening for stream requests on {} with max_frame_len: {:?}",
             &pool_name, port, max_frame_length
         );
-        Ok(TcpServer::<Codec, Req, Res> {
+        Ok(TcpServer {
             sockets: HashMap::new(),
             max_frame_length,
             tcp_listener,
@@ -66,7 +69,7 @@ where
             pool_receiver,
             ping_sender,
             ping_receiver,
-            _codec: PhantomData::<Codec>,
+            _marker: PhantomData,
         })
     }
 
@@ -74,11 +77,10 @@ where
         loop {
             tokio::select! {
                 Ok((stream, socket_addr)) = self.tcp_listener.accept() => {
-
-                    let codec = match self.max_frame_length {
-                        Some(len) => TcpMessageCodec::<Codec>::new(len),
-                        None => TcpMessageCodec::<Codec>::default()
-                    };
+                    let mut codec = LengthDelimitedCodec::new();
+                    if let Some(len) = self.max_frame_length {
+                        codec.set_max_frame_length(len);
+                    }
 
                     let (sender, receiver) = Framed::new(stream, codec).split();
                     self.setup_stream(sender, receiver, &socket_addr.to_string());
@@ -91,7 +93,24 @@ where
                     }
                 }
                 message = self.pool_receiver.recv() => {
-                    return message;
+                    return message.map(|msg| {
+                        match msg {
+                            TcpEvent::Message { data, dest } => {
+                                let data = borsh::from_slice(&data).unwrap();
+                                TcpEvent::Message { data, dest }
+                            },
+                            // TODO: transmute I guess
+                            TcpEvent::Error { dest, error } => {
+                                TcpEvent::Error {
+                                    dest,
+                                    error
+                                }
+                            }
+                            TcpEvent::Closed { dest } => {
+                                TcpEvent::Closed { dest }
+                            }
+                        }
+                    })
                 }
             }
         }
@@ -114,12 +133,24 @@ where
 
         let mut tasks = vec![];
 
+        let Ok(binary_data) = to_tcp_message(&msg) else {
+            return self
+                .sockets
+                .iter()
+                .map(|addr| {
+                    (
+                        addr.0.clone(),
+                        anyhow::anyhow!("Failed to serialize message"),
+                    )
+                })
+                .collect();
+        };
         for (name, socket) in self.sockets.iter_mut() {
             debug!(" - to {}", name);
             tasks.push(
                 socket
                     .sender
-                    .send(TcpMessage::Data(msg.clone()))
+                    .send(binary_data.clone())
                     .map(|res| (name.clone(), res)),
             );
         }
@@ -135,6 +166,7 @@ where
             })
         }))
     }
+
     pub async fn send_parallel(
         &mut self,
         socket_addrs: Vec<String>,
@@ -151,13 +183,23 @@ where
 
         // Send the message to all targets concurrently and wait for them to finish
         let all_sent = {
+            let Ok(binary_data) = to_tcp_message(&msg) else {
+                return socket_addrs
+                    .into_iter()
+                    .map(|addr| (addr, anyhow::anyhow!("Failed to serialize message")))
+                    .collect();
+            };
             let mut tasks = vec![];
-            for (name, socket) in self.sockets.iter_mut().filter(|s| socket_addrs.contains(s.0)) {
+            for (name, socket) in self
+                .sockets
+                .iter_mut()
+                .filter(|s| socket_addrs.contains(s.0))
+            {
                 debug!(" - to {}", name);
                 tasks.push(
                     socket
                         .sender
-                        .send(TcpMessage::Data(msg.clone()))
+                        .send(binary_data.clone())
                         .map(|res| (name.clone(), res)),
                 );
             }
@@ -193,9 +235,10 @@ where
             .get_mut(&socket_addr)
             .context(format!("Retrieving client {}", socket_addr))?;
 
+        let binary_data = to_tcp_message(&msg)?;
         stream
             .sender
-            .send(TcpMessage::Data(msg))
+            .send(binary_data)
             .await
             .map_err(|e| anyhow::anyhow!("Sending msg to client {}: {}", socket_addr, e))
     }
@@ -216,8 +259,8 @@ where
     /// Setup stream in the managed list for a new client
     fn setup_stream(
         &mut self,
-        mut sender: SplitSink<Framed<TcpStream, TcpMessageCodec<Codec>>, TcpMessage<Res>>,
-        mut receiver: SplitStream<Framed<TcpStream, TcpMessageCodec<Codec>>>,
+        mut sender: SplitSink<Framed<TcpStream, LengthDelimitedCodec>, Bytes>,
+        mut receiver: SplitStream<Framed<TcpStream, LengthDelimitedCodec>>,
         socket_addr: &String,
     ) {
         // Start a task to process pings from the peer.
@@ -232,11 +275,15 @@ where
         // If the stream is closed, we also assume the task is to be aborted.
         let abort_receiver_task = tokio::spawn(async move {
             loop {
-                match receiver.next().await {
-                    Some(Ok(TcpMessage::Ping)) => {
+                match receiver
+                    .next()
+                    .await
+                    .map(|x| x.map(|d| borsh::from_slice(&d)))
+                {
+                    Some(Ok(Ok(TcpMessage::Ping))) => {
                         _ = ping_sender.send(cloned_socket_addr.clone()).await;
                     }
-                    Some(Ok(TcpMessage::Data(data))) => {
+                    Some(Ok(Ok(TcpMessage::Data(data)))) => {
                         debug!(
                             "Received data from socket {}: {:?}",
                             cloned_socket_addr, data
@@ -248,7 +295,7 @@ where
                             })
                             .await;
                     }
-                    Some(Err(err)) => {
+                    Some(Err(err)) | Some(Ok(Err(err))) => {
                         if err.kind() == ErrorKind::InvalidData {
                             error!("Received invalid data in socket {cloned_socket_addr} event loop: {err}",);
                         } else {
@@ -283,13 +330,20 @@ where
             }
         });
 
-        let (sender_snd, mut sender_recv) = tokio::sync::mpsc::channel(1000);
+        let (sender_snd, mut sender_recv) = tokio::sync::mpsc::channel::<TcpMessage>(1000);
 
         let abort_sender_task = tokio::spawn({
             let cloned_socket_addr = socket_addr.clone();
             async move {
                 while let Some(msg) = sender_recv.recv().await {
-                    if let Err(e) = sender.send(msg).await {
+                    let Ok(msg_bytes) = msg.try_into() else {
+                        error!(
+                            "Failed to serialize message to send to peer {}",
+                            cloned_socket_addr
+                        );
+                        break;
+                    };
+                    if let Err(e) = sender.send(msg_bytes).await {
                         error!("Sending message to peer {}: {}", cloned_socket_addr, e);
                         break;
                     }
@@ -310,7 +364,7 @@ where
         );
     }
 
-    pub fn setup_client(&mut self, addr: String, tcp_client: TcpClient<Codec, Res, Req>) {
+    pub fn setup_client(&mut self, addr: String, tcp_client: TcpClient<Req, Res>) {
         let (sender, receiver) = tcp_client.split();
         self.setup_stream(sender, receiver, &addr);
     }
@@ -328,14 +382,14 @@ where
 pub mod tests {
     use std::time::Duration;
 
-    use crate::{
-        tcp::{TcpEvent, TcpMessage},
-        tcp_client_server,
-    };
+    use crate::tcp::{tcp_client::TcpClient, to_tcp_message, TcpEvent, TcpMessage};
 
     use anyhow::Result;
     use borsh::{BorshDeserialize, BorshSerialize};
+    use bytes::Bytes;
     use futures::TryStreamExt;
+
+    use super::TcpServer;
 
     #[derive(BorshDeserialize, BorshSerialize, Clone, Debug, PartialEq, Eq)]
     pub struct DataAvailabilityRequest(pub usize);
@@ -345,17 +399,14 @@ pub mod tests {
         SignedBlock(String),
     }
 
-    tcp_client_server! {
-        DataAvailability,
-        request: crate::tcp::tcp_server::tests::DataAvailabilityRequest,
-        response: crate::tcp::tcp_server::tests::DataAvailabilityEvent
-    }
+    type DAServer = TcpServer<DataAvailabilityRequest, DataAvailabilityEvent>;
+    type DAClient = TcpClient<DataAvailabilityRequest, DataAvailabilityEvent>;
 
     #[tokio::test]
     async fn tcp_test() -> Result<()> {
-        let mut server = codec_data_availability::start_server(2345).await?;
+        let mut server = DAServer::start(2345, "DaServer").await?;
 
-        let mut client = codec_data_availability::connect("me".to_string(), "0.0.0.0:2345").await?;
+        let mut client = DAClient::connect("me".to_string(), "0.0.0.0:2345").await?;
 
         // Ping
         client.ping().await?;
@@ -379,8 +430,8 @@ pub mod tests {
             .await;
 
         assert_eq!(
-            client.receiver.try_next().await.unwrap().unwrap(),
-            TcpMessage::Data(DataAvailabilityEvent::SignedBlock("blabla".to_string()))
+            client.recv().await.unwrap(),
+            DataAvailabilityEvent::SignedBlock("blabla".to_string())
         );
 
         let client_socket_addr = server.connected_clients().first().unwrap().clone();
@@ -389,102 +440,173 @@ pub mod tests {
 
         assert_eq!(
             client.receiver.try_next().await.unwrap().unwrap(),
-            TcpMessage::Ping
+            TryInto::<Bytes>::try_into(TcpMessage::Ping).unwrap()
         );
 
         Ok(())
     }
-    
+
     #[tokio::test]
     async fn tcp_broadcast() -> Result<()> {
-        let mut server = codec_data_availability::start_server(0).await?;
+        let mut server = DAServer::start(0, "DaServer").await?;
 
-        let mut client1 = codec_data_availability::connect("me1".to_string(), format!("0.0.0.0:{}", server.local_addr().unwrap().port())).await?;
+        let mut client1 = DAClient::connect(
+            "me1".to_string(),
+            format!("0.0.0.0:{}", server.local_addr().unwrap().port()),
+        )
+        .await?;
         _ = tokio::time::timeout(Duration::from_millis(200), server.listen_next()).await;
 
-        let mut client2 = codec_data_availability::connect("me2".to_string(), format!("0.0.0.0:{}", server.local_addr().unwrap().port())).await?;
+        let mut client2 = DAClient::connect(
+            "me2".to_string(),
+            format!("0.0.0.0:{}", server.local_addr().unwrap().port()),
+        )
+        .await?;
         _ = tokio::time::timeout(Duration::from_millis(200), server.listen_next()).await;
 
         tokio::time::sleep(Duration::from_millis(200)).await;
 
-        server.broadcast(DataAvailabilityEvent::SignedBlock("test".to_string())).await;
+        server
+            .broadcast(DataAvailabilityEvent::SignedBlock("test".to_string()))
+            .await;
 
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         let res1 = client1.receiver.try_next().await;
         assert!(res1.is_ok());
-        assert_eq!(res1.unwrap().unwrap(), TcpMessage::Data(DataAvailabilityEvent::SignedBlock("test".to_string())));
+        assert_eq!(
+            res1.unwrap().unwrap(),
+            TryInto::<Bytes>::try_into(
+                to_tcp_message(&DataAvailabilityEvent::SignedBlock("test".to_string())).unwrap()
+            )
+            .unwrap()
+        );
         let res2 = client2.receiver.try_next().await;
         assert!(res2.is_ok());
-        assert_eq!(res2.unwrap().unwrap(), TcpMessage::Data(DataAvailabilityEvent::SignedBlock("test".to_string())));
+        assert_eq!(
+            res2.unwrap().unwrap(),
+            TryInto::<Bytes>::try_into(
+                to_tcp_message(&DataAvailabilityEvent::SignedBlock("test".to_string())).unwrap()
+            )
+            .unwrap()
+        );
 
         Ok(())
     }
 
     #[tokio::test]
     async fn tcp_send_parallel() -> Result<()> {
-        let mut server = codec_data_availability::start_server(0).await?;
+        let mut server = DAServer::start(0, "DAServer").await?;
 
-        let mut client1 = codec_data_availability::connect("me1".to_string(), format!("0.0.0.0:{}", server.local_addr().unwrap().port())).await?;
+        let mut client1 = DAClient::connect(
+            "me1".to_string(),
+            format!("0.0.0.0:{}", server.local_addr().unwrap().port()),
+        )
+        .await?;
         _ = tokio::time::timeout(Duration::from_millis(200), server.listen_next()).await;
 
         let client1_addr = server.connected_clients().clone().first().unwrap().clone();
 
-        let mut client2 = codec_data_availability::connect("me2".to_string(), format!("0.0.0.0:{}", server.local_addr().unwrap().port())).await?;
+        let mut client2 = DAClient::connect(
+            "me2".to_string(),
+            format!("0.0.0.0:{}", server.local_addr().unwrap().port()),
+        )
+        .await?;
         _ = tokio::time::timeout(Duration::from_millis(200), server.listen_next()).await;
-        let client2_addr = server.connected_clients().clone().into_iter().filter(|addr| addr != &client1_addr).next_back().unwrap();
-        
-        server.send_parallel(vec![client2_addr.to_string()], DataAvailabilityEvent::SignedBlock("test".to_string())).await;
+        let client2_addr = server
+            .connected_clients()
+            .clone()
+            .into_iter()
+            .filter(|addr| addr != &client1_addr)
+            .next_back()
+            .unwrap();
+
+        server
+            .send_parallel(
+                vec![client2_addr.to_string()],
+                DataAvailabilityEvent::SignedBlock("test".to_string()),
+            )
+            .await;
 
         tokio::time::sleep(Duration::from_millis(100)).await;
 
-        let res1 = tokio::time::timeout(Duration::from_millis(200), client1.receiver.try_next()).await;
+        let res1 =
+            tokio::time::timeout(Duration::from_millis(200), client1.receiver.try_next()).await;
         assert!(res1.is_err());
 
         let res2 = client2.receiver.try_next().await;
         assert!(res2.is_ok());
-        assert_eq!(res2.unwrap().unwrap(), TcpMessage::Data(DataAvailabilityEvent::SignedBlock("test".to_string())));
+        assert_eq!(
+            res2.unwrap().unwrap(),
+            TryInto::<Bytes>::try_into(
+                to_tcp_message(&DataAvailabilityEvent::SignedBlock("test".to_string())).unwrap()
+            )
+            .unwrap()
+        );
 
         Ok(())
     }
 
     #[tokio::test]
     async fn tcp_send() -> Result<()> {
-        let mut server = codec_data_availability::start_server(0).await?;
+        let mut server = DAServer::start(0, "DAServer").await?;
 
-        let mut client1 = codec_data_availability::connect("me1".to_string(), format!("0.0.0.0:{}", server.local_addr().unwrap().port())).await?;
+        let mut client1 = DAClient::connect(
+            "me1".to_string(),
+            format!("0.0.0.0:{}", server.local_addr().unwrap().port()),
+        )
+        .await?;
         _ = tokio::time::timeout(Duration::from_millis(200), server.listen_next()).await;
         let client1_addr = server.connected_clients().first().unwrap().clone();
 
-        let mut client2 = codec_data_availability::connect("me2".to_string(), format!("0.0.0.0:{}", server.local_addr().unwrap().port())).await?;
+        let mut client2 = DAClient::connect(
+            "me2".to_string(),
+            format!("0.0.0.0:{}", server.local_addr().unwrap().port()),
+        )
+        .await?;
         _ = tokio::time::timeout(Duration::from_millis(200), server.listen_next()).await;
-        let client2_addr = server.connected_clients().clone().into_iter().filter(|addr| addr != &client1_addr).next_back().unwrap();
-        
-        _ = server.send(client2_addr.to_string(), DataAvailabilityEvent::SignedBlock("test".to_string())).await;
+        let client2_addr = server
+            .connected_clients()
+            .clone()
+            .into_iter()
+            .filter(|addr| addr != &client1_addr)
+            .next_back()
+            .unwrap();
+
+        _ = server
+            .send(
+                client2_addr.to_string(),
+                DataAvailabilityEvent::SignedBlock("test".to_string()),
+            )
+            .await;
 
         tokio::time::sleep(Duration::from_millis(100)).await;
 
-        let res1 = tokio::time::timeout(Duration::from_millis(200), client1.receiver.try_next()).await;
+        let res1 =
+            tokio::time::timeout(Duration::from_millis(200), client1.receiver.try_next()).await;
         assert!(res1.is_err());
 
         let res2 = client2.receiver.try_next().await;
         assert!(res2.is_ok());
-        assert_eq!(res2.unwrap().unwrap(), TcpMessage::Data(DataAvailabilityEvent::SignedBlock("test".to_string())));
+        assert_eq!(
+            res2.unwrap().unwrap(),
+            TryInto::<Bytes>::try_into(
+                to_tcp_message(&DataAvailabilityEvent::SignedBlock("test".to_string())).unwrap()
+            )
+            .unwrap()
+        );
 
         Ok(())
     }
 
-    tcp_client_server! {
-        bytes,
-        request: Vec<u8>,
-        response: Vec<u8>
-    }
+    type BytesServer = TcpServer<Vec<u8>, Vec<u8>>;
+    type BytesClient = TcpClient<Vec<u8>, Vec<u8>>;
 
-    #[tokio::test]
+    #[test_log::test(tokio::test)]
     async fn tcp_with_max_frame_length() -> Result<()> {
-        let mut server = codec_bytes::start_server_with_opts(0, Some(100)).await?;
+        let mut server = BytesServer::start_with_opts(0, Some(100), "Test").await?;
 
-        let mut client = codec_bytes::connect_with_opts(
+        let mut client = BytesClient::connect_with_opts(
             "me".to_string(),
             Some(100),
             format!("0.0.0.0:{}", server.local_addr().unwrap().port()),
@@ -493,39 +615,40 @@ pub mod tests {
 
         // Send data to server
         // A vec will be prefixed with 4 bytes (u32) containing the size of the payload
+        // We also serialize 4 bytes to know it's a data payload.
         // Here we reach 99 bytes < 100
-        client.send(vec![0b_0; 95]).await?;
+        client.send(vec![0b_0; 91]).await?;
 
         let data = match server.listen_next().await.unwrap() {
             TcpEvent::Message { data, .. } => data,
             _ => panic!("Expected a Message event"),
         };
 
-        assert_eq!(data.len(), 95);
+        assert_eq!(data.len(), 91);
         assert!(server.pool_receiver.try_recv().is_err());
 
         // Send data to server
         // Here we reach 100 bytes, it should explode the limit
-        let sent = client.send(vec![0b_0; 96]).await;
+        let sent = client.send(vec![0b_0; 92]).await;
         assert!(sent.is_err_and(|e| e.to_string().contains("frame size too big")));
 
-        let mut client_relaxed = codec_bytes::connect(
+        let mut client_relaxed = BytesClient::connect(
             "me".to_string(),
             format!("0.0.0.0:{}", server.local_addr().unwrap().port()),
         )
         .await?;
 
         // Should be ok server side
-        client_relaxed.send(vec![0b_0; 95]).await?;
+        client_relaxed.send(vec![0b_0; 91]).await?;
 
         let data = match server.listen_next().await.unwrap() {
             TcpEvent::Message { data, .. } => data,
             _ => panic!("Expected a Message event"),
         };
-        assert_eq!(data.len(), 95);
+        assert_eq!(data.len(), 91);
 
         // Should explode server side
-        client_relaxed.send(vec![0b_0; 96]).await?;
+        client_relaxed.send(vec![0b_0; 92]).await?;
 
         let received_data = server.listen_next().await;
         assert!(received_data.is_some_and(|tcp_event| matches!(tcp_event, TcpEvent::Closed { .. })));
