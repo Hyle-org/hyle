@@ -1,10 +1,9 @@
-use std::collections::BTreeMap;
-
+use anyhow::{bail, Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_crypto::BlstCrypto;
+use std::collections::BTreeMap;
 use tracing::{debug, info, trace, warn};
 
-use super::Consensus;
+use super::*;
 use crate::{
     bus::BusClientSender,
     consensus::{role_timeout::TimeoutState, StateTag},
@@ -12,12 +11,11 @@ use crate::{
     p2p::P2PCommand,
     utils::conf::TimestampCheck,
 };
-use anyhow::{bail, Context, Result};
+use hyle_crypto::BlstCrypto;
 use hyle_model::{
-    utils::TimestampMs, AggregateSignature, CommitQC, ConfirmAckMarker, ConsensusNetMessage,
-    ConsensusProposal, ConsensusProposalHash, ConsensusStakingAction, Cut, LaneBytesSize, LaneId,
-    PrepareQC, PrepareVoteMarker, QuorumCertificate, SignedByValidator, TCKind, Ticket, TimeoutQC,
-    ValidatorCandidacy, View,
+    utils::TimestampMs, AggregateSignature, ConsensusProposal, ConsensusProposalHash,
+    ConsensusStakingAction, Cut, LaneBytesSize, LaneId, SignedByValidator, ValidatorCandidacy,
+    View,
 };
 
 #[derive(BorshSerialize, BorshDeserialize, Default)]
@@ -859,8 +857,7 @@ mod tests {
     use crate::bus::metrics::BusMetrics;
     use crate::bus::SharedMessageBus;
     use crate::consensus::test::ConsensusTestCtx;
-    use crate::consensus::{ConsensusProposal, Ticket, ValidatorPublicKey};
-    use crate::model::ConsensusNetMessage;
+    use crate::consensus::*;
     use crate::p2p::network::{MsgWithHeader, NetMessage, OutboundMessage};
 
     #[test]

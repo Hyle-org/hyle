@@ -1,22 +1,12 @@
-use std::{collections::HashSet, time::Duration};
-
-use super::Consensus;
-use crate::{
-    consensus::StateTag,
-    model::{Slot, Ticket, ValidatorPublicKey, View},
-};
 use anyhow::{bail, Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_model::{
-    utils::TimestampMs, ConsensusNetMessage, PrepareQC, QuorumCertificate, SignedByValidator,
-    TimeoutQC,
-};
-use hyle_model::{
-    ConsensusProposalHash, ConsensusTimeout, ConsensusTimeoutMarker, Hashed, PrepareVoteMarker,
-    Signed, TCKind, TimeoutKind,
-};
-use hyle_net::clock::TimestampMsClock;
+use std::{collections::HashSet, time::Duration};
 use tracing::{debug, info, trace, warn};
+
+use super::*;
+use crate::model::{Slot, ValidatorPublicKey, View};
+use hyle_model::{utils::TimestampMs, ConsensusProposalHash, Hashed, Signed, SignedByValidator};
+use hyle_net::clock::TimestampMsClock;
 
 #[derive(Debug, BorshSerialize, BorshDeserialize, Default)]
 pub(super) enum TimeoutState {

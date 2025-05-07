@@ -1,12 +1,12 @@
 //! Networking layer
 
 use crate::{
-    bus::BusClientSender, mempool::MempoolNetMessage, model::SharedRunContext,
-    utils::conf::SharedConf,
+    bus::BusClientSender, consensus::ConsensusNetMessage, mempool::MempoolNetMessage,
+    model::SharedRunContext, utils::conf::SharedConf,
 };
 use anyhow::{Context, Error, Result};
 use hyle_crypto::SharedBlstCrypto;
-use hyle_model::{BlockHeight, ConsensusNetMessage, NodeStateEvent, ValidatorPublicKey};
+use hyle_model::{BlockHeight, NodeStateEvent, ValidatorPublicKey};
 use hyle_modules::{
     log_warn, module_handle_messages,
     modules::{module_bus_client, Module},
