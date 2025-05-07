@@ -21,7 +21,6 @@ use crate::{
 };
 use anyhow::{bail, Context, Result};
 use axum::Router;
-use axum_otel_metrics::HttpMetricsLayerBuilder;
 use hydentity::Hydentity;
 use hyle_crypto::SharedBlstCrypto;
 use hyle_modules::modules::{
@@ -124,7 +123,7 @@ pub fn welcome_message(conf: &conf::Conf) {
    ███████║ ╚████╔╝ ██║     ████╗       {check_p2p} p2p::{p2p_port} | {check_http} http::{http_port} | {check_tcp} tcp::{tcp_port} | ◆ da::{da_port}
    ██╔══██║  ╚██╔╝  ██║     ██╔═╝     
    ██║  ██║   ██║   ███████╗██████╗     {check_indexer} indexer {database_url}
-   ╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═════╝     ∎ ./{data_directory}
+   ╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═════╝     ∎ {data_directory}
  
    Minimal, yet sufficient.
                                  
@@ -136,7 +135,7 @@ pub fn welcome_message(conf: &conf::Conf) {
         } else if conf.p2p.mode == P2pMode::LaneManager {
             "≡  Lane Operator"
         } else {
-            "✘ NO P2P"
+            "✘ NO P2P"
         },
         check_p2p = check_or_cross(!matches!(conf.p2p.mode, P2pMode::None)),
         p2p_port = conf.p2p.server_port,
@@ -211,9 +210,6 @@ async fn common_main(
 
     opentelemetry::global::set_meter_provider(provider.clone());
 
-    let metrics_layer = HttpMetricsLayerBuilder::new()
-        .with_provider(provider)
-        .build();
 
     let bus = SharedMessageBus::new(BusMetrics::global(config.id.clone()));
 
@@ -341,7 +337,6 @@ async fn common_main(
                     },
                     common_run_ctx.bus.new_handle(),
                     router.clone(),
-                    Some(metrics_layer),
                     config.rest_server_max_body_size,
                     openapi,
                 )
