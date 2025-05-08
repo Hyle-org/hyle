@@ -3099,6 +3099,7 @@ dependencies = [
  "borsh",
  "bytes",
  "futures",
+ "hex",
  "http-body-util",
  "hyle-contract-sdk",
  "hyle-crypto",
