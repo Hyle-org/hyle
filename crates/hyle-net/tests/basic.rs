@@ -7,8 +7,7 @@ use std::{collections::HashSet, error::Error, time::Duration};
 use hyle_crypto::BlstCrypto;
 use hyle_net::{
     net::Sim,
-    p2p_server_mod,
-    tcp::{Canal, P2PTcpMessage},
+    tcp::{p2p_server::P2PServer, Canal, P2PTcpMessage},
 };
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 
@@ -19,11 +18,6 @@ impl Into<P2PTcpMessage<Msg>> for Msg {
     fn into(self) -> P2PTcpMessage<Msg> {
         P2PTcpMessage::Data(self)
     }
-}
-
-p2p_server_mod! {
-  pub test,
-  message: crate::Msg
 }
 
 macro_rules! turmoil_simple {
@@ -66,7 +60,6 @@ turmoil_simple!(521..=540, 10, setup_drops);
 
 turmoil_simple!(521..=540, 10, setup_late_host_at_first_handshake);
 
-
 async fn setup_basic_host(
     peer: String,
     peers: Vec<String>,
@@ -74,13 +67,14 @@ async fn setup_basic_host(
     _seed: u64,
 ) -> Result<(), Box<dyn Error>> {
     let crypto = BlstCrypto::new(peer.clone().as_str())?;
-    let mut p2p = p2p_server_test::start_server(
+    let mut p2p = P2PServer::<Msg>::new(
         std::sync::Arc::new(crypto),
         peer.clone(),
         9090,
         None,
         format!("{}:{}", peer, 9090),
         format!("{}:{}", peer, 4141),
+        HashSet::from_iter(std::iter::once(Canal::new("A"))),
     )
     .await?;
 
@@ -132,9 +126,13 @@ pub fn setup_basic(peers: Vec<String>, sim: &mut Sim<'_>, seed: u64) -> anyhow::
     Ok(())
 }
 
-pub fn setup_late_host_at_first_handshake(peers: Vec<String>, sim: &mut Sim<'_>, seed: u64) -> anyhow::Result<()> {
+pub fn setup_late_host_at_first_handshake(
+    peers: Vec<String>,
+    sim: &mut Sim<'_>,
+    seed: u64,
+) -> anyhow::Result<()> {
     tracing::info!("Starting simulation with peers {:?}", peers.clone());
-    let mut rng = StdRng::seed_from_u64(seed); 
+    let mut rng = StdRng::seed_from_u64(seed);
     let late_host = peers.get((rng.next_u64() as usize) % peers.len()).unwrap();
 
     for peer in peers.clone().into_iter() {
@@ -165,13 +163,14 @@ async fn setup_drop_host(
     duration: u64,
 ) -> Result<(), Box<dyn Error>> {
     let crypto = BlstCrypto::new(peer.clone().as_str())?;
-    let mut p2p = p2p_server_test::start_server(
+    let mut p2p = P2PServer::new(
         std::sync::Arc::new(crypto),
         peer.clone(),
         9090,
         None,
         format!("{}:{}", peer, 9090),
         format!("{}:{}", peer, 4141),
+        HashSet::from_iter(std::iter::once(Canal::new("A"))),
     )
     .await?;
 
@@ -205,7 +204,7 @@ async fn setup_drop_host(
                 _ = p2p.handle_p2p_tcp_event(tcp_event).await;
             }
             _ = interval_broadcast.tick() => {
-                p2p.broadcast(Msg(10), Canal::new("A")).await;
+                p2p.broadcast(Msg(10), Canal::new("A"));
             }
         }
     }
@@ -216,13 +215,14 @@ async fn setup_drop_client(
     duration: u64,
 ) -> Result<(), Box<dyn Error>> {
     let crypto = BlstCrypto::new(peer.clone().as_str())?;
-    let mut p2p = p2p_server_test::start_server(
+    let mut p2p = P2PServer::new(
         std::sync::Arc::new(crypto),
         peer.clone(),
         9090,
         None,
         format!("{}:{}", peer, 9090),
         format!("{}:{}", peer, 4141),
+        HashSet::from_iter(std::iter::once(Canal::new("A"))),
     )
     .await?;
 
@@ -243,7 +243,7 @@ async fn setup_drop_client(
             _ = interval_start_shutdown.tick() => {
 
                 if turmoil::elapsed() > Duration::from_millis(duration) {
-                    
+
                     // Peers map should match all_other_peers
                     assert_eq!(all_other_peers.len(), p2p.peers.keys().len());
                     // All current peer sockets should be in tcp server sockets
@@ -258,7 +258,7 @@ async fn setup_drop_client(
                 _ = p2p.handle_p2p_tcp_event(tcp_event).await;
             }
             _ = interval_broadcast.tick() => {
-                p2p.broadcast(Msg(10), Canal::new("A")).await;
+                p2p.broadcast(Msg(10), Canal::new("A"));
             }
         }
     }

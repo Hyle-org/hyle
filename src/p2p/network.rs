@@ -86,11 +86,6 @@ pub enum NetMessage {
     ConsensusMessage(MsgWithHeader<ConsensusNetMessage>),
 }
 
-hyle_net::p2p_server_mod! {
-    pub consensus_mempool,
-    message: super::super::NetMessage
-}
-
 impl From<NetMessage> for P2PTcpMessage<NetMessage> {
     fn from(message: NetMessage) -> Self {
         P2PTcpMessage::Data(message)

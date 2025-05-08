@@ -1,44 +1,41 @@
 use std::net::SocketAddr;
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use bytes::Bytes;
 use futures::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
 use sdk::hyle_model_utils::TimestampMs;
-use tokio_util::codec::{Decoder, Encoder, Framed};
+use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 use crate::{clock::TimestampMsClock, net::TcpStream};
 use anyhow::{bail, Result};
 use tracing::{debug, info, trace, warn};
 
-use super::{TcpMessage, TcpMessageCodec};
+use super::{to_tcp_message, TcpMessage};
 
-type TcpSender<ClientCodec, Req> =
-    SplitSink<Framed<TcpStream, TcpMessageCodec<ClientCodec>>, TcpMessage<Req>>;
-type TcpReceiver<ClientCodec> = SplitStream<Framed<TcpStream, TcpMessageCodec<ClientCodec>>>;
+type TcpSender = SplitSink<Framed<TcpStream, LengthDelimitedCodec>, Bytes>;
+type TcpReceiver = SplitStream<Framed<TcpStream, LengthDelimitedCodec>>;
 
 #[derive(Debug)]
-pub struct TcpClient<ClientCodec, Req, Res>
+pub struct TcpClient<Req, Res>
 where
-    ClientCodec: Decoder<Item = Res> + Encoder<Req> + Default,
-    Req: Clone,
-    Res: Clone + std::fmt::Debug,
+    Req: BorshSerialize,
+    Res: BorshDeserialize,
 {
     pub id: String,
-    pub sender: TcpSender<ClientCodec, Req>,
-    pub receiver: TcpReceiver<ClientCodec>,
+    pub sender: TcpSender,
+    pub receiver: TcpReceiver,
     pub last_ping: TimestampMs,
     pub socket_addr: SocketAddr,
+    pub _marker: std::marker::PhantomData<(Req, Res)>,
 }
 
-impl<ClientCodec, Req, Res> TcpClient<ClientCodec, Req, Res>
+impl<Req, Res> TcpClient<Req, Res>
 where
-    ClientCodec: Decoder<Item = Res> + Encoder<Req> + Default + Send + 'static,
-    <ClientCodec as Decoder>::Error: std::fmt::Debug + Send,
-    <ClientCodec as Encoder<Req>>::Error: std::fmt::Debug + Send,
-    Res: BorshDeserialize + std::fmt::Debug + Clone + Send + 'static,
-    Req: BorshSerialize + Clone + Send + 'static,
+    Req: BorshSerialize,
+    Res: BorshDeserialize,
 {
     pub async fn connect<
         Id: std::fmt::Display,
@@ -46,7 +43,7 @@ where
     >(
         id: Id,
         target: A,
-    ) -> Result<TcpClient<ClientCodec, Req, Res>> {
+    ) -> Result<TcpClient<Req, Res>> {
         Self::connect_with_opts(id, None, target).await
     }
 
@@ -57,7 +54,7 @@ where
         id: Id,
         max_frame_length: Option<usize>,
         target: A,
-    ) -> Result<TcpClient<ClientCodec, Req, Res>> {
+    ) -> Result<TcpClient<Req, Res>> {
         let timeout = std::time::Duration::from_secs(10);
         let start = tokio::time::Instant::now();
         let tcp_stream = loop {
@@ -87,42 +84,47 @@ where
         let addr = tcp_stream.peer_addr()?;
         info!("TcpClient {} - Connected to data stream on {}.", id, addr);
 
-        let codec = match max_frame_length {
-            Some(v) => TcpMessageCodec::<ClientCodec>::new(v),
-            None => TcpMessageCodec::<ClientCodec>::default(),
-        };
+        let mut codec = LengthDelimitedCodec::new();
+        if let Some(mfl) = max_frame_length {
+            codec.set_max_frame_length(mfl);
+        }
 
         let (sender, receiver) = Framed::new(tcp_stream, codec).split();
 
-        Ok(TcpClient {
+        Ok(TcpClient::<Req, Res> {
             id: id.to_string(),
             sender,
             receiver,
             last_ping: TimestampMsClock::now(),
             socket_addr: addr,
+            _marker: std::marker::PhantomData,
         })
     }
 
-    pub async fn send<T: Into<Req>>(&mut self, msg: T) -> Result<()> {
-        self.sender
-            .send(TcpMessage::<Req>::Data(msg.into()))
-            .await?;
-
+    pub async fn send(&mut self, msg: Req) -> Result<()> {
+        self.sender.send(to_tcp_message(&msg)?.try_into()?).await?;
         Ok(())
     }
     pub async fn ping(&mut self) -> Result<()> {
-        self.sender.send(TcpMessage::<Req>::Ping).await?;
-
+        self.sender.send(TcpMessage::Ping.try_into()?).await?;
         Ok(())
     }
 
     pub async fn recv(&mut self) -> Option<Res> {
         loop {
             match self.receiver.next().await {
-                Some(Ok(TcpMessage::Data(data))) => {
-                    // Interesting message
-                    trace!("Some data for client {}", self.id);
-                    return Some(data);
+                Some(Ok(bytes)) => {
+                    if *bytes == *b"PING" {
+                        trace!("Ping received for client {}", self.id);
+                    } else {
+                        match borsh::from_slice(&bytes) {
+                            Ok(data) => return Some(data),
+                            Err(io) => {
+                                warn!("Error while deserializing data: {:#}", io);
+                                return None;
+                            }
+                        }
+                    }
                 }
                 None => {
                     // End of stream
@@ -133,14 +135,11 @@ where
                     warn!("Error while streaming data from peer: {:#}", e);
                     return None;
                 }
-                Some(Ok(TcpMessage::Ping)) => {
-                    trace!("Ping received for client {}", self.id);
-                }
             }
         }
     }
 
-    pub fn split(self) -> (TcpSender<ClientCodec, Req>, TcpReceiver<ClientCodec>) {
+    pub fn split(self) -> (TcpSender, TcpReceiver) {
         (self.sender, self.receiver)
     }
 
@@ -154,22 +153,20 @@ where
 mod tests {
     use std::time::Duration;
 
-    use crate::tcp_client_server;
+    use super::TcpClient;
+    use crate::tcp::tcp_server::TcpServer;
 
-    tcp_client_server! {
-        pub test,
-        request: String,
-        response: String
-    }
+    type TestTCPServer = TcpServer<String, String>;
+    type TestTCPClient = TcpClient<String, String>;
 
     #[tokio::test]
     async fn test_peer_addr() -> anyhow::Result<()> {
-        let mut server = codec_test::start_server(0).await?;
+        let mut server = TestTCPServer::start(0, "Test").await?;
 
         let server_socket = server.local_addr()?;
 
         let client_socket = tokio::spawn(async move {
-            let client = codec_test::connect("id", server_socket).await.unwrap();
+            let client = TestTCPClient::connect("id", server_socket).await.unwrap();
             client.socket_addr
         });
 

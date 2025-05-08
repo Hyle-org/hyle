@@ -1,5 +1,7 @@
 //! Networking layer
 
+use std::collections::HashSet;
+
 use crate::{
     bus::BusClientSender, consensus::ConsensusNetMessage, mempool::MempoolNetMessage,
     model::SharedRunContext, utils::conf::SharedConf,
@@ -15,9 +17,7 @@ use hyle_net::tcp::{
     p2p_server::{P2PServer, P2PServerEvent},
     Canal,
 };
-use network::{
-    p2p_server_consensus_mempool, MsgWithHeader, NetMessage, OutboundMessage, PeerEvent,
-};
+use network::{MsgWithHeader, NetMessage, OutboundMessage, PeerEvent};
 use tracing::{info, trace, warn};
 
 pub mod network;
@@ -68,13 +68,14 @@ impl P2P {
     }
 
     pub async fn p2p_server(&mut self) -> Result<()> {
-        let mut p2p_server = p2p_server_consensus_mempool::start_server(
+        let mut p2p_server = P2PServer::new(
             self.crypto.clone(),
             self.config.id.clone(),
             self.config.p2p.server_port,
             Some(self.config.p2p.max_frame_length),
             self.config.p2p.public_address.clone(),
             self.config.da_public_address.clone(),
+            HashSet::from_iter(vec![Canal::new("mempool"), Canal::new("consensus")]),
         )
         .await?;
 
@@ -117,25 +118,11 @@ impl P2P {
                     }
                     OutboundMessage::BroadcastMessage(message) => {
                         let canal = Self::choose_canal(&message);
-                        for (failed_peer, error) in p2p_server.broadcast(message.clone(), canal).await {
-                            self.handle_failed_send(
-                                &mut p2p_server,
-                                failed_peer,
-                                message.clone(),
-                                error,
-                            ).await;
-                        }
+                        p2p_server.broadcast(message.clone(), canal)
                     }
                     OutboundMessage::BroadcastMessageOnlyFor(only_for, message) => {
                         let canal = Self::choose_canal(&message);
-                        for (failed_peer, error) in p2p_server.broadcast_only_for(&only_for, canal, message.clone()).await {
-                            self.handle_failed_send(
-                                &mut p2p_server,
-                                failed_peer,
-                                message.clone(),
-                                error,
-                            ).await;
-                        }
+                        p2p_server.broadcast_only_for(&only_for, canal, message.clone())
                     }
                 };
             }
@@ -182,10 +169,7 @@ impl P2P {
 
     async fn handle_failed_send(
         &self,
-        p2p_server: &mut P2PServer<
-            p2p_server_consensus_mempool::codec_tcp::ServerCodec,
-            NetMessage,
-        >,
+        p2p_server: &mut P2PServer<NetMessage>,
         validator_id: ValidatorPublicKey,
         _msg: NetMessage,
         error: Error,

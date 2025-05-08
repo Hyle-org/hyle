@@ -10,7 +10,7 @@ use crate::{
     node_state::{metrics::NodeStateMetrics, module::NodeStateEvent, NodeState, NodeStateStore},
     utils::{
         conf::SharedConf,
-        da_codec::{codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequest},
+        da_codec::{DataAvailabilityClient, DataAvailabilityEvent, DataAvailabilityRequest},
     },
 };
 use crate::{log_error, module_handle_messages};
@@ -83,11 +83,8 @@ impl Module for DAListener {
 }
 
 impl DAListener {
-    async fn start_client(
-        &self,
-        block_height: BlockHeight,
-    ) -> Result<codec_data_availability::Client> {
-        let mut client = codec_data_availability::connect_with_opts(
+    async fn start_client(&self, block_height: BlockHeight) -> Result<DataAvailabilityClient> {
+        let mut client = DataAvailabilityClient::connect_with_opts(
             "raw_da_listener".to_string(),
             Some(1024 * 1024 * 1024),
             self.config.da_read_from.clone(),

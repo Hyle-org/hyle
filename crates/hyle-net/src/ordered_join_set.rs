@@ -56,7 +56,7 @@ impl<T> OrderedJoinSet<T> {
     }
 
     /// Polls for the next completed task in order.
-    fn poll_join_next(
+    pub fn poll_join_next(
         &mut self,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<T, tokio::task::JoinError>>> {
