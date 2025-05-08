@@ -11,7 +11,7 @@ use tokio::task::JoinHandle;
 
 use anyhow::Result;
 
-#[derive(Debug, Clone, BorshDeserialize, BorshSerialize, PartialEq)]
+#[derive(Clone, BorshDeserialize, BorshSerialize, PartialEq)]
 pub enum TcpMessage {
     Ping,
     Data(Arc<Vec<u8>>),
@@ -47,6 +47,27 @@ fn test_serialize_tcp_message() {
     let data = to_tcp_message(&d).unwrap();
     let bytes: Bytes = data.try_into().unwrap();
     assert_eq!(bytes, Bytes::from(vec![3, 0, 0, 0, 1, 2, 3]));
+}
+
+impl std::fmt::Debug for TcpMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TcpMessage::Ping => write!(f, "PING"),
+            TcpMessage::Data(data) => write!(
+                f,
+                "DATA: {} bytes ({:?})",
+                data.len(),
+                match data.len() {
+                    0 => "empty".to_string(),
+                    1..20 => hex::encode(data.as_ref()),
+                    _ => format!(
+                        "{}...",
+                        hex::encode(data.iter().take(20).cloned().collect::<Vec<_>>())
+                    ),
+                },
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Clone, BorshDeserialize, BorshSerialize, PartialEq)]

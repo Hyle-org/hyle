@@ -112,8 +112,6 @@ where
     }
 
     pub async fn broadcast(&mut self, msg: Res) -> HashMap<String, anyhow::Error> {
-        debug!("Broadcasting msg {:?} to all", msg);
-
         let mut tasks = vec![];
 
         let Ok(binary_data) = to_tcp_message(&msg) else {
@@ -128,6 +126,7 @@ where
                 })
                 .collect();
         };
+        debug!("Broadcasting msg {:?} to all", binary_data);
         for (name, socket) in self.sockets.iter_mut() {
             debug!(" - to {}", name);
             tasks.push(
@@ -155,8 +154,6 @@ where
         socket_addrs: Vec<String>,
         msg: Vec<u8>,
     ) -> HashMap<String, anyhow::Error> {
-        debug!("Broadcasting msg {:?} to all", msg);
-
         // Getting targetted addrs that are not in the connected sockets list
         let unknown_socket_addrs = {
             let mut res = socket_addrs.clone();
@@ -167,6 +164,7 @@ where
         // Send the message to all targets concurrently and wait for them to finish
         let all_sent = {
             let message = TcpMessage::Data(Arc::new(msg));
+            debug!("Broadcasting msg {:?} to all", message);
             let mut tasks = vec![];
             for (name, socket) in self
                 .sockets
@@ -259,8 +257,10 @@ where
                             _ = ping_sender.send(cloned_socket_addr.clone()).await;
                         } else {
                             debug!(
-                                "Received data from socket {}: {:?}",
-                                cloned_socket_addr, bytes
+                                "Received data from socket {}: {} bytes ({}...)",
+                                cloned_socket_addr,
+                                bytes.len(),
+                                hex::encode(bytes.iter().take(10).cloned().collect::<Vec<_>>())
                             );
                             let _ = pool_sender
                                 .send(Box::new(match borsh::from_slice(&bytes) {
