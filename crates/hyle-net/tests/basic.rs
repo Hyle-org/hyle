@@ -66,7 +66,6 @@ turmoil_simple!(521..=540, 10, setup_drops);
 
 turmoil_simple!(521..=540, 10, setup_late_host_at_first_handshake);
 
-
 async fn setup_basic_host(
     peer: String,
     peers: Vec<String>,
@@ -132,9 +131,13 @@ pub fn setup_basic(peers: Vec<String>, sim: &mut Sim<'_>, seed: u64) -> anyhow::
     Ok(())
 }
 
-pub fn setup_late_host_at_first_handshake(peers: Vec<String>, sim: &mut Sim<'_>, seed: u64) -> anyhow::Result<()> {
+pub fn setup_late_host_at_first_handshake(
+    peers: Vec<String>,
+    sim: &mut Sim<'_>,
+    seed: u64,
+) -> anyhow::Result<()> {
     tracing::info!("Starting simulation with peers {:?}", peers.clone());
-    let mut rng = StdRng::seed_from_u64(seed); 
+    let mut rng = StdRng::seed_from_u64(seed);
     let late_host = peers.get((rng.next_u64() as usize) % peers.len()).unwrap();
 
     for peer in peers.clone().into_iter() {
@@ -243,7 +246,7 @@ async fn setup_drop_client(
             _ = interval_start_shutdown.tick() => {
 
                 if turmoil::elapsed() > Duration::from_millis(duration) {
-                    
+
                     // Peers map should match all_other_peers
                     assert_eq!(all_other_peers.len(), p2p.peers.keys().len());
                     // All current peer sockets should be in tcp server sockets

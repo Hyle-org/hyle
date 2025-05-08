@@ -1,5 +1,3 @@
-#![warn(unused_crate_dependencies)]
-
 use std::fmt::Write;
 use std::io::Read;
 
