@@ -234,16 +234,16 @@ impl super::Mempool {
                 let mut dp = None;
                 if let Some(buffered_proposals) = self.buffered_proposals.get_mut(&lane_id) {
                     // Check if we have a buffered proposal that is a child of this DP
-                    let i = buffered_proposals.iter().position(|dp| {
+                    let child_idx = buffered_proposals.iter().position(|dp| {
                         if let Some(parent_hash) = &dp.parent_data_proposal_hash {
                             parent_hash == &hash
                         } else {
                             false
                         }
                     });
-                    if let Some(i) = i {
+                    if let Some(child_idx) = child_idx {
                         // We have a buffered proposal that is a child of this DP
-                        dp = Some(buffered_proposals.swap_remove(i));
+                        dp = Some(buffered_proposals.swap_remove(child_idx));
                     }
                 }
                 if let Some(dp) = dp {
