@@ -210,7 +210,6 @@ async fn common_main(
 
     opentelemetry::global::set_meter_provider(provider.clone());
 
-
     let bus = SharedMessageBus::new(BusMetrics::global(config.id.clone()));
 
     std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
