@@ -30,6 +30,11 @@ pub struct Args {
 /// Use dhat to profile memory usage
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
+#[cfg(feature = "monitoring")]
+#[global_allocator]
+static GLOBAL_ALLOC: alloc_metrics::MetricAlloc<std::alloc::System> =
+    alloc_metrics::MetricAlloc::new(std::alloc::System);
+
 // We have some modules that have long-ish tasks, but for now we won't bother giving them
 // their own runtime, so to avoid contention we keep a safe number of worker threads
 #[tokio::main(worker_threads = 6)]
