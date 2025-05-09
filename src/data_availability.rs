@@ -279,10 +279,12 @@ impl DataAvailability {
         tcp_server: &mut DaTcpServer,
     ) {
         // Iterative loop to avoid stack overflows
+        // SignedBlock are ordered by height, so the first one is either the next one
+        // or there might still be holes.
         while let Some(first_buffered) = self.buffered_signed_blocks.first() {
             if first_buffered.parent_hash() != &last_block_hash {
-                error!(
-                    "Buffered block parent hash {} does not match last block hash {}",
+                debug!(
+                    "Not popping buffer, parent hash {} does not match last block hash {}",
                     first_buffered.parent_hash(),
                     last_block_hash
                 );
@@ -386,9 +388,13 @@ impl DataAvailability {
             .last()
             .map(|block| block.height() + 1)
             .unwrap_or(BlockHeight(0));
-        let mut client = DataAvailabilityClient::connect("block_catcher".to_string(), ip)
-            .await
-            .context("Error occured setting up the DA listener")?;
+        let mut client = DataAvailabilityClient::connect_with_opts(
+            "block_catcher".to_string(),
+            Some(self.config.da_max_frame_length),
+            ip,
+        )
+        .await
+        .context("Error occured setting up the DA listener")?;
         client.send(DataAvailabilityRequest(start)).await?;
         self.catchup_task = Some(tokio::spawn(async move {
             loop {
@@ -802,5 +808,70 @@ pub mod tests {
         assert_eq!(received_blocks.len(), 5);
         assert_eq!(received_blocks[0].height(), BlockHeight(15));
         assert_eq!(received_blocks[4].height(), BlockHeight(19));
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_out_of_order_blocks() {
+        let tmpdir = tempfile::tempdir().unwrap().into_path();
+        let blocks = Blocks::new(&tmpdir).unwrap();
+
+        let mut server = DataAvailabilityServer::start(7899, "DaServer")
+            .await
+            .unwrap();
+
+        let bus = super::DABusClient::new_from_bus(crate::bus::SharedMessageBus::new(
+            crate::bus::metrics::BusMetrics::global("global".to_string()),
+        ))
+        .await;
+
+        let mut da = super::DataAvailability {
+            config: Default::default(),
+            bus,
+            blocks,
+            buffered_signed_blocks: Default::default(),
+            need_catchup: false,
+            catchup_task: None,
+            catchup_height: None,
+        };
+
+        let mut block0 = SignedBlock::default();
+        block0.consensus_proposal.slot = 0;
+        let block0_hash = block0.hashed();
+
+        let mut block1 = SignedBlock::default();
+        block1.consensus_proposal.slot = 1;
+        block1.consensus_proposal.parent_hash = block0_hash.clone();
+        let block1_hash = block1.hashed();
+
+        let mut block2 = SignedBlock::default();
+        block2.consensus_proposal.slot = 2;
+        block2.consensus_proposal.parent_hash = block1_hash.clone();
+        let block2_hash = block2.hashed();
+
+        let mut block3 = SignedBlock::default();
+        block3.consensus_proposal.slot = 3;
+        block3.consensus_proposal.parent_hash = block2_hash.clone();
+
+        da.handle_signed_block(block0.clone(), &mut server)
+            .await
+            .unwrap();
+        assert_eq!(da.blocks.last().unwrap().height(), BlockHeight(0));
+        da.handle_signed_block(block3.clone(), &mut server)
+            .await
+            .unwrap();
+        assert_eq!(da.blocks.last().unwrap().height(), BlockHeight(0));
+        da.handle_signed_block(block1.clone(), &mut server)
+            .await
+            .unwrap();
+        assert_eq!(da.blocks.last().unwrap().height(), BlockHeight(1));
+        da.handle_signed_block(block2.clone(), &mut server)
+            .await
+            .unwrap();
+
+        assert_eq!(da.blocks.last().unwrap().height(), BlockHeight(3));
+        assert!(da.blocks.get(&block0_hash).unwrap().is_some(),);
+        assert!(da.blocks.get(&block1_hash).unwrap().is_some(),);
+        assert!(da.blocks.get(&block2_hash).unwrap().is_some(),);
+        assert!(da.blocks.get(&block3.hashed()).unwrap().is_some(),);
     }
 }
