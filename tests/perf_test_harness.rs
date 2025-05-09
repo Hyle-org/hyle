@@ -57,6 +57,8 @@ async fn custom_setup() -> Result<()> {
             // Connect all to the second node
             node_conf.da_read_from = format!("localhost:{}", default_conf.da_server_port + 1);
 
+            node_conf.websocket.enabled = false;
+
             confs.push(node_conf);
         }
 

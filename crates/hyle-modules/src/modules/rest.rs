@@ -14,7 +14,6 @@ use axum::{
     routing::get,
     Json,
 };
-use axum_otel_metrics::HttpMetricsLayer;
 use prometheus::{Encoder, Registry, TextEncoder};
 use sdk::{api::NodeInfo, *};
 use tokio::time::Instant;
@@ -37,7 +36,6 @@ pub struct RestApiRunContext {
     pub bus: SharedMessageBus,
     pub router: Router,
     pub registry: Registry,
-    pub metrics_layer: Option<HttpMetricsLayer>,
     pub max_body_size: usize,
     pub openapi: utoipa::openapi::OpenApi,
 }
@@ -48,7 +46,6 @@ impl RestApiRunContext {
         info: NodeInfo,
         bus: SharedMessageBus,
         router: Router,
-        metrics_layer: Option<HttpMetricsLayer>,
         max_body_size: usize,
         openapi: utoipa::openapi::OpenApi,
     ) -> RestApiRunContext {
@@ -58,7 +55,6 @@ impl RestApiRunContext {
             bus,
             router,
             registry: Registry::new(),
-            metrics_layer,
             max_body_size,
             openapi,
         }
@@ -107,10 +103,6 @@ impl Module for RestApi {
                     registry: ctx.registry,
                 }),
         );
-        let app = match ctx.metrics_layer {
-            Some(ml) => app.layer(ml),
-            None => app,
-        };
         let app = app
             .layer(DefaultBodyLimit::max(ctx.max_body_size)) // 10 MB
             .layer(tower_http::cors::CorsLayer::permissive())

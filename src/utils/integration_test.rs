@@ -308,7 +308,6 @@ impl NodeIntegrationCtx {
                     },
                     ctx.common.bus.new_handle(),
                     router.clone(),
-                    None,
                     ctx.common.config.rest_server_max_body_size,
                     Default::default(),
                 ),

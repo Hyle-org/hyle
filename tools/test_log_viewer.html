@@ -13,7 +13,6 @@
         textarea {
             width: 100%;
             height: 100px;
-            margin-bottom: 1rem;
             font-family: monospace;
             font-size: 14px;
         }
@@ -23,13 +22,34 @@
         button {
             padding: 0.5rem 1rem;
             font-size: 16px;
+            cursor: pointer;
+        }
+        .documentation {
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            padding: 1rem;
+            border-radius: 5px;
             margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+        .checkbox-container {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .checkbox-container label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+        }
+        .checkbox-container input[type="checkbox"] {
             cursor: pointer;
         }
         .log-container {
             display: flex;
             gap: 1rem;
-            padding: 1rem 0;
         }
         .log-column {
             flex-basis: 100%;
@@ -82,45 +102,30 @@
             font-weight: bold;
             color: #555;
         }
-        .documentation {
-            background: #f9f9f9;
-            border: 1px solid #ddd;
-            padding: 1rem;
-            border-radius: 5px;
-            margin-bottom: 1rem;
-            font-size: 0.9rem;
-        }
-        .checkbox-container {
-            display: flex;
-            gap: 1rem;
-            margin-bottom: 1rem;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-        .checkbox-container label {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            cursor: pointer;
-        }
-        .checkbox-container input[type="checkbox"] {
-            cursor: pointer;
-        }
+
     </style>
 </head>
 <body>
-    <div class="documentation">
-        <h1>Log Viewer</h1>
-        <p>Paste your logs below and click "Process Logs" to view them in a structured format.</p>
-        <p>Logs are categorized by node, timestamp, and level (INFO, ERROR, WARN, DEBUG).</p>
-        <p>Click on a node's header to toggle its visibility.</p>
+    <div>
+        <div class="documentation">
+            <h1 style="margin-top: 0">Log Viewer</h1>
+            <p>Paste your logs below and click "Process Logs" to view them in a structured format.</p>
+            <p>Logs are categorized by node, timestamp, and level (INFO, ERROR, WARN, DEBUG).</p>
+        </div>
+
+        <textarea id="log-input" placeholder="Paste your logs here" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+        <button onclick="processLogs()" style="margin-bottom: 1rem;">Process Logs</button>
+    </div>
+    <div style="position: sticky; top: 0px; padding-bottom: 1rem; background-color: white;">
+        <div style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem; max-width: 800px">
+            <input id="filter-input" type="text" placeholder="Filter logs by string..." style="flex:1; padding:0.5rem; font-size:14px;" />
+            <button onclick="applyFilter()">Filter</button>
+        </div>
+        <div id="column-visibility" class="checkbox-container">
+            <strong>Show/Hide Columns:</strong>
+        </div>
     </div>
 
-    <textarea id="log-input" placeholder="Paste your logs here" spellcheck="false" autocomplete="off"></textarea>
-    <button onclick="processLogs()">Process Logs</button>
-    <div id="column-visibility" class="checkbox-container">
-        <strong>Show/Hide Columns:</strong>
-    </div>
     <div id="log-container" class="log-container"></div>
 
     <div id="log-line"></div>
@@ -178,7 +183,7 @@
             return { nodeLogs, sortedTimestamps: Array.from(timestamps).sort((a, b) => a - b) };
         }
 
-        function renderLogs(nodeLogs, timestamps) {
+        function renderLogs(nodeLogs, timestamps, filterString = "") {
             const container = document.getElementById("log-container");
             const visibilityContainer = document.getElementById("column-visibility");
             container.innerHTML = ""; // Clear previous logs
@@ -189,15 +194,28 @@
             timeCheckbox.innerHTML = `<input type="checkbox" checked data-column="timestamp"> Timestamp`;
             visibilityContainer.appendChild(timeCheckbox);
 
+            // Filtering logic: only show timestamps where at least one node's log message contains the filter string
+            let filteredTimestamps = timestamps;
+            if (filterString && filterString.trim() !== "") {
+                const filter = filterString.toLowerCase();
+                filteredTimestamps = timestamps.filter(ts => {
+                    return Object.values(nodeLogs).some(logs => {
+                        return logs.some(log => log.timestamp === ts
+                            && log.message && log.message.toLowerCase().includes(filter)
+                        );
+                    });
+                });
+            }
+
             const timeColumn = document.createElement("div");
             timeColumn.classList.add("log-column");
             timeColumn.dataset.columnId = "timestamp";
             timeColumn.style = "flex-basis: 200px;flex-shrink: 0;";
             timeColumn.innerHTML = "<h3>Timestamp</h3>";
-            timestamps.forEach(timestamp => {
+            filteredTimestamps.forEach(timestamp => {
                 const entryDiv = document.createElement("div");
                 entryDiv.classList.add("log-entry");
-                entryDiv.textContent = new Date(timestamp).toISOString();
+                entryDiv.textContent = timestamp.toISOString();
                 timeColumn.appendChild(entryDiv);
             });
 
@@ -219,7 +237,7 @@
                 const column = document.createElement("div");
                 column.appendChild(title);
 
-                timestamps.forEach(timestamp => {
+                filteredTimestamps.forEach(timestamp => {
                     const logEntry = logs.find(log => log.timestamp === timestamp);
                     const entryDiv = document.createElement("p");
                     entryDiv.classList.add("log-entry");
@@ -253,11 +271,21 @@
             });
         }
 
+        let lastNodeLogs = null;
+        let lastTimestamps = null;
         function processLogs() {
             const rawLog = document.getElementById("log-input");
             const { nodeLogs, sortedTimestamps } = parseLogs(rawLog.value);
             rawLog.value = "";
-            renderLogs(nodeLogs, sortedTimestamps);
+            lastNodeLogs = nodeLogs;
+            lastTimestamps = sortedTimestamps;
+            renderLogs(nodeLogs, sortedTimestamps, document.getElementById("filter-input").value);
+        }
+
+        function applyFilter() {
+            if (!lastNodeLogs || !lastTimestamps) return;
+            const filterString = document.getElementById("filter-input").value;
+            renderLogs(lastNodeLogs, lastTimestamps, filterString);
         }
     </script>
 </body>
