@@ -2,14 +2,14 @@
 
 use super::metrics::NodeStateMetrics;
 use super::{NodeState, NodeStateStore};
+use crate::bus::SharedMessageBus;
 use crate::bus::{command_response::Query, BusClientSender};
 use crate::log_error;
 use crate::module_handle_messages;
-use crate::modules::{module_bus_client, CommonRunContext, Module};
-use crate::utils::conf::SharedConf;
+use crate::modules::{module_bus_client, Module, SharedBuildApiCtx};
 use anyhow::{Context, Result};
 use sdk::*;
-use std::sync::Arc;
+use std::path::PathBuf;
 use tracing::info;
 
 /// NodeStateModule maintains a NodeState,
@@ -17,9 +17,9 @@ use tracing::info;
 /// Node state module is separate from DataAvailabiliity
 /// mostly to run asynchronously.
 pub struct NodeStateModule {
-    config: SharedConf,
     bus: NodeStateBusClient,
     inner: NodeState,
+    data_directory: PathBuf,
 }
 
 pub use sdk::NodeStateEvent;
@@ -41,22 +41,26 @@ pub struct NodeStateBusClient {
 }
 }
 
+pub struct NodeStateCtx {
+    pub node_id: String,
+    pub data_directory: PathBuf,
+    pub api: SharedBuildApiCtx,
+}
+
 impl Module for NodeStateModule {
-    type Context = Arc<CommonRunContext>;
+    type Context = NodeStateCtx;
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus = NodeStateBusClient::new_from_bus(ctx.bus.new_handle()).await;
-
-        let api = super::api::api(&ctx).await;
-        if let Ok(mut guard) = ctx.router.lock() {
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
+        let api = super::api::api(bus.new_handle(), &ctx).await;
+        if let Ok(mut guard) = ctx.api.router.lock() {
             if let Some(router) = guard.take() {
                 guard.replace(router.nest("/v1/", api));
             }
         }
-        let metrics = NodeStateMetrics::global(ctx.config.id.clone(), "node_state");
+        let metrics = NodeStateMetrics::global(ctx.node_id.clone(), "node_state");
 
         let store = Self::load_from_disk_or_default::<NodeStateStore>(
-            ctx.config.data_directory.join("node_state.bin").as_path(),
+            ctx.data_directory.join("node_state.bin").as_path(),
         );
 
         for name in store.contracts.keys() {
@@ -64,11 +68,12 @@ impl Module for NodeStateModule {
         }
 
         let node_state = NodeState { store, metrics };
+        let bus = NodeStateBusClient::new_from_bus(bus.new_handle()).await;
 
         Ok(Self {
-            config: ctx.config.clone(),
             bus,
             inner: node_state,
+            data_directory: ctx.data_directory,
         })
     }
 
@@ -102,7 +107,7 @@ impl Module for NodeStateModule {
 
         let _ = log_error!(
             Self::save_on_disk::<NodeStateStore>(
-                self.config.data_directory.join("node_state.bin").as_path(),
+                self.data_directory.join("node_state.bin").as_path(),
                 &self.inner,
             ),
             "Saving node state"

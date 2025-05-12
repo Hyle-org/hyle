@@ -1073,7 +1073,7 @@ pub mod tests {
         // Process the waiting job.
         p2p_server1.listen_next().await;
 
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
 
         let evt = receive_event(&mut p2p_server2, "Should be a TestMessage event").await?;
 
@@ -1100,7 +1100,7 @@ pub mod tests {
         // Process the waiting job.
         p2p_server1.listen_next().await;
 
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
 
         let evt = receive_event(&mut p2p_server2, "Should be a TestMessage event").await?;
 
@@ -1127,7 +1127,7 @@ pub mod tests {
         // Process the waiting job.
         p2p_server2.listen_next().await;
 
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
 
         let evt = receive_event(&mut p2p_server1, "Should be a TestMessage event").await?;
 
@@ -1154,7 +1154,7 @@ pub mod tests {
         // Process the waiting job.
         p2p_server2.listen_next().await;
 
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
 
         let evt = receive_event(&mut p2p_server1, "Should be a TestMessage event").await?;
 

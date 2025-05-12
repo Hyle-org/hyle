@@ -32,16 +32,15 @@ pub struct NodeWebsocketConnector {
 }
 
 pub struct NodeWebsocketConnectorCtx {
-    pub bus: SharedMessageBus,
     pub events: Vec<String>,
 }
 
 impl Module for NodeWebsocketConnector {
     type Context = NodeWebsocketConnectorCtx;
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
         Ok(Self {
-            bus: NodeWebsocketConnectorBusClient::new_from_bus(ctx.bus.new_handle()).await,
+            bus: NodeWebsocketConnectorBusClient::new_from_bus(bus.new_handle()).await,
             events: ctx.events,
         })
     }
