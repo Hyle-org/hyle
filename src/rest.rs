@@ -12,6 +12,7 @@ mod tests {
     use client_sdk::rest_client::NodeApiHttpClient;
     use hyle_model::*;
     use hyle_modules::{
+        bus::SharedMessageBus,
         module_handle_messages,
         modules::{signal::ShutdownModule, Module},
     };
@@ -33,9 +34,9 @@ mod tests {
     impl Module for RestApiListener {
         type Context = SharedRunContext;
 
-        async fn build(ctx: Self::Context) -> Result<Self> {
+        async fn build(bus: SharedMessageBus, _ctx: Self::Context) -> Result<Self> {
             Ok(RestApiListener {
-                bus: MockBusClient::new_from_bus(ctx.common.bus.new_handle()).await,
+                bus: MockBusClient::new_from_bus(bus.new_handle()).await,
             })
         }
 

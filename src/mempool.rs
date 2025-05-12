@@ -21,11 +21,12 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::tcp_client::TcpServerMessage;
 use futures::StreamExt;
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
-use hyle_crypto::{BlstCrypto, SharedBlstCrypto};
+use hyle_crypto::SharedBlstCrypto;
 use hyle_modules::{
-    log_error, log_warn, module_bus_client, module_handle_messages, modules::Module,
+    bus::SharedMessageBus, log_error, log_warn, module_bus_client, module_handle_messages,
+    modules::Module,
 };
-use hyle_net::{clock::TimestampMsClock, ordered_join_set::OrderedJoinSet};
+use hyle_net::ordered_join_set::OrderedJoinSet;
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
@@ -272,30 +273,24 @@ pub enum ProcessedDPEvent {
 impl Module for Mempool {
     type Context = SharedRunContext;
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus = MempoolBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
-        let metrics = MempoolMetrics::global(ctx.common.config.id.clone());
-
-        let api = api::api(&ctx.common).await;
-        if let Ok(mut guard) = ctx.common.router.lock() {
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
+        let metrics = MempoolMetrics::global(ctx.config.id.clone());
+        let api = api::api(&bus, &ctx.api).await;
+        if let Ok(mut guard) = ctx.api.router.lock() {
             if let Some(router) = guard.take() {
                 guard.replace(router.nest("/v1/", api));
             }
         }
+        let bus = MempoolBusClient::new_from_bus(bus.new_handle()).await;
 
         let attributes = Self::load_from_disk::<MempoolStore>(
-            ctx.common
-                .config
-                .data_directory
-                .join("mempool.bin")
-                .as_path(),
+            ctx.config.data_directory.join("mempool.bin").as_path(),
         )
         .unwrap_or_default();
 
         let lanes_tip =
             Self::load_from_disk::<BTreeMap<LaneId, (DataProposalHash, LaneBytesSize)>>(
-                ctx.common
-                    .config
+                ctx.config
                     .data_directory
                     .join("mempool_lanes_tip.bin")
                     .as_path(),
@@ -314,11 +309,11 @@ impl Module for Mempool {
 
         Ok(Mempool {
             bus,
-            file: Some(ctx.common.config.data_directory.clone()),
-            conf: ctx.common.config.clone(),
+            file: Some(ctx.config.data_directory.clone()),
+            conf: ctx.config.clone(),
             metrics,
-            crypto: Arc::clone(&ctx.node.crypto),
-            lanes: LanesStorage::new(&ctx.common.config.data_directory, lanes_tip)?,
+            crypto: Arc::clone(&ctx.crypto),
+            lanes: LanesStorage::new(&ctx.config.data_directory, lanes_tip)?,
             inner: attributes,
         })
     }
@@ -522,20 +517,6 @@ impl Mempool {
     }
 
     async fn handle_net_message(&mut self, msg: MsgWithHeader<MempoolNetMessage>) -> Result<()> {
-        // Ignore messages that seem incorrectly timestamped (1h ahead or back)
-        if msg.header.msg.timestamp.abs_diff(TimestampMsClock::now().0) > 3_600_000 {
-            bail!("Message timestamp too far from current time");
-        }
-        let result = BlstCrypto::verify(&msg.header)?;
-        if !result {
-            bail!("Invalid header signature for message {:?}", msg);
-        }
-
-        // Verify the message matches the signed data
-        if msg.header.msg.hash != msg.msg.to_header_signable_data() {
-            bail!("Invalid signed hash for message {:?}", msg);
-        }
-
         let validator = &msg.header.signature.validator;
         // TODO: adapt can_rejoin test to emit a stake tx before turning on the joining node
         // if !self.validators.contains(validator) {
@@ -849,8 +830,9 @@ pub mod test {
         p2p::network::{HeaderSigner, MsgWithHeader},
     };
     use anyhow::Result;
-    use assertables::{assert_err, assert_ok};
+    use assertables::assert_ok;
     use hyle_contract_sdk::StateCommitment;
+    use hyle_crypto::BlstCrypto;
     use tokio::sync::broadcast::Receiver;
     use utils::TimestampMs;
 
@@ -1274,39 +1256,6 @@ pub mod test {
             .as_blob("hyle".into(), None, None)],
         )
         .into()
-    }
-
-    #[test_log::test(tokio::test)]
-    async fn test_invalid_net_messages() -> Result<()> {
-        let mut ctx = MempoolTestCtx::new("mempool").await;
-        let crypto2 = BlstCrypto::new("2").unwrap();
-        ctx.add_trusted_validator(crypto2.validator_pubkey());
-
-        // Test message with timestamp too far in future
-        let mut bad_time_msg =
-            crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(None, None))?;
-        bad_time_msg.header.msg.timestamp = TimestampMsClock::now().0 + 7200000; // 2h in future
-        assert_err!(ctx.mempool.handle_net_message(bad_time_msg.clone()).await);
-
-        // Test message with timestamp too far in past
-        let mut bad_time_msg =
-            crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(None, None))?;
-        bad_time_msg.header.msg.timestamp = TimestampMsClock::now().0 - 7200000; // 2h in future
-        assert_err!(ctx.mempool.handle_net_message(bad_time_msg.clone()).await);
-
-        // Test message with bad signature
-        let mut bad_sig_msg =
-            crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(None, None))?;
-        bad_sig_msg.header.signature.signature.0 = vec![0, 1, 2, 3]; // Invalid signature bytes
-        assert_err!(ctx.mempool.handle_net_message(bad_sig_msg.clone()).await);
-
-        // Test message with mismatched hash
-        let mut bad_hash_msg =
-            crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(None, None))?;
-        bad_hash_msg.header.msg.hash = HeaderSignableData(vec![9, 9, 9]); // Wrong hash
-        assert_err!(ctx.mempool.handle_net_message(bad_hash_msg.clone()).await);
-
-        Ok(())
     }
 
     #[test_log::test(tokio::test)]
