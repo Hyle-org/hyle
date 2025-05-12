@@ -1,4 +1,5 @@
 use crate::{bus::BusClientSender, consensus::CommittedConsensusProposal, model::*};
+use futures::StreamExt;
 use hyle_modules::log_error;
 
 use super::storage::Storage;
@@ -13,12 +14,13 @@ pub struct BlockUnderConstruction {
 }
 
 impl super::Mempool {
-    pub(super) fn try_to_send_full_signed_blocks(&mut self) -> Result<()> {
+    pub(super) async fn try_to_send_full_signed_blocks(&mut self) -> Result<()> {
         let length = self.blocks_under_contruction.len();
         for _ in 0..length {
             if let Some(block_under_contruction) = self.blocks_under_contruction.pop_front() {
                 if self
                     .build_signed_block_and_emit(&block_under_contruction)
+                    .await
                     .context("Processing queued committedConsensusProposal")
                     .is_err()
                 {
@@ -34,7 +36,7 @@ impl super::Mempool {
 
     /// Retrieves data proposals matching the Block under construction.
     /// If data is not available locally, fails and do nothing
-    fn try_get_full_data_for_signed_block(
+    async fn try_get_full_data_for_signed_block(
         &self,
         buc: &BlockUnderConstruction,
     ) -> Result<Vec<(LaneId, Vec<DataProposal>)>> {
@@ -50,30 +52,35 @@ impl super::Mempool {
                 .and_then(|f| f.iter().find(|el| &el.0 == lane_id))
                 .map(|el| &el.1);
 
-            let entries = self
+            let mut entries = Box::pin(self
                 .lanes
                 .get_entries_between_hashes(
                     lane_id, // get start hash for validator
-                    from_hash,
-                    Some(to_hash),
-                )
-                .context(format!(
+                    from_hash.cloned(),
+                    Some(to_hash.clone()),
+                ));
+
+            let mut dps = vec![];
+
+            while let Some(entry) = entries.next().await {
+                let (_, dp) = entry.context(format!(
                     "Lane entries from {:?} to {:?} not available locally",
                     buc.from, buc.ccp.consensus_proposal.cut
                 ))?;
 
-            result.push((
-                lane_id.clone(),
-                entries.into_iter().map(|(_, dp)| dp).collect(),
-            ))
+                dps.push(dp);                    
+            }
+
+            result.push((lane_id.clone(), dps));
         }
 
         Ok(result)
     }
 
-    fn build_signed_block_and_emit(&mut self, buc: &BlockUnderConstruction) -> Result<()> {
+    async fn build_signed_block_and_emit(&mut self, buc: &BlockUnderConstruction) -> Result<()> {
         let block_data = self
             .try_get_full_data_for_signed_block(buc)
+            .await
             .context("Processing queued committedConsensusProposal")?;
 
         self.metrics.constructed_block.add(1, &[]);

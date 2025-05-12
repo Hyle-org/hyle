@@ -4,6 +4,7 @@ use crate::{bus::BusClientSender, model::*};
 
 use anyhow::{bail, Context, Result};
 use client_sdk::tcp_client::TcpServerMessage;
+use futures::StreamExt;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tracing::{debug, trace};
@@ -82,7 +83,7 @@ impl super::Mempool {
         Ok(true)
     }
 
-    pub(super) fn resume_new_data_proposal(
+    pub(super) async fn resume_new_data_proposal(
         &mut self,
         data_proposal: DataProposal,
         data_proposal_hash: DataProposalHash,
@@ -93,12 +94,12 @@ impl super::Mempool {
 
         // TODO: when we have a smarter system, we should probably not trigger this here
         // to make the event loop more efficient.
-        self.disseminate_data_proposals(Some(data_proposal_hash))
+        self.disseminate_data_proposals(Some(data_proposal_hash)).await
     }
 
     /// If only_dp_with_hash is Some, only disseminate the DP with the specified hash. If None, disseminate any pending DPs.
     /// Returns true if we did disseminate something
-    pub(super) fn disseminate_data_proposals(
+    pub(super) async fn disseminate_data_proposals(
         &mut self,
         only_dp_with_hash: Option<DataProposalHash>,
     ) -> Result<bool> {
@@ -110,11 +111,14 @@ impl super::Mempool {
             .map(|ccp| ccp.consensus_proposal.cut.clone());
 
         // Check for each pending DataProposal if it has enough signatures
-        let entries = self
-            .lanes
-            .get_pending_entries_in_lane(&self.own_lane_id(), last_cut)?;
+        let cloned_lanes = self.lanes.clone();
+        let own_lane_id = self.own_lane_id();
+        let mut entries_stream = Box::pin(cloned_lanes
+            .get_pending_entries_in_lane(&own_lane_id, last_cut));
 
-        for (entry_metadata, dp_hash) in entries {
+        while let Some(stream_entry) = entries_stream.next().await {
+
+            let (entry_metadata, dp_hash) = stream_entry?;
             // If only_dp_with_hash is Some, we only disseminate that one, skip all others.
             if let Some(ref only_dp_with_hash) = only_dp_with_hash {
                 if &dp_hash != only_dp_with_hash {

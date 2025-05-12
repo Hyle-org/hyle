@@ -19,6 +19,7 @@ use api::RestApiMessage;
 use block_construction::BlockUnderConstruction;
 use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::tcp_client::TcpServerMessage;
+use futures::StreamExt;
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
 use hyle_crypto::{BlstCrypto, SharedBlstCrypto};
 use hyle_modules::{
@@ -350,7 +351,7 @@ impl Mempool {
                 self.processing_dps.is_empty() && self.processing_txs.is_empty() && self.own_data_proposal_in_preparation.is_empty()
             },
             listen<MsgWithHeader<MempoolNetMessage>> cmd => {
-                let _ = log_error!(self.handle_net_message(cmd), "Handling MempoolNetMessage in Mempool");
+                let _ = log_error!(self.handle_net_message(cmd).await, "Handling MempoolNetMessage in Mempool");
             }
             listen<RestApiMessage> cmd => {
                 let _ = log_error!(self.handle_api_message(cmd), "Handling API Message in Mempool");
@@ -359,7 +360,7 @@ impl Mempool {
                 let _ = log_error!(self.handle_tcp_server_message(cmd), "Handling TCP Server message in Mempool");
             }
             listen<ConsensusEvent> cmd => {
-                let _ = log_error!(self.handle_consensus_event(cmd), "Handling ConsensusEvent in Mempool");
+                let _ = log_error!(self.handle_consensus_event(cmd).await, "Handling ConsensusEvent in Mempool");
             }
             listen<NodeStateEvent> cmd => {
                 let NodeStateEvent::NewBlock(block) = cmd;
@@ -398,7 +399,7 @@ impl Mempool {
             Some(own_dp) = self.inner.own_data_proposal_in_preparation.join_next() => {
                 // Fatal here, if we loose the dp in the join next error, it's lost
                 if let Ok((own_dp_hash, own_dp)) = log_error!(own_dp, "Getting result for data proposal preparation from joinset"){
-                    _ = log_error!(self.resume_new_data_proposal(own_dp, own_dp_hash), "Resuming own data proposal creation");
+                    _ = log_error!(self.resume_new_data_proposal(own_dp, own_dp_hash).await, "Resuming own data proposal creation");
                     disseminate_timer.reset();
                 }
             }
@@ -406,7 +407,7 @@ impl Mempool {
                 _  = log_error!(self.prepare_new_data_proposal(), "Try preparing a new data proposal on tick");
             }
             _ = disseminate_timer.tick() => {
-                if let Ok(true) = log_error!(self.disseminate_data_proposals(None), "Disseminate data proposals on tick") {
+                if let Ok(true) = log_error!(self.disseminate_data_proposals(None).await, "Disseminate data proposals on tick") {
                     disseminate_timer.reset();
                 }
             }
@@ -492,7 +493,7 @@ impl Mempool {
         }
     }
 
-    fn handle_consensus_event(&mut self, event: ConsensusEvent) -> Result<()> {
+    async fn handle_consensus_event(&mut self, event: ConsensusEvent) -> Result<()> {
         match event {
             ConsensusEvent::CommitConsensusProposal(cpp) => {
                 debug!(
@@ -510,7 +511,7 @@ impl Mempool {
 
                 self.try_create_block_under_construction(cpp);
 
-                self.try_to_send_full_signed_blocks()?;
+                self.try_to_send_full_signed_blocks().await?;
 
                 // Removes all DPs that are not in the new cut, updates lane tip and sends SyncRequest for missing DPs
                 self.clean_and_update_lanes(&cut, &previous_cut)?;
@@ -520,7 +521,7 @@ impl Mempool {
         }
     }
 
-    fn handle_net_message(&mut self, msg: MsgWithHeader<MempoolNetMessage>) -> Result<()> {
+    async fn handle_net_message(&mut self, msg: MsgWithHeader<MempoolNetMessage>) -> Result<()> {
         // Ignore messages that seem incorrectly timestamped (1h ahead or back)
         if msg.header.msg.timestamp.abs_diff(TimestampMsClock::now().0) > 3_600_000 {
             bail!("Message timestamp too far from current time");
@@ -562,16 +563,16 @@ impl Mempool {
                     validator,
                     from_data_proposal_hash.as_ref(),
                     to_data_proposal_hash.as_ref(),
-                )?;
+                ).await?;
             }
             MempoolNetMessage::SyncReply(missing_entries) => {
-                self.on_sync_reply(validator, missing_entries)?;
+                self.on_sync_reply(validator, missing_entries).await?;
             }
         }
         Ok(())
     }
 
-    fn on_sync_reply(
+    async fn on_sync_reply(
         &mut self,
         sender_validator: &ValidatorPublicKey,
         missing_entries: Vec<(LaneEntryMetadata, DataProposal)>,
@@ -640,42 +641,49 @@ impl Mempool {
         }
 
         self.try_to_send_full_signed_blocks()
+            .await
             .context("Try process queued CCP")?;
 
         Ok(())
     }
 
-    fn on_sync_request(
+    async fn on_sync_request(
         &mut self,
         validator: &ValidatorPublicKey,
         from_data_proposal_hash: Option<&DataProposalHash>,
         to_data_proposal_hash: Option<&DataProposalHash>,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         info!(
             "{} SyncRequest received from validator {validator} for last_data_proposal_hash {:?}",
             &self.own_lane_id(),
             to_data_proposal_hash
         );
 
-        let missing_lane_entries = self.lanes.get_entries_between_hashes(
-            &self.own_lane_id(),
-            from_data_proposal_hash,
-            to_data_proposal_hash,
-        );
+        let own_id = self.own_lane_id();
+        let lanes_clone = self.lanes.clone();
 
-        match missing_lane_entries {
-            Err(e) => info!(
-                "Can't send sync reply as there are no missing data proposals found between {:?} and {:?} for {}: {}",
-                to_data_proposal_hash, from_data_proposal_hash, self.own_lane_id(), e
-            ),
-            Ok(lane_entries) => {
-                debug!(
-                    "Missing data proposals on {} are {:?}",
-                    validator, lane_entries
-                );
-                self.send_sync_reply(validator, lane_entries)?;
+        let mut missing_lane_entries = Box::pin(lanes_clone.get_entries_between_hashes(
+            &own_id,
+            from_data_proposal_hash.cloned(),
+            to_data_proposal_hash.cloned(),
+        ));
+
+        while let Some(res) = missing_lane_entries.next().await {
+            match res {
+                Err(e) => info!(
+                    "Can't send sync reply as there are no missing data proposals found between {:?} and {:?} for {}: {}",
+                    to_data_proposal_hash, from_data_proposal_hash, self.own_lane_id(), e
+                ),
+                Ok(lane_entry) => {
+                    debug!(
+                        "One missing data proposal on {} is {:?}",
+                        validator, lane_entry
+                    );
+                    self.send_sync_reply(validator, vec![lane_entry])?;
+                }
             }
         }
+
         Ok(())
     }
 

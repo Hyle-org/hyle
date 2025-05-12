@@ -1,5 +1,7 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
+use async_stream::try_stream;
 use borsh::{BorshDeserialize, BorshSerialize};
+use futures::Stream;
 use hyle_crypto::BlstCrypto;
 use hyle_model::{DataSized, LaneId};
 use serde::{Deserialize, Serialize};
@@ -176,45 +178,38 @@ pub trait Storage {
     fn get_entries_between_hashes(
         &self,
         lane_id: &LaneId,
-        from_data_proposal_hash: Option<&DataProposalHash>,
-        to_data_proposal_hash: Option<&DataProposalHash>,
-    ) -> Result<Vec<(LaneEntryMetadata, DataProposal)>>;
+        from_data_proposal_hash: Option<DataProposalHash>,
+        to_data_proposal_hash: Option<DataProposalHash>,
+    ) -> impl Stream<Item = Result<(LaneEntryMetadata, DataProposal)>>;
 
     fn get_entries_metadata_between_hashes(
         &self,
         lane_id: &LaneId,
-        from_data_proposal_hash: Option<&DataProposalHash>,
-        to_data_proposal_hash: Option<&DataProposalHash>,
-    ) -> Result<Vec<(LaneEntryMetadata, DataProposalHash)>> {
+        from_data_proposal_hash: Option<DataProposalHash>,
+        to_data_proposal_hash: Option<DataProposalHash>,
+    ) -> impl Stream<Item = Result<(LaneEntryMetadata, DataProposalHash)>> {
         // If no dp hash is provided, we use the tip of the lane
-        let mut dp_hash: DataProposalHash = match to_data_proposal_hash {
-            Some(hash) => hash.clone(),
-            None => match self.get_lane_hash_tip(lane_id) {
-                Some(dp_hash) => dp_hash.clone(),
-                None => {
-                    return Ok(vec![]);
-                }
-            },
-        };
-        let mut entries = vec![];
-        while Some(&dp_hash) != from_data_proposal_hash {
-            let lane_entry = self.get_metadata_by_hash(lane_id, &dp_hash)?;
-            match lane_entry {
-                Some(lane_entry) => {
-                    entries.insert(0, (lane_entry.clone(), dp_hash.clone()));
-                    if let Some(parent_dp_hash) = lane_entry.parent_data_proposal_hash.clone() {
-                        dp_hash = parent_dp_hash;
-                    } else {
-                        break;
+        let initial_dp_hash: Option<DataProposalHash> = to_data_proposal_hash.or(self.get_lane_hash_tip(lane_id).cloned());
+        try_stream! {
+            if let Some(mut some_dp_hash) = initial_dp_hash {
+                while Some(&some_dp_hash) != from_data_proposal_hash.as_ref() {
+                    let lane_entry = self.get_metadata_by_hash(lane_id, &some_dp_hash)?;
+                    match lane_entry {
+                        Some(lane_entry) => {
+                            yield (lane_entry.clone(), some_dp_hash);
+                            if let Some(parent_dp_hash) = lane_entry.parent_data_proposal_hash.clone() {
+                                some_dp_hash = parent_dp_hash;
+                            } else {
+                                break;
+                            }
+                        }
+                        None => {
+                            Err(anyhow::anyhow!("Local lane is incomplete: could not find DP {}", some_dp_hash))?;
+                        }
                     }
-                }
-                None => {
-                    bail!("Local lane is incomplete: could not find DP {}", dp_hash);
                 }
             }
         }
-
-        Ok(entries)
     }
 
     fn get_lane_size_at(
@@ -232,7 +227,7 @@ pub trait Storage {
         &self,
         lane_id: &LaneId,
         last_cut: Option<Cut>,
-    ) -> Result<Vec<(LaneEntryMetadata, DataProposalHash)>> {
+    ) -> impl Stream<Item = Result<(LaneEntryMetadata, DataProposalHash)>> {
         let lane_tip = self.get_lane_hash_tip(lane_id);
 
         let last_committed_dp_hash = match last_cut {
@@ -242,7 +237,7 @@ pub trait Storage {
                 .map(|(_, dp, _, _)| dp.clone()),
             None => None,
         };
-        self.get_entries_metadata_between_hashes(lane_id, last_committed_dp_hash.as_ref(), lane_tip)
+        self.get_entries_metadata_between_hashes(lane_id, last_committed_dp_hash.clone(), lane_tip.cloned())
     }
 
     /// For unknown DataProposals in the new cut, we need to remove all DataProposals that we have after the previous cut.
