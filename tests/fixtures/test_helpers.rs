@@ -66,7 +66,7 @@ impl ConfMaker {
 
 impl Default for ConfMaker {
     fn default() -> Self {
-        let mut default = Conf::new(None, None, None).unwrap();
+        let mut default = Conf::new(vec![], None, None).unwrap();
 
         default.log_format = "node".to_string(); // Activate node name in logs for convenience in tests.
         default.p2p.mode = hyle::utils::conf::P2pMode::FullValidator;

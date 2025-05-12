@@ -143,7 +143,7 @@ pub struct Conf {
 
 impl Conf {
     pub fn new(
-        config_file: Option<String>,
+        config_files: Vec<String>,
         data_directory: Option<String>,
         run_indexer: Option<bool>,
     ) -> Result<Self, anyhow::Error> {
@@ -152,7 +152,7 @@ impl Conf {
             config::FileFormat::Toml,
         ));
         // Priority order: config file, then environment variables, then CLI
-        if let Some(config_file) = config_file {
+        for config_file in config_files {
             s = s.add_source(File::with_name(&config_file).required(false));
         }
         let mut conf: Self = s
@@ -195,25 +195,25 @@ mod tests {
 
     #[test]
     fn test_load_default_conf() {
-        assert_ok!(Conf::new(None, None, None));
+        assert_ok!(Conf::new(vec![], None, None));
     }
 
     #[test]
     fn test_override_da_public_address() {
-        let conf = Conf::new(None, None, None).unwrap();
+        let conf = Conf::new(vec![], None, None).unwrap();
         assert_eq!(conf.da_public_address, "127.0.0.1:4141");
         // All single underscores as there is no nesting.
         std::env::set_var("HYLE_DA_PUBLIC_ADDRESS", "127.0.0.1:9090");
-        let conf = Conf::new(None, None, None).unwrap();
+        let conf = Conf::new(vec![], None, None).unwrap();
         assert_eq!(conf.da_public_address, "127.0.0.1:9090");
     }
     #[test]
     fn test_override_p2p_public_address() {
-        let conf = Conf::new(None, None, None).unwrap();
+        let conf = Conf::new(vec![], None, None).unwrap();
         assert_eq!(conf.p2p.public_address, "127.0.0.1:1231");
         // Note the double underscore
         std::env::set_var("HYLE_P2P__PUBLIC_ADDRESS", "127.0.0.1:9090");
-        let conf = Conf::new(None, None, None).unwrap();
+        let conf = Conf::new(vec![], None, None).unwrap();
         assert_eq!(conf.p2p.public_address, "127.0.0.1:9090");
     }
 }

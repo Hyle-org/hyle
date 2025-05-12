@@ -98,7 +98,7 @@ impl NodeIntegrationCtxBuilder {
         let bus = SharedMessageBus::new(BusMetrics::global("default".to_string()));
         let crypto = BlstCrypto::new("test").unwrap();
         let mut conf = Conf::new(
-            None,
+            vec![],
             tmpdir.path().to_str().map(|s| s.to_owned()),
             Some(false),
         )
