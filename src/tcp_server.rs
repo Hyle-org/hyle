@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::{bus::BusClientSender, model::CommonRunContext, utils::conf::SharedConf};
 
 use anyhow::Result;
-use client_sdk::tcp_client::{codec_tcp_server, TcpServerMessage};
+use client_sdk::tcp_client::{TcpApiServer, TcpServerMessage};
 use hyle_modules::{
     log_error, module_handle_messages,
     modules::{module_bus_client, Module},
@@ -50,7 +50,7 @@ impl TcpServer {
             &tcp_server_port
         );
 
-        let mut server = codec_tcp_server::start_server(tcp_server_port).await?;
+        let mut server = TcpApiServer::start(tcp_server_port, "TcpApiServer").await?;
 
         module_handle_messages! {
             on_bus self.bus,
