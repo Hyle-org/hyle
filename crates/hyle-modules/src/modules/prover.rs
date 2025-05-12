@@ -45,7 +45,6 @@ pub struct AutoProverBusClient<Contract: Send + Sync + Clone + 'static> {
 }
 
 pub struct AutoProverCtx {
-    pub bus: SharedMessageBus,
     pub data_directory: PathBuf,
     pub start_height: BlockHeight,
     pub prover: Arc<dyn ClientSdkProver<Vec<Calldata>> + Send + Sync>,
@@ -109,8 +108,8 @@ where
 {
     type Context = Arc<AutoProverCtx>;
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus = AutoProverBusClient::<Contract>::new_from_bus(ctx.bus.new_handle()).await;
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
+        let bus = AutoProverBusClient::<Contract>::new_from_bus(bus.new_handle()).await;
 
         let file = ctx
             .data_directory

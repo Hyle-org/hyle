@@ -10,6 +10,7 @@ use anyhow::{bail, Context, Error, Result};
 use hyle_crypto::{BlstCrypto, SharedBlstCrypto};
 use hyle_model::{BlockHeight, NodeStateEvent, ValidatorPublicKey};
 use hyle_modules::{
+    bus::SharedMessageBus,
     log_warn, module_handle_messages,
     modules::{module_bus_client, Module},
 };
@@ -53,16 +54,16 @@ pub struct P2P {
 impl Module for P2P {
     type Context = SharedRunContext;
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus_client = P2PBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
+        let bus_client = P2PBusClient::new_from_bus(bus.new_handle()).await;
 
-        let scope = InstrumentationScope::builder(ctx.common.config.id.clone()).build();
+        let scope = InstrumentationScope::builder(ctx.config.id.clone()).build();
         let my_meter = opentelemetry::global::meter_with_scope(scope);
 
         Ok(P2P {
-            config: ctx.common.config.clone(),
+            config: ctx.config.clone(),
             bus: bus_client,
-            crypto: ctx.node.crypto.clone(),
+            crypto: ctx.crypto.clone(),
             netmessage_delay: my_meter
                 .u64_histogram("netmessage_delay")
                 .with_description("Reception delay in milliseconds for net messages")

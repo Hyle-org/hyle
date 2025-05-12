@@ -22,7 +22,8 @@ use client_sdk::tcp_client::TcpServerMessage;
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
 use hyle_crypto::SharedBlstCrypto;
 use hyle_modules::{
-    log_error, log_warn, module_bus_client, module_handle_messages, modules::Module,
+    bus::SharedMessageBus, log_error, log_warn, module_bus_client, module_handle_messages,
+    modules::Module,
 };
 use hyle_net::ordered_join_set::OrderedJoinSet;
 use metrics::MempoolMetrics;
@@ -271,30 +272,24 @@ pub enum ProcessedDPEvent {
 impl Module for Mempool {
     type Context = SharedRunContext;
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus = MempoolBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
-        let metrics = MempoolMetrics::global(ctx.common.config.id.clone());
-
-        let api = api::api(&ctx.common).await;
-        if let Ok(mut guard) = ctx.common.router.lock() {
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
+        let metrics = MempoolMetrics::global(ctx.config.id.clone());
+        let api = api::api(&bus, &ctx.api).await;
+        if let Ok(mut guard) = ctx.api.router.lock() {
             if let Some(router) = guard.take() {
                 guard.replace(router.nest("/v1/", api));
             }
         }
+        let bus = MempoolBusClient::new_from_bus(bus.new_handle()).await;
 
         let attributes = Self::load_from_disk::<MempoolStore>(
-            ctx.common
-                .config
-                .data_directory
-                .join("mempool.bin")
-                .as_path(),
+            ctx.config.data_directory.join("mempool.bin").as_path(),
         )
         .unwrap_or_default();
 
         let lanes_tip =
             Self::load_from_disk::<BTreeMap<LaneId, (DataProposalHash, LaneBytesSize)>>(
-                ctx.common
-                    .config
+                ctx.config
                     .data_directory
                     .join("mempool_lanes_tip.bin")
                     .as_path(),
@@ -313,11 +308,11 @@ impl Module for Mempool {
 
         Ok(Mempool {
             bus,
-            file: Some(ctx.common.config.data_directory.clone()),
-            conf: ctx.common.config.clone(),
+            file: Some(ctx.config.data_directory.clone()),
+            conf: ctx.config.clone(),
             metrics,
-            crypto: Arc::clone(&ctx.node.crypto),
-            lanes: LanesStorage::new(&ctx.common.config.data_directory, lanes_tip)?,
+            crypto: Arc::clone(&ctx.crypto),
+            lanes: LanesStorage::new(&ctx.config.data_directory, lanes_tip)?,
             inner: attributes,
         })
     }

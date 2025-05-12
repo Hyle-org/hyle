@@ -11,7 +11,6 @@ use std::{
 use crate::{
     bus::{BusClientSender, SharedMessageBus},
     bus_client, handle_messages, log_error,
-    utils::conf::SharedConf,
 };
 use anyhow::{bail, Error, Result};
 use axum::Router;
@@ -27,12 +26,12 @@ pub mod prover;
 pub mod rest;
 pub mod websocket;
 
-pub struct CommonRunContext {
-    pub config: SharedConf,
-    pub bus: SharedMessageBus,
+#[derive(Default)]
+pub struct BuildApiContextInner {
     pub router: std::sync::Mutex<Option<Router>>,
     pub openapi: std::sync::Mutex<utoipa::openapi::OpenApi>,
 }
+pub type SharedBuildApiCtx = std::sync::Arc<BuildApiContextInner>;
 
 /// Module trait to define startup dependencies
 pub trait Module
@@ -41,7 +40,10 @@ where
 {
     type Context;
 
-    fn build(ctx: Self::Context) -> impl futures::Future<Output = Result<Self>> + Send;
+    fn build(
+        bus: SharedMessageBus,
+        ctx: Self::Context,
+    ) -> impl futures::Future<Output = Result<Self>> + Send;
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send;
 
     fn load_from_disk<S>(file: &Path) -> Option<S>
@@ -426,7 +428,7 @@ impl ModulesHandler {
         M: Module + 'static + Send,
         <M as Module>::Context: std::marker::Send,
     {
-        let module = M::build(ctx).await?;
+        let module = M::build(self.bus.new_handle(), ctx).await?;
         self.add_module(module)
     }
 
@@ -472,10 +474,10 @@ mod tests {
     macro_rules! test_module {
         ($bus_client:ty, $tag:ty) => {
             impl Module for TestModule<$tag> {
-                type Context = $bus_client;
-                async fn build(_ctx: Self::Context) -> Result<Self> {
+                type Context = ();
+                async fn build(bus: SharedMessageBus, _ctx: Self::Context) -> Result<Self> {
                     Ok(TestModule {
-                        bus: _ctx,
+                        bus: <$bus_client>::new_from_bus(bus).await,
                         _field: Default::default(),
                     })
                 }
@@ -509,10 +511,10 @@ mod tests {
     // Failing module by breaking event loop
 
     impl Module for TestModule<u64> {
-        type Context = TestBusClient;
-        async fn build(_ctx: Self::Context) -> Result<Self> {
+        type Context = ();
+        async fn build(bus: SharedMessageBus, _ctx: Self::Context) -> Result<Self> {
             Ok(TestModule {
-                bus: _ctx,
+                bus: TestBusClient::new_from_bus(bus).await,
                 _field: Default::default(),
             })
         }
@@ -532,10 +534,10 @@ mod tests {
     // Failing module by early exit (no shutdown completed event emitted)
 
     impl Module for TestModule<u32> {
-        type Context = TestBusClient;
-        async fn build(_ctx: Self::Context) -> Result<Self> {
+        type Context = ();
+        async fn build(bus: SharedMessageBus, _ctx: Self::Context) -> Result<Self> {
             Ok(TestModule {
-                bus: _ctx,
+                bus: TestBusClient::new_from_bus(bus).await,
                 _field: Default::default(),
             })
         }
@@ -583,12 +585,7 @@ mod tests {
     async fn test_build_module() {
         let shared_bus = SharedMessageBus::new(BusMetrics::global("id".to_string()));
         let mut handler = ModulesHandler::new(&shared_bus).await;
-        handler
-            .build_module::<TestModule<usize>>(
-                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
-            )
-            .await
-            .unwrap();
+        handler.build_module::<TestModule<usize>>(()).await.unwrap();
         assert_eq!(handler.modules.len(), 1);
     }
 
@@ -611,12 +608,7 @@ mod tests {
         let mut shutdown_receiver = get_receiver::<ShutdownModule>(&shared_bus).await;
         let mut shutdown_completed_receiver = get_receiver::<ShutdownCompleted>(&shared_bus).await;
         let mut handler = ModulesHandler::new(&shared_bus).await;
-        handler
-            .build_module::<TestModule<usize>>(
-                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
-            )
-            .await
-            .unwrap();
+        handler.build_module::<TestModule<usize>>(()).await.unwrap();
 
         _ = handler.start_modules().await;
         _ = handler.shutdown_next_module().await;
@@ -640,16 +632,9 @@ mod tests {
         let mut shutdown_completed_receiver = get_receiver::<ShutdownCompleted>(&shared_bus).await;
         let mut handler = ModulesHandler::new(&shared_bus).await;
 
+        handler.build_module::<TestModule<usize>>(()).await.unwrap();
         handler
-            .build_module::<TestModule<usize>>(
-                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
-            )
-            .await
-            .unwrap();
-        handler
-            .build_module::<TestModule<String>>(
-                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
-            )
+            .build_module::<TestModule<String>>(())
             .await
             .unwrap();
         _ = handler.start_modules().await;
@@ -685,24 +670,12 @@ mod tests {
         let mut shutdown_completed_receiver = get_receiver::<ShutdownCompleted>(&shared_bus).await;
         let mut handler = ModulesHandler::new(&shared_bus).await;
 
+        handler.build_module::<TestModule<usize>>(()).await.unwrap();
         handler
-            .build_module::<TestModule<usize>>(
-                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
-            )
+            .build_module::<TestModule<String>>(())
             .await
             .unwrap();
-        handler
-            .build_module::<TestModule<String>>(
-                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
-            )
-            .await
-            .unwrap();
-        handler
-            .build_module::<TestModule<bool>>(
-                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
-            )
-            .await
-            .unwrap();
+        handler.build_module::<TestModule<bool>>(()).await.unwrap();
 
         _ = handler.start_modules().await;
         _ = tokio::time::sleep(Duration::from_millis(100)).await;
@@ -741,30 +714,13 @@ mod tests {
         let mut shutdown_completed_receiver = get_receiver::<ShutdownCompleted>(&shared_bus).await;
         let mut handler = ModulesHandler::new(&shared_bus).await;
 
+        handler.build_module::<TestModule<usize>>(()).await.unwrap();
         handler
-            .build_module::<TestModule<usize>>(
-                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
-            )
+            .build_module::<TestModule<String>>(())
             .await
             .unwrap();
-        handler
-            .build_module::<TestModule<String>>(
-                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
-            )
-            .await
-            .unwrap();
-        handler
-            .build_module::<TestModule<u64>>(
-                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
-            )
-            .await
-            .unwrap();
-        handler
-            .build_module::<TestModule<bool>>(
-                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
-            )
-            .await
-            .unwrap();
+        handler.build_module::<TestModule<u64>>(()).await.unwrap();
+        handler.build_module::<TestModule<bool>>(()).await.unwrap();
 
         _ = handler.start_modules().await;
 
@@ -810,30 +766,13 @@ mod tests {
         let mut shutdown_completed_receiver = get_receiver::<ShutdownCompleted>(&shared_bus).await;
         let mut handler = ModulesHandler::new(&shared_bus).await;
 
+        handler.build_module::<TestModule<usize>>(()).await.unwrap();
         handler
-            .build_module::<TestModule<usize>>(
-                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
-            )
+            .build_module::<TestModule<String>>(())
             .await
             .unwrap();
-        handler
-            .build_module::<TestModule<String>>(
-                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
-            )
-            .await
-            .unwrap();
-        handler
-            .build_module::<TestModule<u32>>(
-                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
-            )
-            .await
-            .unwrap();
-        handler
-            .build_module::<TestModule<bool>>(
-                TestBusClient::new_from_bus(shared_bus.new_handle()).await,
-            )
-            .await
-            .unwrap();
+        handler.build_module::<TestModule<u32>>(()).await.unwrap();
+        handler.build_module::<TestModule<bool>>(()).await.unwrap();
 
         _ = handler.start_modules().await;
 

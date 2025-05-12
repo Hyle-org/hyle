@@ -33,7 +33,6 @@ module_bus_client! {
 pub struct RestApiRunContext {
     pub port: u16,
     pub info: NodeInfo,
-    pub bus: SharedMessageBus,
     pub router: Router,
     pub registry: Registry,
     pub max_body_size: usize,
@@ -44,7 +43,6 @@ impl RestApiRunContext {
     pub fn new(
         port: u16,
         info: NodeInfo,
-        bus: SharedMessageBus,
         router: Router,
         max_body_size: usize,
         openapi: utoipa::openapi::OpenApi,
@@ -52,7 +50,6 @@ impl RestApiRunContext {
         Self {
             port,
             info,
-            bus,
             router,
             registry: Registry::new(),
             max_body_size,
@@ -92,7 +89,7 @@ pub struct ApiDoc;
 impl Module for RestApi {
     type Context = RestApiRunContext;
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
         let app = ctx.router.merge(
             Router::new()
                 .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ctx.openapi))
@@ -110,7 +107,7 @@ impl Module for RestApi {
         Ok(RestApi {
             port: ctx.port,
             app: Some(app),
-            bus: RestBusClient::new_from_bus(ctx.bus.new_handle()).await,
+            bus: RestBusClient::new_from_bus(bus.new_handle()).await,
         })
     }
 

@@ -17,7 +17,11 @@ use hyle_contract_sdk::{
     Blob, Calldata, ContractName, Identity, ProgramId, StateCommitment, ZkContract,
 };
 use hyle_crypto::SharedBlstCrypto;
-use hyle_modules::{bus::BusClientSender, bus_client, handle_messages, modules::Module};
+use hyle_modules::{
+    bus::{BusClientSender, SharedMessageBus},
+    bus_client, handle_messages,
+    modules::Module,
+};
 use hyllar::{client::tx_executor_handler::transfer, Hyllar, FAUCET_ID};
 use serde::{Deserialize, Serialize};
 use staking::{
@@ -52,13 +56,13 @@ pub struct Genesis {
 
 impl Module for Genesis {
     type Context = SharedRunContext;
-    async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus = GenesisBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
+        let bus = GenesisBusClient::new_from_bus(bus.new_handle()).await;
         Ok(Genesis {
-            config: ctx.common.config.clone(),
+            config: ctx.config.clone(),
             bus,
             peer_pubkey: BTreeMap::new(),
-            crypto: ctx.node.crypto.clone(),
+            crypto: ctx.crypto.clone(),
         })
     }
 
