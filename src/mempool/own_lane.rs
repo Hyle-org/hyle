@@ -115,10 +115,10 @@ impl super::Mempool {
             .get_pending_entries_in_lane(&self.own_lane_id(), last_cut)?;
 
         for (entry_metadata, dp_hash) in entries {
-            // If only_dp_with_hash is Some, we only disseminate that one, so break and exit in all other cases.
+            // If only_dp_with_hash is Some, we only disseminate that one, skip all others.
             if let Some(ref only_dp_with_hash) = only_dp_with_hash {
                 if &dp_hash != only_dp_with_hash {
-                    break;
+                    continue;
                 }
             }
             let Some(data_proposal) = self.lanes.get_dp_by_hash(&self.own_lane_id(), &dp_hash)?
@@ -301,14 +301,13 @@ impl super::Mempool {
         #[cfg(test)]
         self.on_new_tx(tx.clone())?;
         #[cfg(not(test))]
-        {
-            let fut = self.long_tasks_runtime.spawn(async move {
+        self.inner.processing_txs.spawn_on(
+            async move {
                 tx.hashed();
                 Ok(tx)
-            });
-            self.processing_txs.push_back(fut);
-        }
-        self.notify_new_tx_to_process.notify_one();
+            },
+            self.inner.long_tasks_runtime.handle(),
+        );
         Ok(())
     }
 
@@ -332,13 +331,14 @@ impl super::Mempool {
                     proof_tx.contract_name
                 );
                 let kc = self.known_contracts.clone();
-                let fut = self.long_tasks_runtime.spawn(async move {
-                    let tx =
-                        Self::process_proof_tx(kc, tx).context("Processing proof tx in blocker")?;
-                    Ok(tx)
-                });
-                self.processing_txs.push_back(fut);
-                self.notify_new_tx_to_process.notify_one();
+                self.inner.processing_txs.spawn_on(
+                    async move {
+                        let tx = Self::process_proof_tx(kc, tx)
+                            .context("Processing proof tx in blocker")?;
+                        Ok(tx)
+                    },
+                    self.inner.long_tasks_runtime.handle(),
+                );
 
                 return Ok(());
             }

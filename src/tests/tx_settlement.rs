@@ -4,6 +4,7 @@ use hyle_model::{
     ProgramId, ProofData, ProofTransaction, RegisterContractAction, RegisterContractEffect,
     StateCommitment,
 };
+use hyle_modules::node_state::test::make_hyle_output_with_state;
 use testcontainers_modules::{
     postgres::Postgres,
     testcontainers::{runners::AsyncRunner, ImageExt},
@@ -12,7 +13,6 @@ use tracing::info;
 
 use crate::{
     model::{Blob, BlobData},
-    node_state::test::make_hyle_output_with_state,
     utils::integration_test::{NodeIntegrationCtx, NodeIntegrationCtxBuilder},
 };
 

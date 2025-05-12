@@ -25,7 +25,6 @@ pub mod entrypoint;
 pub mod genesis;
 pub mod indexer;
 pub mod mempool;
-pub mod modules;
 pub mod node_state;
 pub mod p2p;
 pub mod rest;
@@ -37,4 +36,3 @@ pub mod utils;
 pub mod tests;
 
 pub mod model;
-pub mod tools;

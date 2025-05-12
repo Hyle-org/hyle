@@ -20,14 +20,14 @@ borsh = "1.5.6"
 
 bonsai-sdk = { version = "1.2.4", features = ["non_blocking"] }
 hyle-net = { workspace = true }
-risc0-zkvm = { version = "2.0.0" }
-bytemuck = "1.22.0"
+risc0-zkvm = { version = "2.0.2" }
+bytemuck = "1.23.0"
 # Has to be compatible with whatever bonsai-sdk returns, which is not really documented...
 bincode = "1.3.3"
 serde = { version = "1.0.219", features = ["derive"] }
 
 # For server only
-axum = { version = "0.8.3", features = ["macros"], optional = true }
+axum = { version = "0.8.4", features = ["macros"], optional = true }
 serde_json = { version = "1.0", optional = true }
 tokio = { version = "1", features = ["full"], optional = true }
 tracing-subscriber = { version = "0.3", optional = true }

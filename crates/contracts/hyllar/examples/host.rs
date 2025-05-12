@@ -34,7 +34,7 @@ async fn main() {
     };
 
     let prover = Risc0Prover::new(HYLLAR_ELF);
-    let proof = prover.prove(commitment_metadata, calldata).await;
+    let proof = prover.prove(commitment_metadata, vec![calldata]).await;
 
     if let Err(err) = proof {
         println!("Error: {:?}", err);

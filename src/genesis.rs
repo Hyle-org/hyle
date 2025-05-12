@@ -1,12 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use crate::{
-    bus::{bus_client, BusClientSender, BusMessage},
-    handle_messages,
-    model::*,
-    p2p::network::PeerEvent,
-    utils::{conf::SharedConf, modules::Module},
-};
+use crate::{model::*, p2p::network::PeerEvent, utils::conf::SharedConf};
 use anyhow::{Error, Result};
 use client_sdk::{
     contract_states,
@@ -23,6 +17,11 @@ use hyle_contract_sdk::{
     Blob, Calldata, ContractName, Identity, ProgramId, StateCommitment, ZkContract,
 };
 use hyle_crypto::SharedBlstCrypto;
+use hyle_modules::{
+    bus::{BusClientSender, SharedMessageBus},
+    bus_client, handle_messages,
+    modules::Module,
+};
 use hyllar::{client::tx_executor_handler::transfer, Hyllar, FAUCET_ID};
 use serde::{Deserialize, Serialize};
 use staking::{
@@ -38,7 +37,6 @@ pub enum GenesisEvent {
     NoGenesis,
     GenesisBlock(SignedBlock),
 }
-impl BusMessage for GenesisEvent {}
 
 bus_client! {
 struct GenesisBusClient {
@@ -58,13 +56,13 @@ pub struct Genesis {
 
 impl Module for Genesis {
     type Context = SharedRunContext;
-    async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus = GenesisBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
+        let bus = GenesisBusClient::new_from_bus(bus.new_handle()).await;
         Ok(Genesis {
-            config: ctx.common.config.clone(),
+            config: ctx.config.clone(),
             bus,
             peer_pubkey: BTreeMap::new(),
-            crypto: ctx.node.crypto.clone(),
+            crypto: ctx.crypto.clone(),
         })
     }
 
@@ -123,23 +121,37 @@ impl Genesis {
         // Wait until we've connected with all other genesis peers.
         // (We've already checked we're part of the stakers, so if we're alone carry on).
         if !single_node && self.config.genesis.stakers.len() > 1 {
+            // Cumulate heights of peers, to know whether we need a genesis step or not
+            let mut heights = vec![];
             info!("🌱 Waiting on other genesis peers to join");
             handle_messages! {
                 on_bus self.bus,
                 listen<PeerEvent> msg => {
                     match msg {
-                        PeerEvent::NewPeer { name, pubkey, .. } => {
+                        PeerEvent::NewPeer { name, pubkey, height, .. } => {
                             if !self.config.genesis.stakers.contains_key(&name) {
                                 continue;
                             }
+
+                            heights.push(height.0);
+
                             info!("🌱 New peer {}({}) added to genesis", &name, &pubkey);
-                            self.peer_pubkey
-                                .insert(name.clone(), pubkey.clone());
+                            self.peer_pubkey.insert(name.clone(), pubkey.clone());
 
                             // Once we know everyone in the initial quorum, craft & process the genesis block.
-                            if self.peer_pubkey.len()
-                                == self.config.genesis.stakers.len() {
-                                break
+                            if self.peer_pubkey.len() == self.config.genesis.stakers.len() {
+                                let height = heights
+                                   .iter()
+                                   .max()
+                                   .unwrap_or(&0);
+
+                                if height > &0 {
+                                    info!(" Skipping Genesis because peers' height are higher than 0");
+                                    _ = self.bus.send(GenesisEvent::NoGenesis {});
+                                    return Ok(());
+                                } else {
+                                    break
+                                }
                             } else {
                                 info!("🌱 Waiting for {} more peers to join genesis", self.config.genesis.stakers.len() - self.peer_pubkey.len());
                             }
@@ -540,17 +552,13 @@ impl Genesis {
                 staking_actions: initial_validators
                     .iter()
                     .map(|v| {
-                        NewValidatorCandidate {
-                            pubkey: v.clone(),
-                            msg: SignedByValidator {
-                                msg: ConsensusNetMessage::ValidatorCandidacy(ValidatorCandidacy {
-                                    pubkey: v.clone(),
-                                    peer_address: "".into(),
-                                }),
-                                signature: ValidatorSignature {
-                                    signature: Signature("".into()),
-                                    validator: v.clone(),
-                                },
+                        SignedByValidator {
+                            msg: ValidatorCandidacy {
+                                peer_address: "".into(),
+                            },
+                            signature: ValidatorSignature {
+                                signature: Signature("".into()),
+                                validator: v.clone(),
                             },
                         }
                         .into()
@@ -656,6 +664,7 @@ mod tests {
             name: "node-2".into(),
             pubkey: ValidatorPublicKey("aaa".into()),
             da_address: "".into(),
+            height: BlockHeight(0),
         })
         .expect("send");
 
@@ -691,6 +700,7 @@ mod tests {
         bus.send(PeerEvent::NewPeer {
             name: "node-1".into(),
             pubkey: node_1_pubkey.clone(),
+            height: BlockHeight(0),
             da_address: "".into(),
         })
         .expect("send");
@@ -716,7 +726,6 @@ mod tests {
         let mut config =
             Conf::new(None, tmpdir.path().to_str().map(|s| s.to_owned()), None).unwrap();
         config.id = "node-1".to_string();
-        config.consensus.solo = true;
         config.genesis.stakers = [
             ("node-1".into(), 100),
             ("node-2".into(), 100),
@@ -726,35 +735,17 @@ mod tests {
         .into_iter()
         .collect();
 
+        let build_new_peer = |name: &'static str, height: u64| PeerEvent::NewPeer {
+            name: name.into(),
+            pubkey: BlstCrypto::new(name).unwrap().validator_pubkey().clone(),
+            height: BlockHeight(height),
+            da_address: "".into(),
+        };
         let rec1 = {
             let (mut genesis, mut bus) = new(config.clone()).await;
-            bus.send(PeerEvent::NewPeer {
-                name: "node-2".into(),
-                pubkey: BlstCrypto::new("node-2")
-                    .unwrap()
-                    .validator_pubkey()
-                    .clone(),
-                da_address: "".into(),
-            })
-            .expect("send");
-            bus.send(PeerEvent::NewPeer {
-                name: "node-3".into(),
-                pubkey: BlstCrypto::new("node-3")
-                    .unwrap()
-                    .validator_pubkey()
-                    .clone(),
-                da_address: "".into(),
-            })
-            .expect("send");
-            bus.send(PeerEvent::NewPeer {
-                name: "node-4".into(),
-                pubkey: BlstCrypto::new("node-4")
-                    .unwrap()
-                    .validator_pubkey()
-                    .clone(),
-                da_address: "".into(),
-            })
-            .expect("send");
+            bus.send(build_new_peer("node-2", 0)).expect("send");
+            bus.send(build_new_peer("node-3", 0)).expect("send");
+            bus.send(build_new_peer("node-4", 0)).expect("send");
             let _ = genesis.start().await;
             bus.try_recv().expect("recv")
         };
@@ -762,37 +753,61 @@ mod tests {
         config.data_directory = tmpdir.path().to_path_buf();
         let rec2 = {
             let (mut genesis, mut bus) = new(config).await;
-            bus.send(PeerEvent::NewPeer {
-                name: "node-4".into(),
-                pubkey: BlstCrypto::new("node-4")
-                    .unwrap()
-                    .validator_pubkey()
-                    .clone(),
-                da_address: "".into(),
-            })
-            .expect("send");
-            bus.send(PeerEvent::NewPeer {
-                name: "node-2".into(),
-                pubkey: BlstCrypto::new("node-2")
-                    .unwrap()
-                    .validator_pubkey()
-                    .clone(),
-                da_address: "".into(),
-            })
-            .expect("send");
-            bus.send(PeerEvent::NewPeer {
-                name: "node-3".into(),
-                pubkey: BlstCrypto::new("node-3")
-                    .unwrap()
-                    .validator_pubkey()
-                    .clone(),
-                da_address: "".into(),
-            })
-            .expect("send");
+            bus.send(build_new_peer("node-2", 0)).expect("send");
+            bus.send(build_new_peer("node-3", 0)).expect("send");
+            bus.send(build_new_peer("node-4", 0)).expect("send");
             let _ = genesis.start().await;
             bus.try_recv().expect("recv")
         };
 
         assert_eq!(rec1, rec2);
+    }
+
+    // Test that if at least 2f+1 stakers have a height > 0, we skip the genesis
+    #[test_log::test(tokio::test)]
+    async fn test_skip_genesis_when_height_is_high() {
+        let tmpdir = tempfile::Builder::new().tempdir().unwrap();
+
+        let mut config =
+            Conf::new(None, tmpdir.path().to_str().map(|s| s.to_owned()), None).unwrap();
+        config.id = "node-1".to_string();
+        config.consensus.solo = false;
+        config.genesis.stakers = [
+            ("node-1".into(), 100),
+            ("node-2".into(), 100),
+            ("node-3".into(), 100),
+            ("node-4".into(), 100),
+        ]
+        .into_iter()
+        .collect();
+
+        let build_new_peer = |name: &'static str, height: u64| PeerEvent::NewPeer {
+            name: name.into(),
+            pubkey: BlstCrypto::new(name).unwrap().validator_pubkey().clone(),
+            height: BlockHeight(height),
+            da_address: "".into(),
+        };
+
+        let rec1 = {
+            let (mut genesis, mut bus) = new(config.clone()).await;
+            bus.send(build_new_peer("node-2", 1)).expect("send");
+            bus.send(build_new_peer("node-3", 1)).expect("send");
+            bus.send(build_new_peer("node-4", 1)).expect("send");
+            let _ = genesis.start().await;
+            bus.try_recv().expect("recv")
+        };
+        let tmpdir = tempfile::Builder::new().tempdir().unwrap();
+        config.data_directory = tmpdir.path().to_path_buf();
+        let rec2 = {
+            let (mut genesis, mut bus) = new(config).await;
+            bus.send(build_new_peer("node-2", 1)).expect("send");
+            bus.send(build_new_peer("node-3", 2)).expect("send");
+            bus.send(build_new_peer("node-4", 2)).expect("send");
+            let _ = genesis.start().await;
+            bus.try_recv().expect("recv")
+        };
+
+        assert_eq!(rec1, rec2);
+        assert_eq!(rec1, GenesisEvent::NoGenesis);
     }
 }

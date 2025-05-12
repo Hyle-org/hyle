@@ -39,7 +39,7 @@ impl<'a> CheckSecp256k1<'a> {
         self
     }
 
-    pub fn expect(self) -> Result<(), &'static str> {
+    pub fn expect(self) -> Result<Secp256k1Blob, &'static str> {
         // Verify Secp256k1Blob
         let secp_blob = match self.blob_index {
             Some(idx) => {
@@ -78,6 +78,6 @@ impl<'a> CheckSecp256k1<'a> {
             return Err("Secp256k1Blob data does not match");
         }
 
-        Ok(())
+        Ok(secp_data)
     }
 }

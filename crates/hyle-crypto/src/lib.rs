@@ -336,7 +336,8 @@ fn as_validator_pubkey(pk: PublicKey) -> ValidatorPublicKey {
 mod tests {
 
     use super::*;
-    use hyle_model::{ConsensusNetMessage, ConsensusProposalHash};
+
+    type Data = String;
 
     #[test]
     fn test_sign_bytes() {
@@ -351,7 +352,7 @@ mod tests {
     fn test_sign() {
         let crypto = BlstCrypto::new_random().unwrap();
         let pub_key = ValidatorPublicKey(crypto.sk.sk_to_pk().to_bytes().as_slice().to_vec());
-        let msg = ConsensusNetMessage::PrepareVote(ConsensusProposalHash::default());
+        let msg = Data::default();
         let signed = crypto.sign(&msg).unwrap();
         let valid = BlstCrypto::verify(&signed).unwrap();
         assert!(valid);
@@ -367,26 +368,15 @@ mod tests {
 
     #[test]
     fn test_sign_aggregate() {
-        let (s1, pk1) = new_signed(ConsensusNetMessage::PrepareVote(
-            ConsensusProposalHash::default(),
-        ));
-        let (s2, pk2) = new_signed(ConsensusNetMessage::PrepareVote(
-            ConsensusProposalHash::default(),
-        ));
-        let (s3, pk3) = new_signed(ConsensusNetMessage::PrepareVote(
-            ConsensusProposalHash::default(),
-        ));
-        let (_, pk4) = new_signed(ConsensusNetMessage::PrepareVote(
-            ConsensusProposalHash::default(),
-        ));
+        let (s1, pk1) = new_signed(Data::default());
+        let (s2, pk2) = new_signed(Data::default());
+        let (s3, pk3) = new_signed(Data::default());
+        let (_, pk4) = new_signed(Data::default());
 
         let crypto = BlstCrypto::new_random().unwrap();
         let aggregates = vec![&s1, &s2, &s3];
         let mut signed = crypto
-            .sign_aggregate(
-                ConsensusNetMessage::PrepareVote(ConsensusProposalHash::default()),
-                aggregates.as_slice(),
-            )
+            .sign_aggregate(Data::default(), aggregates.as_slice())
             .unwrap();
 
         assert_eq!(
@@ -431,22 +421,13 @@ mod tests {
 
     #[test]
     fn test_sign_aggregate_wrong_message() {
-        let (s1, pk1) = new_signed(ConsensusNetMessage::PrepareVote(
-            ConsensusProposalHash::default(),
-        ));
-        let (s2, pk2) = new_signed(ConsensusNetMessage::PrepareVote(
-            ConsensusProposalHash::default(),
-        ));
-        let (s3, pk3) = new_signed(ConsensusNetMessage::PrepareVote(ConsensusProposalHash(
-            "azelkaze".to_string(),
-        ))); // different message
+        let (s1, pk1) = new_signed(Data::default());
+        let (s2, pk2) = new_signed(Data::default());
+        let (s3, pk3) = new_signed("Other data".to_string()); // different message
 
         let crypto = BlstCrypto::new_random().unwrap();
         let aggregates = vec![&s1, &s2, &s3];
-        let signed = crypto.sign_aggregate(
-            ConsensusNetMessage::PrepareVote(ConsensusProposalHash::default()),
-            aggregates.as_slice(),
-        );
+        let signed = crypto.sign_aggregate(Data::default(), aggregates.as_slice());
 
         assert!(signed.is_err_and(|e| {
             e.to_string()
@@ -456,26 +437,15 @@ mod tests {
 
     #[test]
     fn test_sign_aggregate_overlap() {
-        let (s1, pk1) = new_signed(ConsensusNetMessage::PrepareVote(
-            ConsensusProposalHash::default(),
-        ));
-        let (s2, pk2) = new_signed(ConsensusNetMessage::PrepareVote(
-            ConsensusProposalHash::default(),
-        ));
-        let (s3, pk3) = new_signed(ConsensusNetMessage::PrepareVote(
-            ConsensusProposalHash::default(),
-        ));
-        let (s4, pk4) = new_signed(ConsensusNetMessage::PrepareVote(
-            ConsensusProposalHash::default(),
-        ));
+        let (s1, pk1) = new_signed(Data::default());
+        let (s2, pk2) = new_signed(Data::default());
+        let (s3, pk3) = new_signed(Data::default());
+        let (s4, pk4) = new_signed(Data::default());
 
         let crypto = BlstCrypto::new_random().unwrap();
         let aggregates = vec![&s1, &s2, &s3, &s2, &s3, &s4];
         let signed = crypto
-            .sign_aggregate(
-                ConsensusNetMessage::PrepareVote(ConsensusProposalHash::default()),
-                aggregates.as_slice(),
-            )
+            .sign_aggregate(Data::default(), aggregates.as_slice())
             .unwrap();
         assert!(BlstCrypto::verify_aggregate(&signed).unwrap());
 

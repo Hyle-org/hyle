@@ -6,17 +6,18 @@ use hyle_model::{
     api::APIRegisterContract, BlockHeight, ContractAction, RegisterContractAction,
     StructuredBlobData, TimeoutWindow,
 };
+use hyle_modules::{
+    bus::SharedMessageBus, modules::SharedBuildApiCtx,
+    node_state::contract_registration::validate_contract_registration_metadata,
+};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
-    bus::{bus_client, metrics::BusMetrics, BusClientSender, BusMessage},
-    model::{
-        contract_registration::validate_contract_registration_metadata, BlobTransaction,
-        CommonRunContext, Hashed, ProofTransaction, Transaction, TransactionData,
-    },
+    bus::{bus_client, metrics::BusMetrics, BusClientSender},
+    model::{BlobTransaction, Hashed, ProofTransaction, Transaction, TransactionData},
     rest::AppError,
 };
 
@@ -24,7 +25,6 @@ use crate::{
 pub enum RestApiMessage {
     NewTx(Transaction),
 }
-impl BusMessage for RestApiMessage {}
 
 bus_client! {
 struct RestBusClient {
@@ -39,9 +39,9 @@ pub struct RouterState {
 #[derive(OpenApi)]
 struct MempoolAPI;
 
-pub async fn api(ctx: &CommonRunContext) -> Router<()> {
+pub async fn api(bus: &SharedMessageBus, ctx: &SharedBuildApiCtx) -> Router<()> {
     let state = RouterState {
-        bus: RestBusClient::new_from_bus(ctx.bus.new_handle()).await,
+        bus: RestBusClient::new_from_bus(bus.new_handle()).await,
     };
 
     let (router, api) = OpenApiRouter::with_openapi(MempoolAPI::openapi())
@@ -171,7 +171,7 @@ pub async fn register_contract(
 
 impl Clone for RouterState {
     fn clone(&self) -> Self {
-        use crate::utils::static_type_map::Pick;
+        use hyle_modules::utils::static_type_map::Pick;
         Self {
             bus: RestBusClient::new(
                 Pick::<BusMetrics>::get(&self.bus).clone(),

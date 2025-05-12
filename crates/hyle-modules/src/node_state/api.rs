@@ -5,8 +5,8 @@ use axum::{
     response::IntoResponse,
     Json, Router,
 };
-use hyle_contract_sdk::ContractName;
-use hyle_model::UnsettledBlobTransaction;
+use client_sdk::contract_indexer::AppError;
+use sdk::*;
 use tracing::error;
 use utoipa::OpenApi;
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -16,11 +16,12 @@ use crate::{
         bus_client,
         command_response::{CmdRespClient, Query},
         metrics::BusMetrics,
+        SharedMessageBus,
     },
-    model::{BlockHeight, CommonRunContext, Contract},
     node_state::module::{QueryBlockHeight, QueryUnsettledTx},
-    rest::AppError,
 };
+
+use super::module::NodeStateCtx;
 
 bus_client! {
 struct RestBusClient {
@@ -37,9 +38,9 @@ pub struct RouterState {
 #[derive(OpenApi)]
 struct NodeStateAPI;
 
-pub async fn api(ctx: &CommonRunContext) -> Router<()> {
+pub async fn api(bus: SharedMessageBus, ctx: &NodeStateCtx) -> Router<()> {
     let state = RouterState {
-        bus: RestBusClient::new_from_bus(ctx.bus.new_handle()).await,
+        bus: RestBusClient::new_from_bus(bus).await,
     };
 
     let (router, api) = OpenApiRouter::with_openapi(NodeStateAPI::openapi())
@@ -50,7 +51,7 @@ pub async fn api(ctx: &CommonRunContext) -> Router<()> {
         .routes(routes!(get_unsettled_tx))
         .split_for_parts();
 
-    if let Ok(mut o) = ctx.openapi.lock() {
+    if let Ok(mut o) = ctx.api.openapi.lock() {
         *o = o.clone().nest("/v1", api);
     }
 
@@ -103,7 +104,7 @@ pub async fn get_unsettled_tx(
 ) -> Result<impl IntoResponse, AppError> {
     match state
         .bus
-        .request(QueryUnsettledTx(hyle_model::TxHash(blob_tx_hash)))
+        .request(QueryUnsettledTx(TxHash(blob_tx_hash)))
         .await
     {
         Ok(tx_context) => Ok(Json(tx_context)),

@@ -2,19 +2,14 @@
 
 use super::metrics::NodeStateMetrics;
 use super::{NodeState, NodeStateStore};
-use crate::bus::{command_response::Query, BusClientSender, BusMessage};
-use crate::data_availability::DataEvent;
+use crate::bus::SharedMessageBus;
+use crate::bus::{command_response::Query, BusClientSender};
 use crate::log_error;
-use crate::model::Contract;
-use crate::model::{Block, BlockHeight, CommonRunContext, ContractName};
 use crate::module_handle_messages;
-use crate::utils::conf::SharedConf;
-use crate::utils::modules::{module_bus_client, Module};
+use crate::modules::{module_bus_client, Module, SharedBuildApiCtx};
 use anyhow::{Context, Result};
-use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_model::{TxHash, UnsettledBlobTransaction};
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use sdk::*;
+use std::path::PathBuf;
 use tracing::info;
 
 /// NodeStateModule maintains a NodeState,
@@ -22,16 +17,12 @@ use tracing::info;
 /// Node state module is separate from DataAvailabiliity
 /// mostly to run asynchronously.
 pub struct NodeStateModule {
-    config: SharedConf,
     bus: NodeStateBusClient,
     inner: NodeState,
+    data_directory: PathBuf,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize)]
-pub enum NodeStateEvent {
-    NewBlock(Box<Block>),
-}
-impl BusMessage for NodeStateEvent {}
+pub use sdk::NodeStateEvent;
 
 #[derive(Clone)]
 pub struct QueryBlockHeight {}
@@ -50,22 +41,26 @@ pub struct NodeStateBusClient {
 }
 }
 
+pub struct NodeStateCtx {
+    pub node_id: String,
+    pub data_directory: PathBuf,
+    pub api: SharedBuildApiCtx,
+}
+
 impl Module for NodeStateModule {
-    type Context = Arc<CommonRunContext>;
+    type Context = NodeStateCtx;
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus = NodeStateBusClient::new_from_bus(ctx.bus.new_handle()).await;
-
-        let api = super::api::api(&ctx).await;
-        if let Ok(mut guard) = ctx.router.lock() {
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
+        let api = super::api::api(bus.new_handle(), &ctx).await;
+        if let Ok(mut guard) = ctx.api.router.lock() {
             if let Some(router) = guard.take() {
                 guard.replace(router.nest("/v1/", api));
             }
         }
-        let metrics = NodeStateMetrics::global(ctx.config.id.clone(), "node_state");
+        let metrics = NodeStateMetrics::global(ctx.node_id.clone(), "node_state");
 
         let store = Self::load_from_disk_or_default::<NodeStateStore>(
-            ctx.config.data_directory.join("node_state.bin").as_path(),
+            ctx.data_directory.join("node_state.bin").as_path(),
         );
 
         for name in store.contracts.keys() {
@@ -73,11 +68,12 @@ impl Module for NodeStateModule {
         }
 
         let node_state = NodeState { store, metrics };
+        let bus = NodeStateBusClient::new_from_bus(bus.new_handle()).await;
 
         Ok(Self {
-            config: ctx.config.clone(),
             bus,
             inner: node_state,
+            data_directory: ctx.data_directory,
         })
     }
 
@@ -99,7 +95,8 @@ impl Module for NodeStateModule {
             listen<DataEvent> block => {
                 match block {
                     DataEvent::OrderedSignedBlock(block) => {
-                        let node_state_block = self.inner.handle_signed_block(&block);
+                        // TODO: If we are in a broken state, this will likely kill the node every time.
+                        let node_state_block = self.inner.handle_signed_block(&block)?;
                         _ = log_error!(self
                             .bus
                             .send(NodeStateEvent::NewBlock(Box::new(node_state_block))), "Sending DataEvent while processing SignedBlock");
@@ -110,7 +107,7 @@ impl Module for NodeStateModule {
 
         let _ = log_error!(
             Self::save_on_disk::<NodeStateStore>(
-                self.config.data_directory.join("node_state.bin").as_path(),
+                self.data_directory.join("node_state.bin").as_path(),
                 &self.inner,
             ),
             "Saving node state"

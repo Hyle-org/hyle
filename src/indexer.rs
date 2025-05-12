@@ -1,15 +1,9 @@
 //! Index system for historical data.
 
 mod api;
-pub mod contract_state_indexer;
-pub mod da_listener;
 
 use crate::model::*;
-use crate::{
-    log_error, log_warn, module_handle_messages,
-    node_state::module::NodeStateEvent,
-    utils::modules::{module_bus_client, Module},
-};
+use crate::node_state::module::NodeStateEvent;
 use anyhow::{bail, Context, Error, Result};
 use api::IndexerAPI;
 use axum::{
@@ -26,10 +20,16 @@ use hyle_contract_sdk::TxHash;
 use hyle_model::api::{
     BlobWithStatus, TransactionStatusDb, TransactionTypeDb, TransactionWithBlobs,
 };
+use hyle_modules::{
+    bus::SharedMessageBus,
+    log_error, log_warn, module_handle_messages,
+    modules::{module_bus_client, Module, SharedBuildApiCtx},
+    utils::conf::SharedConf,
+};
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use sqlx::{PgExecutor, QueryBuilder, Row};
+use std::collections::HashMap;
 use std::ops::DerefMut;
-use std::{collections::HashMap, sync::Arc};
 use tokio::select;
 use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, error, info, trace};
@@ -65,15 +65,15 @@ pub struct Indexer {
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./src/indexer/migrations");
 
 impl Module for Indexer {
-    type Context = Arc<CommonRunContext>;
+    type Context = (SharedConf, SharedBuildApiCtx);
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus = IndexerBusClient::new_from_bus(ctx.bus.new_handle()).await;
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
+        let bus = IndexerBusClient::new_from_bus(bus.new_handle()).await;
 
         let pool = PgPoolOptions::new()
             .max_connections(20)
             .acquire_timeout(std::time::Duration::from_secs(1))
-            .connect(&ctx.config.database_url)
+            .connect(&ctx.0.database_url)
             .await
             .context("Failed to connect to the database")?;
 
@@ -93,14 +93,14 @@ impl Module for Indexer {
             subscribers,
         };
 
-        if let Ok(mut guard) = ctx.router.lock() {
+        if let Ok(mut guard) = ctx.1.router.lock() {
             if let Some(router) = guard.take() {
-                guard.replace(router.nest("/v1/indexer", indexer.api(Some(&ctx))));
+                guard.replace(router.nest("/v1/indexer", indexer.api(Some(&ctx.1))));
                 return Ok(indexer);
             }
         }
 
-        if let Ok(mut guard) = ctx.openapi.lock() {
+        if let Ok(mut guard) = ctx.1.openapi.lock() {
             tracing::info!("Adding OpenAPI for Indexer");
             let openapi = guard.clone().nest("/v1/indexer", IndexerAPI::openapi());
             *guard = openapi;
@@ -193,7 +193,7 @@ impl Indexer {
             .unwrap_or(None))
     }
 
-    pub fn api(&self, ctx: Option<&CommonRunContext>) -> Router<()> {
+    pub fn api(&self, ctx: Option<&SharedBuildApiCtx>) -> Router<()> {
         #[derive(OpenApi)]
         struct IndexerAPI;
 
@@ -1059,11 +1059,12 @@ mod test {
 
         let parent_data_proposal = DataProposal::new(None, txs);
         let mut signed_block = SignedBlock::default();
+        signed_block.consensus_proposal.slot = 1;
         signed_block.data_proposals.push((
             LaneId(ValidatorPublicKey("ttt".into())),
             vec![parent_data_proposal.clone()],
         ));
-        let block = node_state.handle_signed_block(&signed_block);
+        let block = node_state.force_handle_block(&signed_block);
 
         indexer
             .handle_processed_block(block)
@@ -1209,7 +1210,7 @@ mod test {
             LaneId(ValidatorPublicKey("ttt".into())),
             vec![data_proposal],
         ));
-        let block_2 = node_state.handle_signed_block(&signed_block);
+        let block_2 = node_state.force_handle_block(&signed_block);
         let block_2_hash = block_2.hash.clone();
         indexer
             .handle_processed_block(block_2)
@@ -1294,7 +1295,7 @@ mod test {
                 }
             ])
         );
-        let all_txs = server.get("/transactions/block/0").await;
+        let all_txs = server.get("/transactions/block/1").await;
         all_txs.assert_status_ok();
         assert_json_include!(
             actual: all_txs.json::<serde_json::Value>(),
@@ -1344,7 +1345,7 @@ mod test {
             ])
         );
 
-        let proofs_by_height = server.get("/proofs/block/0").await;
+        let proofs_by_height = server.get("/proofs/block/1").await;
         proofs_by_height.assert_status_ok();
         assert_json_include!(
             actual: proofs_by_height.json::<serde_json::Value>(),

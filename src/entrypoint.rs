@@ -5,31 +5,33 @@ use crate::{
     consensus::Consensus,
     data_availability::DataAvailability,
     genesis::Genesis,
-    indexer::{
-        contract_state_indexer::{ContractStateIndexer, ContractStateIndexerCtx},
-        da_listener::{DAListener, DAListenerCtx},
-        Indexer,
-    },
+    indexer::Indexer,
     mempool::Mempool,
-    model::{api::NodeInfo, CommonRunContext, NodeRunContext, SharedRunContext},
-    modules::websocket::{WebSocketModule, WebSocketModuleCtx},
+    model::{api::NodeInfo, SharedRunContext},
     node_state::module::NodeStateModule,
     p2p::P2P,
     rest::{ApiDoc, RestApi, RestApiRunContext},
     single_node_consensus::SingleNodeConsensus,
     tcp_server::TcpServer,
-    tools::mock_workflow::MockWorkflowHandler,
     utils::{
-        bus_ws_connector::{NodeWebsocketConnector, NodeWebsocketConnectorCtx, WebsocketOutEvent},
         conf::{self, P2pMode},
         modules::ModulesHandler,
     },
 };
 use anyhow::{bail, Context, Result};
 use axum::Router;
-use axum_otel_metrics::HttpMetricsLayerBuilder;
 use hydentity::Hydentity;
 use hyle_crypto::SharedBlstCrypto;
+use hyle_modules::{
+    modules::{
+        bus_ws_connector::{NodeWebsocketConnector, NodeWebsocketConnectorCtx, WebsocketOutEvent},
+        contract_state_indexer::{ContractStateIndexer, ContractStateIndexerCtx},
+        da_listener::{DAListener, DAListenerConf},
+        websocket::WebSocketModule,
+        BuildApiContextInner,
+    },
+    node_state::module::NodeStateCtx,
+};
 use hyllar::Hyllar;
 use prometheus::Registry;
 use std::{
@@ -124,7 +126,7 @@ pub fn welcome_message(conf: &conf::Conf) {
    ███████║ ╚████╔╝ ██║     ████╗       {check_p2p} p2p::{p2p_port} | {check_http} http::{http_port} | {check_tcp} tcp::{tcp_port} | ◆ da::{da_port}
    ██╔══██║  ╚██╔╝  ██║     ██╔═╝     
    ██║  ██║   ██║   ███████╗██████╗     {check_indexer} indexer {database_url}
-   ╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═════╝     ∎ ./{data_directory}
+   ╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═════╝     ∎ {data_directory}
  
    Minimal, yet sufficient.
                                  
@@ -136,7 +138,7 @@ pub fn welcome_message(conf: &conf::Conf) {
         } else if conf.p2p.mode == P2pMode::LaneManager {
             "≡  Lane Operator"
         } else {
-            "✘ NO P2P"
+            "✘ NO P2P"
         },
         check_p2p = check_or_cross(!matches!(conf.p2p.mode, P2pMode::None)),
         p2p_port = conf.p2p.server_port,
@@ -211,17 +213,38 @@ async fn common_main(
 
     opentelemetry::global::set_meter_provider(provider.clone());
 
-    let metrics_layer = HttpMetricsLayerBuilder::new()
-        .with_provider(provider)
-        .build();
+    #[cfg(feature = "monitoring")]
+    {
+        let scope = opentelemetry::InstrumentationScope::builder(config.id.clone()).build();
+        let my_meter = opentelemetry::global::meter_with_scope(scope);
+        let alloc_metric = my_meter.u64_gauge("malloc_allocated_size").build();
+        let alloc_metric2 = my_meter.u64_gauge("malloc_allocations").build();
+        let latency_metric = my_meter.u64_histogram("tokio_latency").build();
+        // Measure the event loop latency
+        // Bit of a noisey hack, but it's indicative.
+        tokio::spawn(async move {
+            let mut latency = tokio::time::Instant::now();
+            loop {
+                latency_metric.record(latency.elapsed().as_millis() as u64 - 250, &[]);
+                latency = tokio::time::Instant::now();
+                tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+            }
+        });
+        tokio::spawn(async move {
+            loop {
+                let metrics = alloc_metrics::global_metrics();
+                alloc_metric.record(metrics.allocated_bytes as u64, &[]);
+                alloc_metric2.record(metrics.allocations as u64, &[]);
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            }
+        });
+    }
 
     let bus = SharedMessageBus::new(BusMetrics::global(config.id.clone()));
 
     std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
 
-    let common_run_ctx = Arc::new(CommonRunContext {
-        bus: bus.new_handle(),
-        config: config.clone(),
+    let build_api_ctx = Arc::new(BuildApiContextInner {
         router: Mutex::new(Some(Router::new())),
         openapi: Mutex::new(ApiDoc::openapi()),
     });
@@ -230,42 +253,47 @@ async fn common_main(
 
     if config.run_indexer {
         handler
-            .build_module::<Indexer>(common_run_ctx.clone())
+            .build_module::<Indexer>((config.clone(), build_api_ctx.clone()))
             .await?;
         handler
             .build_module::<ContractStateIndexer<Hyllar>>(ContractStateIndexerCtx {
                 contract_name: "hyllar".into(),
-                common: common_run_ctx.clone(),
+                data_directory: config.data_directory.clone(),
+                api: build_api_ctx.clone(),
             })
             .await?;
         handler
             .build_module::<ContractStateIndexer<Hyllar>>(ContractStateIndexerCtx {
                 contract_name: "hyllar2".into(),
-                common: common_run_ctx.clone(),
+                data_directory: config.data_directory.clone(),
+                api: build_api_ctx.clone(),
             })
             .await?;
         handler
             .build_module::<ContractStateIndexer<Hydentity>>(ContractStateIndexerCtx {
                 contract_name: "hydentity".into(),
-                common: common_run_ctx.clone(),
+                data_directory: config.data_directory.clone(),
+                api: build_api_ctx.clone(),
             })
             .await?;
     }
 
     if config.p2p.mode != conf::P2pMode::None {
         let ctx = SharedRunContext {
-            common: common_run_ctx.clone(),
-            node: NodeRunContext {
-                crypto: crypto
-                    .as_ref()
-                    .expect("Crypto must be defined to run p2p")
-                    .clone(),
-            }
-            .into(),
+            config: config.clone(),
+            api: build_api_ctx.clone(),
+            crypto: crypto
+                .as_ref()
+                .expect("Crypto must be defined to run p2p")
+                .clone(),
         };
 
         handler
-            .build_module::<NodeStateModule>(common_run_ctx.clone())
+            .build_module::<NodeStateModule>(NodeStateCtx {
+                node_id: config.id.clone(),
+                data_directory: config.data_directory.clone(),
+                api: build_api_ctx.clone(),
+            })
             .await?;
 
         handler
@@ -286,15 +314,12 @@ async fn common_main(
             }
         }
 
-        handler
-            .build_module::<MockWorkflowHandler>(ctx.clone())
-            .await?;
-
         handler.build_module::<P2P>(ctx.clone()).await?;
     } else {
         handler
-            .build_module::<DAListener>(DAListenerCtx {
-                common: common_run_ctx.clone(),
+            .build_module::<DAListener>(DAListenerConf {
+                data_directory: config.data_directory.clone(),
+                da_read_from: config.da_read_from.clone(),
                 start_block: None,
             })
             .await?;
@@ -302,15 +327,11 @@ async fn common_main(
 
     if config.websocket.enabled {
         handler
-            .build_module::<WebSocketModule<(), WebsocketOutEvent>>(WebSocketModuleCtx {
-                bus: bus.new_handle(),
-                config: config.websocket.clone().into(),
-            })
+            .build_module::<WebSocketModule<(), WebsocketOutEvent>>(config.websocket.clone().into())
             .await?;
 
         handler
             .build_module::<NodeWebsocketConnector>(NodeWebsocketConnectorCtx {
-                bus: bus.new_handle(),
                 events: config.websocket.events.clone(),
             })
             .await?;
@@ -318,13 +339,13 @@ async fn common_main(
 
     if config.run_rest_server {
         // Should come last so the other modules have nested their own routes.
-        let router = common_run_ctx
+        let router = build_api_ctx
             .router
             .lock()
-            .expect("Context router should be available")
+            .expect("Context router should be available.")
             .take()
-            .expect("Context router should be available");
-        let openapi = common_run_ctx
+            .expect("Context router should be available.");
+        let openapi = build_api_ctx
             .openapi
             .lock()
             .expect("OpenAPI should be available")
@@ -339,9 +360,7 @@ async fn common_main(
                         pubkey: crypto.as_ref().map(|c| c.validator_pubkey()).cloned(),
                         da_address: config.da_public_address.clone(),
                     },
-                    common_run_ctx.bus.new_handle(),
                     router.clone(),
-                    Some(metrics_layer),
                     config.rest_server_max_body_size,
                     openapi,
                 )
@@ -352,7 +371,7 @@ async fn common_main(
 
     if config.run_tcp_server {
         handler
-            .build_module::<TcpServer>(common_run_ctx.clone())
+            .build_module::<TcpServer>(config.tcp_server_port)
             .await?;
     }
 

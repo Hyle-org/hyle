@@ -1,11 +1,8 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use hyle::{
-    entrypoint::RunPg,
-    log_error,
-    utils::{conf, logger::setup_tracing},
-};
+use hyle::{entrypoint::RunPg, utils::conf};
 use hyle_crypto::BlstCrypto;
+use hyle_modules::{log_error, utils::logger::setup_tracing};
 use std::sync::Arc;
 use tracing::info;
 
@@ -33,6 +30,11 @@ pub struct Args {
 /// Use dhat to profile memory usage
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
+#[cfg(all(feature = "monitoring", not(feature = "dhat")))]
+#[global_allocator]
+static GLOBAL_ALLOC: alloc_metrics::MetricAlloc<std::alloc::System> =
+    alloc_metrics::MetricAlloc::new(std::alloc::System);
+
 // We have some modules that have long-ish tasks, but for now we won't bother giving them
 // their own runtime, so to avoid contention we keep a safe number of worker threads
 #[tokio::main(worker_threads = 6)]
@@ -51,7 +53,7 @@ async fn main() -> Result<()> {
     let pubkey = Some(crypto.validator_pubkey().clone());
 
     setup_tracing(
-        &config,
+        &config.log_format,
         format!(
             "{}({})",
             config.id.clone(),
@@ -66,6 +68,11 @@ async fn main() -> Result<()> {
     } else {
         None
     };
+
+    #[cfg(feature = "sp1")]
+    {
+        hyle_verifiers::sp1_4::init();
+    }
 
     log_error!(
         hyle::entrypoint::main_process(config, Some(crypto)).await,

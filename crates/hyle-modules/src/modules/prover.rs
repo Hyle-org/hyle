@@ -1,21 +1,15 @@
-use std::{fmt::Debug, sync::Arc};
+use std::{fmt::Debug, path::PathBuf, sync::Arc};
 
-use crate::{
-    bus::{BusClientSender, BusMessage},
-    log_error,
-    model::CommonRunContext,
-    module_bus_client, module_handle_messages,
-    node_state::module::NodeStateEvent,
-    utils::modules::Module,
-};
+use crate::bus::{BusClientSender, SharedMessageBus};
+use crate::{log_error, module_bus_client, module_handle_messages, modules::Module};
 use anyhow::{anyhow, Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::{
-    helpers::risc0::Risc0Prover, rest_client::NodeApiHttpClient,
+    helpers::ClientSdkProver, rest_client::NodeApiHttpClient,
     transaction_builder::TxExecutorHandler,
 };
-use hyle_model::{
-    BlobIndex, BlobTransaction, Block, BlockHeight, Calldata, ContractName, Hashed,
+use sdk::{
+    BlobIndex, BlobTransaction, Block, BlockHeight, Calldata, ContractName, Hashed, NodeStateEvent,
     ProofTransaction, TransactionData, TxContext, TxHash, HYLE_TESTNET_CHAIN_ID,
 };
 use tracing::{debug, error, info, warn};
@@ -51,11 +45,46 @@ pub struct AutoProverBusClient<Contract: Send + Sync + Clone + 'static> {
 }
 
 pub struct AutoProverCtx {
-    pub common: Arc<CommonRunContext>,
+    pub data_directory: PathBuf,
     pub start_height: BlockHeight,
-    pub elf: &'static [u8],
+    pub prover: Arc<dyn ClientSdkProver<Vec<Calldata>> + Send + Sync>,
     pub contract_name: ContractName,
     pub node: Arc<NodeApiHttpClient>,
+}
+
+impl AutoProverCtx {
+    #[cfg(feature = "risc0")]
+    pub fn risc0(
+        data_directory: PathBuf,
+        elf: &'static [u8],
+        contract_name: ContractName,
+        node: Arc<NodeApiHttpClient>,
+    ) -> Self {
+        Self {
+            data_directory,
+            start_height: BlockHeight(0),
+            prover: Arc::new(client_sdk::helpers::risc0::Risc0Prover::new(elf)),
+            contract_name,
+            node,
+        }
+    }
+
+    #[cfg(feature = "sp1")]
+    pub fn sp1(
+        data_directory: PathBuf,
+        elf: &'static [u8],
+        contract_name: ContractName,
+        start_height: BlockHeight,
+        node: Arc<NodeApiHttpClient>,
+    ) -> Self {
+        Self {
+            data_directory,
+            start_height,
+            prover: Arc::new(client_sdk::helpers::sp1::SP1Prover::new(elf)),
+            contract_name,
+            node,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -68,8 +97,6 @@ pub enum AutoProverEvent<Contract> {
     SuccessTx(TxHash, Contract),
 }
 
-impl<Contract> BusMessage for AutoProverEvent<Contract> {}
-
 impl<Contract> Module for AutoProver<Contract>
 where
     Contract:
@@ -77,12 +104,10 @@ where
 {
     type Context = Arc<AutoProverCtx>;
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus = AutoProverBusClient::<Contract>::new_from_bus(ctx.common.bus.new_handle()).await;
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
+        let bus = AutoProverBusClient::<Contract>::new_from_bus(bus.new_handle()).await;
 
         let file = ctx
-            .common
-            .config
             .data_directory
             .join(format!("autoprover_{}.bin", ctx.contract_name).as_str());
 
@@ -332,25 +357,50 @@ where
         };
 
         let node_client = self.ctx.node.clone();
-        let prover = Risc0Prover::new(self.ctx.elf);
+        let prover = self.ctx.prover.clone();
         let contract_name = self.ctx.contract_name.clone();
         tokio::task::spawn(async move {
-            match prover.prove(commitment_metadata, calldatas).await {
-                Ok(proof) => {
-                    let tx = ProofTransaction {
-                        contract_name: contract_name.clone(),
-                        proof,
-                    };
-                    let _ = log_error!(
-                        node_client.send_tx_proof(&tx).await,
-                        "failed to send proof to node"
-                    );
-                    info!("✅ Proved {len} txs");
-                }
-                Err(e) => {
-                    error!("Error proving tx: {:?}", e);
-                }
-            };
+            let mut retries = 0;
+            const MAX_RETRIES: u32 = 30;
+
+            loop {
+                match prover
+                    .prove(commitment_metadata.clone(), calldatas.clone())
+                    .await
+                {
+                    Ok(proof) => {
+                        let tx = ProofTransaction {
+                            contract_name: contract_name.clone(),
+                            proof,
+                        };
+                        let _ = log_error!(
+                            node_client.send_tx_proof(&tx).await,
+                            "failed to send proof to node"
+                        );
+                        info!("✅ Proved {len} txs");
+                        break;
+                    }
+                    Err(e) => {
+                        let should_retry =
+                            e.to_string().contains("SessionCreateErr") && retries < MAX_RETRIES;
+                        if should_retry {
+                            warn!(
+                                "Session creation error, retrying ({}/{})",
+                                retries, MAX_RETRIES
+                            );
+                            retries += 1;
+                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                            warn!(
+                                "Session creation error, retrying ({}/{})",
+                                retries, MAX_RETRIES
+                            );
+                            continue;
+                        }
+                        error!("Error proving tx: {:?}", e);
+                        break;
+                    }
+                };
+            }
         });
         Ok(())
     }

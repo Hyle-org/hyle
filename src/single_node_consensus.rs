@@ -2,17 +2,19 @@ use std::path::PathBuf;
 
 use crate::bus::command_response::{CmdRespClient, Query};
 use crate::bus::BusClientSender;
+use crate::consensus::ConfirmAckMarker;
 use crate::consensus::{CommittedConsensusProposal, ConsensusEvent, QueryConsensusInfo};
 use crate::genesis::GenesisEvent;
 use crate::mempool::QueryNewCut;
 use crate::model::*;
-use crate::module_handle_messages;
 use crate::utils::conf::SharedConf;
-use crate::utils::modules::module_bus_client;
-use crate::{model::SharedRunContext, utils::modules::Module};
 use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_crypto::SharedBlstCrypto;
+use hyle_modules::bus::SharedMessageBus;
+use hyle_modules::module_handle_messages;
+use hyle_modules::modules::module_bus_client;
+use hyle_modules::modules::Module;
 use hyle_net::clock::TimestampMsClock;
 use staking::state::Staking;
 use tracing::{debug, warn};
@@ -52,9 +54,8 @@ pub struct SingleNodeConsensus {
 impl Module for SingleNodeConsensus {
     type Context = SharedRunContext;
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
         let file = ctx
-            .common
             .config
             .data_directory
             .clone()
@@ -62,19 +63,19 @@ impl Module for SingleNodeConsensus {
 
         let store: SingleNodeConsensusStore = Self::load_from_disk_or_default(file.as_path());
 
-        let bus = SingleNodeConsensusBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
-
-        let api = super::consensus::api::api(&ctx.common).await;
-        if let Ok(mut guard) = ctx.common.router.lock() {
+        let api = super::consensus::api::api(&bus, &ctx).await;
+        if let Ok(mut guard) = ctx.api.router.lock() {
             if let Some(router) = guard.take() {
                 guard.replace(router.nest("/v1/consensus", api));
             }
         }
 
+        let bus = SingleNodeConsensusBusClient::new_from_bus(bus.new_handle()).await;
+
         Ok(SingleNodeConsensus {
             bus,
-            crypto: ctx.node.crypto.clone(),
-            config: ctx.common.config.clone(),
+            crypto: ctx.crypto.clone(),
+            config: ctx.config.clone(),
             store,
             file: Some(file),
         })
@@ -186,10 +187,9 @@ impl SingleNodeConsensus {
 
         self.store.last_consensus_proposal_hash = consensus_proposal.hashed();
 
-        let certificate = self.crypto.sign_aggregate(
-            ConsensusNetMessage::ConfirmAck(consensus_proposal.hashed()),
-            &[],
-        )?;
+        let certificate = self
+            .crypto
+            .sign_aggregate((consensus_proposal.hashed(), ConfirmAckMarker), &[])?;
 
         _ = self.bus.send(ConsensusEvent::CommitConsensusProposal(
             CommittedConsensusProposal {
@@ -211,10 +211,10 @@ mod tests {
     use crate::bus::dont_use_this::get_receiver;
     use crate::bus::metrics::BusMetrics;
     use crate::bus::{bus_client, SharedMessageBus};
-    use crate::handle_messages;
     use crate::utils::conf::Conf;
     use anyhow::Result;
     use hyle_crypto::BlstCrypto;
+    use hyle_modules::handle_messages;
     use std::sync::Arc;
     use tokio::sync::broadcast::Receiver;
 

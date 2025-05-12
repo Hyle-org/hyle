@@ -1,18 +1,15 @@
 use anyhow::Result;
-use hyle_model::{
+use sdk::{
     api::{APIBlock, APITransaction, TransactionTypeDb},
-    TransactionData,
+    NodeStateEvent, TransactionData,
 };
 use serde::Serialize;
 
 use crate::{
     bus::{BusClientSender, SharedMessageBus},
-    module_bus_client, module_handle_messages,
     modules::websocket::WsTopicMessage,
-    node_state::module::NodeStateEvent,
 };
-
-use super::modules::Module;
+use crate::{module_bus_client, module_handle_messages, modules::Module};
 
 #[derive(Debug, Clone, Serialize)]
 pub enum WebsocketOutEvent {
@@ -35,16 +32,15 @@ pub struct NodeWebsocketConnector {
 }
 
 pub struct NodeWebsocketConnectorCtx {
-    pub bus: SharedMessageBus,
     pub events: Vec<String>,
 }
 
 impl Module for NodeWebsocketConnector {
     type Context = NodeWebsocketConnectorCtx;
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
         Ok(Self {
-            bus: NodeWebsocketConnectorBusClient::new_from_bus(ctx.bus.new_handle()).await,
+            bus: NodeWebsocketConnectorBusClient::new_from_bus(bus.new_handle()).await,
             events: ctx.events,
         })
     }
@@ -109,7 +105,7 @@ impl NodeWebsocketConnector {
                 TransactionData::Proof(_) => TransactionTypeDb::ProofTransaction,
                 TransactionData::VerifiedProof(_) => TransactionTypeDb::ProofTransaction,
             };
-            let transaction_status = hyle_model::api::TransactionStatusDb::Sequenced;
+            let transaction_status = sdk::api::TransactionStatusDb::Sequenced;
             let api_tx = APITransaction {
                 tx_hash: metadata.id.1,
                 parent_dp_hash: metadata.id.0,

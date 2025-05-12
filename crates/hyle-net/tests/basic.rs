@@ -7,8 +7,7 @@ use std::{collections::HashSet, error::Error, time::Duration};
 use hyle_crypto::BlstCrypto;
 use hyle_net::{
     net::Sim,
-    p2p_server_mod,
-    tcp::{Canal, P2PTcpMessage},
+    tcp::{p2p_server::P2PServer, Canal, P2PTcpMessage},
 };
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 
@@ -19,11 +18,6 @@ impl Into<P2PTcpMessage<Msg>> for Msg {
     fn into(self) -> P2PTcpMessage<Msg> {
         P2PTcpMessage::Data(self)
     }
-}
-
-p2p_server_mod! {
-  pub test,
-  message: crate::Msg
 }
 
 macro_rules! turmoil_simple {
@@ -64,19 +58,23 @@ turmoil_simple!(501..=520, 10, setup_basic);
 turmoil_simple!(501..=520, 4, setup_drops);
 turmoil_simple!(521..=540, 10, setup_drops);
 
+turmoil_simple!(521..=540, 10, setup_late_host_at_first_handshake);
+
 async fn setup_basic_host(
     peer: String,
     peers: Vec<String>,
+    connect_to_others: bool,
     _seed: u64,
 ) -> Result<(), Box<dyn Error>> {
     let crypto = BlstCrypto::new(peer.clone().as_str())?;
-    let mut p2p = p2p_server_test::start_server(
+    let mut p2p = P2PServer::<Msg>::new(
         std::sync::Arc::new(crypto),
         peer.clone(),
         9090,
         None,
         format!("{}:{}", peer, 9090),
         format!("{}:{}", peer, 4141),
+        HashSet::from_iter(std::iter::once(Canal::new("A"))),
     )
     .await?;
 
@@ -85,8 +83,10 @@ async fn setup_basic_host(
 
     tracing::info!("All other peers {:?}", all_other_peers);
 
-    for peer in all_other_peers.clone() {
-        p2p.start_handshake(format!("{}:{}", peer.clone(), 9090), Canal::new("A"));
+    if connect_to_others {
+        for peer in all_other_peers.clone() {
+            let _ = p2p.try_start_connection(format!("{}:{}", peer.clone(), 9090), Canal::new("A"));
+        }
     }
 
     let mut interval = tokio::time::interval(Duration::from_millis(100));
@@ -116,7 +116,38 @@ pub fn setup_basic(peers: Vec<String>, sim: &mut Sim<'_>, seed: u64) -> anyhow::
         let peer_clone = peer.clone();
         let peers_clone = peers.clone();
         sim.client(peer.clone(), async move {
-            setup_basic_host(peer_clone, peers_clone, seed).await
+            setup_basic_host(peer_clone, peers_clone, true, seed).await
+        })
+    }
+
+    sim.run()
+        .map_err(|e| anyhow::anyhow!("Simulation error {}", e.to_string()))?;
+
+    Ok(())
+}
+
+pub fn setup_late_host_at_first_handshake(
+    peers: Vec<String>,
+    sim: &mut Sim<'_>,
+    seed: u64,
+) -> anyhow::Result<()> {
+    tracing::info!("Starting simulation with peers {:?}", peers.clone());
+    let mut rng = StdRng::seed_from_u64(seed);
+    let late_host = peers.get((rng.next_u64() as usize) % peers.len()).unwrap();
+
+    for peer in peers.clone().into_iter() {
+        let late = rng.next_u64() % 12;
+        let peer_clone = peer.clone();
+        let peers_clone = peers.clone();
+        let late_clone = late_host.clone();
+        sim.client(peer.clone(), async move {
+            if peer_clone == *late_clone {
+                tokio::time::sleep(Duration::from_secs(15)).await;
+                setup_basic_host(peer_clone, peers_clone, false, seed).await
+            } else {
+                tokio::time::sleep(Duration::from_secs(late)).await;
+                setup_basic_host(peer_clone, peers_clone, true, seed).await
+            }
         })
     }
 
@@ -132,13 +163,14 @@ async fn setup_drop_host(
     duration: u64,
 ) -> Result<(), Box<dyn Error>> {
     let crypto = BlstCrypto::new(peer.clone().as_str())?;
-    let mut p2p = p2p_server_test::start_server(
+    let mut p2p = P2PServer::new(
         std::sync::Arc::new(crypto),
         peer.clone(),
         9090,
         None,
         format!("{}:{}", peer, 9090),
         format!("{}:{}", peer, 4141),
+        HashSet::from_iter(std::iter::once(Canal::new("A"))),
     )
     .await?;
 
@@ -148,26 +180,31 @@ async fn setup_drop_host(
     tracing::info!("All other peers {:?}", all_other_peers);
 
     for peer in all_other_peers.clone() {
-        p2p.start_handshake(format!("{}:{}", peer.clone(), 9090), Canal::new("A"));
+        let _ = p2p.try_start_connection(format!("{}:{}", peer.clone(), 9090), Canal::new("A"));
     }
 
     let mut interval_broadcast = tokio::time::interval(Duration::from_millis(50));
-    let mut interval_start_shutdown = tokio::time::interval(Duration::from_millis(duration - 1000));
+    let mut interval_start_shutdown = tokio::time::interval(Duration::from_millis(1000));
     interval_start_shutdown.tick().await;
     loop {
         tokio::select! {
             _ = interval_start_shutdown.tick() => {
-                tracing::error!("Current peers {:?}", p2p.peers.keys());
-                tracing::error!("Current tcp peers {:?}", p2p.tcp_server.connected_clients());
+                if turmoil::elapsed() > Duration::from_millis(duration) {
+                    tracing::error!("Current peers {:?}", p2p.peers.keys());
+                    tracing::error!("Current tcp peers {:?}", p2p.tcp_server.connected_clients());
 
-                assert_eq!(all_other_peers.len(), p2p.tcp_server.connected_clients().len());
-                assert_eq!(p2p.peers.keys().len(), p2p.tcp_server.connected_clients().len());
+                    // Peers map should match all_other_peers
+                    assert_eq!(all_other_peers.len(), p2p.peers.keys().len());
+                    // All current peer sockets should be in tcp server sockets
+                    let connected_tcp_clients = p2p.tcp_server.connected_clients().clone();
+                    assert!(p2p.peers.values().flat_map(|t| t.canals.values()).all(|v| connected_tcp_clients.contains(&v.socket_addr)));
+                }
             }
             tcp_event = p2p.listen_next() => {
                 _ = p2p.handle_p2p_tcp_event(tcp_event).await;
             }
             _ = interval_broadcast.tick() => {
-                p2p.broadcast(Msg(10), Canal::new("A")).await;
+                p2p.broadcast(Msg(10), Canal::new("A"));
             }
         }
     }
@@ -178,13 +215,14 @@ async fn setup_drop_client(
     duration: u64,
 ) -> Result<(), Box<dyn Error>> {
     let crypto = BlstCrypto::new(peer.clone().as_str())?;
-    let mut p2p = p2p_server_test::start_server(
+    let mut p2p = P2PServer::new(
         std::sync::Arc::new(crypto),
         peer.clone(),
         9090,
         None,
         format!("{}:{}", peer, 9090),
         format!("{}:{}", peer, 4141),
+        HashSet::from_iter(std::iter::once(Canal::new("A"))),
     )
     .await?;
 
@@ -194,25 +232,25 @@ async fn setup_drop_client(
     tracing::info!("All other peers {:?}", all_other_peers);
 
     for peer in all_other_peers.clone() {
-        p2p.start_handshake(format!("{}:{}", peer.clone(), 9090), Canal::new("A"));
+        let _ = p2p.try_start_connection(format!("{}:{}", peer.clone(), 9090), Canal::new("A"));
     }
 
     let mut interval_broadcast = tokio::time::interval(Duration::from_millis(100));
-    let mut interval_start_shutdown = tokio::time::interval(Duration::from_millis(duration));
+    let mut interval_start_shutdown = tokio::time::interval(Duration::from_millis(1000));
     interval_start_shutdown.tick().await;
     loop {
         tokio::select! {
             _ = interval_start_shutdown.tick() => {
-                let peer_names = HashSet::from_iter(p2p.peers.iter().map(|(_, v)| v.node_connection_data.name.clone()));
 
-                tracing::error!("Current peers {:?}", peer_names);
-                tracing::error!("Current tcp peers {:?}", p2p.tcp_server.connected_clients());
+                if turmoil::elapsed() > Duration::from_millis(duration) {
 
-                if peer_names == all_other_peers && peer_names.len() == p2p.tcp_server.connected_clients().len() {
-                    break {
-                        tracing::info!("Breaking tcp peers {:?}", p2p.tcp_server.connected_clients());
-                        Ok(())
-                    };
+                    // Peers map should match all_other_peers
+                    assert_eq!(all_other_peers.len(), p2p.peers.keys().len());
+                    // All current peer sockets should be in tcp server sockets
+                    let connected_tcp_clients = p2p.tcp_server.connected_clients().clone();
+                    assert!(p2p.peers.values().flat_map(|t| t.canals.values()).all(|v| connected_tcp_clients.contains(&v.socket_addr)));
+
+                    break Ok(())
                 }
             }
 
@@ -220,7 +258,7 @@ async fn setup_drop_client(
                 _ = p2p.handle_p2p_tcp_event(tcp_event).await;
             }
             _ = interval_broadcast.tick() => {
-                p2p.broadcast(Msg(10), Canal::new("A")).await;
+                p2p.broadcast(Msg(10), Canal::new("A"));
             }
         }
     }

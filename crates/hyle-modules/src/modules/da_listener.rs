@@ -1,23 +1,16 @@
-use std::sync::Arc;
+use std::path::PathBuf;
 
 use anyhow::Result;
-use hyle_model::Hashed;
+use sdk::{BlockHeight, Hashed};
 use tracing::{debug, info};
 
 use crate::{
-    bus::BusClientSender,
-    data_availability::codec::{
-        codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequest,
-    },
-    log_error,
-    model::{BlockHeight, CommonRunContext},
-    module_handle_messages,
+    bus::{BusClientSender, SharedMessageBus},
+    modules::{module_bus_client, Module},
     node_state::{metrics::NodeStateMetrics, module::NodeStateEvent, NodeState, NodeStateStore},
-    utils::{
-        conf::SharedConf,
-        modules::{module_bus_client, Module},
-    },
+    utils::da_codec::{DataAvailabilityClient, DataAvailabilityEvent, DataAvailabilityRequest},
 };
+use crate::{log_error, module_handle_messages};
 
 module_bus_client! {
 #[derive(Debug)]
@@ -28,32 +21,31 @@ struct DAListenerBusClient {
 
 /// Module that listens to the data availability stream and sends the blocks to the bus
 pub struct DAListener {
-    config: SharedConf,
+    config: DAListenerConf,
     bus: DAListenerBusClient,
     node_state: NodeState,
     start_block: BlockHeight,
 }
 
-pub struct DAListenerCtx {
-    pub common: Arc<CommonRunContext>,
+pub struct DAListenerConf {
+    pub data_directory: PathBuf,
+    pub da_read_from: String,
     pub start_block: Option<BlockHeight>,
 }
 
 impl Module for DAListener {
-    type Context = DAListenerCtx;
+    type Context = DAListenerConf;
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
         let node_state_store = Self::load_from_disk_or_default::<NodeStateStore>(
-            ctx.common
-                .config
-                .data_directory
+            ctx.data_directory
                 .join("da_listener_node_state.bin")
                 .as_path(),
         );
 
         let node_state = NodeState {
             store: node_state_store,
-            metrics: NodeStateMetrics::global(ctx.common.config.id.clone(), "da_listener"),
+            metrics: NodeStateMetrics::global("da_listener".to_string(), "da_listener"),
         };
 
         let start_block = ctx.start_block.unwrap_or(
@@ -65,14 +57,14 @@ impl Module for DAListener {
             },
         );
 
-        let bus = DAListenerBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
+        let bus = DAListenerBusClient::new_from_bus(bus.new_handle()).await;
 
         for name in node_state.contracts.keys() {
             info!("📝 Loaded contract state for {}", name);
         }
 
         Ok(DAListener {
-            config: ctx.common.config.clone(),
+            config: ctx,
             start_block,
             bus,
             node_state,
@@ -85,12 +77,10 @@ impl Module for DAListener {
 }
 
 impl DAListener {
-    async fn start_client(
-        &self,
-        block_height: BlockHeight,
-    ) -> Result<codec_data_availability::Client> {
-        let mut client = codec_data_availability::connect(
+    async fn start_client(&self, block_height: BlockHeight) -> Result<DataAvailabilityClient> {
+        let mut client = DataAvailabilityClient::connect_with_opts(
             "raw_da_listener".to_string(),
+            Some(1024 * 1024 * 1024),
             self.config.da_read_from.clone(),
         )
         .await?;
@@ -134,7 +124,7 @@ impl DAListener {
                 block.consensus_proposal.slot,
                 block.consensus_proposal.hashed()
             );
-            let block = self.node_state.handle_signed_block(&block);
+            let block = self.node_state.handle_signed_block(&block)?;
             debug!("📦 Handled block outputs: {:?}", block);
 
             self.bus.send(NodeStateEvent::NewBlock(Box::new(block)))?;

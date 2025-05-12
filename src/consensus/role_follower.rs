@@ -1,10 +1,9 @@
-use std::collections::BTreeMap;
-
+use anyhow::{bail, Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_crypto::BlstCrypto;
+use std::collections::BTreeMap;
 use tracing::{debug, info, trace, warn};
 
-use super::Consensus;
+use super::*;
 use crate::{
     bus::BusClientSender,
     consensus::{role_timeout::TimeoutState, StateTag},
@@ -12,16 +11,16 @@ use crate::{
     p2p::P2PCommand,
     utils::conf::TimestampCheck,
 };
-use anyhow::{bail, Context, Result};
+use hyle_crypto::BlstCrypto;
 use hyle_model::{
-    utils::TimestampMs, ConsensusNetMessage, ConsensusProposal, ConsensusProposalHash,
-    ConsensusStakingAction, Cut, LaneBytesSize, LaneId, NewValidatorCandidate, QuorumCertificate,
-    TCKind, Ticket, ValidatorCandidacy, View,
+    utils::TimestampMs, AggregateSignature, ConsensusProposal, ConsensusProposalHash,
+    ConsensusStakingAction, Cut, LaneBytesSize, LaneId, SignedByValidator, ValidatorCandidacy,
+    View,
 };
 
 #[derive(BorshSerialize, BorshDeserialize, Default)]
 pub(super) struct FollowerState {
-    pub(super) buffered_quorum_certificate: Option<QuorumCertificate>, // if we receive a commit before the next prepare
+    pub(super) buffered_quorum_certificate: Option<CommitQC>, // if we receive a commit before the next prepare
     pub(super) buffered_prepares: BufferedPrepares, // History of seen prepares & buffer of future prepares
 }
 
@@ -182,7 +181,10 @@ impl Consensus {
                 "📤 Slot {} Prepare message validated. Sending PrepareVote to leader",
                 self.bft_round_state.slot
             );
-            self.send_net_message(round_leader, ConsensusNetMessage::PrepareVote(cp_hash))?;
+            self.send_net_message(
+                round_leader,
+                self.crypto.sign((cp_hash, PrepareVoteMarker))?.into(),
+            )?;
         } else {
             info!(
                 "😥 Not part of consensus ({}), not sending PrepareVote",
@@ -196,7 +198,7 @@ impl Consensus {
     pub(super) fn on_confirm(
         &mut self,
         sender: ValidatorPublicKey,
-        prepare_quorum_certificate: QuorumCertificate,
+        prepare_quorum_certificate: PrepareQC,
         proposal_hash_hint: ConsensusProposalHash,
     ) -> Result<()> {
         match self.bft_round_state.state_tag {
@@ -228,7 +230,7 @@ impl Consensus {
         // This also checks slot/view as those are part of the hash.
         // TODO: would probably be good to make that more explicit.
         self.verify_quorum_certificate(
-            ConsensusNetMessage::PrepareVote(proposal_hash_hint.clone()),
+            (proposal_hash_hint.clone(), PrepareVoteMarker),
             &prepare_quorum_certificate,
         )?;
 
@@ -247,7 +249,9 @@ impl Consensus {
             );
             self.send_net_message(
                 self.round_leader()?,
-                ConsensusNetMessage::ConfirmAck(proposal_hash_hint),
+                self.crypto
+                    .sign((proposal_hash_hint, ConfirmAckMarker))?
+                    .into(),
             )?;
         } else {
             info!("😥 Not part of consensus, not sending ConfirmAck");
@@ -258,7 +262,7 @@ impl Consensus {
     pub(super) fn on_commit(
         &mut self,
         sender: ValidatorPublicKey,
-        commit_quorum_certificate: QuorumCertificate,
+        commit_quorum_certificate: CommitQC,
         proposal_hash_hint: ConsensusProposalHash,
     ) -> Result<()> {
         // Unless joining, ignore commit messages for the wrong slot.
@@ -278,7 +282,7 @@ impl Consensus {
                     return Ok(());
                 }
 
-                self.verify_commit_quorum_certificate_againt_current_proposal(
+                self.verify_commit_quorum_certificate_against_current_proposal(
                     &commit_quorum_certificate,
                 )?;
                 self.emit_commit_event(&commit_quorum_certificate)?;
@@ -457,7 +461,7 @@ impl Consensus {
 
     fn verify_and_process_tc_ticket(
         &mut self,
-        timeout_qc: QuorumCertificate,
+        timeout_qc: TimeoutQC,
         tc_kind_data: &TCKind,
         consensus_proposal: &ConsensusProposal,
         prepare_view: View,
@@ -507,12 +511,18 @@ impl Consensus {
                     bail!("Timeout Certificate slot {} view {} is for the next slot, and current proposal changes voting power", prepare_slot, prepare_view);
                 }
 
-                self.emit_commit_event(&timeout_qc)
-                    .context("Processing TC ticket")?;
+                // SOOOOO here we're stuck actually, because we don't have the commit certificate.
+                // It's safe to fast-forward, but our SignedBlock ultimately won't be verifiable.
+                // To not pretend otherwise, just store an empty commit QC.
+                self.emit_commit_event(&QuorumCertificate(
+                    AggregateSignature::default(),
+                    ConfirmAckMarker,
+                ))
+                .context("Processing TC ticket")?;
 
                 // We have received a timeout certificate for the next slot,
                 // and it matches our know prepare for this slot, so try and commit that one then the TC.
-                self.advance_round(Ticket::ForcedCommitQc(timeout_qc.clone()))?;
+                self.advance_round(Ticket::ForcedCommitQc)?;
 
                 info!(
                     "🔀 Fast forwarded to slot {} view 0",
@@ -548,7 +558,7 @@ impl Consensus {
 
     fn on_commit_while_joining(
         &mut self,
-        commit_quorum_certificate: QuorumCertificate,
+        commit_quorum_certificate: CommitQC,
         proposal_hash_hint: ConsensusProposalHash,
     ) -> Result<()> {
         // We are joining consensus, try to sync our state.
@@ -589,7 +599,7 @@ impl Consensus {
         );
 
         // Try to commit the proposal
-        self.verify_commit_quorum_certificate_againt_current_proposal(&commit_quorum_certificate)
+        self.verify_commit_quorum_certificate_against_current_proposal(&commit_quorum_certificate)
             .context("On Commit when joining")?;
 
         self.bft_round_state.slot = self.bft_round_state.current_proposal.slot;
@@ -659,10 +669,36 @@ impl Consensus {
             "🔉 Requesting missing parent prepare for proposal {}",
             missing_dp_hash
         );
-        // TODO: use send & retry in case of no response instead of broadcast
-        // It's not supposed to occur often, so it's fine for now
-        self.broadcast_net_message(ConsensusNetMessage::SyncRequest(missing_dp_hash.clone()))
-            .context("Sending SyncRequest")?;
+        // We use send instead of broadcast to avoid an exponential number of messages
+        // TODO: improve on this.
+        #[cfg(not(test))]
+        let node_to_ask = {
+            let bonded = self.bft_round_state.staking.bonded();
+            if bonded.is_empty() {
+                None
+            } else {
+                let i: usize = rand::random();
+                // Skip us
+                if bonded
+                    .get(i)
+                    .map(|x| x == self.crypto.validator_pubkey())
+                    .unwrap_or(true)
+                {
+                    bonded.get((i + 1) % bonded.len()).cloned()
+                } else {
+                    bonded.get(i).cloned()
+                }
+            }
+        };
+        // For test deterministically always use the sender
+        #[cfg(test)]
+        let node_to_ask = Some(sender.clone());
+        let mess = ConsensusNetMessage::SyncRequest(missing_dp_hash.clone());
+        match node_to_ask {
+            Some(n) => self.send_net_message(n, mess),
+            None => self.broadcast_net_message(mess),
+        }
+        .context("Sending SyncRequest")?;
 
         Ok(())
     }
@@ -670,7 +706,7 @@ impl Consensus {
     fn verify_and_process_commit_ticket(
         &mut self,
         consensus_proposal: &ConsensusProposal,
-        commit_qc: QuorumCertificate,
+        commit_qc: CommitQC,
     ) -> Result<TicketVerifyAndProcess> {
         // Two cases:
         // - the prepare is for next slot *and* we have the prepare for the current slot
@@ -700,13 +736,13 @@ impl Consensus {
             );
                 // To still sorta make this work, verify the CQC with our current staking and hope for the best.
                 self.verify_quorum_certificate(
-                    ConsensusNetMessage::ConfirmAck(self.bft_round_state.parent_hash.clone()),
+                    (self.bft_round_state.parent_hash.clone(), ConfirmAckMarker),
                     &commit_qc,
                 )?;
                 return Ok(TicketVerifyAndProcess::Processed);
             }
 
-            self.verify_commit_quorum_certificate_againt_current_proposal(&commit_qc)?;
+            self.verify_commit_quorum_certificate_against_current_proposal(&commit_qc)?;
             self.emit_commit_event(&commit_qc)?;
             self.advance_round(Ticket::CommitQC(commit_qc))?;
 
@@ -746,14 +782,11 @@ impl Consensus {
     /// and have a valid signature so can be bonded.
     fn verify_new_validators_to_bond(
         &mut self,
-        new_validator: &NewValidatorCandidate,
+        new_validator: &SignedByValidator<ValidatorCandidacy>,
     ) -> Result<()> {
+        let pubkey = &new_validator.signature.validator;
         // Verify that the new validator has enough stake
-        if let Some(stake) = self
-            .bft_round_state
-            .staking
-            .get_stake(&new_validator.pubkey)
-        {
+        if let Some(stake) = self.bft_round_state.staking.get_stake(pubkey) {
             if stake < staking::state::MIN_STAKE {
                 bail!("New bonded validator has not enough stake to be bonded");
             }
@@ -761,31 +794,15 @@ impl Consensus {
             bail!("New bonded validator has no stake");
         }
         // Verify that the new validator has a valid signature
-        if !BlstCrypto::verify(&new_validator.msg)? {
+        if !BlstCrypto::verify(new_validator)? {
             bail!("New bonded validator has an invalid signature");
         }
-        // Verify that the signed message is a matching candidacy
-        if let ConsensusNetMessage::ValidatorCandidacy(ValidatorCandidacy {
-            pubkey,
-            peer_address,
-        }) = &new_validator.msg.msg
-        {
-            if pubkey != &new_validator.pubkey {
-                debug!("Invalid candidacy message");
-                debug!("Got - Expected");
-                debug!("{} - {}", pubkey, new_validator.pubkey);
-
-                bail!("New bonded validator has an invalid candidacy message");
-            }
-
-            self.validator_candidates
-                .retain(|v| v.pubkey != new_validator.pubkey);
-            self.bus.send(P2PCommand::ConnectTo {
-                peer: peer_address.clone(),
-            })?;
-        } else {
-            bail!("New bonded validator forwarded signed message is not a candidacy message");
-        }
+        // This validator is being bonded, so we can drop it from our own list of candidates.
+        self.validator_candidates
+            .retain(|v| v.signature.validator != new_validator.signature.validator);
+        self.bus.send(P2PCommand::ConnectTo {
+            peer: new_validator.msg.peer_address.clone(),
+        })?;
         Ok(())
     }
 }
@@ -840,10 +857,8 @@ mod tests {
     use crate::bus::metrics::BusMetrics;
     use crate::bus::SharedMessageBus;
     use crate::consensus::test::ConsensusTestCtx;
-    use crate::consensus::{ConsensusProposal, Ticket, ValidatorPublicKey};
-    use crate::model::ConsensusNetMessage;
-    use crate::p2p::network::{NetMessage, OutboundMessage};
-    use hyle_model::SignedByValidator;
+    use crate::consensus::*;
+    use crate::p2p::network::{MsgWithHeader, NetMessage, OutboundMessage};
 
     #[test]
     fn test_contains() {
@@ -855,7 +870,10 @@ mod tests {
         let prepare_message = (
             ValidatorPublicKey::default(),
             proposal,
-            Ticket::CommitQC(QuorumCertificate::default()),
+            Ticket::CommitQC(QuorumCertificate(
+                AggregateSignature::default(),
+                ConfirmAckMarker,
+            )),
             0,
         );
         buffered_prepares.push(prepare_message);
@@ -871,7 +889,10 @@ mod tests {
         let prepare_message = (
             ValidatorPublicKey::default(),
             proposal.clone(),
-            Ticket::CommitQC(QuorumCertificate::default()),
+            Ticket::CommitQC(QuorumCertificate(
+                AggregateSignature::default(),
+                ConfirmAckMarker,
+            )),
             0,
         );
         buffered_prepares.push(prepare_message);
@@ -931,12 +952,14 @@ mod tests {
 
         // We should request missing_prepare2
         match sync_request_rv.recv().await {
-            Ok(OutboundMessage::BroadcastMessage(NetMessage::ConsensusMessage(
-                SignedByValidator::<ConsensusNetMessage> {
-                    msg: ConsensusNetMessage::SyncRequest(hash),
-                    ..
-                },
-            ))) => {
+            Ok(OutboundMessage::SendMessage {
+                msg:
+                    NetMessage::ConsensusMessage(MsgWithHeader::<ConsensusNetMessage> {
+                        msg: ConsensusNetMessage::SyncRequest(hash),
+                        ..
+                    }),
+                ..
+            }) => {
                 assert_eq!(
                     hash,
                     missing_prepare2.hashed(),
@@ -966,12 +989,14 @@ mod tests {
 
         // We should request missing_prepare1
         match sync_request_rv.recv().await {
-            Ok(OutboundMessage::BroadcastMessage(NetMessage::ConsensusMessage(
-                SignedByValidator::<ConsensusNetMessage> {
-                    msg: ConsensusNetMessage::SyncRequest(hash),
-                    ..
-                },
-            ))) => {
+            Ok(OutboundMessage::SendMessage {
+                msg:
+                    NetMessage::ConsensusMessage(MsgWithHeader::<ConsensusNetMessage> {
+                        msg: ConsensusNetMessage::SyncRequest(hash),
+                        ..
+                    }),
+                ..
+            }) => {
                 assert_eq!(
                     hash,
                     missing_prepare1.hashed(),

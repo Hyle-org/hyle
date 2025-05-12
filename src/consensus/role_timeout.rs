@@ -1,17 +1,12 @@
-use std::{collections::HashSet, time::Duration};
-
+use anyhow::{bail, Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use hyle_model::{utils::TimestampMs, ConsensusNetMessage, QuorumCertificate, SignedByValidator};
-use hyle_model::{Hashed, Signed, TCKind, TimeoutKind};
-use hyle_net::clock::TimestampMsClock;
+use std::{collections::HashSet, time::Duration};
 use tracing::{debug, info, trace, warn};
 
-use super::Consensus;
-use crate::{
-    consensus::StateTag,
-    model::{Slot, Ticket, ValidatorPublicKey, View},
-};
-use anyhow::{bail, Context, Result};
+use super::*;
+use crate::model::{Slot, ValidatorPublicKey, View};
+use hyle_model::{utils::TimestampMs, ConsensusProposalHash, Hashed, Signed, SignedByValidator};
+use hyle_net::clock::TimestampMsClock;
 
 #[derive(Debug, BorshSerialize, BorshDeserialize, Default)]
 pub(super) enum TimeoutState {
@@ -64,17 +59,13 @@ impl TimeoutState {
 
 #[derive(BorshSerialize, BorshDeserialize, Default)]
 pub(super) struct TimeoutRoleState {
-    pub(super) requests: HashSet<SignedByValidator<ConsensusNetMessage>>,
+    pub(super) requests: HashSet<ConsensusTimeout>,
     pub(super) state: TimeoutState,
-    pub(super) highest_seen_prepare_qc: Option<(Slot, QuorumCertificate)>,
+    pub(super) highest_seen_prepare_qc: Option<(Slot, PrepareQC)>,
 }
 
 impl TimeoutRoleState {
-    pub(super) fn update_highest_seen_prepare_qc(
-        &mut self,
-        slot: Slot,
-        qc: QuorumCertificate,
-    ) -> bool {
+    pub(super) fn update_highest_seen_prepare_qc(&mut self, slot: Slot, qc: PrepareQC) -> bool {
         if let Some((s, _)) = &self.highest_seen_prepare_qc {
             if slot < *s {
                 return false;
@@ -88,7 +79,7 @@ impl TimeoutRoleState {
 impl Consensus {
     pub(super) fn verify_tc(
         &mut self,
-        received_timeout_certificate: &QuorumCertificate,
+        received_timeout_certificate: &TimeoutQC,
         received_proposal_qc: &TCKind,
         received_slot: Slot,
         received_view: View,
@@ -107,7 +98,7 @@ impl Consensus {
                         received_slot,
                         received_view,
                         self.bft_round_state.parent_hash.clone(),
-                        (),
+                        ConsensusTimeoutMarker,
                     ),
                     received_timeout_certificate,
                 )
@@ -123,6 +114,7 @@ impl Consensus {
                         received_slot,
                         received_view,
                         self.bft_round_state.parent_hash.clone(),
+                        ConsensusTimeoutMarker,
                     ),
                     received_timeout_certificate,
                 )
@@ -138,7 +130,7 @@ impl Consensus {
                     );
                 }
                 // Then check the prepare quorum certificate
-                self.verify_quorum_certificate(ConsensusNetMessage::PrepareVote(cp.hashed()), qc)
+                self.verify_quorum_certificate((cp.hashed(), PrepareVoteMarker), qc)
                     .context("Verifying PrepareQC")?;
                 // Update prepare QC & local CP
                 if self
@@ -158,7 +150,7 @@ impl Consensus {
 
     pub(super) fn on_timeout_certificate(
         &mut self,
-        received_timeout_certificate: &QuorumCertificate,
+        received_timeout_certificate: &TimeoutQC,
         received_proposal_qc: &TCKind,
         received_slot: Slot,
         received_view: View,
@@ -211,16 +203,11 @@ impl Consensus {
                     "⏰ Trigger timeout for slot {} and view {}",
                     self.bft_round_state.slot, self.bft_round_state.view
                 );
-                let timeout_message = self.get_timeout_message()?;
+                let (timeout, kind) = self.get_timeout_message()?;
 
-                // TODO: we are signing twice here
-                let signed_timeout_message = self
-                    .sign_net_message(timeout_message.clone())
-                    .context("Signing timeout message")?;
+                self.on_timeout(timeout.clone(), kind.clone())?;
 
-                self.on_timeout(signed_timeout_message)?;
-
-                self.broadcast_net_message(timeout_message)?;
+                self.broadcast_net_message((timeout, kind).into())?;
 
                 self.bft_round_state
                     .timeout
@@ -235,7 +222,13 @@ impl Consensus {
 
     pub(super) fn on_timeout(
         &mut self,
-        received_msg: SignedByValidator<ConsensusNetMessage>,
+        received_timeout: SignedByValidator<(
+            Slot,
+            View,
+            ConsensusProposalHash,
+            ConsensusTimeoutMarker,
+        )>,
+        received_tk: TimeoutKind,
     ) -> Result<()> {
         // Only timeout if it is in consensus
         if !self.is_part_of_consensus(self.crypto.validator_pubkey()) {
@@ -246,15 +239,10 @@ impl Consensus {
             return Ok(());
         }
 
-        let (received_slot, received_view, received_parent_hash) = match &received_msg {
-            Signed {
-                msg: ConsensusNetMessage::Timeout(Signed { msg: (s, v, p), .. }, ..),
-                ..
-            } => (s, v, p),
-            _ => {
-                bail!("Received timeout message with unexpected format");
-            }
-        };
+        let Signed {
+            msg: (received_slot, received_view, received_parent_hash, _),
+            ..
+        } = &received_timeout;
 
         if received_parent_hash != &self.bft_round_state.parent_hash {
             debug!(
@@ -283,13 +271,9 @@ impl Consensus {
 
         // If there is a prepareQC along with this message, verify it (we can, it's the same slot),
         // and then potentially update our highest seen PrepareQC.
-        if let Signed {
-            msg: ConsensusNetMessage::Timeout(_, TimeoutKind::PrepareQC((qc, cp))),
-            ..
-        } = &received_msg
-        {
+        if let TimeoutKind::PrepareQC((qc, cp)) = &received_tk {
             if cp.slot == *received_slot {
-                self.verify_quorum_certificate(ConsensusNetMessage::PrepareVote(cp.hashed()), qc)
+                self.verify_quorum_certificate((cp.hashed(), PrepareVoteMarker), qc)
                     .context("Verifying PrepareQC")?;
                 if self
                     .store
@@ -317,7 +301,7 @@ impl Consensus {
             .bft_round_state
             .timeout
             .requests
-            .insert(received_msg.clone())
+            .insert((received_timeout.clone(), received_tk.clone()))
         {
             info!("Timeout has already been processed");
             return Ok(());
@@ -331,7 +315,7 @@ impl Consensus {
             .timeout
             .requests
             .iter()
-            .map(|signed_message| signed_message.signature.validator.clone())
+            .map(|(signed_message, _)| signed_message.signature.validator.clone())
             .collect::<Vec<ValidatorPublicKey>>();
 
         let mut len = timeout_validators.len();
@@ -347,16 +331,16 @@ impl Consensus {
         if voting_power > f && !timeout_validators.contains(self.crypto.validator_pubkey()) {
             info!("Joining timeout mutiny!");
 
-            let timeout_message = self.get_timeout_message()?;
+            let (timeout, kind) = self.get_timeout_message()?;
 
             self.store
                 .bft_round_state
                 .timeout
                 .requests
-                .insert(self.sign_net_message(timeout_message.clone())?);
+                .insert((timeout.clone(), kind.clone()));
 
             // Broadcast a timeout message
-            self.broadcast_net_message(timeout_message)
+            self.broadcast_net_message((timeout, kind).into())
                 .context(format!(
                     "Sending timeout message for slot:{} view:{}",
                     self.bft_round_state.slot, self.bft_round_state.view,
@@ -390,26 +374,24 @@ impl Consensus {
                             .timeout
                             .requests
                             .iter()
-                            .map(|msg| match &msg.msg {
-                                ConsensusNetMessage::Timeout(signed_message, _) => {
-                                    Ok(signed_message)
-                                }
-                                // Unreachable because this is a logic error in the earlier code
-                                _ => bail!("All messages should be Timeout messages"),
-                            })
-                            .collect::<Result<_>>()?;
+                            .map(|(signed_message, _)| signed_message)
+                            .collect::<_>();
                         // TODO: check current proposal matches QC.
                         Result::Ok((
-                            self.crypto
-                                .sign_aggregate(
-                                    (
-                                        self.bft_round_state.slot,
-                                        self.bft_round_state.view,
-                                        self.bft_round_state.parent_hash.clone(),
-                                    ),
-                                    signed_messages.as_slice(),
-                                )?
-                                .signature,
+                            QuorumCertificate(
+                                self.crypto
+                                    .sign_aggregate(
+                                        (
+                                            self.bft_round_state.slot,
+                                            self.bft_round_state.view,
+                                            self.bft_round_state.parent_hash.clone(),
+                                            ConsensusTimeoutMarker,
+                                        ),
+                                        signed_messages.as_slice(),
+                                    )?
+                                    .signature,
+                                ConsensusTimeoutMarker,
+                            ),
                             TCKind::PrepareQC((
                                 qc.clone(),
                                 self.bft_round_state.current_proposal.clone(),
@@ -423,26 +405,28 @@ impl Consensus {
                             .timeout
                             .requests
                             .iter()
-                            .map(|msg| match &msg.msg {
-                                ConsensusNetMessage::Timeout(
-                                    _,
-                                    TimeoutKind::NilProposal(signed_nil_message),
-                                ) => Ok(signed_nil_message),
+                            .map(|msg| match &msg {
+                                (_, TimeoutKind::NilProposal(signed_nil_message)) => {
+                                    Ok(signed_nil_message)
+                                }
                                 _ => bail!("All messages should be Nil Timeout messages"),
                             })
                             .collect::<Result<_>>()?;
                         Result::Ok((
-                            self.crypto
-                                .sign_aggregate(
-                                    (
-                                        self.bft_round_state.slot,
-                                        self.bft_round_state.view,
-                                        self.bft_round_state.parent_hash.clone(),
-                                        (),
-                                    ),
-                                    signed_nil_messages.as_slice(),
-                                )?
-                                .signature,
+                            QuorumCertificate(
+                                self.crypto
+                                    .sign_aggregate(
+                                        (
+                                            self.bft_round_state.slot,
+                                            self.bft_round_state.view,
+                                            self.bft_round_state.parent_hash.clone(),
+                                            ConsensusTimeoutMarker,
+                                        ),
+                                        signed_nil_messages.as_slice(),
+                                    )?
+                                    .signature,
+                                ConsensusTimeoutMarker,
+                            ),
                             TCKind::NilProposal,
                         ))
                     }
@@ -476,11 +460,12 @@ impl Consensus {
         Ok(())
     }
 
-    fn get_timeout_message(&self) -> Result<ConsensusNetMessage> {
+    fn get_timeout_message(&self) -> Result<ConsensusTimeout> {
         let signed_timeout_metadata = self.crypto.sign((
             self.bft_round_state.slot,
             self.bft_round_state.view,
             self.bft_round_state.parent_hash.clone(),
+            ConsensusTimeoutMarker,
         ))?;
         tracing::debug!(
             "Sending timeout message for slot {} and view {}.\nHighest seen {:?}",
@@ -492,7 +477,7 @@ impl Consensus {
             match &self.bft_round_state.timeout.highest_seen_prepare_qc {
                 Some((s, qc)) if s == &self.bft_round_state.slot => {
                     // If we have a PrepareQC for this slot (any view), use it
-                    ConsensusNetMessage::Timeout(
+                    (
                         signed_timeout_metadata,
                         TimeoutKind::PrepareQC((
                             qc.clone(),
@@ -500,13 +485,13 @@ impl Consensus {
                         )),
                     )
                 }
-                _ => ConsensusNetMessage::Timeout(
+                _ => (
                     signed_timeout_metadata,
                     TimeoutKind::NilProposal(self.crypto.sign((
                         self.bft_round_state.slot,
                         self.bft_round_state.view,
                         self.bft_round_state.parent_hash.clone(),
-                        (),
+                        ConsensusTimeoutMarker,
                     ))?),
                 ),
             },

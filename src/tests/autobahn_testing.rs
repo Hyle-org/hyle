@@ -133,7 +133,7 @@ macro_rules! simple_commit_round {
         broadcast! {
             description: "Leader - Prepare",
             from: $leader, to: [$($follower),+$(,$joining)?],
-            message_matches: hyle_contract_sdk::ConsensusNetMessage::Prepare(cp, ticket, prep_view) => {
+            message_matches: ConsensusNetMessage::Prepare(cp, ticket, prep_view) => {
                 round_consensus_proposal = cp.clone();
                 round_ticket = ticket.clone();
                 view = *prep_view;
@@ -143,25 +143,25 @@ macro_rules! simple_commit_round {
         send! {
             description: "Follower - PrepareVote",
             from: [$($follower),+], to: $leader,
-            message_matches: hyle_contract_sdk::ConsensusNetMessage::PrepareVote(_)
+            message_matches: ConsensusNetMessage::PrepareVote(_)
         };
 
         broadcast! {
             description: "Leader - Confirm",
             from: $leader, to: [$($follower),+$(,$joining)?],
-            message_matches: hyle_contract_sdk::ConsensusNetMessage::Confirm(..)
+            message_matches: ConsensusNetMessage::Confirm(..)
         };
 
         send! {
             description: "Follower - Confirm Ack",
             from: [$($follower),+], to: $leader,
-            message_matches: hyle_contract_sdk::ConsensusNetMessage::ConfirmAck(_)
+            message_matches: ConsensusNetMessage::ConfirmAck(_)
         };
 
         broadcast! {
             description: "Leader - Commit",
             from: $leader, to: [$($follower),+$(,$joining)?],
-            message_matches: hyle_contract_sdk::ConsensusNetMessage::Commit(..)
+            message_matches: ConsensusNetMessage::Commit(..)
         };
 
         (round_consensus_proposal, round_ticket, view)
@@ -237,10 +237,12 @@ macro_rules! assert_chanmsg_matches {
 }
 
 pub(crate) use assert_chanmsg_matches;
+use assertables::assert_matches;
 pub(crate) use broadcast;
 pub(crate) use build_tuple;
 use futures::future::join_all;
 use hyle_model::utils::TimestampMs;
+use hyle_modules::utils::da_codec::DataAvailabilityServer;
 pub(crate) use send;
 pub(crate) use simple_commit_round;
 
@@ -271,9 +273,7 @@ use crate::bus::dont_use_this::get_receiver;
 use crate::bus::metrics::BusMetrics;
 use crate::bus::{bus_client, SharedMessageBus};
 use crate::consensus::test::ConsensusTestCtx;
-use crate::consensus::ConsensusEvent;
-use crate::data_availability::codec::codec_data_availability;
-use crate::handle_messages;
+use crate::consensus::{ConsensusEvent, ConsensusNetMessage, TCKind, Ticket, TimeoutKind};
 use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
 use crate::mempool::{MempoolNetMessage, QueryNewCut, ValidatorDAG};
 use crate::model::*;
@@ -281,6 +281,7 @@ use crate::node_state::module::NodeStateEvent;
 use crate::p2p::network::OutboundMessage;
 use crate::p2p::P2PCommand;
 use hyle_crypto::BlstCrypto;
+use hyle_modules::handle_messages;
 use tracing::info;
 
 bus_client!(
@@ -347,8 +348,6 @@ impl AutobahnTestCtx {
 
         let mut autobahn_client_bus =
             AutobahnBusClient::new_from_bus(self.shared_bus.new_handle()).await;
-
-        use crate::bus::command_response::*;
 
         tokio::spawn(async move {
             handle_messages! {
@@ -474,17 +473,20 @@ async fn autobahn_basic_flow() {
         message_matches: ConsensusNetMessage::PrepareVote(_)
     };
 
-    assert_eq!(
+    assert_matches!(
         vote2.msg,
-        ConsensusNetMessage::PrepareVote(consensus_proposal.hashed())
+        ConsensusNetMessage::PrepareVote(Signed { msg: (cp, _), .. })
+        if cp == consensus_proposal.hashed()
     );
-    assert_eq!(
+    assert_matches!(
         vote3.msg,
-        ConsensusNetMessage::PrepareVote(consensus_proposal.hashed())
+        ConsensusNetMessage::PrepareVote(Signed { msg: (cp, _), .. })
+        if cp == consensus_proposal.hashed()
     );
-    assert_eq!(
+    assert_matches!(
         vote4.msg,
-        ConsensusNetMessage::PrepareVote(consensus_proposal.hashed())
+        ConsensusNetMessage::PrepareVote(Signed { msg: (cp, _), .. })
+        if cp == consensus_proposal.hashed()
     );
 
     broadcast! {
@@ -499,17 +501,20 @@ async fn autobahn_basic_flow() {
         message_matches: ConsensusNetMessage::ConfirmAck(_)
     };
 
-    assert_eq!(
+    assert_matches!(
         vote2.msg,
-        ConsensusNetMessage::ConfirmAck(consensus_proposal.hashed())
+        ConsensusNetMessage::ConfirmAck(Signed { msg: (cp, _), .. })
+        if cp == consensus_proposal.hashed()
     );
-    assert_eq!(
+    assert_matches!(
         vote3.msg,
-        ConsensusNetMessage::ConfirmAck(consensus_proposal.hashed())
+        ConsensusNetMessage::ConfirmAck(Signed { msg: (cp, _), .. })
+        if cp == consensus_proposal.hashed()
     );
-    assert_eq!(
+    assert_matches!(
         vote4.msg,
-        ConsensusNetMessage::ConfirmAck(consensus_proposal.hashed())
+        ConsensusNetMessage::ConfirmAck(Signed { msg: (cp, _), .. })
+        if cp == consensus_proposal.hashed()
     );
 
     broadcast! {
@@ -789,22 +794,17 @@ async fn consensus_missed_prepare() {
     };
 
     // Node 3 can't vote yet
-
-    send! {
-        description: "Voting",
-        from: [node1.consensus_ctx, node2.consensus_ctx], to: node4.consensus_ctx,
-        message_matches: ConsensusNetMessage::PrepareVote(..)
-    };
-
     // Node 3 needs to sync
 
-    let sync_request = node3.consensus_ctx.assert_broadcast("Sync Request");
+    let sync_request = node3
+        .consensus_ctx
+        .assert_send(&node4.consensus_ctx.pubkey(), "Sync Request");
 
-    node2
+    node4
         .consensus_ctx
         .handle_msg(&sync_request, "Handling Sync request");
 
-    let sync_reply = node2
+    let sync_reply = node4
         .consensus_ctx
         .assert_send(&node3.consensus_ctx.validator_pubkey(), "SyncReply");
 
@@ -815,6 +815,13 @@ async fn consensus_missed_prepare() {
     send! {
         description: "Voting after sync",
         from: [node3.consensus_ctx], to: node4.consensus_ctx,
+        message_matches: ConsensusNetMessage::PrepareVote(..)
+    };
+
+    // Others vote too
+    send! {
+        description: "Voting",
+        from: [node1.consensus_ctx, node2.consensus_ctx], to: node4.consensus_ctx,
         message_matches: ConsensusNetMessage::PrepareVote(..)
     };
 
@@ -991,7 +998,9 @@ async fn mempool_fail_to_vote_on_fork() {
 
 #[test_log::test(tokio::test)]
 async fn autobahn_rejoin_flow() {
-    let mut server = codec_data_availability::start_server(7890).await.unwrap();
+    let mut server = DataAvailabilityServer::start(7890, "DaServer")
+        .await
+        .unwrap();
     let (mut node1, mut node2) = build_nodes!(2).await;
 
     // Let's setup the consensus so our joining node has some blocks to catch up.
@@ -1545,15 +1554,15 @@ async fn autobahn_buffer_early_messages() {
 
     let confirm = node3.consensus_ctx.assert_broadcast("Confirm");
 
-    broadcast! {
+    send! {
         description: "SyncRequest - Node4 ask for missed proposal Slot 4",
-        from: node4.consensus_ctx, to: [node1.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx],
+        from: [node4.consensus_ctx], to: node3.consensus_ctx,
         message_matches: ConsensusNetMessage::SyncRequest(_)
     };
 
     send! {
-        description: "SyncReply - All nodes reply with proposal Slot 4",
-        from: [node1.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx], to: node4.consensus_ctx,
+        description: "SyncReply - Node 3 replies with proposal Slot 4",
+        from: [node3.consensus_ctx], to: node4.consensus_ctx,
         message_matches: ConsensusNetMessage::SyncReply(_)
     };
 
@@ -1739,15 +1748,15 @@ async fn autobahn_got_timed_out_during_sync() {
 
     let confirm = node2.consensus_ctx.assert_broadcast("Confirm");
 
-    broadcast! {
+    send! {
         description: "SyncRequest - Node1 ask for missed proposal Slot 4",
-        from: node1.consensus_ctx, to: [node0.consensus_ctx, node3.consensus_ctx, node2.consensus_ctx],
+        from: [node1.consensus_ctx], to: node2.consensus_ctx,
         message_matches: ConsensusNetMessage::SyncRequest(_)
     };
 
     send! {
-        description: "SyncReply - All nodes reply with proposal Slot 4",
-        from: [node0.consensus_ctx, node2.consensus_ctx, node3.consensus_ctx], to: node1.consensus_ctx,
+        description: "SyncReply - Node 2 replies with proposal Slot 4",
+        from: [node2.consensus_ctx], to: node1.consensus_ctx,
         message_matches: ConsensusNetMessage::SyncReply(_)
     };
 
@@ -2047,7 +2056,7 @@ async fn autobahn_commit_byzantine_across_views_attempts() {
     broadcast! {
         description: "Follower - Timeout",
         from: node2.consensus_ctx, to: [node0.consensus_ctx, node1.consensus_ctx, node3.consensus_ctx],
-        message_matches: ConsensusNetMessage::Timeout(_, TimeoutKind::PrepareQC(..))
+        message_matches: ConsensusNetMessage::Timeout((_, TimeoutKind::PrepareQC(..)))
     };
     // node 3 won't even timeout, it will process the TC directly.
 

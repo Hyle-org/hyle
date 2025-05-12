@@ -1,7 +1,5 @@
 //! Minimal block storage layer for data availability.
 
-pub mod codec;
-
 mod blocks_fjall;
 mod blocks_memory;
 
@@ -9,35 +7,31 @@ mod blocks_memory;
 use blocks_fjall::Blocks;
 //use blocks_memory::Blocks;
 
-use codec::{codec_data_availability, DataAvailabilityEvent, DataAvailabilityRequest};
+use hyle_modules::{
+    bus::SharedMessageBus,
+    log_error, module_bus_client, module_handle_messages,
+    modules::Module,
+    utils::da_codec::{
+        DataAvailabilityClient, DataAvailabilityEvent, DataAvailabilityRequest,
+        DataAvailabilityServer,
+    },
+};
 use hyle_net::tcp::TcpEvent;
 
 use crate::{
-    bus::{BusClientSender, BusMessage},
+    bus::BusClientSender,
     consensus::ConsensusCommand,
     genesis::GenesisEvent,
-    log_error,
     model::*,
-    module_handle_messages,
     p2p::network::{OutboundMessage, PeerEvent},
-    utils::{
-        conf::SharedConf,
-        modules::{module_bus_client, Module},
-    },
+    utils::conf::SharedConf,
 };
 use anyhow::{Context, Error, Result};
-use borsh::{BorshDeserialize, BorshSerialize};
 use core::str;
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use tracing::{debug, error, info, trace, warn};
 
-#[derive(Debug, Serialize, Deserialize, Clone, BorshSerialize, BorshDeserialize, Eq, PartialEq)]
-pub enum DataEvent {
-    OrderedSignedBlock(SignedBlock),
-}
-
-impl BusMessage for DataEvent {}
+pub mod codec;
 
 module_bus_client! {
 #[derive(Debug)]
@@ -52,11 +46,8 @@ struct DABusClient {
 }
 }
 
-type DaTcpServer = hyle_net::tcp::tcp_server::TcpServer<
-    codec_data_availability::ServerCodec,
-    DataAvailabilityRequest,
-    DataAvailabilityEvent,
->;
+type DaTcpServer =
+    hyle_net::tcp::tcp_server::TcpServer<DataAvailabilityRequest, DataAvailabilityEvent>;
 
 #[derive(Debug)]
 pub struct DataAvailability {
@@ -74,18 +65,13 @@ pub struct DataAvailability {
 impl Module for DataAvailability {
     type Context = SharedRunContext;
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus = DABusClient::new_from_bus(ctx.common.bus.new_handle()).await;
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
+        let bus = DABusClient::new_from_bus(bus.new_handle()).await;
 
         Ok(DataAvailability {
-            config: ctx.common.config.clone(),
+            config: ctx.config.clone(),
             bus,
-            blocks: Blocks::new(
-                &ctx.common
-                    .config
-                    .data_directory
-                    .join("data_availability.db"),
-            )?,
+            blocks: Blocks::new(&ctx.config.data_directory.join("data_availability.db"))?,
             buffered_signed_blocks: BTreeSet::new(),
             need_catchup: false,
             catchup_task: None,
@@ -105,9 +91,10 @@ impl DataAvailability {
             self.config.da_server_port
         );
 
-        let mut server: DaTcpServer = codec_data_availability::start_server_with_opts(
+        let mut server: DaTcpServer = DataAvailabilityServer::start_with_opts(
             self.config.da_server_port,
             Some(self.config.da_max_frame_length),
+            "DAServer",
         )
         .await?;
 
@@ -395,7 +382,7 @@ impl DataAvailability {
             .last()
             .map(|block| block.height() + 1)
             .unwrap_or(BlockHeight(0));
-        let mut client = codec_data_availability::connect("block_catcher".to_string(), ip)
+        let mut client = DataAvailabilityClient::connect("block_catcher".to_string(), ip)
             .await
             .context("Error occured setting up the DA listener")?;
         client.send(DataAvailabilityRequest(start)).await?;
@@ -428,8 +415,7 @@ impl DataAvailability {
 pub mod tests {
     #![allow(clippy::indexing_slicing)]
 
-    use crate::data_availability::codec::{codec_data_availability, DataAvailabilityRequest};
-    use crate::log_error;
+    use crate::data_availability::codec::DataAvailabilityRequest;
     use crate::node_state::NodeState;
     use crate::{
         bus::BusClientSender,
@@ -438,6 +424,8 @@ pub mod tests {
         node_state::module::{NodeStateBusClient, NodeStateEvent},
         utils::{conf::Conf, integration_test::find_available_port},
     };
+    use hyle_modules::log_error;
+    use hyle_modules::utils::da_codec::{DataAvailabilityClient, DataAvailabilityServer};
 
     use super::codec::DataAvailabilityEvent;
     use super::Blocks;
@@ -489,15 +477,19 @@ pub mod tests {
             block: SignedBlock,
             tcp_server: &mut DaTcpServer,
         ) {
-            let full_block = self.node_state.handle_signed_block(&block);
+            _ = log_error!(
+                self.da.handle_signed_block(block.clone(), tcp_server).await,
+                "Handling Signed Block"
+            );
+            // TODO: we use this in autobahn_testing, but it'd be cleaner to separate it.
+            let Ok(full_block) = self.node_state.handle_signed_block(&block) else {
+                tracing::warn!("Error while handling signed block {}", block.hashed());
+                return;
+            };
             _ = log_error!(
                 self.node_state_bus
                     .send(NodeStateEvent::NewBlock(Box::new(full_block))),
                 "Sending NodeState event"
-            );
-            _ = log_error!(
-                self.da.handle_signed_block(block, tcp_server).await,
-                "Handling Signed Block"
             );
         }
     }
@@ -520,7 +512,9 @@ pub mod tests {
         let tmpdir = tempfile::tempdir().unwrap().into_path();
         let blocks = Blocks::new(&tmpdir).unwrap();
 
-        let mut server = codec_data_availability::start_server(7898).await.unwrap();
+        let mut server = DataAvailabilityServer::start(7898, "DaServer")
+            .await
+            .unwrap();
 
         let bus = super::DABusClient::new_from_bus(crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
@@ -593,12 +587,10 @@ pub mod tests {
             da.start().await.unwrap();
         });
 
-        let mut client = codec_data_availability::connect(
-            "client_id".to_string(),
-            config.da_public_address.clone(),
-        )
-        .await
-        .unwrap();
+        let mut client =
+            DataAvailabilityClient::connect("client_id", config.da_public_address.clone())
+                .await
+                .unwrap();
 
         client
             .send(DataAvailabilityRequest(BlockHeight(0)))
@@ -652,12 +644,10 @@ pub mod tests {
 
         // End of the first stream
 
-        let mut client = codec_data_availability::connect(
-            "client_id".to_string(),
-            config.da_public_address.clone(),
-        )
-        .await
-        .unwrap();
+        let mut client =
+            DataAvailabilityClient::connect("client_id", config.da_public_address.clone())
+                .await
+                .unwrap();
 
         client
             .send(DataAvailabilityRequest(BlockHeight(0)))
@@ -683,7 +673,9 @@ pub mod tests {
         );
         let mut block_sender = TestBusClient::new_from_bus(sender_global_bus.new_handle()).await;
         let mut da_sender = DataAvailabilityTestCtx::new(sender_global_bus).await;
-        let mut server = codec_data_availability::start_server(7890).await.unwrap();
+        let mut server = DataAvailabilityServer::start(7890, "DaServer")
+            .await
+            .unwrap();
 
         let receiver_global_bus = crate::bus::SharedMessageBus::new(
             crate::bus::metrics::BusMetrics::global("global".to_string()),
