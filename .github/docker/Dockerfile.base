@@ -3,7 +3,7 @@ RUN apt-get update && apt-get -y install curl
 RUN curl -L https://risczero.com/install | bash
 RUN /root/.risc0/bin/rzup install r0vm 2.0.2
 
-FROM debian:12-slim
+FROM ubuntu:noble
 COPY --from=builder /usr/local/cargo/bin/r0vm /usr/local/bin/r0vm
 
 # installing Barrenteberg CLI
