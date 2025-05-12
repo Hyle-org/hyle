@@ -44,8 +44,6 @@ pub trait ClientSdkProver<T: BorshSerialize + Send> {
 #[cfg(feature = "risc0")]
 pub mod risc0 {
 
-    use borsh::BorshSerialize;
-
     use super::*;
 
     pub struct Risc0Prover<'a> {
@@ -55,16 +53,16 @@ pub mod risc0 {
         pub fn new(binary: &'a [u8]) -> Self {
             Self { binary }
         }
-        pub async fn prove<T: BorshSerialize>(
+        pub async fn prove(
             &self,
             commitment_metadata: Vec<u8>,
-            calldata: T,
+            calldatas: Vec<Calldata>,
         ) -> Result<ProofData> {
             let explicit = std::env::var("RISC0_PROVER").unwrap_or_default();
             let receipt = match explicit.to_lowercase().as_str() {
                 "bonsai" => {
                     let input_data =
-                        bonsai_runner::as_input_data(&(commitment_metadata, calldata))?;
+                        bonsai_runner::as_input_data(&(commitment_metadata, calldatas))?;
                     bonsai_runner::run_bonsai(self.binary, input_data.clone()).await?
                 }
                 "boundless" => {
@@ -73,7 +71,7 @@ pub mod risc0 {
                     bonsai_runner::run_boundless(self.binary, input_data).await?
                 }
                 _ => {
-                    let input_data = borsh::to_vec(&(commitment_metadata, calldata))?;
+                    let input_data = borsh::to_vec(&(commitment_metadata, calldatas))?;
                     let env = risc0_zkvm::ExecutorEnv::builder()
                         .write(&input_data.len())?
                         .write_slice(&input_data)
@@ -91,13 +89,13 @@ pub mod risc0 {
         }
     }
 
-    impl<T: BorshSerialize + Send + 'static> ClientSdkProver<T> for Risc0Prover<'_> {
+    impl ClientSdkProver<Vec<Calldata>> for Risc0Prover<'_> {
         fn prove(
             &self,
             commitment_metadata: Vec<u8>,
-            calldata: T,
+            calldatas: Vec<Calldata>,
         ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
-            Box::pin(self.prove(commitment_metadata, calldata))
+            Box::pin(self.prove(commitment_metadata, calldatas))
         }
     }
 }
@@ -125,14 +123,14 @@ pub mod sp1 {
             Ok(sdk::ProgramId(serde_json::to_vec(&self.vk)?))
         }
 
-        pub async fn prove<T: BorshSerialize>(
+        pub async fn prove(
             &self,
             commitment_metadata: Vec<u8>,
-            calldata: T,
+            calldatas: Vec<Calldata>,
         ) -> Result<ProofData> {
             // Setup the inputs.
             let mut stdin = SP1Stdin::new();
-            let encoded = borsh::to_vec(&(commitment_metadata, calldata))?;
+            let encoded = borsh::to_vec(&(commitment_metadata, calldatas))?;
             stdin.write_vec(encoded);
 
             // Generate the proof
@@ -148,11 +146,11 @@ pub mod sp1 {
         }
     }
 
-    impl<T: BorshSerialize + Send + 'static> ClientSdkProver<T> for SP1Prover {
+    impl ClientSdkProver<Vec<Calldata>> for SP1Prover {
         fn prove(
             &self,
             commitment_metadata: Vec<u8>,
-            calldata: T,
+            calldata: Vec<Calldata>,
         ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
             Box::pin(self.prove(commitment_metadata, calldata))
         }

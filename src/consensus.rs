@@ -3,7 +3,6 @@
 use crate::bus::BusClientSender;
 use crate::model::*;
 use crate::node_state::module::NodeStateEvent;
-use crate::p2p::network::HeaderSignableData;
 use crate::p2p::network::HeaderSigner;
 use crate::p2p::network::IntoHeaderSignableData;
 use crate::{
@@ -40,10 +39,13 @@ use tracing::{debug, info, trace, warn};
 pub mod api;
 pub mod metrics;
 pub mod module;
+mod network;
 pub mod role_follower;
 pub mod role_leader;
 pub mod role_sync;
 pub mod role_timeout;
+
+pub use network::*;
 
 // -----------------------------
 // ------ Consensus bus --------
@@ -88,49 +90,6 @@ receiver(MsgWithHeader<ConsensusNetMessage>),
 receiver(Query<QueryConsensusInfo, ConsensusInfo>),
 receiver(Query<QueryConsensusStakingState, Staking>),
 }
-}
-
-impl IntoHeaderSignableData for ConsensusNetMessage {
-    // This signature is just for DOS / efficiency
-    fn to_header_signable_data(&self) -> HeaderSignableData {
-        HeaderSignableData(match self {
-            ConsensusNetMessage::Prepare(cp, t, v) => {
-                borsh::to_vec(&(cp.hashed(), t, v)).unwrap_or_default()
-            }
-            ConsensusNetMessage::PrepareVote(pv) => pv.msg.0.clone().0.into_bytes(),
-            ConsensusNetMessage::Confirm(qc, cph) => {
-                borsh::to_vec(&(&qc.signature, cph)).unwrap_or_default()
-            }
-            ConsensusNetMessage::ConfirmAck(ca) => ca.msg.0.clone().0.into_bytes(),
-            ConsensusNetMessage::Commit(qc, cph) => borsh::to_vec(&(qc, cph)).unwrap_or_default(),
-            ConsensusNetMessage::Timeout((SignedByValidator { signature, .. }, tk)) => match tk {
-                TimeoutKind::NilProposal(..) => borsh::to_vec(signature),
-                TimeoutKind::PrepareQC((qc, cp)) => {
-                    borsh::to_vec(&(signature, &qc.signature, cp.hashed()))
-                }
-            }
-            .unwrap_or_default(),
-            ConsensusNetMessage::TimeoutCertificate(qc, tck, s, v) => match tck {
-                TCKind::NilProposal => borsh::to_vec(&(&qc.signature, s, v)),
-                TCKind::PrepareQC((qc, cp)) => borsh::to_vec(&(&qc.signature, cp.hashed(), s, v)),
-            }
-            .unwrap_or_default(),
-            ConsensusNetMessage::ValidatorCandidacy(vc) => borsh::to_vec(vc).unwrap_or_default(),
-            ConsensusNetMessage::SyncRequest(cph) => borsh::to_vec(cph).unwrap_or_default(),
-            ConsensusNetMessage::SyncReply((pb, cp, t, v)) => borsh::to_vec(&(
-                match t {
-                    Ticket::CommitQC(qc) => Some(&qc.signature),
-                    Ticket::TimeoutQC(qc, ..) => Some(&qc.signature),
-                    _ => None,
-                },
-                pb,
-                cp.hashed(),
-                t,
-                v,
-            ))
-            .unwrap_or_default(),
-        })
-    }
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Default)]

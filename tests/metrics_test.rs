@@ -17,7 +17,6 @@ mod e2e_metrics {
 
         assert!(metrics.contains("receive_"));
         assert!(metrics.contains("send_"));
-        assert!(metrics.contains("http_server_"));
         Ok(())
     }
 

@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use crate::bus::command_response::{CmdRespClient, Query};
 use crate::bus::BusClientSender;
+use crate::consensus::ConfirmAckMarker;
 use crate::consensus::{CommittedConsensusProposal, ConsensusEvent, QueryConsensusInfo};
 use crate::genesis::GenesisEvent;
 use crate::mempool::QueryNewCut;

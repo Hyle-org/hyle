@@ -133,7 +133,7 @@ macro_rules! simple_commit_round {
         broadcast! {
             description: "Leader - Prepare",
             from: $leader, to: [$($follower),+$(,$joining)?],
-            message_matches: hyle_contract_sdk::ConsensusNetMessage::Prepare(cp, ticket, prep_view) => {
+            message_matches: ConsensusNetMessage::Prepare(cp, ticket, prep_view) => {
                 round_consensus_proposal = cp.clone();
                 round_ticket = ticket.clone();
                 view = *prep_view;
@@ -143,25 +143,25 @@ macro_rules! simple_commit_round {
         send! {
             description: "Follower - PrepareVote",
             from: [$($follower),+], to: $leader,
-            message_matches: hyle_contract_sdk::ConsensusNetMessage::PrepareVote(_)
+            message_matches: ConsensusNetMessage::PrepareVote(_)
         };
 
         broadcast! {
             description: "Leader - Confirm",
             from: $leader, to: [$($follower),+$(,$joining)?],
-            message_matches: hyle_contract_sdk::ConsensusNetMessage::Confirm(..)
+            message_matches: ConsensusNetMessage::Confirm(..)
         };
 
         send! {
             description: "Follower - Confirm Ack",
             from: [$($follower),+], to: $leader,
-            message_matches: hyle_contract_sdk::ConsensusNetMessage::ConfirmAck(_)
+            message_matches: ConsensusNetMessage::ConfirmAck(_)
         };
 
         broadcast! {
             description: "Leader - Commit",
             from: $leader, to: [$($follower),+$(,$joining)?],
-            message_matches: hyle_contract_sdk::ConsensusNetMessage::Commit(..)
+            message_matches: ConsensusNetMessage::Commit(..)
         };
 
         (round_consensus_proposal, round_ticket, view)
@@ -272,7 +272,7 @@ use crate::bus::dont_use_this::get_receiver;
 use crate::bus::metrics::BusMetrics;
 use crate::bus::{bus_client, SharedMessageBus};
 use crate::consensus::test::ConsensusTestCtx;
-use crate::consensus::ConsensusEvent;
+use crate::consensus::{ConsensusEvent, ConsensusNetMessage, TCKind, Ticket, TimeoutKind};
 use crate::data_availability::codec::codec_data_availability;
 use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
 use crate::mempool::{MempoolNetMessage, QueryNewCut, ValidatorDAG};

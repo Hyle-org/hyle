@@ -116,13 +116,11 @@ tracing = "0.1"
 
 assertables = { version = "9.5.2" }
 axum = { version = "0.8.4", features = ["macros"] }
-axum-otel-metrics = { version = "0.10.0" }
 bytes = { version = "1.10.0" }
 clap = { version = "4.5.37", features = ["derive"] }
 config = { version = "0.15.9", default-features = false, features = ["toml"] }
 futures = { version = "0.3.31" }
 indexmap = { version = "2.9.0", features = ["serde"] }
-# opentelemetry and axum-otel-metrics must be updated together (so that there is only one opentelemetry version)
 opentelemetry = { version = "0.28" }
 opentelemetry-prometheus = { version = "0.28.0" }
 opentelemetry_sdk = "0.28.0"
@@ -141,6 +139,7 @@ tokio-util = { version = "0.7.14" }
 fjall = { version = "2.10.0" }
 
 dhat = { version = "0.3.3", optional = true }
+alloc-metrics = { version = "0.1.1", optional = true }
 utoipa = { version = "5.3.1", features = ["axum_extras"] }
 utoipa-axum = { version = "0.2.0" }
 testcontainers-modules = { version = "0.12.0", features = ["postgres"] }
@@ -149,6 +148,7 @@ toml = "0.8.22"
 # We force zip version here as later version is not compatible with utoipa-swagger-ui
 zip = "=2.3.0"
 seq-macro = "0.3.6"
+
 [package.metadata.cargo-machete]
 ignored = ["zip", "bytes", "tokio-util"]
 
@@ -196,6 +196,8 @@ sp1 = ["hyle-verifiers/sp1", "client-sdk/sp1"]
 keyring = ["hyle-crypto/keyring"]
 
 dhat = ["dep:dhat"]
+monitoring = ["dep:alloc-metrics"]
+
 # Activate this feature to recompile contracts locally (mostly useful for iterating on tests)
 nonreproducible = ["hyle-contracts/nonreproducible"]
 node_local_proving = ["risc0-zkvm/client"]
@@ -205,6 +207,8 @@ lto = "thin"
 incremental = true
 
 [profile.profiling]
+# Turn off LTO, takes too long
+lto = "off"
 inherits = "release"
 debug = true         # Keep debug info for profiling
 strip = "none"
