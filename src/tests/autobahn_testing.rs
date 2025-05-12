@@ -242,6 +242,7 @@ pub(crate) use broadcast;
 pub(crate) use build_tuple;
 use futures::future::join_all;
 use hyle_model::utils::TimestampMs;
+use hyle_modules::utils::da_codec::DataAvailabilityServer;
 pub(crate) use send;
 pub(crate) use simple_commit_round;
 
@@ -273,7 +274,6 @@ use crate::bus::metrics::BusMetrics;
 use crate::bus::{bus_client, SharedMessageBus};
 use crate::consensus::test::ConsensusTestCtx;
 use crate::consensus::{ConsensusEvent, ConsensusNetMessage, TCKind, Ticket, TimeoutKind};
-use crate::data_availability::codec::codec_data_availability;
 use crate::mempool::test::{make_register_contract_tx, MempoolTestCtx};
 use crate::mempool::{MempoolNetMessage, QueryNewCut, ValidatorDAG};
 use crate::model::*;
@@ -998,7 +998,9 @@ async fn mempool_fail_to_vote_on_fork() {
 
 #[test_log::test(tokio::test)]
 async fn autobahn_rejoin_flow() {
-    let mut server = codec_data_availability::start_server(7890).await.unwrap();
+    let mut server = DataAvailabilityServer::start(7890, "DaServer")
+        .await
+        .unwrap();
     let (mut node1, mut node2) = build_nodes!(2).await;
 
     // Let's setup the consensus so our joining node has some blocks to catch up.

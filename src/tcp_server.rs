@@ -1,10 +1,9 @@
-use std::sync::Arc;
-
-use crate::{bus::BusClientSender, model::CommonRunContext, utils::conf::SharedConf};
+use crate::bus::BusClientSender;
 
 use anyhow::Result;
-use client_sdk::tcp_client::{codec_tcp_server, TcpServerMessage};
+use client_sdk::tcp_client::{TcpApiServer, TcpServerMessage};
 use hyle_modules::{
+    bus::SharedMessageBus,
     log_error, module_handle_messages,
     modules::{module_bus_client, Module},
 };
@@ -20,18 +19,18 @@ struct TcpServerBusClient {
 
 #[derive(Debug)]
 pub struct TcpServer {
-    config: SharedConf,
+    tcp_server_port: u16,
     bus: TcpServerBusClient,
 }
 
 impl Module for TcpServer {
-    type Context = Arc<CommonRunContext>;
+    type Context = u16;
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus = TcpServerBusClient::new_from_bus(ctx.bus.new_handle()).await;
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
+        let bus = TcpServerBusClient::new_from_bus(bus.new_handle()).await;
 
         Ok(TcpServer {
-            config: ctx.config.clone(),
+            tcp_server_port: ctx,
             bus,
         })
     }
@@ -43,14 +42,14 @@ impl Module for TcpServer {
 
 impl TcpServer {
     pub async fn start(&mut self) -> Result<()> {
-        let tcp_server_port = self.config.tcp_server_port;
+        let tcp_server_port = self.tcp_server_port;
 
         info!(
             "📡  Starting TcpServer module, listening for stream requests on port {}",
             &tcp_server_port
         );
 
-        let mut server = codec_tcp_server::start_server(tcp_server_port).await?;
+        let mut server = TcpApiServer::start(tcp_server_port, "TcpApiServer").await?;
 
         module_handle_messages! {
             on_bus self.bus,

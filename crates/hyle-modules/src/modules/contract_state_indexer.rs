@@ -1,5 +1,6 @@
 use crate::{
-    bus::BusClientSender, log_debug, log_error, module_bus_client, module_handle_messages,
+    bus::{BusClientSender, SharedMessageBus},
+    log_debug, log_error, module_bus_client, module_handle_messages,
     modules::Module,
 };
 use anyhow::{anyhow, Error, Result};
@@ -11,9 +12,9 @@ use std::{any::TypeId, ops::Deref, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::debug;
 
-use crate::{node_state::module::NodeStateEvent, utils::conf::Conf};
+use crate::node_state::module::NodeStateEvent;
 
-use super::CommonRunContext;
+use super::SharedBuildApiCtx;
 
 #[derive(Debug, Clone)]
 pub struct CSIBusEvent<E> {
@@ -34,13 +35,12 @@ pub struct ContractStateIndexer<State, Event: Clone + Send + Sync + 'static = ()
     store: Arc<RwLock<ContractStateStore<State>>>,
     contract_name: ContractName,
     file: PathBuf,
-    #[allow(dead_code)]
-    config: Arc<Conf>,
 }
 
 pub struct ContractStateIndexerCtx {
-    pub common: Arc<CommonRunContext>,
+    pub data_directory: PathBuf,
     pub contract_name: ContractName,
+    pub api: SharedBuildApiCtx,
 }
 
 impl<State, Event> Module for ContractStateIndexer<State, Event>
@@ -59,11 +59,9 @@ where
 {
     type Context = ContractStateIndexerCtx;
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus = CSIBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
+        let bus = CSIBusClient::new_from_bus(bus.new_handle()).await;
         let file = ctx
-            .common
-            .config
             .data_directory
             .join(format!("state_indexer_{}.bin", ctx.contract_name).as_str());
 
@@ -73,7 +71,7 @@ where
         let store = Arc::new(RwLock::new(store));
 
         let (nested, mut api) = State::api(Arc::clone(&store)).await;
-        if let Ok(mut o) = ctx.common.openapi.lock() {
+        if let Ok(mut o) = ctx.api.openapi.lock() {
             // Deduplicate operation ids
             for p in api.paths.paths.iter_mut() {
                 p.1.get = p.1.get.take().map(|mut g| {
@@ -90,7 +88,7 @@ where
                 .nest(format!("/v1/indexer/contract/{}", ctx.contract_name), api);
         }
 
-        if let Ok(mut guard) = ctx.common.router.lock() {
+        if let Ok(mut guard) = ctx.api.router.lock() {
             if let Some(router) = guard.take() {
                 guard.replace(router.nest(
                     format!("/v1/indexer/contract/{}", ctx.contract_name).as_str(),
@@ -98,11 +96,9 @@ where
                 ));
             }
         }
-        let config = ctx.common.config.clone();
 
         Ok(ContractStateIndexer {
             bus,
-            config,
             file,
             store,
             contract_name: ctx.contract_name,
@@ -305,7 +301,6 @@ mod tests {
     use crate::bus::SharedMessageBus;
     use crate::node_state::metrics::NodeStateMetrics;
     use crate::node_state::{NodeState, NodeStateStore};
-    use crate::utils::conf::Conf;
     use std::sync::Arc;
 
     #[derive(Clone, Debug, Default, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
@@ -356,19 +351,18 @@ mod tests {
     }
 
     async fn build_indexer(contract_name: ContractName) -> ContractStateIndexer<MockState> {
-        let common = Arc::new(CommonRunContext {
-            bus: SharedMessageBus::new(BusMetrics::global("global".to_string())),
-            config: Arc::new(Conf::default()),
-            router: Default::default(),
-            openapi: Default::default(),
-        });
-
         let ctx = ContractStateIndexerCtx {
-            common: common.clone(),
             contract_name,
+            data_directory: PathBuf::from("test_data"),
+            api: Default::default(),
         };
 
-        ContractStateIndexer::<MockState>::build(ctx).await.unwrap()
+        ContractStateIndexer::<MockState>::build(
+            SharedMessageBus::new(BusMetrics::global("global".to_string())),
+            ctx,
+        )
+        .await
+        .unwrap()
     }
 
     async fn register_contract(indexer: &mut ContractStateIndexer<MockState>) {
