@@ -836,6 +836,8 @@ pub mod test {
     mod native_verifier_test;
 
     use core::panic;
+    use std::future::Future;
+    use std::pin::Pin;
 
     use super::*;
     use crate::bus::metrics::BusMetrics;
@@ -949,7 +951,7 @@ pub mod test {
 
         pub async fn timer_tick(&mut self) -> Result<bool> {
             let Ok(true) = self.mempool.prepare_new_data_proposal() else {
-                return self.mempool.disseminate_data_proposals(None);
+                return self.mempool.disseminate_data_proposals(None).await;
             };
 
             let (dp_hash, dp) = self
@@ -959,13 +961,14 @@ pub mod test {
                 .await
                 .context("join next data proposal in preparation")??;
 
-            Ok(self.mempool.resume_new_data_proposal(dp, dp_hash)?
-                || self.mempool.disseminate_data_proposals(None)?)
+            Ok(self.mempool.resume_new_data_proposal(dp, dp_hash).await?
+                || self.mempool.disseminate_data_proposals(None).await?)
         }
 
-        pub fn handle_poda_update(&mut self, net_message: MsgWithHeader<MempoolNetMessage>) {
+        pub async fn handle_poda_update(&mut self, net_message: MsgWithHeader<MempoolNetMessage>) {
             self.mempool
                 .handle_net_message(net_message)
+                .await
                 .expect("fail to handle net message");
         }
 
@@ -985,7 +988,8 @@ pub mod test {
         }
 
         #[track_caller]
-        pub fn assert_broadcast(&mut self, description: &str) -> MsgWithHeader<MempoolNetMessage> {
+        pub fn assert_broadcast(&mut self, description: &str) 
+            -> Pin<Box<dyn Future<Output = MsgWithHeader<MempoolNetMessage>>>> {
             #[allow(clippy::expect_fun_call)]
             let rec = self
                 .out_receiver
@@ -995,7 +999,7 @@ pub mod test {
             match rec {
                 OutboundMessage::BroadcastMessage(net_msg) => {
                     if let NetMessage::MempoolMessage(msg) = net_msg {
-                        msg
+                        Box::pin(async move {msg})
                     } else {
                         println!(
                             "{description}: Mempool OutboundMessage message is missing, found {}",
@@ -1052,7 +1056,7 @@ pub mod test {
             &mut self,
             to: &ValidatorPublicKey,
             description: &str,
-        ) -> MsgWithHeader<MempoolNetMessage> {
+        ) -> Pin<Box<dyn Future<Output = MsgWithHeader<MempoolNetMessage>>>> {
             #[allow(clippy::expect_fun_call)]
             let rec = self
                 .out_receiver
@@ -1069,7 +1073,7 @@ pub mod test {
                             );
                         }
 
-                        msg
+                        Box::pin(async move {msg})
                     } else {
                         tracing::warn!("{description}: skipping {:?}", msg);
                         self.assert_send(to, description)
@@ -1099,10 +1103,10 @@ pub mod test {
         }
 
         #[track_caller]
-        pub fn handle_msg(&mut self, msg: &MsgWithHeader<MempoolNetMessage>, _err: &str) {
+        pub async fn handle_msg(&mut self, msg: &MsgWithHeader<MempoolNetMessage>, _err: &str) {
             debug!("📥 {} Handling message: {:?}", self.name, msg);
             self.mempool
-                .handle_net_message(msg.clone())
+                .handle_net_message(msg.clone()).await
                 .expect("should handle net msg");
         }
 
@@ -1172,7 +1176,7 @@ pub mod test {
                 .unwrap();
         }
 
-        pub fn handle_consensus_event(&mut self, consensus_proposal: ConsensusProposal) {
+        pub async fn handle_consensus_event(&mut self, consensus_proposal: ConsensusProposal) {
             self.mempool
                 .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
                     CommittedConsensusProposal {
@@ -1181,6 +1185,7 @@ pub mod test {
                         certificate: AggregateSignature::default(),
                     },
                 ))
+                .await
                 .expect("Error while handling consensus event");
         }
 
@@ -1215,7 +1220,7 @@ pub mod test {
             Ok(())
         }
 
-        pub fn process_cut_with_dp(
+        pub async fn process_cut_with_dp(
             &mut self,
             leader: &ValidatorPublicKey,
             dp_hash: &DataProposalHash,
@@ -1242,7 +1247,7 @@ pub mod test {
                         },
                         certificate: AggregateSignature::default(),
                     },
-                ))?;
+                )).await?;
 
             Ok(cut)
         }
@@ -1281,25 +1286,25 @@ pub mod test {
         let mut bad_time_msg =
             crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(None, None))?;
         bad_time_msg.header.msg.timestamp = TimestampMsClock::now().0 + 7200000; // 2h in future
-        assert_err!(ctx.mempool.handle_net_message(bad_time_msg.clone()));
+        assert_err!(ctx.mempool.handle_net_message(bad_time_msg.clone()).await);
 
         // Test message with timestamp too far in past
         let mut bad_time_msg =
             crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(None, None))?;
         bad_time_msg.header.msg.timestamp = TimestampMsClock::now().0 - 7200000; // 2h in future
-        assert_err!(ctx.mempool.handle_net_message(bad_time_msg.clone()));
+        assert_err!(ctx.mempool.handle_net_message(bad_time_msg.clone()).await);
 
         // Test message with bad signature
         let mut bad_sig_msg =
             crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(None, None))?;
         bad_sig_msg.header.signature.signature.0 = vec![0, 1, 2, 3]; // Invalid signature bytes
-        assert_err!(ctx.mempool.handle_net_message(bad_sig_msg.clone()));
+        assert_err!(ctx.mempool.handle_net_message(bad_sig_msg.clone()).await);
 
         // Test message with mismatched hash
         let mut bad_hash_msg =
             crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(None, None))?;
         bad_hash_msg.header.msg.hash = HeaderSignableData(vec![9, 9, 9]); // Wrong hash
-        assert_err!(ctx.mempool.handle_net_message(bad_hash_msg.clone()));
+        assert_err!(ctx.mempool.handle_net_message(bad_hash_msg.clone()).await);
 
         Ok(())
     }
@@ -1318,10 +1323,10 @@ pub mod test {
                 PoDA::default(),
             )],
             ..ConsensusProposal::default()
-        });
+        }).await;
 
         // Assert that we send a SyncReply
-        match ctx.assert_send(crypto2.validator_pubkey(), "SyncReply").msg {
+        match ctx.assert_send(crypto2.validator_pubkey(), "SyncReply").await.msg {
             MempoolNetMessage::SyncRequest(from, to) => {
                 assert_eq!(from, None);
                 assert_eq!(to, Some(DataProposalHash("dp_hash_in_cut".to_owned())));
@@ -1353,11 +1358,11 @@ pub mod test {
         ))?;
 
         ctx.mempool
-            .handle_net_message(signed_msg)
+            .handle_net_message(signed_msg).await
             .expect("should handle net message");
 
         // Assert that we send a SyncReply
-        match ctx.assert_send(crypto2.validator_pubkey(), "SyncReply").msg {
+        match ctx.assert_send(crypto2.validator_pubkey(), "SyncReply").await.msg {
             MempoolNetMessage::SyncReply(lane_entries) => {
                 assert_eq!(lane_entries.len(), 1);
                 assert_eq!(lane_entries.first().unwrap().1, data_proposal);
@@ -1394,7 +1399,7 @@ pub mod test {
             data_proposal.clone(),
         )]))?;
 
-        let handle = ctx.mempool.handle_net_message(signed_msg.clone());
+        let handle = ctx.mempool.handle_net_message(signed_msg.clone()).await;
         assert_eq!(
             handle.expect_err("should fail").to_string(),
             format!(
@@ -1416,7 +1421,7 @@ pub mod test {
         )]))?;
 
         // This actually fails - we don't know how to handle it
-        let handle = ctx.mempool.handle_net_message(signed_msg.clone());
+        let handle = ctx.mempool.handle_net_message(signed_msg.clone()).await;
         assert_eq!(
             handle.expect_err("should fail").to_string(),
             format!(
@@ -1438,7 +1443,7 @@ pub mod test {
         )]))?;
 
         // This actually fails - we don't know how to handle it
-        let handle = ctx.mempool.handle_net_message(signed_msg.clone());
+        let handle = ctx.mempool.handle_net_message(signed_msg.clone()).await;
         assert_eq!(
             handle.expect_err("should fail").to_string(),
             format!(
@@ -1460,7 +1465,7 @@ pub mod test {
         )]))?;
 
         // This actually fails - we don't know how to handle it
-        let handle = ctx.mempool.handle_net_message(signed_msg.clone());
+        let handle = ctx.mempool.handle_net_message(signed_msg.clone()).await;
         assert_eq!(
             handle.expect_err("should fail").to_string(),
             format!(
@@ -1498,7 +1503,7 @@ pub mod test {
         ]))?;
 
         // This actually fails - we don't know how to handle it
-        let handle = ctx.mempool.handle_net_message(signed_msg.clone());
+        let handle = ctx.mempool.handle_net_message(signed_msg.clone()).await;
         assert_eq!(
             handle.expect_err("should fail").to_string(),
             "Lane entries are not in the right order"
@@ -1516,7 +1521,7 @@ pub mod test {
             data_proposal.clone(),
         )]))?;
 
-        let handle = ctx.mempool.handle_net_message(signed_msg.clone());
+        let handle = ctx.mempool.handle_net_message(signed_msg.clone()).await;
         assert_ok!(handle, "Should handle net message");
 
         // Assert that the lane entry was added

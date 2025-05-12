@@ -303,6 +303,7 @@ mod tests {
 
     use super::*;
     use crate::mempool::storage_memory::LanesStorage;
+    use futures::StreamExt;
     use hyle_model::{DataSized, Signature, Transaction, ValidatorSignature};
     use staking::state::Staking;
 
@@ -461,46 +462,55 @@ mod tests {
             .unwrap();
 
         // [start, end] == [1, 2, 3]
-        let all_entries = storage
+        let all_entries: Vec<_> = storage
             .get_entries_between_hashes(lane_id, None, None)
-            .unwrap();
+            .collect()
+            .await;
         assert_eq!(3, all_entries.len());
 
-        // ]1, end] == [2, 3]
-        let entries_from_1_to_end = storage
-            .get_entries_between_hashes(lane_id, Some(&dp1.hashed()), None)
-            .unwrap();
+        // ]1, end] == [3, 2]
+        let entries_from_1_to_end: Vec<_> = storage
+            .get_entries_between_hashes(lane_id, Some(dp1.hashed()), None)
+            .collect()
+            .await;
         assert_eq!(2, entries_from_1_to_end.len());
-        assert_eq!(dp2, entries_from_1_to_end.first().unwrap().1);
-        assert_eq!(dp3, entries_from_1_to_end.last().unwrap().1);
+        dbg!(&dp2);
+        dbg!(&dp3);
+        dbg!(&entries_from_1_to_end);
+        assert_eq!(dp2, entries_from_1_to_end.last().unwrap().as_ref().unwrap().1);
+        assert_eq!(dp3, entries_from_1_to_end.first().unwrap().as_ref().unwrap().1);
 
-        // [start, 2] == [1, 2]
-        let entries_from_start_to_2 = storage
-            .get_entries_between_hashes(lane_id, None, Some(&dp2.hashed()))
-            .unwrap();
+        // [start, 2] == [2, 1]
+        let entries_from_start_to_2: Vec<_> = storage
+            .get_entries_between_hashes(lane_id, None, Some(dp2.hashed()))
+            .collect()
+            .await;
         assert_eq!(2, entries_from_start_to_2.len());
-        assert_eq!(dp1, entries_from_start_to_2.first().unwrap().1);
-        assert_eq!(dp2, entries_from_start_to_2.last().unwrap().1);
+        assert_eq!(dp1, entries_from_start_to_2.last().unwrap().as_ref().unwrap().1);
+        assert_eq!(dp2, entries_from_start_to_2.first().unwrap().as_ref().unwrap().1);
 
         // ]1, 2] == [2]
-        let entries_from_1_to_2 = storage
-            .get_entries_between_hashes(lane_id, Some(&dp1.hashed()), Some(&dp2.hashed()))
-            .unwrap();
+        let entries_from_1_to_2: Vec<_> = storage
+            .get_entries_between_hashes(lane_id, Some(dp1.hashed()), Some(dp2.hashed()))
+            .collect()
+            .await;
         assert_eq!(1, entries_from_1_to_2.len());
-        assert_eq!(dp2, entries_from_1_to_2.first().unwrap().1);
+        assert_eq!(dp2, entries_from_1_to_2.first().unwrap().as_ref().unwrap().1);
 
-        // ]1, 3] == [2, 3]
-        let entries_from_1_to_3 = storage
-            .get_entries_between_hashes(lane_id, Some(&dp1.hashed()), None)
-            .unwrap();
+        // ]1, 3] == [3, 2]
+        let entries_from_1_to_3: Vec<_> = storage
+            .get_entries_between_hashes(lane_id, Some(dp1.hashed()), None)
+            .collect()
+            .await;
         assert_eq!(2, entries_from_1_to_3.len());
-        assert_eq!(dp2, entries_from_1_to_3.first().unwrap().1);
-        assert_eq!(dp3, entries_from_1_to_3.last().unwrap().1);
+        assert_eq!(dp2, entries_from_1_to_3.last().unwrap().as_ref().unwrap().1);
+        assert_eq!(dp3, entries_from_1_to_3.first().unwrap().as_ref().unwrap().1);
 
         // ]1, 1[ == []
-        let entries_from_1_to_1 = storage
-            .get_entries_between_hashes(lane_id, Some(&dp1.hashed()), Some(&dp1.hashed()))
-            .unwrap();
+        let entries_from_1_to_1: Vec<_> = storage
+            .get_entries_between_hashes(lane_id, Some(dp1.hashed()), Some(dp1.hashed()))
+            .collect()
+            .await;
         assert_eq!(0, entries_from_1_to_1.len());
     }
 
@@ -550,7 +560,7 @@ mod tests {
         storage
             .put(lane_id.clone(), (entry, data_proposal))
             .unwrap();
-        let pending = storage.get_pending_entries_in_lane(lane_id, None).unwrap();
+        let pending: Vec<_> = storage.get_pending_entries_in_lane(lane_id, None).collect().await;
         assert_eq!(1, pending.len());
     }
 

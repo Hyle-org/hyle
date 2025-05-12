@@ -226,7 +226,7 @@ pub mod test {
         let key = ctx.validator_pubkey().clone();
         ctx.add_trusted_validator(&key);
 
-        let cut = ctx.process_cut_with_dp(&key, &dp_hash, cumul_size, 1)?;
+        let cut = ctx.process_cut_with_dp(&key, &dp_hash, cumul_size, 1).await?;
 
         assert_chanmsg_matches!(
             ctx.mempool_event_receiver,
@@ -267,22 +267,22 @@ pub mod test {
                 .expect_err("Should not build signed block");
         };
 
-        ctx.process_cut_with_dp(&ctx_key, &dp2_hash, dp2_size, 2)?;
+        ctx.process_cut_with_dp(&ctx_key, &dp2_hash, dp2_size, 2).await?;
         expect_nothing(&mut ctx);
 
-        ctx.process_cut_with_dp(&ctx_key, &dp5_hash, dp5_size, 5)?;
+        ctx.process_cut_with_dp(&ctx_key, &dp5_hash, dp5_size, 5).await?;
         expect_nothing(&mut ctx);
 
         // Process it twice to check idempotency
-        ctx.process_cut_with_dp(&ctx_key, &dp5_hash, dp5_size, 5)?;
+        ctx.process_cut_with_dp(&ctx_key, &dp5_hash, dp5_size, 5).await?;
         expect_nothing(&mut ctx);
 
         // Process the old one again as well
-        ctx.process_cut_with_dp(&ctx_key, &dp2_hash, dp2_size, 2)?;
+        ctx.process_cut_with_dp(&ctx_key, &dp2_hash, dp2_size, 2).await?;
         expect_nothing(&mut ctx);
 
         // Finally process two consecutive ones
-        ctx.process_cut_with_dp(&ctx_key, &dp6_hash, dp6_size, 6)?;
+        ctx.process_cut_with_dp(&ctx_key, &dp6_hash, dp6_size, 6).await?;
 
         assert_chanmsg_matches!(
             ctx.mempool_event_receiver,
@@ -338,7 +338,7 @@ pub mod test {
                     },
                     certificate: AggregateSignature::default(),
                 },
-            ))?;
+            )).await?;
 
         // We've received consecutive blocks so start building
         assert_chanmsg_matches!(
@@ -381,7 +381,7 @@ pub mod test {
                     },
                     certificate: AggregateSignature::default(),
                 },
-            ))?;
+            )).await?;
 
         // We don't have the data so we still don't send anything.
         ctx.mempool_event_receiver
@@ -391,6 +391,7 @@ pub mod test {
         // We send sync requests - we don't have the data.
         match ctx
             .assert_send(&ctx.validator_pubkey().clone(), "SyncRequest")
+            .await
             .msg
         {
             MempoolNetMessage::SyncRequest(from, to) => {
@@ -401,6 +402,7 @@ pub mod test {
         };
         match ctx
             .assert_send(&crypto2.validator_pubkey().clone(), "SyncRequest")
+            .await
             .msg
         {
             MempoolNetMessage::SyncRequest(from, to) => {
@@ -411,6 +413,7 @@ pub mod test {
         };
         match ctx
             .assert_send(&ctx.validator_pubkey().clone(), "SyncRequest")
+            .await
             .msg
         {
             MempoolNetMessage::SyncRequest(from, to) => {
@@ -421,6 +424,7 @@ pub mod test {
         };
         match ctx
             .assert_send(&crypto2.validator_pubkey().clone(), "SyncRequest")
+            .await
             .msg
         {
             MempoolNetMessage::SyncRequest(from, to) => {
@@ -446,7 +450,7 @@ pub mod test {
                 },
                 dp1.clone(),
             )],
-        )?;
+        ).await?;
 
         // We don't have the data so we still don't send anything.
         ctx.mempool_event_receiver
@@ -463,7 +467,7 @@ pub mod test {
                 },
                 dp1b.clone(),
             )],
-        )?;
+        ).await?;
 
         assert_chanmsg_matches!(
             ctx.mempool_event_receiver,

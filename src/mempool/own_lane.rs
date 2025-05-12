@@ -533,7 +533,7 @@ pub mod test {
         ctx.process_new_data_proposal(dp)?;
         ctx.timer_tick().await?;
 
-        let data_proposal = match ctx.assert_broadcast("DataProposal").msg {
+        let data_proposal = match ctx.assert_broadcast("DataProposal").await.msg {
             MempoolNetMessage::DataProposal(_, dp) => dp,
             _ => panic!("Expected DataProposal message"),
         };
@@ -543,12 +543,12 @@ pub mod test {
         let signed_msg2 = create_data_vote(&crypto2, data_proposal.hashed(), size)?;
         let signed_msg3 = create_data_vote(&crypto3, data_proposal.hashed(), size)?;
         ctx.mempool
-            .handle_net_message(crypto2.sign_msg_with_header(signed_msg2)?)?;
+            .handle_net_message(crypto2.sign_msg_with_header(signed_msg2)?).await?;
         ctx.mempool
-            .handle_net_message(crypto3.sign_msg_with_header(signed_msg3)?)?;
+            .handle_net_message(crypto3.sign_msg_with_header(signed_msg3)?).await?;
 
         // Assert that PoDAUpdate message is broadcasted
-        match ctx.assert_broadcast("PoDAUpdate").msg {
+        match ctx.assert_broadcast("PoDAUpdate").await.msg {
             MempoolNetMessage::PoDAUpdate(hash, signatures) => {
                 assert_eq!(hash, data_proposal.hashed());
                 assert_eq!(signatures.len(), 2);
@@ -574,6 +574,7 @@ pub mod test {
         assert!(ctx
             .mempool
             .handle_net_message(temp_crypto.sign_msg_with_header(signed_msg)?)
+            .await
             .is_err());
 
         Ok(())
@@ -600,6 +601,7 @@ pub mod test {
 
         ctx.mempool
             .handle_net_message(crypto2.sign_msg_with_header(signed_msg)?)
+            .await
             .expect("should handle net message");
 
         // Assert that we added the vote to the signatures
@@ -627,6 +629,7 @@ pub mod test {
         assert!(ctx
             .mempool
             .handle_net_message(crypto2.sign_msg_with_header(signed_msg)?)
+            .await
             .is_err());
         Ok(())
     }
