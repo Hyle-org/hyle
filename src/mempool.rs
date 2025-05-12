@@ -11,7 +11,6 @@ use crate::{
     },
     utils::{
         conf::{P2pMode, SharedConf},
-        ordered_join_set::OrderedJoinSet,
         serialize::arc_rwlock_borsh,
     },
 };
@@ -21,11 +20,11 @@ use block_construction::BlockUnderConstruction;
 use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::tcp_client::TcpServerMessage;
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
-use hyle_crypto::{BlstCrypto, SharedBlstCrypto};
+use hyle_crypto::SharedBlstCrypto;
 use hyle_modules::{
     log_error, log_warn, module_bus_client, module_handle_messages, modules::Module,
 };
-use hyle_net::clock::TimestampMsClock;
+use hyle_net::ordered_join_set::OrderedJoinSet;
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
@@ -522,20 +521,6 @@ impl Mempool {
     }
 
     fn handle_net_message(&mut self, msg: MsgWithHeader<MempoolNetMessage>) -> Result<()> {
-        // Ignore messages that seem incorrectly timestamped (1h ahead or back)
-        if msg.header.msg.timestamp.abs_diff(TimestampMsClock::now().0) > 3_600_000 {
-            bail!("Message timestamp too far from current time");
-        }
-        let result = BlstCrypto::verify(&msg.header)?;
-        if !result {
-            bail!("Invalid header signature for message {:?}", msg);
-        }
-
-        // Verify the message matches the signed data
-        if msg.header.msg.hash != msg.msg.to_header_signable_data() {
-            bail!("Invalid signed hash for message {:?}", msg);
-        }
-
         let validator = &msg.header.signature.validator;
         // TODO: adapt can_rejoin test to emit a stake tx before turning on the joining node
         // if !self.validators.contains(validator) {
@@ -840,8 +825,9 @@ pub mod test {
         p2p::network::{HeaderSigner, MsgWithHeader},
     };
     use anyhow::Result;
-    use assertables::{assert_err, assert_ok};
+    use assertables::assert_ok;
     use hyle_contract_sdk::StateCommitment;
+    use hyle_crypto::BlstCrypto;
     use tokio::sync::broadcast::Receiver;
     use utils::TimestampMs;
 
@@ -1262,39 +1248,6 @@ pub mod test {
             .as_blob("hyle".into(), None, None)],
         )
         .into()
-    }
-
-    #[test_log::test(tokio::test)]
-    async fn test_invalid_net_messages() -> Result<()> {
-        let mut ctx = MempoolTestCtx::new("mempool").await;
-        let crypto2 = BlstCrypto::new("2").unwrap();
-        ctx.add_trusted_validator(crypto2.validator_pubkey());
-
-        // Test message with timestamp too far in future
-        let mut bad_time_msg =
-            crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(None, None))?;
-        bad_time_msg.header.msg.timestamp = TimestampMsClock::now().0 + 7200000; // 2h in future
-        assert_err!(ctx.mempool.handle_net_message(bad_time_msg.clone()));
-
-        // Test message with timestamp too far in past
-        let mut bad_time_msg =
-            crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(None, None))?;
-        bad_time_msg.header.msg.timestamp = TimestampMsClock::now().0 - 7200000; // 2h in future
-        assert_err!(ctx.mempool.handle_net_message(bad_time_msg.clone()));
-
-        // Test message with bad signature
-        let mut bad_sig_msg =
-            crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(None, None))?;
-        bad_sig_msg.header.signature.signature.0 = vec![0, 1, 2, 3]; // Invalid signature bytes
-        assert_err!(ctx.mempool.handle_net_message(bad_sig_msg.clone()));
-
-        // Test message with mismatched hash
-        let mut bad_hash_msg =
-            crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(None, None))?;
-        bad_hash_msg.header.msg.hash = HeaderSignableData(vec![9, 9, 9]); // Wrong hash
-        assert_err!(ctx.mempool.handle_net_message(bad_hash_msg.clone()));
-
-        Ok(())
     }
 
     #[test_log::test(tokio::test)]

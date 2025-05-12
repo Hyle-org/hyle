@@ -30,7 +30,7 @@ pub struct Args {
 /// Use dhat to profile memory usage
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
-#[cfg(feature = "monitoring")]
+#[cfg(all(feature = "monitoring", not(feature = "dhat")))]
 #[global_allocator]
 static GLOBAL_ALLOC: alloc_metrics::MetricAlloc<std::alloc::System> =
     alloc_metrics::MetricAlloc::new(std::alloc::System);
