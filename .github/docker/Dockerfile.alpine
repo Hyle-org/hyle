@@ -2,11 +2,14 @@ FROM rust:alpine AS builder
 RUN apk add gcc musl-dev g++
 RUN cargo install --version 2.0.0 risc0-r0vm
 
-FROM ubuntu:24.04
+FROM alpine:latest
 COPY --from=builder /usr/local/cargo/bin/r0vm /usr/local/bin/r0vm
 
 # installing Barrenteberg CLI
-RUN apt-get update && apt-get install -y curl bash
-RUN curl -L https://raw.githubusercontent.com/AztecProtocol/aztec-packages/refs/heads/master/barretenberg/bbup/install | bash
+RUN apk add --no-cache curl bash
+ENV SHELL=/bin/bash
+RUN curl -L https://raw.githubusercontent.com/AztecProtocol/aztec-packages/master/barretenberg/cpp/installation/install | bash
 ENV PATH="/root/.bb:$PATH"
-RUN bbup -v 0.82.2
+RUN bbup -v 0.41.0
+
+
