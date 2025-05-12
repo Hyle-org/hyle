@@ -10,7 +10,8 @@ use axum::Router;
 use client_sdk::rest_client::NodeApiHttpClient;
 use hyle_model::api::NodeInfo;
 use hyle_model::TxHash;
-use hyle_modules::modules::ModulesHandler;
+use hyle_modules::modules::{BuildApiContextInner, ModulesHandler};
+use hyle_modules::node_state::module::NodeStateCtx;
 use tracing::info;
 
 use crate::bus::metrics::BusMetrics;
@@ -20,7 +21,7 @@ use crate::data_availability::DataAvailability;
 use crate::genesis::{Genesis, GenesisEvent};
 use crate::indexer::Indexer;
 use crate::mempool::Mempool;
-use crate::model::{CommonRunContext, NodeRunContext, SharedRunContext};
+use crate::model::SharedRunContext;
 use crate::node_state::module::{NodeStateEvent, NodeStateModule};
 use crate::p2p::P2P;
 use crate::rest::{RestApi, RestApiRunContext};
@@ -72,8 +73,11 @@ impl<T> MockModule<T> {
 }
 impl<T: Send> Module for MockModule<T> {
     type Context = SharedRunContext;
-    fn build(ctx: Self::Context) -> impl futures::Future<Output = Result<Self>> + Send {
-        MockModule::new(ctx.common.bus.new_handle())
+    fn build(
+        bus: SharedMessageBus,
+        _ctx: Self::Context,
+    ) -> impl futures::Future<Output = Result<Self>> + Send {
+        MockModule::new(bus.new_handle())
     }
     fn run(&mut self) -> impl futures::Future<Output = Result<()>> + Send {
         self.start()
@@ -250,14 +254,12 @@ impl NodeIntegrationCtx {
         std::fs::create_dir_all(&config.data_directory).context("creating data directory")?;
 
         let ctx = SharedRunContext {
-            common: CommonRunContext {
-                bus: bus.new_handle(),
-                config: config.clone(),
+            config: config.clone(),
+            api: Arc::new(BuildApiContextInner {
                 router: Mutex::new(Some(Router::new())),
                 openapi: Default::default(),
-            }
-            .into(),
-            node: NodeRunContext { crypto }.into(),
+            }),
+            crypto,
         };
 
         let mut handler = ModulesHandler::new(&bus).await;
@@ -274,13 +276,27 @@ impl NodeIntegrationCtx {
         }
 
         if config.run_indexer {
-            Self::build_module::<Indexer>(&mut handler, &ctx, ctx.common.clone(), &mut mocks)
-                .await?;
+            Self::build_module::<Indexer>(
+                &mut handler,
+                &ctx,
+                (config.clone(), ctx.api.clone()),
+                &mut mocks,
+            )
+            .await?;
         }
 
         Self::build_module::<DataAvailability>(&mut handler, &ctx, ctx.clone(), &mut mocks).await?;
-        Self::build_module::<NodeStateModule>(&mut handler, &ctx, ctx.common.clone(), &mut mocks)
-            .await?;
+        Self::build_module::<NodeStateModule>(
+            &mut handler,
+            &ctx,
+            NodeStateCtx {
+                node_id: config.id.clone(),
+                data_directory: config.data_directory.clone(),
+                api: ctx.api.clone(),
+            },
+            &mut mocks,
+        )
+        .await?;
 
         Self::build_module::<P2P>(&mut handler, &ctx, ctx.clone(), &mut mocks).await?;
 
@@ -288,7 +304,7 @@ impl NodeIntegrationCtx {
             // Should come last so the other modules have nested their own routes.
             #[allow(clippy::expect_used, reason = "Fail on misconfiguration")]
             let router = ctx
-                .common
+                .api
                 .router
                 .lock()
                 .expect("Context router should be available")
@@ -306,9 +322,8 @@ impl NodeIntegrationCtx {
                         pubkey: Some(pubkey),
                         da_address: config.da_public_address.clone(),
                     },
-                    ctx.common.bus.new_handle(),
                     router.clone(),
-                    ctx.common.config.rest_server_max_body_size,
+                    ctx.config.rest_server_max_body_size,
                     Default::default(),
                 ),
                 &mut mocks,
@@ -317,8 +332,13 @@ impl NodeIntegrationCtx {
         }
 
         if config.run_tcp_server {
-            Self::build_module::<TcpServer>(&mut handler, &ctx, ctx.common.clone(), &mut mocks)
-                .await?;
+            Self::build_module::<TcpServer>(
+                &mut handler,
+                &ctx,
+                ctx.config.tcp_server_port,
+                &mut mocks,
+            )
+            .await?;
         }
 
         // Ensure we didn't pass a Mock we didn't use

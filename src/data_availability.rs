@@ -8,6 +8,7 @@ use blocks_fjall::Blocks;
 //use blocks_memory::Blocks;
 
 use hyle_modules::{
+    bus::SharedMessageBus,
     log_error, module_bus_client, module_handle_messages,
     modules::Module,
     utils::da_codec::{
@@ -64,18 +65,13 @@ pub struct DataAvailability {
 impl Module for DataAvailability {
     type Context = SharedRunContext;
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus = DABusClient::new_from_bus(ctx.common.bus.new_handle()).await;
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
+        let bus = DABusClient::new_from_bus(bus.new_handle()).await;
 
         Ok(DataAvailability {
-            config: ctx.common.config.clone(),
+            config: ctx.config.clone(),
             bus,
-            blocks: Blocks::new(
-                &ctx.common
-                    .config
-                    .data_directory
-                    .join("data_availability.db"),
-            )?,
+            blocks: Blocks::new(&ctx.config.data_directory.join("data_availability.db"))?,
             buffered_signed_blocks: BTreeSet::new(),
             need_catchup: false,
             catchup_task: None,

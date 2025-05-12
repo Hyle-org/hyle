@@ -45,7 +45,6 @@ pub struct AutoProverBusClient<Contract: Send + Sync + Clone + 'static> {
 }
 
 pub struct AutoProverCtx {
-    pub bus: SharedMessageBus,
     pub data_directory: PathBuf,
     pub start_height: BlockHeight,
     pub prover: Arc<dyn ClientSdkProver<Vec<Calldata>> + Send + Sync>,
@@ -56,14 +55,12 @@ pub struct AutoProverCtx {
 impl AutoProverCtx {
     #[cfg(feature = "risc0")]
     pub fn risc0(
-        bus: SharedMessageBus,
         data_directory: PathBuf,
         elf: &'static [u8],
         contract_name: ContractName,
         node: Arc<NodeApiHttpClient>,
     ) -> Self {
         Self {
-            bus,
             data_directory,
             start_height: BlockHeight(0),
             prover: Arc::new(client_sdk::helpers::risc0::Risc0Prover::new(elf)),
@@ -74,7 +71,6 @@ impl AutoProverCtx {
 
     #[cfg(feature = "sp1")]
     pub fn sp1(
-        bus: SharedMessageBus,
         data_directory: PathBuf,
         elf: &'static [u8],
         contract_name: ContractName,
@@ -82,7 +78,6 @@ impl AutoProverCtx {
         node: Arc<NodeApiHttpClient>,
     ) -> Self {
         Self {
-            bus,
             data_directory,
             start_height,
             prover: Arc::new(client_sdk::helpers::sp1::SP1Prover::new(elf)),
@@ -109,8 +104,8 @@ where
 {
     type Context = Arc<AutoProverCtx>;
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus = AutoProverBusClient::<Contract>::new_from_bus(ctx.bus.new_handle()).await;
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
+        let bus = AutoProverBusClient::<Contract>::new_from_bus(bus.new_handle()).await;
 
         let file = ctx
             .data_directory

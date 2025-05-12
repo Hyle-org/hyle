@@ -21,13 +21,15 @@ use hyle_model::api::{
     BlobWithStatus, TransactionStatusDb, TransactionTypeDb, TransactionWithBlobs,
 };
 use hyle_modules::{
+    bus::SharedMessageBus,
     log_error, log_warn, module_handle_messages,
-    modules::{module_bus_client, Module},
+    modules::{module_bus_client, Module, SharedBuildApiCtx},
+    utils::conf::SharedConf,
 };
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use sqlx::{PgExecutor, QueryBuilder, Row};
+use std::collections::HashMap;
 use std::ops::DerefMut;
-use std::{collections::HashMap, sync::Arc};
 use tokio::select;
 use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, error, info, trace};
@@ -63,15 +65,15 @@ pub struct Indexer {
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./src/indexer/migrations");
 
 impl Module for Indexer {
-    type Context = Arc<CommonRunContext>;
+    type Context = (SharedConf, SharedBuildApiCtx);
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
-        let bus = IndexerBusClient::new_from_bus(ctx.bus.new_handle()).await;
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
+        let bus = IndexerBusClient::new_from_bus(bus.new_handle()).await;
 
         let pool = PgPoolOptions::new()
             .max_connections(20)
             .acquire_timeout(std::time::Duration::from_secs(1))
-            .connect(&ctx.config.database_url)
+            .connect(&ctx.0.database_url)
             .await
             .context("Failed to connect to the database")?;
 
@@ -91,14 +93,14 @@ impl Module for Indexer {
             subscribers,
         };
 
-        if let Ok(mut guard) = ctx.router.lock() {
+        if let Ok(mut guard) = ctx.1.router.lock() {
             if let Some(router) = guard.take() {
-                guard.replace(router.nest("/v1/indexer", indexer.api(Some(&ctx))));
+                guard.replace(router.nest("/v1/indexer", indexer.api(Some(&ctx.1))));
                 return Ok(indexer);
             }
         }
 
-        if let Ok(mut guard) = ctx.openapi.lock() {
+        if let Ok(mut guard) = ctx.1.openapi.lock() {
             tracing::info!("Adding OpenAPI for Indexer");
             let openapi = guard.clone().nest("/v1/indexer", IndexerAPI::openapi());
             *guard = openapi;
@@ -191,7 +193,7 @@ impl Indexer {
             .unwrap_or(None))
     }
 
-    pub fn api(&self, ctx: Option<&CommonRunContext>) -> Router<()> {
+    pub fn api(&self, ctx: Option<&SharedBuildApiCtx>) -> Router<()> {
         #[derive(OpenApi)]
         struct IndexerAPI;
 
