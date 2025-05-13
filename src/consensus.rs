@@ -817,7 +817,6 @@ pub mod test {
         rest::RestApi,
         utils::integration_test::NodeIntegrationCtxBuilder,
     };
-    use futures::FutureExt;
     use hyle_modules::{handle_messages, node_state::module::NodeStateModule};
     use std::{future::Future, pin::Pin, sync::Arc};
 
@@ -1030,13 +1029,20 @@ pub mod test {
         }
 
         #[track_caller]
-        pub(crate) async fn handle_msg(&mut self, msg: &MsgWithHeader<ConsensusNetMessage>, err: &str) {
+        pub(crate) async fn handle_msg(
+            &mut self,
+            msg: &MsgWithHeader<ConsensusNetMessage>,
+            err: &str,
+        ) {
             debug!("📥 {} Handling message: {:?}", self.name, msg);
             self.consensus.handle_net_message(msg.clone()).expect(err);
         }
 
         #[track_caller]
-        pub(crate) async fn handle_msg_err(&mut self, msg: &MsgWithHeader<ConsensusNetMessage>) -> Error {
+        pub(crate) async fn handle_msg_err(
+            &mut self,
+            msg: &MsgWithHeader<ConsensusNetMessage>,
+        ) -> Error {
             debug!("📥 {} Handling message expecting err: {:?}", self.name, msg);
             let err = self.consensus.handle_net_message(msg.clone()).unwrap_err();
             info!("Expected error: {:#}", err);
@@ -1122,7 +1128,7 @@ pub mod test {
 
             if let OutboundMessage::BroadcastMessage(net_msg) = rec {
                 if let NetMessage::ConsensusMessage(msg) = net_msg {
-                    Box::pin(async move {msg})
+                    Box::pin(async move { msg })
                 } else {
                     warn!("{description}: skipping {:?}", net_msg);
                     self.assert_broadcast(description)
@@ -1176,7 +1182,7 @@ pub mod test {
             {
                 if let NetMessage::ConsensusMessage(msg) = net_msg {
                     assert_eq!(to, &dest, "Got message {:?}", msg);
-                    Box::pin(async move {msg})
+                    Box::pin(async move { msg })
                 } else {
                     warn!("{description}: skipping non-consensus message, details in debug");
                     debug!("Message is: {:?}", net_msg);
@@ -1327,7 +1333,10 @@ pub mod test {
         // Slot 1 - leader = node1
         // Ensuring one slot commits correctly before a
 
-        assert_contains!(node2.handle_msg_err(&prepare_msg).await.to_string(), "wrong slot");
+        assert_contains!(
+            node2.handle_msg_err(&prepare_msg).await.to_string(),
+            "wrong slot"
+        );
         assert_eq!(
             node2
                 .consensus
@@ -1338,7 +1347,10 @@ pub mod test {
             None
         );
 
-        assert_contains!(node3.handle_msg_err(&prepare_msg).await.to_string(), "wrong slot");
+        assert_contains!(
+            node3.handle_msg_err(&prepare_msg).await.to_string(),
+            "wrong slot"
+        );
         assert_eq!(
             node3
                 .consensus
@@ -1349,7 +1361,10 @@ pub mod test {
             None
         );
 
-        assert_contains!(node4.handle_msg_err(&prepare_msg).await.to_string(), "wrong slot");
+        assert_contains!(
+            node4.handle_msg_err(&prepare_msg).await.to_string(),
+            "wrong slot"
+        );
         assert_eq!(
             node4
                 .consensus
@@ -1665,7 +1680,9 @@ pub mod test {
         // Test sending a timestamp in the future
         node3.start_round_at(TimestampMs(10001)).await;
 
-        let prepare_msg = node3.assert_broadcast("Prepare with future timestamp").await;
+        let prepare_msg = node3
+            .assert_broadcast("Prepare with future timestamp")
+            .await;
 
         node1.handle_msg_err(&prepare_msg).await;
         node2.handle_msg_err(&prepare_msg).await;
@@ -2023,7 +2040,10 @@ pub mod test {
 
         node1.start_round().await;
 
-        let lost_prepare = node1.assert_broadcast("Lost Prepare slot 1/view 0").await.msg;
+        let lost_prepare = node1
+            .assert_broadcast("Lost Prepare slot 1/view 0")
+            .await
+            .msg;
 
         // node2 is the next leader, let the others timeout and create a certificate and send it to node2.
         // It should be able to build a prepare message with it
@@ -2160,16 +2180,21 @@ pub mod test {
             node2.handle_msg(&leader_proposal, "Leader proposal").await;
             node3.handle_msg(&leader_proposal, "Leader proposal").await;
             info!("➡️  Slave vote");
-            let slave_vote = node2.assert_send(&node1.validator_pubkey(), "Slave vote").await;
+            let slave_vote = node2
+                .assert_send(&node1.validator_pubkey(), "Slave vote")
+                .await;
             node1.handle_msg(&slave_vote, "Slave vote").await;
             info!("➡️  Leader confirm");
             let leader_confirm = node1.assert_broadcast("Leader confirm").await;
             node2.handle_msg(&leader_confirm, "Leader confirm").await;
             node3.handle_msg(&leader_confirm, "Leader confirm").await;
             info!("➡️  Slave confirm ack");
-            let slave_confirm_ack =
-                node2.assert_send(&node1.validator_pubkey(), "Slave confirm ack").await;
-            node1.handle_msg(&slave_confirm_ack, "Slave confirm ack").await;
+            let slave_confirm_ack = node2
+                .assert_send(&node1.validator_pubkey(), "Slave confirm ack")
+                .await;
+            node1
+                .handle_msg(&slave_confirm_ack, "Slave confirm ack")
+                .await;
             info!("➡️  Leader commit");
             let leader_commit = node1.assert_broadcast("Leader commit").await;
             node2.handle_msg(&leader_commit, "Leader commit").await;
@@ -2184,9 +2209,13 @@ pub mod test {
                 "validator is not staking"
             );
             node1.add_staker(&node3, 100, "Add staker").await;
-            node1.handle_msg(&slave2_candidacy, "Slave 2 candidacy").await;
+            node1
+                .handle_msg(&slave2_candidacy, "Slave 2 candidacy")
+                .await;
             node2.add_staker(&node3, 100, "Add staker").await;
-            node2.handle_msg(&slave2_candidacy, "Slave 2 candidacy").await;
+            node2
+                .handle_msg(&slave2_candidacy, "Slave 2 candidacy")
+                .await;
         }
 
         // Slot 4: Still a slot without slave 2 - leader = node 2

@@ -544,7 +544,8 @@ impl Mempool {
                     validator,
                     from_data_proposal_hash.as_ref(),
                     to_data_proposal_hash.as_ref(),
-                ).await?;
+                )
+                .await?;
             }
             MempoolNetMessage::SyncReply(missing_entries) => {
                 self.on_sync_reply(validator, missing_entries).await?;
@@ -969,9 +970,10 @@ pub mod test {
                 .expect("fail to handle event");
         }
 
-        #[track_caller]
-        pub fn assert_broadcast(&mut self, description: &str) 
-            -> Pin<Box<dyn Future<Output = MsgWithHeader<MempoolNetMessage>>>> {
+        pub fn assert_broadcast(
+            &mut self,
+            description: &str,
+        ) -> Pin<Box<dyn Future<Output = MsgWithHeader<MempoolNetMessage>>>> {
             #[allow(clippy::expect_fun_call)]
             let rec = self
                 .out_receiver
@@ -981,7 +983,7 @@ pub mod test {
             match rec {
                 OutboundMessage::BroadcastMessage(net_msg) => {
                     if let NetMessage::MempoolMessage(msg) = net_msg {
-                        Box::pin(async move {msg})
+                        Box::pin(async move { msg })
                     } else {
                         println!(
                             "{description}: Mempool OutboundMessage message is missing, found {}",
@@ -1033,7 +1035,6 @@ pub mod test {
             }
         }
 
-        #[track_caller]
         pub fn assert_send(
             &mut self,
             to: &ValidatorPublicKey,
@@ -1055,7 +1056,7 @@ pub mod test {
                             );
                         }
 
-                        Box::pin(async move {msg})
+                        Box::pin(async move { msg })
                     } else {
                         tracing::warn!("{description}: skipping {:?}", msg);
                         self.assert_send(to, description)
@@ -1084,11 +1085,11 @@ pub mod test {
             }
         }
 
-        #[track_caller]
         pub async fn handle_msg(&mut self, msg: &MsgWithHeader<MempoolNetMessage>, _err: &str) {
             debug!("📥 {} Handling message: {:?}", self.name, msg);
             self.mempool
-                .handle_net_message(msg.clone()).await
+                .handle_net_message(msg.clone())
+                .await
                 .expect("should handle net msg");
         }
 
@@ -1101,7 +1102,6 @@ pub mod test {
                 .map(|(h, _)| h)
         }
 
-        #[track_caller]
         pub fn current_size_of(&self, lane_id: &LaneId) -> Option<LaneBytesSize> {
             self.mempool
                 .lanes
@@ -1229,7 +1229,8 @@ pub mod test {
                         },
                         certificate: AggregateSignature::default(),
                     },
-                )).await?;
+                ))
+                .await?;
 
             Ok(cut)
         }
@@ -1272,10 +1273,15 @@ pub mod test {
                 PoDA::default(),
             )],
             ..ConsensusProposal::default()
-        }).await;
+        })
+        .await;
 
         // Assert that we send a SyncReply
-        match ctx.assert_send(crypto2.validator_pubkey(), "SyncReply").await.msg {
+        match ctx
+            .assert_send(crypto2.validator_pubkey(), "SyncReply")
+            .await
+            .msg
+        {
             MempoolNetMessage::SyncRequest(from, to) => {
                 assert_eq!(from, None);
                 assert_eq!(to, Some(DataProposalHash("dp_hash_in_cut".to_owned())));
@@ -1307,11 +1313,16 @@ pub mod test {
         ))?;
 
         ctx.mempool
-            .handle_net_message(signed_msg).await
+            .handle_net_message(signed_msg)
+            .await
             .expect("should handle net message");
 
         // Assert that we send a SyncReply
-        match ctx.assert_send(crypto2.validator_pubkey(), "SyncReply").await.msg {
+        match ctx
+            .assert_send(crypto2.validator_pubkey(), "SyncReply")
+            .await
+            .msg
+        {
             MempoolNetMessage::SyncReply(lane_entries) => {
                 assert_eq!(lane_entries.len(), 1);
                 assert_eq!(lane_entries.first().unwrap().1, data_proposal);
