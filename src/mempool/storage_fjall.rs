@@ -297,12 +297,12 @@ impl Storage for LanesStorage {
                 let data_proposal = self.get_dp_by_hash(lane_id, &dp_hash)?.ok_or_else(|| {
                     anyhow::anyhow!("Data proposal {} not found in lane {}", dp_hash, lane_id)
                 })?;
-                
+
                 yield (metadata, data_proposal);
             }
         }
     }
-    
+
     #[cfg(test)]
     fn remove_lane_entry(&mut self, lane_id: &LaneId, dp_hash: &DataProposalHash) {
         self.by_hash_metadata
