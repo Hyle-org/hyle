@@ -37,12 +37,14 @@ pub trait ClientSdkProver<T: BorshSerialize + Send> {
     fn prove(
         &self,
         commitment_metadata: Vec<u8>,
-        calldata: T,
+        calldatas: T,
     ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>>;
 }
 
 #[cfg(feature = "risc0")]
 pub mod risc0 {
+
+    use borsh::BorshSerialize;
 
     use super::*;
 
@@ -53,10 +55,10 @@ pub mod risc0 {
         pub fn new(binary: &'a [u8]) -> Self {
             Self { binary }
         }
-        pub async fn prove(
+        pub async fn prove<T: BorshSerialize>(
             &self,
             commitment_metadata: Vec<u8>,
-            calldatas: Vec<Calldata>,
+            calldatas: T,
         ) -> Result<ProofData> {
             let explicit = std::env::var("RISC0_PROVER").unwrap_or_default();
             let receipt = match explicit.to_lowercase().as_str() {
@@ -84,11 +86,11 @@ pub mod risc0 {
         }
     }
 
-    impl ClientSdkProver<Vec<Calldata>> for Risc0Prover<'_> {
+    impl<T: BorshSerialize + Send + 'static> ClientSdkProver<T> for Risc0Prover<'_> {
         fn prove(
             &self,
             commitment_metadata: Vec<u8>,
-            calldatas: Vec<Calldata>,
+            calldatas: T,
         ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
             Box::pin(self.prove(commitment_metadata, calldatas))
         }
@@ -118,10 +120,10 @@ pub mod sp1 {
             Ok(sdk::ProgramId(serde_json::to_vec(&self.vk)?))
         }
 
-        pub async fn prove(
+        pub async fn prove<T: BorshSerialize>(
             &self,
             commitment_metadata: Vec<u8>,
-            calldatas: Vec<Calldata>,
+            calldatas: T,
         ) -> Result<ProofData> {
             // Setup the inputs.
             let mut stdin = SP1Stdin::new();
@@ -141,13 +143,13 @@ pub mod sp1 {
         }
     }
 
-    impl ClientSdkProver<Vec<Calldata>> for SP1Prover {
+    impl<T: BorshSerialize + Send + 'static> ClientSdkProver<T> for SP1Prover {
         fn prove(
             &self,
             commitment_metadata: Vec<u8>,
-            calldata: Vec<Calldata>,
+            calldatas: T,
         ) -> Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>> {
-            Box::pin(self.prove(commitment_metadata, calldata))
+            Box::pin(self.prove(commitment_metadata, calldatas))
         }
     }
 }
