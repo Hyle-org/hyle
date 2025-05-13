@@ -11,6 +11,7 @@ use crate::utils::conf::SharedConf;
 use anyhow::Result;
 use borsh::{BorshDeserialize, BorshSerialize};
 use hyle_crypto::SharedBlstCrypto;
+use hyle_modules::bus::SharedMessageBus;
 use hyle_modules::module_handle_messages;
 use hyle_modules::modules::module_bus_client;
 use hyle_modules::modules::Module;
@@ -53,9 +54,8 @@ pub struct SingleNodeConsensus {
 impl Module for SingleNodeConsensus {
     type Context = SharedRunContext;
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
+    async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
         let file = ctx
-            .common
             .config
             .data_directory
             .clone()
@@ -63,19 +63,19 @@ impl Module for SingleNodeConsensus {
 
         let store: SingleNodeConsensusStore = Self::load_from_disk_or_default(file.as_path());
 
-        let bus = SingleNodeConsensusBusClient::new_from_bus(ctx.common.bus.new_handle()).await;
-
-        let api = super::consensus::api::api(&ctx.common).await;
-        if let Ok(mut guard) = ctx.common.router.lock() {
+        let api = super::consensus::api::api(&bus, &ctx).await;
+        if let Ok(mut guard) = ctx.api.router.lock() {
             if let Some(router) = guard.take() {
                 guard.replace(router.nest("/v1/consensus", api));
             }
         }
 
+        let bus = SingleNodeConsensusBusClient::new_from_bus(bus.new_handle()).await;
+
         Ok(SingleNodeConsensus {
             bus,
-            crypto: ctx.node.crypto.clone(),
-            config: ctx.common.config.clone(),
+            crypto: ctx.crypto.clone(),
+            config: ctx.config.clone(),
             store,
             file: Some(file),
         })

@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use axum::{debug_handler, extract::State, http::StatusCode, response::IntoResponse, Json, Router};
 use client_sdk::contract_indexer::AppError;
 use hyle_model::api::APIStaking;
-use hyle_modules::modules::CommonRunContext;
+use hyle_modules::bus::SharedMessageBus;
 use staking::state::Staking;
 use tracing::error;
 use utoipa::OpenApi;
@@ -14,7 +14,7 @@ use crate::{
         command_response::{CmdRespClient, Query},
         metrics::BusMetrics,
     },
-    model::ConsensusInfo,
+    model::{ConsensusInfo, SharedRunContext},
 };
 
 use super::{QueryConsensusInfo, QueryConsensusStakingState};
@@ -33,9 +33,9 @@ pub struct RouterState {
 #[derive(OpenApi)]
 struct ConsensusAPI;
 
-pub async fn api(ctx: &CommonRunContext) -> Router<()> {
+pub async fn api(bus: &SharedMessageBus, ctx: &SharedRunContext) -> Router<()> {
     let state = RouterState {
-        bus: RestBusClient::new_from_bus(ctx.bus.new_handle()).await,
+        bus: RestBusClient::new_from_bus(bus.new_handle()).await,
     };
 
     let (router, api) = OpenApiRouter::with_openapi(ConsensusAPI::openapi())
@@ -43,7 +43,7 @@ pub async fn api(ctx: &CommonRunContext) -> Router<()> {
         .routes(routes!(get_consensus_staking_state))
         .split_for_parts();
 
-    if let Ok(mut o) = ctx.openapi.lock() {
+    if let Ok(mut o) = ctx.api.openapi.lock() {
         *o = o.clone().nest("/v1/consensus", api);
     }
 
