@@ -4,6 +4,8 @@ use std::{
 };
 
 use anyhow::{bail, Result};
+use async_stream::try_stream;
+use futures::Stream;
 use hyle_model::{LaneBytesSize, LaneId};
 use tracing::info;
 
@@ -188,22 +190,26 @@ impl Storage for LanesStorage {
     fn get_entries_between_hashes(
         &self,
         lane_id: &LaneId,
-        from_data_proposal_hash: Option<&DataProposalHash>,
-        to_data_proposal_hash: Option<&DataProposalHash>,
-    ) -> Result<Vec<(LaneEntryMetadata, DataProposal)>> {
-        let metadata = self.get_entries_metadata_between_hashes(
+        from_data_proposal_hash: Option<DataProposalHash>,
+        to_data_proposal_hash: Option<DataProposalHash>,
+    ) -> impl Stream<Item = Result<(LaneEntryMetadata, DataProposal)>> {
+        let metadata_stream = self.get_entries_metadata_between_hashes(
             lane_id,
             from_data_proposal_hash,
             to_data_proposal_hash,
-        )?;
-        let mut entries = Vec::with_capacity(metadata.len());
-        for (metadata, dp_hash) in metadata {
-            let Some(dp) = self.get_dp_by_hash(lane_id, &dp_hash)? else {
-                bail!("Can't find DP {} for validator {}", dp_hash, lane_id);
-            };
-            entries.push((metadata, dp));
+        );
+
+        try_stream! {
+            for await md in metadata_stream {
+                let (metadata, dp_hash) = md?;
+
+                let data_proposal = self.get_dp_by_hash(lane_id, &dp_hash)?.ok_or_else(|| {
+                    anyhow::anyhow!("Data proposal {} not found in lane {}", dp_hash, lane_id)
+                })?;
+                
+                yield (metadata, data_proposal);
+            }
         }
-        Ok(entries)
     }
 
     #[cfg(test)]
