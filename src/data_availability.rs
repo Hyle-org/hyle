@@ -449,7 +449,7 @@ pub mod tests {
             let bus = super::DABusClient::new_from_bus(shared_bus.new_handle()).await;
             let node_state_bus = NodeStateBusClient::new_from_bus(shared_bus).await;
 
-            let mut config: Conf = Conf::new(None, None, None).unwrap();
+            let mut config: Conf = Conf::new(vec![], None, None).unwrap();
 
             let node_state = NodeState::create(config.id.clone(), "data_availability");
 
@@ -560,7 +560,7 @@ pub mod tests {
         let bus = super::DABusClient::new_from_bus(global_bus.new_handle()).await;
         let mut block_sender = TestBusClient::new_from_bus(global_bus).await;
 
-        let mut config: Conf = Conf::new(None, None, None).unwrap();
+        let mut config: Conf = Conf::new(vec![], None, None).unwrap();
         config.da_server_port = find_available_port().await;
         config.da_public_address = format!("127.0.0.1:{}", config.da_server_port);
         let mut da = super::DataAvailability {

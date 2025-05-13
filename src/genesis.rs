@@ -608,7 +608,7 @@ mod tests {
         let tmpdir = tempfile::Builder::new().tempdir().unwrap();
 
         let mut config =
-            Conf::new(None, tmpdir.path().to_str().map(|s| s.to_owned()), None).unwrap();
+            Conf::new(vec![], tmpdir.path().to_str().map(|s| s.to_owned()), None).unwrap();
         config.id = "node-4".to_string();
         config.consensus.solo = false;
         config.genesis.stakers = [("node-1".into(), 100)].into_iter().collect();
@@ -626,7 +626,7 @@ mod tests {
     async fn test_genesis_single() {
         let tmpdir = tempfile::Builder::new().tempdir().unwrap();
         let mut config =
-            Conf::new(None, tmpdir.path().to_str().map(|s| s.to_owned()), None).unwrap();
+            Conf::new(vec![], tmpdir.path().to_str().map(|s| s.to_owned()), None).unwrap();
         config.id = "single-node".to_string();
         config.consensus.solo = true;
         config.genesis.stakers = [("single-node".into(), 100)].into_iter().collect();
@@ -651,7 +651,7 @@ mod tests {
         let tmpdir = tempfile::Builder::new().tempdir().unwrap();
 
         let mut config =
-            Conf::new(None, tmpdir.path().to_str().map(|s| s.to_owned()), None).unwrap();
+            Conf::new(vec![], tmpdir.path().to_str().map(|s| s.to_owned()), None).unwrap();
         config.id = "node-1".to_string();
         config.consensus.solo = false;
         config.genesis.stakers = [("node-1".into(), 100), ("node-2".into(), 100)]
@@ -686,7 +686,7 @@ mod tests {
         let tmpdir = tempfile::Builder::new().tempdir().unwrap();
 
         let mut config =
-            Conf::new(None, tmpdir.path().to_str().map(|s| s.to_owned()), None).unwrap();
+            Conf::new(vec![], tmpdir.path().to_str().map(|s| s.to_owned()), None).unwrap();
         config.id = "node-2".to_string();
         config.consensus.solo = false;
         config.genesis.stakers = [("node-1".into(), 100), ("node-2".into(), 100)]
@@ -724,7 +724,7 @@ mod tests {
         let tmpdir = tempfile::Builder::new().tempdir().unwrap();
 
         let mut config =
-            Conf::new(None, tmpdir.path().to_str().map(|s| s.to_owned()), None).unwrap();
+            Conf::new(vec![], tmpdir.path().to_str().map(|s| s.to_owned()), None).unwrap();
         config.id = "node-1".to_string();
         config.genesis.stakers = [
             ("node-1".into(), 100),
@@ -769,7 +769,7 @@ mod tests {
         let tmpdir = tempfile::Builder::new().tempdir().unwrap();
 
         let mut config =
-            Conf::new(None, tmpdir.path().to_str().map(|s| s.to_owned()), None).unwrap();
+            Conf::new(vec![], tmpdir.path().to_str().map(|s| s.to_owned()), None).unwrap();
         config.id = "node-1".to_string();
         config.consensus.solo = false;
         config.genesis.stakers = [

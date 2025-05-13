@@ -2,8 +2,8 @@
 
 mod api;
 
-use crate::model::*;
 use crate::node_state::module::NodeStateEvent;
+use crate::{model::*, utils::conf::SharedConf};
 use anyhow::{bail, Context, Error, Result};
 use api::IndexerAPI;
 use axum::{
@@ -24,7 +24,6 @@ use hyle_modules::{
     bus::SharedMessageBus,
     log_error, log_warn, module_handle_messages,
     modules::{module_bus_client, Module, SharedBuildApiCtx},
-    utils::conf::SharedConf,
 };
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use sqlx::{PgExecutor, QueryBuilder, Row};
