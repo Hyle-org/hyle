@@ -52,13 +52,11 @@ impl super::Mempool {
                 .and_then(|f| f.iter().find(|el| &el.0 == lane_id))
                 .map(|el| &el.1);
 
-            let mut entries = Box::pin(self
-                .lanes
-                .get_entries_between_hashes(
-                    lane_id, // get start hash for validator
-                    from_hash.cloned(),
-                    Some(to_hash.clone()),
-                ));
+            let mut entries = Box::pin(self.lanes.get_entries_between_hashes(
+                lane_id, // get start hash for validator
+                from_hash.cloned(),
+                Some(to_hash.clone()),
+            ));
 
             let mut dps = vec![];
 
@@ -68,7 +66,7 @@ impl super::Mempool {
                     buc.from, buc.ccp.consensus_proposal.cut
                 ))?;
 
-                dps.push(dp);                    
+                dps.push(dp);
             }
 
             result.push((lane_id.clone(), dps));
@@ -226,7 +224,9 @@ pub mod test {
         let key = ctx.validator_pubkey().clone();
         ctx.add_trusted_validator(&key);
 
-        let cut = ctx.process_cut_with_dp(&key, &dp_hash, cumul_size, 1).await?;
+        let cut = ctx
+            .process_cut_with_dp(&key, &dp_hash, cumul_size, 1)
+            .await?;
 
         assert_chanmsg_matches!(
             ctx.mempool_event_receiver,
@@ -267,22 +267,27 @@ pub mod test {
                 .expect_err("Should not build signed block");
         };
 
-        ctx.process_cut_with_dp(&ctx_key, &dp2_hash, dp2_size, 2).await?;
+        ctx.process_cut_with_dp(&ctx_key, &dp2_hash, dp2_size, 2)
+            .await?;
         expect_nothing(&mut ctx);
 
-        ctx.process_cut_with_dp(&ctx_key, &dp5_hash, dp5_size, 5).await?;
+        ctx.process_cut_with_dp(&ctx_key, &dp5_hash, dp5_size, 5)
+            .await?;
         expect_nothing(&mut ctx);
 
         // Process it twice to check idempotency
-        ctx.process_cut_with_dp(&ctx_key, &dp5_hash, dp5_size, 5).await?;
+        ctx.process_cut_with_dp(&ctx_key, &dp5_hash, dp5_size, 5)
+            .await?;
         expect_nothing(&mut ctx);
 
         // Process the old one again as well
-        ctx.process_cut_with_dp(&ctx_key, &dp2_hash, dp2_size, 2).await?;
+        ctx.process_cut_with_dp(&ctx_key, &dp2_hash, dp2_size, 2)
+            .await?;
         expect_nothing(&mut ctx);
 
         // Finally process two consecutive ones
-        ctx.process_cut_with_dp(&ctx_key, &dp6_hash, dp6_size, 6).await?;
+        ctx.process_cut_with_dp(&ctx_key, &dp6_hash, dp6_size, 6)
+            .await?;
 
         assert_chanmsg_matches!(
             ctx.mempool_event_receiver,
@@ -338,7 +343,8 @@ pub mod test {
                     },
                     certificate: AggregateSignature::default(),
                 },
-            )).await?;
+            ))
+            .await?;
 
         // We've received consecutive blocks so start building
         assert_chanmsg_matches!(
@@ -381,7 +387,8 @@ pub mod test {
                     },
                     certificate: AggregateSignature::default(),
                 },
-            )).await?;
+            ))
+            .await?;
 
         // We don't have the data so we still don't send anything.
         ctx.mempool_event_receiver
@@ -436,34 +443,38 @@ pub mod test {
 
         // Receive the two DPs.
 
-        ctx.mempool.on_sync_reply(
-            &ctx.validator_pubkey().clone(),
-            LaneEntryMetadata {
-                parent_data_proposal_hash: dp1.parent_data_proposal_hash.clone(),
-                cumul_size: dp1_size,
-                signatures: vec![ctx
-                    .mempool
-                    .crypto
-                    .sign((dp1_hash, dp1_size))
-                    .expect("should sign")],
-            },
-            dp1.clone(),
-        ).await?;
+        ctx.mempool
+            .on_sync_reply(
+                &ctx.validator_pubkey().clone(),
+                LaneEntryMetadata {
+                    parent_data_proposal_hash: dp1.parent_data_proposal_hash.clone(),
+                    cumul_size: dp1_size,
+                    signatures: vec![ctx
+                        .mempool
+                        .crypto
+                        .sign((dp1_hash, dp1_size))
+                        .expect("should sign")],
+                },
+                dp1.clone(),
+            )
+            .await?;
 
         // We don't have the data so we still don't send anything.
         ctx.mempool_event_receiver
             .try_recv()
             .expect_err("Should not build signed block");
 
-        ctx.mempool.on_sync_reply(
-            &crypto2.validator_pubkey().clone(),
-            LaneEntryMetadata {
-                parent_data_proposal_hash: dp1b.parent_data_proposal_hash.clone(),
-                cumul_size: dp1b_size,
-                signatures: vec![crypto2.sign((dp1b_hash, dp1b_size)).expect("should sign")],
-            },
-            dp1b.clone(),
-        ).await?;
+        ctx.mempool
+            .on_sync_reply(
+                &crypto2.validator_pubkey().clone(),
+                LaneEntryMetadata {
+                    parent_data_proposal_hash: dp1b.parent_data_proposal_hash.clone(),
+                    cumul_size: dp1b_size,
+                    signatures: vec![crypto2.sign((dp1b_hash, dp1b_size)).expect("should sign")],
+                },
+                dp1b.clone(),
+            )
+            .await?;
 
         assert_chanmsg_matches!(
             ctx.mempool_event_receiver,
