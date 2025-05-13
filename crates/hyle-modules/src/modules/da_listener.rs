@@ -96,7 +96,7 @@ impl DAListener {
             on_bus self.bus,
             frame = client.recv() => {
                 if let Some(streamed_signed_block) = frame {
-                    log_error!(self.processing_next_frame(streamed_signed_block).await, "Consuming da stream")?;
+                    let _ = log_error!(self.processing_next_frame(streamed_signed_block).await, "Consuming da stream");
                     client.ping().await?;
                 } else {
                     client = self.start_client(self.node_state.current_height + 1).await?;
