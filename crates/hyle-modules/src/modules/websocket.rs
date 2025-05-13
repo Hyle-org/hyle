@@ -67,7 +67,7 @@ pub struct WebSocketBusClient<In: Send + Sync + Clone + 'static, Out: Send + Syn
 // ---- WebSocket Module ----
 
 /// Configuration for the WebSocket module
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebSocketConfig {
     /// The port number to bind the WebSocket server to
     pub port: u16,
