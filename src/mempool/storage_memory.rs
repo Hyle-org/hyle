@@ -206,7 +206,7 @@ impl Storage for LanesStorage {
                 let data_proposal = self.get_dp_by_hash(lane_id, &dp_hash)?.ok_or_else(|| {
                     anyhow::anyhow!("Data proposal {} not found in lane {}", dp_hash, lane_id)
                 })?;
-                
+
                 yield (metadata, data_proposal);
             }
         }

@@ -94,7 +94,8 @@ impl super::Mempool {
 
         // TODO: when we have a smarter system, we should probably not trigger this here
         // to make the event loop more efficient.
-        self.disseminate_data_proposals(Some(data_proposal_hash)).await
+        self.disseminate_data_proposals(Some(data_proposal_hash))
+            .await
     }
 
     /// If only_dp_with_hash is Some, only disseminate the DP with the specified hash. If None, disseminate any pending DPs.
@@ -113,11 +114,10 @@ impl super::Mempool {
         // Check for each pending DataProposal if it has enough signatures
         let cloned_lanes = self.lanes.clone();
         let own_lane_id = self.own_lane_id();
-        let mut entries_stream = Box::pin(cloned_lanes
-            .get_pending_entries_in_lane(&own_lane_id, last_cut));
+        let mut entries_stream =
+            Box::pin(cloned_lanes.get_pending_entries_in_lane(&own_lane_id, last_cut));
 
         while let Some(stream_entry) = entries_stream.next().await {
-
             let (entry_metadata, dp_hash) = stream_entry?;
             // If only_dp_with_hash is Some, we only disseminate that one, skip all others.
             if let Some(ref only_dp_with_hash) = only_dp_with_hash {
@@ -543,9 +543,11 @@ pub mod test {
         let signed_msg2 = create_data_vote(&crypto2, data_proposal.hashed(), size)?;
         let signed_msg3 = create_data_vote(&crypto3, data_proposal.hashed(), size)?;
         ctx.mempool
-            .handle_net_message(crypto2.sign_msg_with_header(signed_msg2)?).await?;
+            .handle_net_message(crypto2.sign_msg_with_header(signed_msg2)?)
+            .await?;
         ctx.mempool
-            .handle_net_message(crypto3.sign_msg_with_header(signed_msg3)?).await?;
+            .handle_net_message(crypto3.sign_msg_with_header(signed_msg3)?)
+            .await?;
 
         // Assert that PoDAUpdate message is broadcasted
         match ctx.assert_broadcast("PoDAUpdate").await.msg {

@@ -189,7 +189,8 @@ pub trait Storage {
         to_data_proposal_hash: Option<DataProposalHash>,
     ) -> impl Stream<Item = Result<(LaneEntryMetadata, DataProposalHash)>> {
         // If no dp hash is provided, we use the tip of the lane
-        let initial_dp_hash: Option<DataProposalHash> = to_data_proposal_hash.or(self.get_lane_hash_tip(lane_id).cloned());
+        let initial_dp_hash: Option<DataProposalHash> =
+            to_data_proposal_hash.or(self.get_lane_hash_tip(lane_id).cloned());
         try_stream! {
             if let Some(mut some_dp_hash) = initial_dp_hash {
                 while Some(&some_dp_hash) != from_data_proposal_hash.as_ref() {
@@ -237,7 +238,11 @@ pub trait Storage {
                 .map(|(_, dp, _, _)| dp.clone()),
             None => None,
         };
-        self.get_entries_metadata_between_hashes(lane_id, last_committed_dp_hash.clone(), lane_tip.cloned())
+        self.get_entries_metadata_between_hashes(
+            lane_id,
+            last_committed_dp_hash.clone(),
+            lane_tip.cloned(),
+        )
     }
 
     /// For unknown DataProposals in the new cut, we need to remove all DataProposals that we have after the previous cut.
@@ -477,8 +482,14 @@ mod tests {
         dbg!(&dp2);
         dbg!(&dp3);
         dbg!(&entries_from_1_to_end);
-        assert_eq!(dp2, entries_from_1_to_end.last().unwrap().as_ref().unwrap().1);
-        assert_eq!(dp3, entries_from_1_to_end.first().unwrap().as_ref().unwrap().1);
+        assert_eq!(
+            dp2,
+            entries_from_1_to_end.last().unwrap().as_ref().unwrap().1
+        );
+        assert_eq!(
+            dp3,
+            entries_from_1_to_end.first().unwrap().as_ref().unwrap().1
+        );
 
         // [start, 2] == [2, 1]
         let entries_from_start_to_2: Vec<_> = storage
@@ -486,8 +497,14 @@ mod tests {
             .collect()
             .await;
         assert_eq!(2, entries_from_start_to_2.len());
-        assert_eq!(dp1, entries_from_start_to_2.last().unwrap().as_ref().unwrap().1);
-        assert_eq!(dp2, entries_from_start_to_2.first().unwrap().as_ref().unwrap().1);
+        assert_eq!(
+            dp1,
+            entries_from_start_to_2.last().unwrap().as_ref().unwrap().1
+        );
+        assert_eq!(
+            dp2,
+            entries_from_start_to_2.first().unwrap().as_ref().unwrap().1
+        );
 
         // ]1, 2] == [2]
         let entries_from_1_to_2: Vec<_> = storage
@@ -495,7 +512,10 @@ mod tests {
             .collect()
             .await;
         assert_eq!(1, entries_from_1_to_2.len());
-        assert_eq!(dp2, entries_from_1_to_2.first().unwrap().as_ref().unwrap().1);
+        assert_eq!(
+            dp2,
+            entries_from_1_to_2.first().unwrap().as_ref().unwrap().1
+        );
 
         // ]1, 3] == [3, 2]
         let entries_from_1_to_3: Vec<_> = storage
@@ -504,7 +524,10 @@ mod tests {
             .await;
         assert_eq!(2, entries_from_1_to_3.len());
         assert_eq!(dp2, entries_from_1_to_3.last().unwrap().as_ref().unwrap().1);
-        assert_eq!(dp3, entries_from_1_to_3.first().unwrap().as_ref().unwrap().1);
+        assert_eq!(
+            dp3,
+            entries_from_1_to_3.first().unwrap().as_ref().unwrap().1
+        );
 
         // ]1, 1[ == []
         let entries_from_1_to_1: Vec<_> = storage
@@ -560,7 +583,10 @@ mod tests {
         storage
             .put(lane_id.clone(), (entry, data_proposal))
             .unwrap();
-        let pending: Vec<_> = storage.get_pending_entries_in_lane(lane_id, None).collect().await;
+        let pending: Vec<_> = storage
+            .get_pending_entries_in_lane(lane_id, None)
+            .collect()
+            .await;
         assert_eq!(1, pending.len());
     }
 
