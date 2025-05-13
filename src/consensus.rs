@@ -1028,7 +1028,6 @@ pub mod test {
             }
         }
 
-        #[track_caller]
         pub(crate) async fn handle_msg(
             &mut self,
             msg: &MsgWithHeader<ConsensusNetMessage>,
@@ -1038,7 +1037,6 @@ pub mod test {
             self.consensus.handle_net_message(msg.clone()).expect(err);
         }
 
-        #[track_caller]
         pub(crate) async fn handle_msg_err(
             &mut self,
             msg: &MsgWithHeader<ConsensusNetMessage>,
@@ -1115,7 +1113,6 @@ pub mod test {
                 .expect("Failed to start slot");
         }
 
-        #[track_caller]
         pub(crate) fn assert_broadcast(
             &mut self,
             description: &str,
@@ -1164,7 +1161,6 @@ pub mod test {
             }
         }
 
-        #[track_caller]
         pub(crate) fn assert_send(
             &mut self,
             to: &ValidatorPublicKey,
