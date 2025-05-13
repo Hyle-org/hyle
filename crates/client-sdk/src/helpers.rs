@@ -67,6 +67,11 @@ pub mod risc0 {
                         bonsai_runner::as_input_data(&(commitment_metadata, calldatas))?;
                     bonsai_runner::run_bonsai(self.binary, input_data.clone()).await?
                 }
+                "boundless" => {
+                    let input_data =
+                        bonsai_runner::as_input_data(&(commitment_metadata, calldatas))?;
+                    bonsai_runner::run_boundless(self.binary, input_data).await?
+                }
                 _ => {
                     let input_data = borsh::to_vec(&(commitment_metadata, calldatas))?;
                     let env = risc0_zkvm::ExecutorEnv::builder()

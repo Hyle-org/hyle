@@ -313,7 +313,7 @@ mod tests {
     use staking::state::Staking;
 
     fn setup_storage() -> LanesStorage {
-        let tmp_dir = tempfile::tempdir().unwrap().into_path();
+        let tmp_dir = tempfile::tempdir().unwrap().keep();
         LanesStorage::new(&tmp_dir, BTreeMap::default()).unwrap()
     }
 
