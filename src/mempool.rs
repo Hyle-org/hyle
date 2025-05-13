@@ -253,9 +253,10 @@ impl IntoHeaderSignableData for MempoolNetMessage {
                     .concat(),
             ),
             MempoolNetMessage::SyncReply(metadata, data_proposal) => {
-                let mut hash = vec![];
-                hash.push(borsh::to_vec(&metadata).unwrap_or_default());
-                hash.push(data_proposal.hashed().0.into_bytes());
+                let hash = [
+                    borsh::to_vec(&metadata).unwrap_or_default(),
+                    data_proposal.hashed().0.into_bytes(),
+                ];
                 HeaderSignableData(hash.concat())
             }
         }
@@ -565,15 +566,17 @@ impl Mempool {
         let lane_id = &LaneId(sender_validator.clone());
         let lane_operator = self.get_lane_operator(lane_id);
 
-        // Ensure all lane entries are signed by the validator.
-        if {
+        let missing_entry_not_present = {
             let expected_message = (data_proposal.hashed(), metadata.cumul_size);
 
             !metadata
                 .signatures
                 .iter()
                 .any(|s| &s.signature.validator == lane_operator && s.msg == expected_message)
-        } {
+        };
+
+        // Ensure all lane entries are signed by the validator.
+        if missing_entry_not_present {
             bail!(
                 "At least one lane entry is missing signature from {}",
                 lane_operator
