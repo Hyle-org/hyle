@@ -131,20 +131,14 @@ where
 #[derive(Clone, Default)]
 struct NewPeers(pub Arc<Mutex<Vec<(String, WebSocket)>>>);
 
-pub struct WebSocketModuleCtx {
-    pub bus: SharedMessageBus,
-    pub config: WebSocketConfig,
-}
-
 impl<In, Out> Module for WebSocketModule<In, Out>
 where
     In: DeserializeOwned + std::fmt::Debug + Send + Sync + Clone + 'static,
     Out: Serialize + Send + Sync + Clone + 'static,
 {
-    type Context = WebSocketModuleCtx;
+    type Context = WebSocketConfig;
 
-    async fn build(ctx: Self::Context) -> Result<Self> {
-        let config = ctx.config;
+    async fn build(bus: SharedMessageBus, config: Self::Context) -> Result<Self> {
         let new_peers = NewPeers::default();
         let app = Router::new()
             .route(&config.ws_path, get(ws_handler))
@@ -152,7 +146,7 @@ where
             .with_state(new_peers.clone());
 
         Ok(Self {
-            bus: WebSocketBusClient::new_from_bus(ctx.bus.new_handle()).await,
+            bus: WebSocketBusClient::new_from_bus(bus.new_handle()).await,
             app: Some(app),
             peer_senders: HashMap::new(),
             topic_listeners: HashMap::new(),

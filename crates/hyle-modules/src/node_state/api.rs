@@ -16,10 +16,12 @@ use crate::{
         bus_client,
         command_response::{CmdRespClient, Query},
         metrics::BusMetrics,
+        SharedMessageBus,
     },
-    modules::CommonRunContext,
     node_state::module::{QueryBlockHeight, QueryUnsettledTx},
 };
+
+use super::module::NodeStateCtx;
 
 bus_client! {
 struct RestBusClient {
@@ -36,9 +38,9 @@ pub struct RouterState {
 #[derive(OpenApi)]
 struct NodeStateAPI;
 
-pub async fn api(ctx: &CommonRunContext) -> Router<()> {
+pub async fn api(bus: SharedMessageBus, ctx: &NodeStateCtx) -> Router<()> {
     let state = RouterState {
-        bus: RestBusClient::new_from_bus(ctx.bus.new_handle()).await,
+        bus: RestBusClient::new_from_bus(bus).await,
     };
 
     let (router, api) = OpenApiRouter::with_openapi(NodeStateAPI::openapi())
@@ -49,7 +51,7 @@ pub async fn api(ctx: &CommonRunContext) -> Router<()> {
         .routes(routes!(get_unsettled_tx))
         .split_for_parts();
 
-    if let Ok(mut o) = ctx.openapi.lock() {
+    if let Ok(mut o) = ctx.api.openapi.lock() {
         *o = o.clone().nest("/v1", api);
     }
 

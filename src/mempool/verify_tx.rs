@@ -170,6 +170,7 @@ impl super::Mempool {
                 );
             }
             DataProposalVerdict::Wait => {
+                debug!("Buffering DataProposal");
                 // Push the data proposal in the waiting list
                 self.buffered_proposals
                     .entry(lane_id.clone())
@@ -227,6 +228,32 @@ impl super::Mempool {
                 {
                     self.on_poda_update(&lane_id, &hash, poda_signatures)
                         .context("Processing buffered poda")?;
+                }
+
+                // Check if we maybe buffered a descendant of this DP.
+                let mut dp = None;
+                if let Some(buffered_proposals) = self.buffered_proposals.get_mut(&lane_id) {
+                    // Check if we have a buffered proposal that is a child of this DP
+                    let child_idx = buffered_proposals.iter().position(|dp| {
+                        if let Some(parent_hash) = &dp.parent_data_proposal_hash {
+                            parent_hash == &hash
+                        } else {
+                            false
+                        }
+                    });
+                    if let Some(child_idx) = child_idx {
+                        // We have a buffered proposal that is a child of this DP
+                        dp = Some(buffered_proposals.swap_remove(child_idx));
+                    }
+                }
+                if let Some(dp) = dp {
+                    // We can process this DP
+                    debug!(
+                        "Processing buffered DataProposal {:?} on lane {}",
+                        dp.hashed(),
+                        lane_id
+                    );
+                    self.on_hashed_data_proposal(&lane_id, dp)?;
                 }
             }
             DataProposalVerdict::Refuse => {
@@ -545,6 +572,7 @@ pub mod test {
 
         ctx.mempool
             .handle_net_message(signed_msg)
+            .await
             .expect("should handle net message");
 
         ctx.handle_processed_data_proposals().await;
@@ -552,6 +580,7 @@ pub mod test {
         // Assert that we vote for that specific DataProposal
         match ctx
             .assert_send(&ctx.mempool.crypto.validator_pubkey().clone(), "DataVote")
+            .await
             .msg
         {
             MempoolNetMessage::DataVote(SignedByValidator {
