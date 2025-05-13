@@ -94,7 +94,17 @@ impl DAListener {
     }
 
     async fn process_block(&mut self, block: SignedBlock) -> Result<()> {
-        let block_height = BlockHeight(block.consensus_proposal.slot);
+        let block_height = block.height();
+
+        if block_height == BlockHeight(0) && self.node_state.current_height == BlockHeight(0) {
+            info!(
+                "📦 Processing genesis block: {} {}",
+                block.consensus_proposal.slot,
+                block.consensus_proposal.hashed()
+            );
+            self.node_state.handle_signed_block(&block)?;
+            return Ok(());
+        }
 
         // If this is the next block we expect, process it immediately, otherwise buffer it
         match block_height.cmp(&(self.node_state.current_height + 1)) {
