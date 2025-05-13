@@ -4,6 +4,7 @@ use crate::{bus::BusClientSender, model::*};
 
 use anyhow::{bail, Context, Result};
 use client_sdk::tcp_client::TcpServerMessage;
+use futures::StreamExt;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tracing::{debug, trace};
@@ -82,7 +83,7 @@ impl super::Mempool {
         Ok(true)
     }
 
-    pub(super) fn resume_new_data_proposal(
+    pub(super) async fn resume_new_data_proposal(
         &mut self,
         data_proposal: DataProposal,
         data_proposal_hash: DataProposalHash,
@@ -94,11 +95,12 @@ impl super::Mempool {
         // TODO: when we have a smarter system, we should probably not trigger this here
         // to make the event loop more efficient.
         self.disseminate_data_proposals(Some(data_proposal_hash))
+            .await
     }
 
     /// If only_dp_with_hash is Some, only disseminate the DP with the specified hash. If None, disseminate any pending DPs.
     /// Returns true if we did disseminate something
-    pub(super) fn disseminate_data_proposals(
+    pub(super) async fn disseminate_data_proposals(
         &mut self,
         only_dp_with_hash: Option<DataProposalHash>,
     ) -> Result<bool> {
@@ -110,11 +112,13 @@ impl super::Mempool {
             .map(|ccp| ccp.consensus_proposal.cut.clone());
 
         // Check for each pending DataProposal if it has enough signatures
-        let entries = self
-            .lanes
-            .get_pending_entries_in_lane(&self.own_lane_id(), last_cut)?;
+        let cloned_lanes = self.lanes.clone();
+        let own_lane_id = self.own_lane_id();
+        let mut entries_stream =
+            Box::pin(cloned_lanes.get_pending_entries_in_lane(&own_lane_id, last_cut));
 
-        for (entry_metadata, dp_hash) in entries {
+        while let Some(stream_entry) = entries_stream.next().await {
+            let (entry_metadata, dp_hash) = stream_entry?;
             // If only_dp_with_hash is Some, we only disseminate that one, skip all others.
             if let Some(ref only_dp_with_hash) = only_dp_with_hash {
                 if &dp_hash != only_dp_with_hash {
@@ -529,7 +533,7 @@ pub mod test {
         ctx.process_new_data_proposal(dp)?;
         ctx.timer_tick().await?;
 
-        let data_proposal = match ctx.assert_broadcast("DataProposal").msg {
+        let data_proposal = match ctx.assert_broadcast("DataProposal").await.msg {
             MempoolNetMessage::DataProposal(_, dp) => dp,
             _ => panic!("Expected DataProposal message"),
         };
@@ -539,12 +543,14 @@ pub mod test {
         let signed_msg2 = create_data_vote(&crypto2, data_proposal.hashed(), size)?;
         let signed_msg3 = create_data_vote(&crypto3, data_proposal.hashed(), size)?;
         ctx.mempool
-            .handle_net_message(crypto2.sign_msg_with_header(signed_msg2)?)?;
+            .handle_net_message(crypto2.sign_msg_with_header(signed_msg2)?)
+            .await?;
         ctx.mempool
-            .handle_net_message(crypto3.sign_msg_with_header(signed_msg3)?)?;
+            .handle_net_message(crypto3.sign_msg_with_header(signed_msg3)?)
+            .await?;
 
         // Assert that PoDAUpdate message is broadcasted
-        match ctx.assert_broadcast("PoDAUpdate").msg {
+        match ctx.assert_broadcast("PoDAUpdate").await.msg {
             MempoolNetMessage::PoDAUpdate(hash, signatures) => {
                 assert_eq!(hash, data_proposal.hashed());
                 assert_eq!(signatures.len(), 2);
@@ -570,6 +576,7 @@ pub mod test {
         assert!(ctx
             .mempool
             .handle_net_message(temp_crypto.sign_msg_with_header(signed_msg)?)
+            .await
             .is_err());
 
         Ok(())
@@ -596,6 +603,7 @@ pub mod test {
 
         ctx.mempool
             .handle_net_message(crypto2.sign_msg_with_header(signed_msg)?)
+            .await
             .expect("should handle net message");
 
         // Assert that we added the vote to the signatures
@@ -623,6 +631,7 @@ pub mod test {
         assert!(ctx
             .mempool
             .handle_net_message(crypto2.sign_msg_with_header(signed_msg)?)
+            .await
             .is_err());
         Ok(())
     }

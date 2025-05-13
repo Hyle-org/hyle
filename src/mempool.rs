@@ -19,6 +19,7 @@ use api::RestApiMessage;
 use block_construction::BlockUnderConstruction;
 use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::tcp_client::TcpServerMessage;
+use futures::StreamExt;
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
 use hyle_crypto::SharedBlstCrypto;
 use hyle_modules::{
@@ -345,7 +346,7 @@ impl Mempool {
                 self.processing_dps.is_empty() && self.processing_txs.is_empty() && self.own_data_proposal_in_preparation.is_empty()
             },
             listen<MsgWithHeader<MempoolNetMessage>> cmd => {
-                let _ = log_error!(self.handle_net_message(cmd), "Handling MempoolNetMessage in Mempool");
+                let _ = log_error!(self.handle_net_message(cmd).await, "Handling MempoolNetMessage in Mempool");
             }
             listen<RestApiMessage> cmd => {
                 let _ = log_error!(self.handle_api_message(cmd), "Handling API Message in Mempool");
@@ -354,7 +355,7 @@ impl Mempool {
                 let _ = log_error!(self.handle_tcp_server_message(cmd), "Handling TCP Server message in Mempool");
             }
             listen<ConsensusEvent> cmd => {
-                let _ = log_error!(self.handle_consensus_event(cmd), "Handling ConsensusEvent in Mempool");
+                let _ = log_error!(self.handle_consensus_event(cmd).await, "Handling ConsensusEvent in Mempool");
             }
             listen<NodeStateEvent> cmd => {
                 let NodeStateEvent::NewBlock(block) = cmd;
@@ -393,7 +394,7 @@ impl Mempool {
             Some(own_dp) = self.inner.own_data_proposal_in_preparation.join_next() => {
                 // Fatal here, if we loose the dp in the join next error, it's lost
                 if let Ok((own_dp_hash, own_dp)) = log_error!(own_dp, "Getting result for data proposal preparation from joinset"){
-                    _ = log_error!(self.resume_new_data_proposal(own_dp, own_dp_hash), "Resuming own data proposal creation");
+                    _ = log_error!(self.resume_new_data_proposal(own_dp, own_dp_hash).await, "Resuming own data proposal creation");
                     disseminate_timer.reset();
                 }
             }
@@ -401,7 +402,7 @@ impl Mempool {
                 _  = log_error!(self.prepare_new_data_proposal(), "Try preparing a new data proposal on tick");
             }
             _ = disseminate_timer.tick() => {
-                if let Ok(true) = log_error!(self.disseminate_data_proposals(None), "Disseminate data proposals on tick") {
+                if let Ok(true) = log_error!(self.disseminate_data_proposals(None).await, "Disseminate data proposals on tick") {
                     disseminate_timer.reset();
                 }
             }
@@ -487,7 +488,7 @@ impl Mempool {
         }
     }
 
-    fn handle_consensus_event(&mut self, event: ConsensusEvent) -> Result<()> {
+    async fn handle_consensus_event(&mut self, event: ConsensusEvent) -> Result<()> {
         match event {
             ConsensusEvent::CommitConsensusProposal(cpp) => {
                 debug!(
@@ -505,7 +506,7 @@ impl Mempool {
 
                 self.try_create_block_under_construction(cpp);
 
-                self.try_to_send_full_signed_blocks()?;
+                self.try_to_send_full_signed_blocks().await?;
 
                 // Removes all DPs that are not in the new cut, updates lane tip and sends SyncRequest for missing DPs
                 self.clean_and_update_lanes(&cut, &previous_cut)?;
@@ -515,7 +516,7 @@ impl Mempool {
         }
     }
 
-    fn handle_net_message(&mut self, msg: MsgWithHeader<MempoolNetMessage>) -> Result<()> {
+    async fn handle_net_message(&mut self, msg: MsgWithHeader<MempoolNetMessage>) -> Result<()> {
         let validator = &msg.header.signature.validator;
         // TODO: adapt can_rejoin test to emit a stake tx before turning on the joining node
         // if !self.validators.contains(validator) {
@@ -543,16 +544,17 @@ impl Mempool {
                     validator,
                     from_data_proposal_hash.as_ref(),
                     to_data_proposal_hash.as_ref(),
-                )?;
+                )
+                .await?;
             }
             MempoolNetMessage::SyncReply(missing_entries) => {
-                self.on_sync_reply(validator, missing_entries)?;
+                self.on_sync_reply(validator, missing_entries).await?;
             }
         }
         Ok(())
     }
 
-    fn on_sync_reply(
+    async fn on_sync_reply(
         &mut self,
         sender_validator: &ValidatorPublicKey,
         missing_entries: Vec<(LaneEntryMetadata, DataProposal)>,
@@ -621,42 +623,49 @@ impl Mempool {
         }
 
         self.try_to_send_full_signed_blocks()
+            .await
             .context("Try process queued CCP")?;
 
         Ok(())
     }
 
-    fn on_sync_request(
+    async fn on_sync_request(
         &mut self,
         validator: &ValidatorPublicKey,
         from_data_proposal_hash: Option<&DataProposalHash>,
         to_data_proposal_hash: Option<&DataProposalHash>,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
         info!(
             "{} SyncRequest received from validator {validator} for last_data_proposal_hash {:?}",
             &self.own_lane_id(),
             to_data_proposal_hash
         );
 
-        let missing_lane_entries = self.lanes.get_entries_between_hashes(
-            &self.own_lane_id(),
-            from_data_proposal_hash,
-            to_data_proposal_hash,
-        );
+        let own_id = self.own_lane_id();
+        let lanes_clone = self.lanes.clone();
 
-        match missing_lane_entries {
-            Err(e) => info!(
-                "Can't send sync reply as there are no missing data proposals found between {:?} and {:?} for {}: {}",
-                to_data_proposal_hash, from_data_proposal_hash, self.own_lane_id(), e
-            ),
-            Ok(lane_entries) => {
-                debug!(
-                    "Missing data proposals on {} are {:?}",
-                    validator, lane_entries
-                );
-                self.send_sync_reply(validator, lane_entries)?;
+        let mut missing_lane_entries = Box::pin(lanes_clone.get_entries_between_hashes(
+            &own_id,
+            from_data_proposal_hash.cloned(),
+            to_data_proposal_hash.cloned(),
+        ));
+
+        while let Some(res) = missing_lane_entries.next().await {
+            match res {
+                Err(e) => info!(
+                    "Can't send sync reply as there are no missing data proposals found between {:?} and {:?} for {}: {}",
+                    to_data_proposal_hash, from_data_proposal_hash, self.own_lane_id(), e
+                ),
+                Ok(lane_entry) => {
+                    debug!(
+                        "One missing data proposal on {} is {:?}",
+                        validator, lane_entry
+                    );
+                    self.send_sync_reply(validator, vec![lane_entry])?;
+                }
             }
         }
+
         Ok(())
     }
 
@@ -809,6 +818,8 @@ pub mod test {
     mod native_verifier_test;
 
     use core::panic;
+    use std::future::Future;
+    use std::pin::Pin;
 
     use super::*;
     use crate::bus::metrics::BusMetrics;
@@ -923,7 +934,7 @@ pub mod test {
 
         pub async fn timer_tick(&mut self) -> Result<bool> {
             let Ok(true) = self.mempool.prepare_new_data_proposal() else {
-                return self.mempool.disseminate_data_proposals(None);
+                return self.mempool.disseminate_data_proposals(None).await;
             };
 
             let (dp_hash, dp) = self
@@ -933,13 +944,14 @@ pub mod test {
                 .await
                 .context("join next data proposal in preparation")??;
 
-            Ok(self.mempool.resume_new_data_proposal(dp, dp_hash)?
-                || self.mempool.disseminate_data_proposals(None)?)
+            Ok(self.mempool.resume_new_data_proposal(dp, dp_hash).await?
+                || self.mempool.disseminate_data_proposals(None).await?)
         }
 
-        pub fn handle_poda_update(&mut self, net_message: MsgWithHeader<MempoolNetMessage>) {
+        pub async fn handle_poda_update(&mut self, net_message: MsgWithHeader<MempoolNetMessage>) {
             self.mempool
                 .handle_net_message(net_message)
+                .await
                 .expect("fail to handle net message");
         }
 
@@ -958,8 +970,10 @@ pub mod test {
                 .expect("fail to handle event");
         }
 
-        #[track_caller]
-        pub fn assert_broadcast(&mut self, description: &str) -> MsgWithHeader<MempoolNetMessage> {
+        pub fn assert_broadcast(
+            &mut self,
+            description: &str,
+        ) -> Pin<Box<dyn Future<Output = MsgWithHeader<MempoolNetMessage>>>> {
             #[allow(clippy::expect_fun_call)]
             let rec = self
                 .out_receiver
@@ -969,7 +983,7 @@ pub mod test {
             match rec {
                 OutboundMessage::BroadcastMessage(net_msg) => {
                     if let NetMessage::MempoolMessage(msg) = net_msg {
-                        msg
+                        Box::pin(async move { msg })
                     } else {
                         println!(
                             "{description}: Mempool OutboundMessage message is missing, found {}",
@@ -1021,12 +1035,11 @@ pub mod test {
             }
         }
 
-        #[track_caller]
         pub fn assert_send(
             &mut self,
             to: &ValidatorPublicKey,
             description: &str,
-        ) -> MsgWithHeader<MempoolNetMessage> {
+        ) -> Pin<Box<dyn Future<Output = MsgWithHeader<MempoolNetMessage>>>> {
             #[allow(clippy::expect_fun_call)]
             let rec = self
                 .out_receiver
@@ -1043,7 +1056,7 @@ pub mod test {
                             );
                         }
 
-                        msg
+                        Box::pin(async move { msg })
                     } else {
                         tracing::warn!("{description}: skipping {:?}", msg);
                         self.assert_send(to, description)
@@ -1072,11 +1085,11 @@ pub mod test {
             }
         }
 
-        #[track_caller]
-        pub fn handle_msg(&mut self, msg: &MsgWithHeader<MempoolNetMessage>, _err: &str) {
+        pub async fn handle_msg(&mut self, msg: &MsgWithHeader<MempoolNetMessage>, _err: &str) {
             debug!("📥 {} Handling message: {:?}", self.name, msg);
             self.mempool
                 .handle_net_message(msg.clone())
+                .await
                 .expect("should handle net msg");
         }
 
@@ -1089,7 +1102,6 @@ pub mod test {
                 .map(|(h, _)| h)
         }
 
-        #[track_caller]
         pub fn current_size_of(&self, lane_id: &LaneId) -> Option<LaneBytesSize> {
             self.mempool
                 .lanes
@@ -1146,7 +1158,7 @@ pub mod test {
                 .unwrap();
         }
 
-        pub fn handle_consensus_event(&mut self, consensus_proposal: ConsensusProposal) {
+        pub async fn handle_consensus_event(&mut self, consensus_proposal: ConsensusProposal) {
             self.mempool
                 .handle_consensus_event(ConsensusEvent::CommitConsensusProposal(
                     CommittedConsensusProposal {
@@ -1155,6 +1167,7 @@ pub mod test {
                         certificate: AggregateSignature::default(),
                     },
                 ))
+                .await
                 .expect("Error while handling consensus event");
         }
 
@@ -1189,7 +1202,7 @@ pub mod test {
             Ok(())
         }
 
-        pub fn process_cut_with_dp(
+        pub async fn process_cut_with_dp(
             &mut self,
             leader: &ValidatorPublicKey,
             dp_hash: &DataProposalHash,
@@ -1216,7 +1229,8 @@ pub mod test {
                         },
                         certificate: AggregateSignature::default(),
                     },
-                ))?;
+                ))
+                .await?;
 
             Ok(cut)
         }
@@ -1259,10 +1273,15 @@ pub mod test {
                 PoDA::default(),
             )],
             ..ConsensusProposal::default()
-        });
+        })
+        .await;
 
         // Assert that we send a SyncReply
-        match ctx.assert_send(crypto2.validator_pubkey(), "SyncReply").msg {
+        match ctx
+            .assert_send(crypto2.validator_pubkey(), "SyncReply")
+            .await
+            .msg
+        {
             MempoolNetMessage::SyncRequest(from, to) => {
                 assert_eq!(from, None);
                 assert_eq!(to, Some(DataProposalHash("dp_hash_in_cut".to_owned())));
@@ -1295,10 +1314,15 @@ pub mod test {
 
         ctx.mempool
             .handle_net_message(signed_msg)
+            .await
             .expect("should handle net message");
 
         // Assert that we send a SyncReply
-        match ctx.assert_send(crypto2.validator_pubkey(), "SyncReply").msg {
+        match ctx
+            .assert_send(crypto2.validator_pubkey(), "SyncReply")
+            .await
+            .msg
+        {
             MempoolNetMessage::SyncReply(lane_entries) => {
                 assert_eq!(lane_entries.len(), 1);
                 assert_eq!(lane_entries.first().unwrap().1, data_proposal);
@@ -1335,7 +1359,7 @@ pub mod test {
             data_proposal.clone(),
         )]))?;
 
-        let handle = ctx.mempool.handle_net_message(signed_msg.clone());
+        let handle = ctx.mempool.handle_net_message(signed_msg.clone()).await;
         assert_eq!(
             handle.expect_err("should fail").to_string(),
             format!(
@@ -1357,7 +1381,7 @@ pub mod test {
         )]))?;
 
         // This actually fails - we don't know how to handle it
-        let handle = ctx.mempool.handle_net_message(signed_msg.clone());
+        let handle = ctx.mempool.handle_net_message(signed_msg.clone()).await;
         assert_eq!(
             handle.expect_err("should fail").to_string(),
             format!(
@@ -1379,7 +1403,7 @@ pub mod test {
         )]))?;
 
         // This actually fails - we don't know how to handle it
-        let handle = ctx.mempool.handle_net_message(signed_msg.clone());
+        let handle = ctx.mempool.handle_net_message(signed_msg.clone()).await;
         assert_eq!(
             handle.expect_err("should fail").to_string(),
             format!(
@@ -1401,7 +1425,7 @@ pub mod test {
         )]))?;
 
         // This actually fails - we don't know how to handle it
-        let handle = ctx.mempool.handle_net_message(signed_msg.clone());
+        let handle = ctx.mempool.handle_net_message(signed_msg.clone()).await;
         assert_eq!(
             handle.expect_err("should fail").to_string(),
             format!(
@@ -1439,7 +1463,7 @@ pub mod test {
         ]))?;
 
         // This actually fails - we don't know how to handle it
-        let handle = ctx.mempool.handle_net_message(signed_msg.clone());
+        let handle = ctx.mempool.handle_net_message(signed_msg.clone()).await;
         assert_eq!(
             handle.expect_err("should fail").to_string(),
             "Lane entries are not in the right order"
@@ -1457,7 +1481,7 @@ pub mod test {
             data_proposal.clone(),
         )]))?;
 
-        let handle = ctx.mempool.handle_net_message(signed_msg.clone());
+        let handle = ctx.mempool.handle_net_message(signed_msg.clone()).await;
         assert_ok!(handle, "Should handle net message");
 
         // Assert that the lane entry was added
