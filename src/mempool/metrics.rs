@@ -8,6 +8,7 @@ use crate::model::ValidatorPublicKey;
 
 use super::QueryNewCut;
 
+#[derive(Clone)]
 pub struct MempoolMetrics {
     api_tx: Counter<u64>,
     dp_vote: Counter<u64>,
