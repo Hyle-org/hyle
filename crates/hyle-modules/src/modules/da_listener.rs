@@ -166,7 +166,15 @@ impl DAListener {
                     block.height(),
                     block.consensus_proposal.hashed()
                 );
-                self.block_buffer.insert(height, block).unwrap();
+                if let Some(previous_block) = self.block_buffer.insert(height, block) {
+                    debug!(
+                        "Replaced an existing block at height {}: {:?}",
+                        height,
+                        previous_block.consensus_proposal.hashed()
+                    );
+                } else {
+                    debug!("Inserted a new block at height {}", height);
+                }
                 break;
             }
         }
