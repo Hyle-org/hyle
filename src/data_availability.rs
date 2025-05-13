@@ -442,7 +442,7 @@ pub mod tests {
 
     impl DataAvailabilityTestCtx {
         pub async fn new(shared_bus: crate::bus::SharedMessageBus) -> Self {
-            let path = tempfile::tempdir().unwrap().into_path();
+            let path = tempfile::tempdir().unwrap().keep();
             let tmpdir = path;
             let blocks = Blocks::new(&tmpdir).unwrap();
 
@@ -496,7 +496,7 @@ pub mod tests {
 
     #[test_log::test]
     fn test_blocks() -> Result<()> {
-        let tmpdir = tempfile::tempdir().unwrap().into_path();
+        let tmpdir = tempfile::tempdir().unwrap().keep();
         let mut blocks = Blocks::new(&tmpdir).unwrap();
         let block = SignedBlock::default();
         blocks.put(block.clone())?;
@@ -509,7 +509,7 @@ pub mod tests {
 
     #[tokio::test]
     async fn test_pop_buffer_large() {
-        let tmpdir = tempfile::tempdir().unwrap().into_path();
+        let tmpdir = tempfile::tempdir().unwrap().keep();
         let blocks = Blocks::new(&tmpdir).unwrap();
 
         let mut server = DataAvailabilityServer::start(7898, "DaServer")
@@ -551,7 +551,7 @@ pub mod tests {
 
     #[test_log::test(tokio::test)]
     async fn test_da_streaming() {
-        let tmpdir = tempfile::tempdir().unwrap().into_path();
+        let tmpdir = tempfile::tempdir().unwrap().keep();
         let blocks = Blocks::new(&tmpdir).unwrap();
 
         let global_bus = crate::bus::SharedMessageBus::new(

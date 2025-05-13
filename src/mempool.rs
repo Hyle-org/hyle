@@ -847,7 +847,7 @@ pub mod test {
 
     impl MempoolTestCtx {
         pub async fn build_mempool(shared_bus: &SharedMessageBus, crypto: BlstCrypto) -> Mempool {
-            let tmp_dir = tempfile::tempdir().unwrap().into_path();
+            let tmp_dir = tempfile::tempdir().unwrap().keep();
             let lanes = LanesStorage::new(&tmp_dir, BTreeMap::default()).unwrap();
             let bus = MempoolBusClient::new_from_bus(shared_bus.new_handle()).await;
 
