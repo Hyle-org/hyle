@@ -102,7 +102,9 @@ impl DAListener {
                 block.consensus_proposal.slot,
                 block.consensus_proposal.hashed()
             );
-            self.node_state.handle_signed_block(&block)?;
+            let processed_block = self.node_state.handle_signed_block(&block)?;
+            self.bus
+                .send(NodeStateEvent::NewBlock(Box::new(processed_block)))?;
             return Ok(());
         }
 
