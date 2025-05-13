@@ -2,7 +2,7 @@ name: Custom Docker images
 
 on: 
   push:
-    paths: [".github/docker/Dockerfile.alpine"]
+    paths: [".github/docker/Dockerfile.base"]
     branches: 
       - main
 
@@ -19,11 +19,11 @@ jobs:
       fail-fast: false
       matrix:
         mode:
-          - file: .github/docker/Dockerfile.alpine 
-            name: alpine
+          - file: .github/docker/Dockerfile.base 
+            name: base
             context: .github/docker
             images: |
-              ghcr.io/hyle-org/alpine
+              ghcr.io/hyle-org/base
 
     name: ${{ matrix.mode.name }}
     steps:
