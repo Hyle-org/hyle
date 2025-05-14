@@ -357,7 +357,7 @@ impl Module for Mempool {
             )
             .unwrap_or_default();
 
-        // Register the Hyle contract to be able to handle registrations.
+        // Register the Hyli contract to be able to handle registrations.
         #[allow(clippy::expect_used, reason = "not held across await")]
         attributes
             .known_contracts
@@ -515,7 +515,7 @@ impl Mempool {
         );
     }
 
-    // Optimistically parse Hyle tx blobs
+    // Optimistically parse Hyli tx blobs
     fn handle_hyle_contract_registration(&mut self, blob_tx: &BlobTransaction) {
         #[allow(clippy::expect_used, reason = "not held across await")]
         let mut known_contracts = self.known_contracts.write().expect("logic issue");

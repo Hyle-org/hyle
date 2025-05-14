@@ -34,8 +34,8 @@ resolver = "2"
 [workspace.package]
 version = "0.13.0-rc.4"
 edition = "2021"
-homepage = "https://hyle.eu/"
-repository = "https://github.com/Hyle-org/hyle/"
+homepage = "https://hyli.org/"
+repository = "https://github.com/hyli-org/hyli/"
 rust-version = "1.84"
 license-file = "LICENSE"
 
@@ -60,7 +60,7 @@ hyle-modules = { version = "0.13.0-rc.4", default-features = false, path = "crat
 
 [package]
 name = "hyle"
-description = "Hyle node"
+description = "Hyli node"
 license-file = { workspace = true }
 version = { workspace = true }
 edition = { workspace = true }

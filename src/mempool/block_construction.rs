@@ -66,7 +66,7 @@ impl super::Mempool {
                     buc.from, buc.ccp.consensus_proposal.cut
                 ))?;
 
-                dps.push(dp);
+                dps.insert(0, dp);
             }
 
             result.push((lane_id.clone(), dps));

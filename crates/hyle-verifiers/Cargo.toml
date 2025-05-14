@@ -1,6 +1,6 @@
 [package]
 name = "hyle-verifiers"
-description = "Hyle verifiers"
+description = "Hyli verifiers"
 license-file = { workspace = true }
 version = { workspace = true }
 edition = { workspace = true }
