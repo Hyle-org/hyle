@@ -1,6 +1,6 @@
 [package]
 name = "hyle-loadtest"
-description = "Hyle loadtest tooling"
+description = "Hyli loadtest tooling"
 license-file.workspace = true
 version.workspace = true
 edition.workspace = true

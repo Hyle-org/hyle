@@ -66,9 +66,9 @@ fn handle_delete_blob(
     contract_changes: &mut BTreeMap<ContractName, SideEffect>,
     delete: &DeleteContractAction,
 ) -> Result<()> {
-    // For now, Hylé is allowed to delete all contracts but itself
+    // For now, Hyli is allowed to delete all contracts but itself
     if delete.contract_name.0 == "hyle" {
-        bail!("Cannot delete Hylé contract");
+        bail!("Cannot delete Hyli contract");
     }
 
     // Check it's registered
