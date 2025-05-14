@@ -1,4 +1,4 @@
-> [!IMPORTANT] > `main` is the development branch.
+> `main` is the development branch.
 > When building applications or running examples, use the [latest release](https://github.com/hyli-org/hyli/releases) instead.
 
 # Hyli
@@ -8,7 +8,7 @@
 [![Code Coverage][codecov-badge]][codecov-url]
 [![Twitter][twitter-badge]][twitter-url]
 
-_AHyli is the new proof-powered L1 to build the next generation of apps onchain._
+_Hyli is the new proof-powered L1 to build the next generation of apps onchain._
 
 This repository hosts the **work-in-progress Rust client** for the [Hyli](https://hyli.org) chain.
 
