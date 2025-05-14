@@ -8,7 +8,7 @@
 [![Code Coverage][codecov-badge]][codecov-url]
 [![Twitter][twitter-badge]][twitter-url]
 
-_A sequencing and settlement layer to help you build provable apps that are minimally, yet sufficiently, on-chain._
+_AHyli is the new proof-powered L1 to build the next generation of apps onchain._
 
 This repository hosts the **work-in-progress Rust client** for the [Hyli](https://hyli.org) chain.
 
