@@ -1,8 +1,9 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use anyhow::Result;
-use sdk::{BlockHeight, Hashed};
-use tracing::{debug, info};
+use sdk::{BlockHeight, Hashed, SignedBlock};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     bus::{BusClientSender, SharedMessageBus},
@@ -25,6 +26,7 @@ pub struct DAListener {
     bus: DAListenerBusClient,
     node_state: NodeState,
     start_block: BlockHeight,
+    block_buffer: BTreeMap<BlockHeight, SignedBlock>,
 }
 
 pub struct DAListenerConf {
@@ -68,6 +70,7 @@ impl Module for DAListener {
             start_block,
             bus,
             node_state,
+            block_buffer: BTreeMap::new(),
         })
     }
 
@@ -89,6 +92,108 @@ impl DAListener {
 
         Ok(client)
     }
+
+    async fn process_block(&mut self, block: SignedBlock) -> Result<()> {
+        let block_height = block.height();
+
+        if block_height == BlockHeight(0) && self.node_state.current_height == BlockHeight(0) {
+            info!(
+                "📦 Processing genesis block: {} {}",
+                block.consensus_proposal.slot,
+                block.consensus_proposal.hashed()
+            );
+            let processed_block = self.node_state.handle_signed_block(&block)?;
+            self.bus
+                .send(NodeStateEvent::NewBlock(Box::new(processed_block)))?;
+            return Ok(());
+        }
+
+        // If this is the next block we expect, process it immediately, otherwise buffer it
+        match block_height.cmp(&(self.node_state.current_height + 1)) {
+            std::cmp::Ordering::Less => {
+                // Block is from the past, log and ignore
+                warn!(
+                    "📦 Ignoring past block: {} {}",
+                    block.consensus_proposal.slot,
+                    block.consensus_proposal.hashed()
+                );
+            }
+            std::cmp::Ordering::Equal => {
+                if block_height.0 % 1000 == 0 {
+                    info!(
+                        "📦 Processing block: {} {}",
+                        block.consensus_proposal.slot,
+                        block.consensus_proposal.hashed()
+                    );
+                } else {
+                    debug!(
+                        "📦 Processing block: {} {}",
+                        block.consensus_proposal.slot,
+                        block.consensus_proposal.hashed()
+                    );
+                }
+                let processed_block = self.node_state.handle_signed_block(&block)?;
+                debug!("📦 Handled block outputs: {:?}", processed_block);
+                self.bus
+                    .send(NodeStateEvent::NewBlock(Box::new(processed_block)))?;
+
+                // Process any buffered blocks that are now in sequence
+                self.process_buffered_blocks().await?;
+            }
+            std::cmp::Ordering::Greater => {
+                // Block is from the future, buffer it
+                debug!(
+                    "📦 Buffering future block: {} {}",
+                    block.consensus_proposal.slot,
+                    block.consensus_proposal.hashed()
+                );
+                self.block_buffer.insert(block_height, block);
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn process_buffered_blocks(&mut self) -> Result<()> {
+        if let Some((height, _)) = self.block_buffer.first_key_value() {
+            if *height > self.node_state.current_height + 1 {
+                return Ok(());
+            }
+        }
+
+        while let Some((height, block)) = self.block_buffer.pop_first() {
+            if height == self.node_state.current_height + 1 {
+                debug!(
+                    "📦 Processing buffered block: {} {}",
+                    block.consensus_proposal.slot,
+                    block.consensus_proposal.hashed()
+                );
+                let processed_block = self.node_state.handle_signed_block(&block)?;
+                debug!("📦 Handled buffered block outputs: {:?}", processed_block);
+                self.bus
+                    .send(NodeStateEvent::NewBlock(Box::new(processed_block)))?;
+            } else {
+                error!(
+                    "📦 Buffered block is not in sequence: {} {}",
+                    block.height(),
+                    block.consensus_proposal.hashed()
+                );
+                if let Some(previous_block) = self.block_buffer.insert(height, block) {
+                    debug!(
+                        "Replaced an existing block at height {}: {:?}",
+                        height,
+                        previous_block.consensus_proposal.hashed()
+                    );
+                } else {
+                    debug!("Inserted a new block at height {}", height);
+                }
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn start(&mut self) -> Result<()> {
         let mut client = self.start_client(self.start_block).await?;
 
@@ -119,15 +224,7 @@ impl DAListener {
 
     async fn processing_next_frame(&mut self, event: DataAvailabilityEvent) -> Result<()> {
         if let DataAvailabilityEvent::SignedBlock(block) = event {
-            debug!(
-                "📦 Received block: {} {}",
-                block.consensus_proposal.slot,
-                block.consensus_proposal.hashed()
-            );
-            let block = self.node_state.handle_signed_block(&block)?;
-            debug!("📦 Handled block outputs: {:?}", block);
-
-            self.bus.send(NodeStateEvent::NewBlock(Box::new(block)))?;
+            self.process_block(block).await?;
         }
 
         Ok(())
