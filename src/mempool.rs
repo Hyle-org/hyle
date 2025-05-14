@@ -187,7 +187,7 @@ impl MempoolSyncRequestThrottler {
             return false;
         };
 
-        if now - data_proposal_record.clone() > Duration::from_secs(15) {
+        if now - data_proposal_record.clone() > Duration::from_secs(10) {
             return false;
         }
 
@@ -829,6 +829,17 @@ impl Mempool {
                 .or_default();
 
             lane.push(podas);
+
+            self.send_sync_request(
+                lane_id,
+                self.lanes
+                    .lanes_tip
+                    .get(lane_id)
+                    .map(|tip| tip.0.clone())
+                    .as_ref(),
+                Some(data_proposal_hash),
+            )
+            .context("When buffering poda")?;
         }
 
         Ok(())
