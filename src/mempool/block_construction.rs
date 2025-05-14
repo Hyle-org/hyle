@@ -446,18 +446,16 @@ pub mod test {
         ctx.mempool
             .on_sync_reply(
                 &ctx.validator_pubkey().clone(),
-                vec![(
-                    LaneEntryMetadata {
-                        parent_data_proposal_hash: dp1.parent_data_proposal_hash.clone(),
-                        cumul_size: dp1_size,
-                        signatures: vec![ctx
-                            .mempool
-                            .crypto
-                            .sign((dp1_hash, dp1_size))
-                            .expect("should sign")],
-                    },
-                    dp1.clone(),
-                )],
+                LaneEntryMetadata {
+                    parent_data_proposal_hash: dp1.parent_data_proposal_hash.clone(),
+                    cumul_size: dp1_size,
+                    signatures: vec![ctx
+                        .mempool
+                        .crypto
+                        .sign((dp1_hash, dp1_size))
+                        .expect("should sign")],
+                },
+                dp1.clone(),
             )
             .await?;
 
@@ -469,16 +467,12 @@ pub mod test {
         ctx.mempool
             .on_sync_reply(
                 &crypto2.validator_pubkey().clone(),
-                vec![(
-                    LaneEntryMetadata {
-                        parent_data_proposal_hash: dp1b.parent_data_proposal_hash.clone(),
-                        cumul_size: dp1b_size,
-                        signatures: vec![crypto2
-                            .sign((dp1b_hash, dp1b_size))
-                            .expect("should sign")],
-                    },
-                    dp1b.clone(),
-                )],
+                LaneEntryMetadata {
+                    parent_data_proposal_hash: dp1b.parent_data_proposal_hash.clone(),
+                    cumul_size: dp1b_size,
+                    signatures: vec![crypto2.sign((dp1b_hash, dp1b_size)).expect("should sign")],
+                },
+                dp1b.clone(),
             )
             .await?;
 
