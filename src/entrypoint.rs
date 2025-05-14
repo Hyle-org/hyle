@@ -316,13 +316,13 @@ async fn common_main(
 
         handler.build_module::<P2P>(ctx.clone()).await?;
     } else {
-        handler
-            .build_module::<DAListener>(DAListenerConf {
-                data_directory: config.data_directory.clone(),
-                da_read_from: config.da_read_from.clone(),
-                start_block: None,
-            })
-            .await?;
+        // handler
+        //     .build_module::<DAListener>(DAListenerConf {
+        //         data_directory: config.data_directory.clone(),
+        //         da_read_from: config.da_read_from.clone(),
+        //         start_block: None,
+        //     })
+        //     .await?;
     }
 
     if config.websocket.enabled {

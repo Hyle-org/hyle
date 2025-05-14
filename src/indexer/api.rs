@@ -717,7 +717,20 @@ pub async fn list_contracts(
     State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<APIContract>>, StatusCode> {
     let contract = log_error!(
-        sqlx::query_as::<_, ContractDb>("SELECT * FROM contracts")
+        sqlx::query_as::<_, ContractDb>(r#"
+        SELECT
+          c.*,
+          COUNT(DISTINCT t.tx_hash)                             AS total_tx,
+          COUNT(DISTINCT t.tx_hash) 
+            FILTER (WHERE t.transaction_status = 'sequenced')   AS unsettled_tx
+        FROM contracts AS c
+        LEFT JOIN blobs AS b
+          ON b.contract_name = c.contract_name
+        LEFT JOIN transactions AS t
+          ON t.parent_dp_hash = b.parent_dp_hash
+         AND t.tx_hash       = b.tx_hash
+        GROUP BY c.contract_name
+"#)
             .fetch_all(&state.db)
             .await
             .map(|db| db.into_iter().map(Into::<APIContract>::into).collect()),
@@ -744,11 +757,27 @@ pub async fn get_contract(
     State(state): State<IndexerApiState>,
 ) -> Result<Json<APIContract>, StatusCode> {
     let contract = log_error!(
-        sqlx::query_as::<_, ContractDb>("SELECT * FROM contracts WHERE contract_name = $1")
-            .bind(contract_name)
-            .fetch_optional(&state.db)
-            .await
-            .map(|db| db.map(Into::<APIContract>::into)),
+        sqlx::query_as::<_, ContractDb>(
+            r#"
+        SELECT
+          c.*,
+          COUNT(DISTINCT t.tx_hash)                             AS total_tx,
+          COUNT(DISTINCT t.tx_hash) 
+            FILTER (WHERE t.transaction_status = 'sequenced')   AS unsettled_tx
+        FROM contracts AS c
+        LEFT JOIN blobs AS b
+          ON b.contract_name = c.contract_name
+        LEFT JOIN transactions AS t
+          ON t.parent_dp_hash = b.parent_dp_hash
+         AND t.tx_hash       = b.tx_hash
+        WHERE c.contract_name = $1 
+        GROUP BY c.contract_name
+        "#
+        )
+        .bind(contract_name)
+        .fetch_optional(&state.db)
+        .await
+        .map(|db| db.map(Into::<APIContract>::into)),
         "Failed to fetch contract"
     )
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;

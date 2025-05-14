@@ -148,6 +148,10 @@ pub struct ContractDb {
     pub program_id: Vec<u8>, // Program ID
     pub state_commitment: Vec<u8>, // state commitment of the contract
     pub contract_name: String, // Contract name
+    #[sqlx(try_from = "i64")]
+    pub total_tx: u64, // Total number of transactions associated with the contract
+    #[sqlx(try_from = "i64")]
+    pub unsettled_tx: u64, // Total number of unsettled transactions
 }
 
 impl From<ContractDb> for APIContract {
@@ -158,6 +162,8 @@ impl From<ContractDb> for APIContract {
             program_id: val.program_id,
             state_commitment: val.state_commitment,
             contract_name: val.contract_name,
+            total_tx: val.total_tx,
+            unsettled_tx: val.unsettled_tx,
         }
     }
 }

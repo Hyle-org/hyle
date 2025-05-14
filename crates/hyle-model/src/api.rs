@@ -172,6 +172,8 @@ pub struct APIContract {
     #[serde_as(as = "serde_with::hex::Hex")]
     pub state_commitment: Vec<u8>, // State commitment of the contract
     pub contract_name: String, // Contract name
+    pub total_tx: u64,    // Total number of transactions associated with the contract
+    pub unsettled_tx: u64, // Total number of unsettled transactions
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
