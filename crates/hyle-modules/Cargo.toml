@@ -1,6 +1,6 @@
 [package]
 name = "hyle-modules"
-description = "Collection of Hyle Modules"
+description = "Collection of Hyli Modules"
 license-file = { workspace = true }
 version = { workspace = true }
 edition = { workspace = true }

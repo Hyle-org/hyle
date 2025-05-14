@@ -1,9 +1,9 @@
-//! # Hylé Contract SDK
+//! # Hyli Contract SDK
 //!
 //! This crate contains tools to be used in smart contracts that runs on rust zkvm like Risc0 or
 //! SP1.
 //!
-//! ## How to build a contract on Hyle ?
+//! ## How to build a contract on Hyli ?
 //!
 //! To build a contract, you will need to create a contract lib, with a struct that implements
 //! the [ZkContract] trait.
@@ -11,8 +11,8 @@
 //! Then you will need a zkvm binary that will execute this code. Take a look at the
 //! [Guest module for contract zkvm](crate::guest).
 //!
-//! You can start from our templates for [Risc0](https://github.com/Hyle-org/template-risc0)
-//! or [SP1](https://github.com/Hyle-org/template-sp1).
+//! You can start from our templates for [Risc0](https://github.com/hyli-org/template-risc0)
+//! or [SP1](https://github.com/hyli-org/template-sp1).
 //!
 //! If your contract needs to interact with other contracts, take a look at
 //! [StructuredBlobData]. More is coming on that soon.

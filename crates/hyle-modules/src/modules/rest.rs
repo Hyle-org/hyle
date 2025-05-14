@@ -75,8 +75,8 @@ pub struct RestApi {
 #[derive(OpenApi)]
 #[openapi(
     info(
-        description = "Hyle Node API",
-        title = "Hyle Node API",
+        description = "Hyli Node API",
+        title = "Hyli Node API",
     ),
     // When opening the swagger, if on some endpoint you get the error:
     // Could not resolve reference: JSON Pointer evaluation failed while evaluating token "BlobIndex" against an ObjectElement

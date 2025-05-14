@@ -279,7 +279,7 @@ As Blob 4 now has a "caller", the identity used by the contract will be "amm" an
 Note that here we are using a TransferFrom in blob 4, contract "amm" got the approval from Bob
 to initate a transfer on its behalf with blob 1.
 
-You can find an example of this implementation in our [amm contract](https://github.com/Hyle-org/hyle/tree/main/crates/contracts/amm/src/lib.rs)
+You can find an example of this implementation in our [amm contract](https://github.com/hyli-org/hyli/tree/main/crates/contracts/amm/src/lib.rs)
 */
 #[derive(Debug, BorshSerialize)]
 pub struct StructuredBlobData<Action> {
@@ -848,7 +848,7 @@ impl ContractAction for DeleteContractAction {
     }
 }
 
-/// Used by the Hylé node to recognize contract registration.
+/// Used by the Hyli node to recognize contract registration.
 /// Simply output this struct in your HyleOutput registered_contracts.
 /// See uuid-tld for examples.
 pub type RegisterContractEffect = RegisterContractAction;
