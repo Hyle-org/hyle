@@ -301,7 +301,7 @@ pub mod test {
     }
 
     #[test_log::test(tokio::test)]
-    async fn test_signed_block_start_building_later() -> Result<()> {
+    async fn signed_block_start_building_later() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         let dp2_size = LaneBytesSize(20);
