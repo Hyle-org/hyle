@@ -11,7 +11,7 @@ COPY crates ./crates
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef 
-RUN apt-get update && apt-get install -y g++ curl libdbus-1-dev pkg-config
+RUN apt-get update && apt-get install -y g++ curl libdbus-1-dev pkg-config libssl-dev
 COPY --from=planner /usr/src/hyle/recipe.json recipe.json
 
 # Build dependencies 
