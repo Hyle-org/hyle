@@ -19,14 +19,14 @@ use api::RestApiMessage;
 use block_construction::BlockUnderConstruction;
 use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::tcp_client::TcpServerMessage;
-use futures::StreamExt;
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
 use hyle_crypto::SharedBlstCrypto;
+use hyle_model::utils::TimestampMs;
 use hyle_modules::{
     bus::SharedMessageBus, log_error, log_warn, module_bus_client, module_handle_messages,
     modules::Module, utils::static_type_map::Pick,
 };
-use hyle_net::ordered_join_set::OrderedJoinSet;
+use hyle_net::{clock::TimestampMsClock, ordered_join_set::OrderedJoinSet};
 use metrics::MempoolMetrics;
 use serde::{Deserialize, Serialize};
 use staking::state::Staking;
@@ -124,6 +124,9 @@ pub struct MempoolStore {
     #[borsh(skip)]
     buc_build_start_height: Option<u64>,
 
+    // Sync Request throttling
+    sync_request_throttler: MempoolSyncRequestThrottler,
+
     // Common
     last_ccp: Option<CommittedConsensusProposal>,
     staking: Staking,
@@ -132,6 +135,64 @@ pub struct MempoolStore {
         deserialize_with = "arc_rwlock_borsh::deserialize"
     )]
     known_contracts: Arc<std::sync::RwLock<KnownContracts>>,
+}
+
+pub struct SyncRequest {
+    from: Option<DataProposalHash>,
+    to: DataProposalHash,
+    validator: ValidatorPublicKey,
+}
+
+pub struct ProcessedSyncRequest {
+    processed: (ValidatorPublicKey, DataProposalHash),
+    next_sync_request: Option<SyncRequest>,
+}
+
+#[derive(Default, BorshSerialize, BorshDeserialize)]
+pub struct MempoolSyncRequestThrottler {
+    #[borsh(skip)]
+    joinset: JoinSet<Result<ProcessedSyncRequest>>,
+    by_pubkey_by_dp_hash: HashMap<ValidatorPublicKey, HashMap<DataProposalHash, TimestampMs>>,
+}
+
+impl MempoolSyncRequestThrottler {
+    /// Update the timestamp in the map, so we don't emit replies before some time
+    fn start_throttling_for(
+        &mut self,
+        validator: ValidatorPublicKey,
+        data_proposal_hash: DataProposalHash,
+    ) {
+        let now = TimestampMsClock::now();
+        self.by_pubkey_by_dp_hash
+            .entry(validator)
+            .or_default()
+            .insert(data_proposal_hash, now);
+    }
+
+    /// Reply can be emitted because
+    /// - it has never been emitted before
+    /// - it was emitted a long time ago
+    fn should_throttle(
+        &self,
+        validator: &ValidatorPublicKey,
+        data_proposal_hash: &DataProposalHash,
+    ) -> bool {
+        let now = TimestampMsClock::now();
+
+        let Some(data_proposal_record) = self
+            .by_pubkey_by_dp_hash
+            .get(validator)
+            .and_then(|validator_records| validator_records.get(data_proposal_hash))
+        else {
+            return false;
+        };
+
+        if now - data_proposal_record.clone() > Duration::from_secs(15) {
+            return false;
+        }
+
+        true
+    }
 }
 
 pub struct LongTasksRuntime(std::mem::ManuallyDrop<tokio::runtime::Runtime>);
@@ -371,6 +432,28 @@ impl Mempool {
             command_response<QueryNewCut, Cut> staking => {
                 self.handle_querynewcut(staking)
             }
+            Some(processed_sync_request) = self.inner.sync_request_throttler.joinset.join_next() => {
+                if let Ok(processed_sync_request) = log_error!(processed_sync_request, "Processing SyncRequests from JoinSet") {
+                    if let Ok(processed_sync_request) = log_error!(processed_sync_request, "Error in running task") {
+                        // TODO: maybe move this function in the SyncRequestThrottler
+                        let ProcessedSyncRequest { processed, next_sync_request } = processed_sync_request;
+                        let (pubkey, dp_hash) = processed;
+
+                        self.metrics.sync_request_received_processed(&pubkey, &self.own_lane_id().0);
+                        self.inner.sync_request_throttler.start_throttling_for(pubkey.clone(), dp_hash);
+
+                        if let Some(next_sync_request) = next_sync_request {
+                            if !self.inner.sync_request_throttler.should_throttle(&pubkey, &next_sync_request.to) {
+                                _ = log_error!(self.process_sync_request(next_sync_request),
+                                    "Handling InternalMempoolEvent in Mempool");
+                            } else {
+                                self.metrics.sync_request_received_throttled(&pubkey, &self.own_lane_id().0);
+                            }
+                        }
+
+                    }
+                }
+            }
             Some(event) = self.inner.processing_dps.join_next() => {
                 if let Ok(event) = log_error!(event, "Processing DPs from JoinSet") {
                     if let Ok(event) = log_error!(event, "Error in running task") {
@@ -543,8 +626,7 @@ impl Mempool {
                     validator.clone(),
                     from_data_proposal_hash,
                     to_data_proposal_hash,
-                )
-                .await?;
+                )?;
             }
             MempoolNetMessage::SyncReply(metadata, data_proposal) => {
                 self.on_sync_reply(validator, metadata, data_proposal)
@@ -613,64 +695,100 @@ impl Mempool {
 
         Ok(())
     }
-
-    async fn on_sync_request(
-        &self,
+    fn on_sync_request(
+        &mut self,
         validator: ValidatorPublicKey,
-        from_data_proposal_hash: Option<DataProposalHash>,
-        to_data_proposal_hash: Option<DataProposalHash>,
+        from: Option<DataProposalHash>,
+        to: Option<DataProposalHash>,
     ) -> anyhow::Result<()> {
+        if from == to {
+            info!("Ignoring empty SyncRequest from {:?} to {:?}", from, to);
+            return Ok(());
+        }
+
+        let Some(to) = to else {
+            return Ok(());
+        };
+
+        self.process_sync_request(SyncRequest {
+            validator,
+            from,
+            to,
+        })
+    }
+
+    fn process_sync_request(
+        &mut self,
+        SyncRequest {
+            from,
+            to,
+            validator,
+        }: SyncRequest,
+    ) -> anyhow::Result<()> {
+        let own_id = self.own_lane_id();
         info!(
             "{} SyncRequest received from validator {validator} for last_data_proposal_hash {:?}",
-            &self.own_lane_id(),
-            to_data_proposal_hash
+            own_id, to
         );
 
-        let own_id = self.own_lane_id();
+        if from.as_ref() == Some(&to) {
+            return Ok(());
+        }
+
         let lanes_clone = self.lanes.clone();
         let metrics = self.metrics.clone();
         let crypto = self.crypto.clone();
         let net_sender =
             Pick::<tokio::sync::broadcast::Sender<OutboundMessage>>::get(&self.bus).clone();
 
-        tokio::spawn(async move {
-            let mut missing_lane_entries = Box::pin(lanes_clone.get_entries_between_hashes(
-                &own_id,
-                from_data_proposal_hash.clone(),
-                to_data_proposal_hash.clone(),
-            ));
+        self.inner.sync_request_throttler.joinset.spawn(async move {
+            let Some(metadata): Option<LaneEntryMetadata> = log_error!(
+                lanes_clone.get_metadata_by_hash(&own_id, &to),
+                "Getting data proposal for SyncRequest"
+            )?
+            else {
+                bail!(
+                    "Could not send sync reply because data proposal {:?} was not found",
+                    &to
+                );
+            };
 
-            while let Some(res) = missing_lane_entries.next().await {
-                match res {
-                    Err(e) => info!(
-                        "Can't send sync reply as there are no missing data proposals found between {:?} and {:?} for {}: {}",
-                        to_data_proposal_hash, from_data_proposal_hash, own_id, e
-                    ),
-                    Ok((metadata, data_proposal)) => {
-                        debug!(
-                            "One missing data proposal on {} is {:?}",
-                            &validator, metadata
-                        );
+            let Some(data_proposal): Option<DataProposal> = log_error!(
+                lanes_clone.get_dp_by_hash(&own_id, &to),
+                "Getting data proposal for SyncRequest"
+            )?
+            else {
+                bail!(
+                    "Could not send sync reply because data proposal {:?} was not found",
+                    &to
+                );
+            };
 
-                        // cleanup previously tracked sent sync request
+            let parent_data_proposal_hash = metadata.parent_data_proposal_hash.clone();
 
-                        if let Ok(t) = crypto.sign_msg_with_header(
-                            MempoolNetMessage::SyncReply(metadata, data_proposal)
-                        ) {
+            let signed_reply = crypto
+                .sign_msg_with_header(MempoolNetMessage::SyncReply(metadata, data_proposal))?;
 
-                            metrics
-                                .add_sync_reply(&own_id.0, &validator, 1);
-                            _ = log_error!(
-                                net_sender
-                                .send(OutboundMessage::send(
-                                    validator.clone(),
-                                    t
-                                )),
-                                "Sending MempoolNetMessage::SyncReply msg on the bus");
-                        }
-                    }
-                }
+            metrics.add_sync_reply(&own_id.0, &validator, 1);
+            log_error!(
+                net_sender.send(OutboundMessage::send(validator.clone(), signed_reply)),
+                "Sending MempoolNetMessage::SyncReply msg on the bus"
+            )?;
+
+            let mut processed = ProcessedSyncRequest {
+                processed: (validator.clone(), to),
+                next_sync_request: None,
+            };
+
+            if parent_data_proposal_hash != from && parent_data_proposal_hash.is_some() {
+                processed.next_sync_request = Some(SyncRequest {
+                    from,
+                    to: parent_data_proposal_hash.unwrap(),
+                    validator,
+                });
             }
+
+            Ok(processed)
         });
 
         Ok(())

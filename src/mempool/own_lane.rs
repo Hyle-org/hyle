@@ -148,6 +148,14 @@ impl super::Mempool {
                 self.metrics
                     .dp_disseminations
                     .add(self.staking.bonded().len() as u64, &[]);
+
+                // When broadcasting, mark emitted data proposal so we throttle sync requests that come too soon
+                for validator in self.staking.bonded().clone() {
+                    self.inner
+                        .sync_request_throttler
+                        .start_throttling_for(validator, data_proposal.hashed());
+                }
+
                 self.broadcast_net_message(MempoolNetMessage::DataProposal(
                     data_proposal.hashed(),
                     data_proposal.clone(),
@@ -196,6 +204,13 @@ impl super::Mempool {
                 self.metrics
                     .dp_disseminations
                     .add(only_for.len() as u64, &[]);
+
+                // When broadcasting, mark emitted data proposal so we throttle sync requests that come too soon
+                for validator in only_for.iter() {
+                    self.inner
+                        .sync_request_throttler
+                        .start_throttling_for(validator.clone(), data_proposal.hashed());
+                }
 
                 self.broadcast_only_for_net_message(
                     only_for,

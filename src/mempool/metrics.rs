@@ -13,6 +13,7 @@ pub struct MempoolMetrics {
     api_tx: Counter<u64>,
     dp_vote: Counter<u64>,
     sync_request: Counter<u64>,
+    sync_request_received: Counter<u64>,
     sync_reply: Counter<u64>,
     tx_waiting_dissemination: Gauge<u64>,
     new_cut: Counter<u64>,
@@ -39,6 +40,9 @@ impl MempoolMetrics {
             dp_vote: my_meter.u64_counter(format!("{}_dp_vote", mempool)).build(),
             sync_request: my_meter
                 .u64_counter(format!("{}_sync_request", mempool))
+                .build(),
+            sync_request_received: my_meter
+                .u64_counter(format!("{}_sync_request_received", mempool))
                 .build(),
             sync_reply: my_meter
                 .u64_counter(format!("{}_sync_reply", mempool))
@@ -116,6 +120,7 @@ impl MempoolMetrics {
             .add(1, &[KeyValue::new("lane_id", format!("{}", lane_id))])
     }
 
+    /// Emit a metric everytime we emit a sync request
     pub fn add_sync_request(&self, sender: &ValidatorPublicKey, dest: &ValidatorPublicKey) {
         self.sync_request.add(
             1,
@@ -125,6 +130,39 @@ impl MempoolMetrics {
             ],
         );
     }
+
+    /// Emit a metric everytime we process a sync request
+    pub fn sync_request_received_processed(
+        &self,
+        sender: &ValidatorPublicKey,
+        dest: &ValidatorPublicKey,
+    ) {
+        self.sync_request_received.add(
+            1,
+            &[
+                KeyValue::new("sender", format!("{}", sender)),
+                KeyValue::new("dest", format!("{}", dest)),
+                KeyValue::new("status", "processed"),
+            ],
+        );
+    }
+
+    /// Emit a metric everytime we throttle a sync request instead of processing it
+    pub fn sync_request_received_throttled(
+        &self,
+        sender: &ValidatorPublicKey,
+        dest: &ValidatorPublicKey,
+    ) {
+        self.sync_request_received.add(
+            1,
+            &[
+                KeyValue::new("sender", format!("{}", sender)),
+                KeyValue::new("dest", format!("{}", dest)),
+                KeyValue::new("status", "throttled"),
+            ],
+        );
+    }
+
     pub fn add_sync_reply(
         &self,
         sender: &ValidatorPublicKey,
