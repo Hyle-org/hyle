@@ -31,7 +31,7 @@ struct SettledTxOutput {
 #[derive(Debug, Clone)]
 // Similar to OnchainEffect but slightly more adapted to nodestate settlement
 enum SideEffect {
-    Register(Contract),
+    Register(Contract, Option<Vec<u8>>),
     // Pass a full Contract because it's simpler in the settlement logic
     UpdateState(Contract),
     Delete(ContractName),
@@ -41,7 +41,7 @@ impl SideEffect {
     fn apply(&mut self, other_effect: SideEffect) {
         tracing::trace!("Applying side effect: {:?} -> {:?}", self, other_effect);
         match (self, other_effect) {
-            (SideEffect::Register(reg), SideEffect::UpdateState(contract)) => {
+            (SideEffect::Register(reg, _), SideEffect::UpdateState(contract)) => {
                 reg.state = contract.state
             }
             (SideEffect::Delete(_), SideEffect::UpdateState(_)) => {}
@@ -714,6 +714,7 @@ impl NodeState {
                 &mut current_contracts,
                 contract_name,
                 proof_metadata,
+                current_blob,
             ) {
                 // Not a valid proof, log it and try the next one.
                 let msg = format!(
@@ -864,7 +865,7 @@ impl NodeState {
                         .deleted_contracts
                         .push((bth.clone(), contract_name));
                 }
-                SideEffect::Register(contract) => {
+                SideEffect::Register(contract, metadata) => {
                     let has_contract = self.contracts.contains_key(&contract.name);
                     if has_contract {
                         debug!(
@@ -890,6 +891,7 @@ impl NodeState {
                             verifier: contract.verifier.clone(),
                             timeout_window: Some(contract.timeout_window.clone()),
                         },
+                        metadata,
                     ));
 
                     // TODO: would be nice to have a drain-like API here.
@@ -1038,7 +1040,7 @@ impl NodeState {
         let Some(contract) = contract_changes
             .get(contract_name)
             .and_then(|c| match c {
-                SideEffect::Register(c) => Some(c),
+                SideEffect::Register(c, _) => Some(c),
                 SideEffect::UpdateState(c) => Some(c),
                 _ => None,
             })
@@ -1060,6 +1062,7 @@ impl NodeState {
         contract_changes: &mut BTreeMap<ContractName, SideEffect>,
         contract_name: &ContractName,
         proof_metadata: &(ProgramId, HyleOutput),
+        current_blob: &UnsettledBlobMetadata,
     ) -> Result<()> {
         validate_state_commitment_size(&proof_metadata.1.next_state)?;
 
@@ -1107,18 +1110,26 @@ impl NodeState {
                         &effect.program_id,
                         &effect.state_commitment,
                     )?;
+
+                    let metadata = StructuredBlobData::<RegisterContractAction>::try_from(
+                        current_blob.blob.data.clone(),
+                    )?;
+
                     contract_changes.insert(
                         effect.contract_name.clone(),
-                        SideEffect::Register(Contract {
-                            name: effect.contract_name.clone(),
-                            program_id: effect.program_id.clone(),
-                            state: effect.state_commitment.clone(),
-                            verifier: effect.verifier.clone(),
-                            timeout_window: effect
-                                .timeout_window
-                                .clone()
-                                .unwrap_or(contract.timeout_window.clone()),
-                        }),
+                        SideEffect::Register(
+                            Contract {
+                                name: effect.contract_name.clone(),
+                                program_id: effect.program_id.clone(),
+                                state: effect.state_commitment.clone(),
+                                verifier: effect.verifier.clone(),
+                                timeout_window: effect
+                                    .timeout_window
+                                    .clone()
+                                    .unwrap_or(contract.timeout_window.clone()),
+                            },
+                            metadata.parameters.constructor_metadata,
+                        ),
                     );
                 }
                 OnchainEffect::DeleteContract(cn) => {

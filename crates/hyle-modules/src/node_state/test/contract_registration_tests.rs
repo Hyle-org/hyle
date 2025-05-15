@@ -300,7 +300,7 @@ async fn test_register_contract_and_delete_hyle() {
         block
             .registered_contracts
             .iter()
-            .map(|(_, rce)| rce.contract_name.0.clone())
+            .map(|(_, rce, _)| rce.contract_name.0.clone())
             .collect::<Vec<_>>(),
         vec!["c1", "c2.hyle", "sub.c2.hyle"]
     );

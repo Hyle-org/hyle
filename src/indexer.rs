@@ -696,7 +696,7 @@ impl Indexer {
         }
 
         // After TXes as it refers to those (for now)
-        for (tx_hash, contract) in block.registered_contracts {
+        for (tx_hash, contract, _) in block.registered_contracts {
             let verifier = &contract.verifier.0;
             let program_id = &contract.program_id.0;
             let state_commitment = &contract.state_commitment.0;

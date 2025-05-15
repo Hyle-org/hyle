@@ -235,11 +235,11 @@ pub mod test {
             let hos = calldatas
                 .iter()
                 .map(|calldata| self.contract.lock().unwrap().handle(calldata))
-                .collect::<Result<Vec<_>, String>>();
+                .collect::<Result<Vec<_>>>();
             Box::pin(async move {
                 match hos {
                     Ok(hos) => Ok(ProofData(borsh::to_vec(&hos).unwrap())),
-                    Err(e) => Err(anyhow::anyhow!(e)),
+                    Err(e) => Err(e),
                 }
             })
         }
