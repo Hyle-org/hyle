@@ -73,6 +73,7 @@ pub struct APIBlock {
     pub parent_hash: ConsensusProposalHash,
     pub height: u64,    // Corresponds to BlockHeight
     pub timestamp: i64, // UNIX timestamp
+    pub total_txs: u64, // Total number of transactions in the block
 }
 
 #[cfg_attr(feature = "sqlx", derive(sqlx::Type))]
@@ -172,6 +173,8 @@ pub struct APIContract {
     #[serde_as(as = "serde_with::hex::Hex")]
     pub state_commitment: Vec<u8>, // State commitment of the contract
     pub contract_name: String, // Contract name
+    pub total_tx: u64,    // Total number of transactions associated with the contract
+    pub unsettled_tx: u64, // Total number of unsettled transactions
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
