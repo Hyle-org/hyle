@@ -698,6 +698,17 @@ async fn mempool_podaupdate_too_early() {
     send! {
         description: "Disseminated Tx Vote",
         from: [node4.mempool_ctx], to: node1.mempool_ctx,
+        message_matches: MempoolNetMessage::SyncRequest(..)
+    };
+    send! {
+        description: "Disseminated Tx Vote",
+        from: [node4.mempool_ctx], to: node1.mempool_ctx,
+        message_matches: MempoolNetMessage::SyncRequest(..)
+    };
+
+    send! {
+        description: "Disseminated Tx Vote",
+        from: [node4.mempool_ctx], to: node1.mempool_ctx,
         message_matches: MempoolNetMessage::DataVote(..)
     };
 
