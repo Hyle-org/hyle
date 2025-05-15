@@ -369,7 +369,6 @@ impl NodeState {
             .iter()
             .any(|blob| !self.contracts.contains_key(&blob.contract_name))
         {
-            info!("blobs: {:?}", tx.blobs);
             let contracts = tx
                 .blobs
                 .iter()
