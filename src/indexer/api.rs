@@ -383,7 +383,7 @@ pub async fn get_transactions_by_contract(
             JOIN blobs b ON t.tx_hash = b.tx_hash AND t.parent_dp_hash = b.parent_dp_hash
             LEFT JOIN blocks bl ON t.block_hash = bl.hash
             WHERE b.contract_name = $1 AND t.transaction_type = 'blob_transaction'
-            ORDER BY t.block_hash DESC, t.index DESC
+            ORDER BY bl.height DESC, t.index DESC
             LIMIT $2
             "#,
         )
@@ -717,7 +717,8 @@ pub async fn list_contracts(
     State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<APIContract>>, StatusCode> {
     let contract = log_error!(
-        sqlx::query_as::<_, ContractDb>(r#"
+        sqlx::query_as::<_, ContractDb>(
+            r#"
         SELECT
           c.*,
           COUNT(DISTINCT t.tx_hash)                             AS total_tx,
@@ -730,10 +731,11 @@ pub async fn list_contracts(
           ON t.parent_dp_hash = b.parent_dp_hash
          AND t.tx_hash       = b.tx_hash
         GROUP BY c.contract_name
-"#)
-            .fetch_all(&state.db)
-            .await
-            .map(|db| db.into_iter().map(Into::<APIContract>::into).collect()),
+"#
+        )
+        .fetch_all(&state.db)
+        .await
+        .map(|db| db.into_iter().map(Into::<APIContract>::into).collect()),
         "Failed to fetch contracts"
     )
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
