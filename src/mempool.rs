@@ -143,8 +143,11 @@ pub struct SyncRequest {
     validator: ValidatorPublicKey,
 }
 
+/// Result of a syncRequest process (obtained on joining the joinset)
+/// processed is None if the request has been throttled, Some otherwise
+/// next sync request contains the next data proposal to send if any
 pub struct ProcessedSyncRequest {
-    processed: (ValidatorPublicKey, DataProposalHash),
+    processed: Option<(ValidatorPublicKey, DataProposalHash)>,
     next_sync_request: Option<SyncRequest>,
 }
 
@@ -187,7 +190,7 @@ impl MempoolSyncRequestThrottler {
             return false;
         };
 
-        if now - data_proposal_record.clone() > Duration::from_secs(10) {
+        if now - data_proposal_record.clone() > Duration::from_secs(5) {
             return false;
         }
 
@@ -436,21 +439,8 @@ impl Mempool {
                 if let Ok(processed_sync_request) = log_error!(processed_sync_request, "Processing SyncRequests from JoinSet") {
                     if let Ok(processed_sync_request) = log_error!(processed_sync_request, "Error in running task") {
                         // TODO: maybe move this function in the SyncRequestThrottler
-                        let ProcessedSyncRequest { processed, next_sync_request } = processed_sync_request;
-                        let (pubkey, dp_hash) = processed;
 
-                        self.metrics.sync_request_received_processed(&pubkey, &self.own_lane_id().0);
-                        self.inner.sync_request_throttler.start_throttling_for(pubkey.clone(), dp_hash);
-
-                        if let Some(next_sync_request) = next_sync_request {
-                            if !self.inner.sync_request_throttler.should_throttle(&pubkey, &next_sync_request.to) {
-                                _ = log_error!(self.process_sync_request(next_sync_request),
-                                    "Handling InternalMempoolEvent in Mempool");
-                            } else {
-                                self.metrics.sync_request_received_throttled(&pubkey, &self.own_lane_id().0);
-                            }
-                        }
-
+                        _ = log_error!(self.process_sync_request(processed_sync_request), "Chaining Sync Request from joinset");
                     }
                 }
             }
@@ -629,6 +619,11 @@ impl Mempool {
                 )?;
             }
             MempoolNetMessage::SyncReply(metadata, data_proposal) => {
+                warn!(
+                    "SyncReply received containing {:?} <- {} ",
+                    metadata.parent_data_proposal_hash,
+                    data_proposal.hashed()
+                );
                 self.on_sync_reply(validator, metadata, data_proposal)
                     .await?;
             }
@@ -666,7 +661,7 @@ impl Mempool {
         }
 
         // Add missing lanes to the validator's lane
-        debug!(
+        info!(
             "Filling hole with 1 entry (parent dp hash: {:?}) for {lane_id}",
             metadata.parent_data_proposal_hash
         );
@@ -685,6 +680,8 @@ impl Mempool {
             if self.lanes.contains(lane_id, &wp.hashed()) {
                 continue;
             }
+
+            info!("Retrying data proposal {:?} <- {}", wp, wp.hashed());
             self.on_data_proposal(lane_id, wp.hashed(), std::mem::take(wp))
                 .context("Consuming waiting data proposal")?;
         }
@@ -706,27 +703,58 @@ impl Mempool {
             return Ok(());
         }
 
-        let Some(to) = to else {
+        // If to is None, we take the local tip
+        let Some(to) = to.or(self
+            .lanes
+            .lanes_tip
+            .get(&self.own_lane_id())
+            .map(|tip| tip.0.clone()))
+        else {
             return Ok(());
         };
 
-        self.process_sync_request(SyncRequest {
-            validator,
-            from,
-            to,
+        warn!("Handling sync request with from: {:?} and to: {}", from, to);
+
+        self.process_sync_request(ProcessedSyncRequest {
+            processed: None,
+            next_sync_request: Some(SyncRequest {
+                validator,
+                from,
+                to,
+            }),
         })
     }
 
     fn process_sync_request(
         &mut self,
-        SyncRequest {
+        ProcessedSyncRequest {
+            processed,
+            next_sync_request,
+        }: ProcessedSyncRequest,
+    ) -> anyhow::Result<()> {
+        let own_id = self.own_lane_id();
+
+        let lanes_clone = self.lanes.clone();
+        let metrics = self.metrics.clone();
+        let crypto = self.crypto.clone();
+        let net_sender =
+            Pick::<tokio::sync::broadcast::Sender<OutboundMessage>>::get(&self.bus).clone();
+
+        if let Some((pubkey, dp_hash)) = processed {
+            self.metrics
+                .sync_request_received_processed(&pubkey, &self.own_lane_id().0);
+        }
+
+        let Some(SyncRequest {
             from,
             to,
             validator,
-        }: SyncRequest,
-    ) -> anyhow::Result<()> {
-        let own_id = self.own_lane_id();
-        info!(
+        }) = next_sync_request
+        else {
+            return Ok(());
+        };
+
+        debug!(
             "{} SyncRequest received from validator {validator} for last_data_proposal_hash {:?}",
             own_id, to
         );
@@ -735,13 +763,26 @@ impl Mempool {
             return Ok(());
         }
 
-        let lanes_clone = self.lanes.clone();
-        let metrics = self.metrics.clone();
-        let crypto = self.crypto.clone();
-        let net_sender =
-            Pick::<tokio::sync::broadcast::Sender<OutboundMessage>>::get(&self.bus).clone();
+        // We precompute whether we throttle or not
+        let mut throttle = false;
+        if self
+            .inner
+            .sync_request_throttler
+            .should_throttle(&validator, &to)
+        {
+            info!("Throttling {} from {}", to.0, validator);
+            self.metrics
+                .sync_request_received_throttled(&validator, &self.own_lane_id().0);
+            throttle = true;
+        } else {
+            // If we don't throttle, we start throttling upcoming requests
+            self.inner
+                .sync_request_throttler
+                .start_throttling_for(validator.clone(), to.clone());
+        }
 
         self.inner.sync_request_throttler.joinset.spawn(async move {
+            // Get metadata to determine next entry
             let Some(metadata): Option<LaneEntryMetadata> = log_error!(
                 lanes_clone.get_metadata_by_hash(&own_id, &to),
                 "Getting data proposal for SyncRequest"
@@ -753,6 +794,28 @@ impl Mempool {
                 );
             };
 
+            // Build the SyncRequest data if any
+            let mut next_sync_request = None;
+            if metadata.parent_data_proposal_hash != from
+                && metadata.parent_data_proposal_hash.is_some()
+            {
+                next_sync_request = Some(SyncRequest {
+                    from,
+                    to: metadata.parent_data_proposal_hash.clone().unwrap(),
+                    validator: validator.clone(),
+                });
+            }
+
+            // If throttle, we don't create a reply for this dp
+            // but we return the next parent data proposal to try
+            if throttle {
+                return Ok(ProcessedSyncRequest {
+                    processed: None,
+                    next_sync_request: None,
+                });
+            }
+            info!("Processing {} from {}", to.0, validator);
+            // We don't throttle so we fetch the data and send a reply
             let Some(data_proposal): Option<DataProposal> = log_error!(
                 lanes_clone.get_dp_by_hash(&own_id, &to),
                 "Getting data proposal for SyncRequest"
@@ -764,31 +827,22 @@ impl Mempool {
                 );
             };
 
-            let parent_data_proposal_hash = metadata.parent_data_proposal_hash.clone();
+            let dp_hash = data_proposal.hashed();
 
             let signed_reply = crypto
                 .sign_msg_with_header(MempoolNetMessage::SyncReply(metadata, data_proposal))?;
 
             metrics.add_sync_reply(&own_id.0, &validator, 1);
+
             log_error!(
                 net_sender.send(OutboundMessage::send(validator.clone(), signed_reply)),
                 "Sending MempoolNetMessage::SyncReply msg on the bus"
             )?;
 
-            let mut processed = ProcessedSyncRequest {
-                processed: (validator.clone(), to),
-                next_sync_request: None,
-            };
-
-            if parent_data_proposal_hash != from && parent_data_proposal_hash.is_some() {
-                processed.next_sync_request = Some(SyncRequest {
-                    from,
-                    to: parent_data_proposal_hash.unwrap(),
-                    validator,
-                });
-            }
-
-            Ok(processed)
+            Ok(ProcessedSyncRequest {
+                processed: Some((validator.clone(), dp_hash)),
+                next_sync_request,
+            })
         });
 
         Ok(())
@@ -830,16 +884,12 @@ impl Mempool {
 
             lane.push(podas);
 
-            self.send_sync_request(
-                lane_id,
-                self.lanes
-                    .lanes_tip
-                    .get(lane_id)
-                    .map(|tip| tip.0.clone())
-                    .as_ref(),
-                Some(data_proposal_hash),
-            )
-            .context("When buffering poda")?;
+            let from = self.lanes.lanes_tip.get(lane_id).map(|tip| tip.0.clone());
+
+            if from.as_ref() != Some(data_proposal_hash) {
+                self.send_sync_request(lane_id, from.as_ref(), Some(data_proposal_hash))
+                    .context("When buffering poda")?;
+            }
         }
 
         Ok(())

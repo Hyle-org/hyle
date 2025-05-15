@@ -696,12 +696,13 @@ async fn mempool_podaupdate_too_early() {
     assert_nb_signatures(&node4, 4);
 
     send! {
-        description: "Disseminated Tx Vote",
+        description: "Sync Request Poda1",
         from: [node4.mempool_ctx], to: node1.mempool_ctx,
         message_matches: MempoolNetMessage::SyncRequest(..)
     };
+
     send! {
-        description: "Disseminated Tx Vote",
+        description: "Sync Request Poda2",
         from: [node4.mempool_ctx], to: node1.mempool_ctx,
         message_matches: MempoolNetMessage::SyncRequest(..)
     };
