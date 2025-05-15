@@ -25,7 +25,7 @@ use tracing::{debug, error, info, warn};
 /// a `Vec<Calldata>` as input.
 pub struct AutoProver<Contract: Send + Sync + Clone + 'static> {
     bus: AutoProverBusClient<Contract>,
-    ctx: Arc<AutoProverCtx>,
+    ctx: Arc<AutoProverCtx<Contract>>,
     store: AutoProverStore<Contract>,
 }
 
@@ -44,28 +44,33 @@ pub struct AutoProverBusClient<Contract: Send + Sync + Clone + 'static> {
 }
 }
 
-pub struct AutoProverCtx {
+pub struct AutoProverCtx<Contract> {
     pub data_directory: PathBuf,
     pub start_height: BlockHeight,
     pub prover: Arc<dyn ClientSdkProver<Vec<Calldata>> + Send + Sync>,
     pub contract_name: ContractName,
     pub node: Arc<NodeApiHttpClient>,
+    pub default_state: Contract,
 }
 
-impl AutoProverCtx {
+impl<Contract> AutoProverCtx<Contract> {
     #[cfg(feature = "risc0")]
     pub fn risc0(
         data_directory: PathBuf,
         elf: &'static [u8],
         contract_name: ContractName,
         node: Arc<NodeApiHttpClient>,
-    ) -> Self {
+    ) -> Self
+    where
+        Contract: Default,
+    {
         Self {
             data_directory,
             start_height: BlockHeight(0),
             prover: Arc::new(client_sdk::helpers::risc0::Risc0Prover::new(elf)),
             contract_name,
             node,
+            default_state: Contract::default(),
         }
     }
 
@@ -76,13 +81,17 @@ impl AutoProverCtx {
         contract_name: ContractName,
         start_height: BlockHeight,
         node: Arc<NodeApiHttpClient>,
-    ) -> Self {
+    ) -> Self
+    where
+        Contract: Default,
+    {
         Self {
             data_directory,
             start_height,
             prover: Arc::new(client_sdk::helpers::sp1::SP1Prover::new(elf)),
             contract_name,
             node,
+            default_state: Contract::default(),
         }
     }
 }
@@ -99,10 +108,9 @@ pub enum AutoProverEvent<Contract> {
 
 impl<Contract> Module for AutoProver<Contract>
 where
-    Contract:
-        TxExecutorHandler + BorshDeserialize + Default + Debug + Send + Sync + Clone + 'static,
+    Contract: TxExecutorHandler + BorshDeserialize + Debug + Send + Sync + Clone + 'static,
 {
-    type Context = Arc<AutoProverCtx>;
+    type Context = Arc<AutoProverCtx<Contract>>;
 
     async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
         let bus = AutoProverBusClient::<Contract>::new_from_bus(bus.new_handle()).await;
@@ -111,7 +119,14 @@ where
             .data_directory
             .join(format!("autoprover_{}.bin", ctx.contract_name).as_str());
 
-        let store = Self::load_from_disk_or_default::<AutoProverStore<Contract>>(file.as_path());
+        let store = match Self::load_from_disk::<AutoProverStore<Contract>>(file.as_path()) {
+            Some(store) => store,
+            None => AutoProverStore::<Contract> {
+                contract: ctx.default_state.clone(),
+                unsettled_txs: vec![],
+                state_history: vec![],
+            },
+        };
 
         Ok(AutoProver { bus, store, ctx })
     }
@@ -131,7 +146,7 @@ where
 
 impl<Contract> AutoProver<Contract>
 where
-    Contract: TxExecutorHandler + Default + Debug + Clone + Send + Sync + 'static,
+    Contract: TxExecutorHandler + Debug + Clone + Send + Sync + 'static,
 {
     async fn handle_node_state_event(&mut self, event: NodeStateEvent) -> Result<()> {
         let NodeStateEvent::NewBlock(block) = event;
@@ -246,7 +261,7 @@ where
             self.store.contract = contract.clone();
         } else {
             warn!(cn =% self.ctx.contract_name, tx_hash =% failed_tx, "Reverting to default state");
-            self.store.contract = Contract::default();
+            self.store.contract = self.ctx.default_state.clone();
         }
         let mut blobs = vec![];
         for (tx, ctx) in self.store.unsettled_txs.clone().iter().skip(idx) {

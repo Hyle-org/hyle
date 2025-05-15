@@ -66,7 +66,7 @@ impl super::Mempool {
                     buc.from, buc.ccp.consensus_proposal.cut
                 ))?;
 
-                dps.push(dp);
+                dps.insert(0, dp);
             }
 
             result.push((lane_id.clone(), dps));
@@ -211,7 +211,7 @@ pub mod test {
     use crate::model;
 
     #[test_log::test(tokio::test)]
-    async fn test_basic_signed_block() -> Result<()> {
+    async fn signed_block_basic() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         // Store a DP, process the commit message for the cut containing it.
@@ -250,7 +250,58 @@ pub mod test {
     }
 
     #[test_log::test(tokio::test)]
-    async fn test_signed_block_start_building_later() -> Result<()> {
+    async fn signed_block_data_proposals_in_order() -> Result<()> {
+        let mut ctx = MempoolTestCtx::new("mempool").await;
+
+        // Store a DP, process the commit message for the cut containing it.
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
+        let dp_orig = ctx.create_data_proposal(None, &[register_tx.clone()]);
+        ctx.process_new_data_proposal(dp_orig.clone())?;
+        let cumul_size = LaneBytesSize(dp_orig.estimate_size() as u64);
+        let dp_hash = dp_orig.hashed();
+
+        let register_tx2 = make_register_contract_tx(ContractName::new("test2"));
+        let dp_orig2 = ctx.create_data_proposal(Some(dp_hash.clone()), &[register_tx2.clone()]);
+        ctx.process_new_data_proposal(dp_orig2.clone())?;
+        let cumul_size = LaneBytesSize(cumul_size.0 + dp_orig2.estimate_size() as u64);
+        let dp_hash2 = dp_orig2.hashed();
+
+        let register_tx3 = make_register_contract_tx(ContractName::new("test3"));
+        let dp_orig3 = ctx.create_data_proposal(Some(dp_hash2.clone()), &[register_tx3.clone()]);
+        ctx.process_new_data_proposal(dp_orig3.clone())?;
+        let cumul_size = LaneBytesSize(cumul_size.0 + dp_orig3.estimate_size() as u64);
+        let dp_hash3 = dp_orig3.hashed();
+
+        let key = ctx.validator_pubkey().clone();
+        ctx.add_trusted_validator(&key);
+
+        let cut = ctx
+            .process_cut_with_dp(&key, &dp_hash3, cumul_size, 1)
+            .await?;
+
+        assert_chanmsg_matches!(
+            ctx.mempool_event_receiver,
+            MempoolBlockEvent::StartedBuildingBlocks(height) => {
+                assert_eq!(height, BlockHeight(1));
+            }
+        );
+
+        assert_chanmsg_matches!(
+            ctx.mempool_event_receiver,
+            MempoolBlockEvent::BuiltSignedBlock(sb) => {
+                assert_eq!(sb.consensus_proposal.cut, cut);
+                assert_eq!(
+                    sb.data_proposals,
+                    vec![(LaneId(key.clone()), vec![dp_orig, dp_orig2, dp_orig3])]
+                );
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn signed_block_start_building_later() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         let dp2_size = LaneBytesSize(20);
@@ -300,7 +351,7 @@ pub mod test {
     }
 
     #[test_log::test(tokio::test)]
-    async fn test_signed_block_buffer_ccp() -> Result<()> {
+    async fn signed_block_buffer_ccp() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
         let dp1 = DataProposal::new(None, vec![]);
