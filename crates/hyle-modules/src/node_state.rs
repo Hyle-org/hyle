@@ -111,12 +111,23 @@ pub struct NodeStateStore {
 // TODO: we should register the 'hyle' TLD in the genesis block.
 impl Default for NodeStateStore {
     fn default() -> Self {
-        Self {
+        let mut ret = Self {
             timeouts: Timeouts::default(),
             current_height: BlockHeight(0),
             contracts: HashMap::new(),
             unsettled_transactions: OrderedTxMap::default(),
-        }
+        };
+        ret.contracts.insert(
+            "hyle".into(),
+            Contract {
+                name: "hyle".into(),
+                program_id: ProgramId(vec![]),
+                state: StateCommitment(vec![0]),
+                verifier: Verifier("hyle".to_owned()),
+                timeout_window: TimeoutWindow::NoTimeout,
+            },
+        );
+        ret
     }
 }
 
@@ -358,7 +369,18 @@ impl NodeState {
             .iter()
             .any(|blob| !self.contracts.contains_key(&blob.contract_name))
         {
-            bail!("Blob Transaction contains blobs for unknown contracts");
+            info!("blobs: {:?}", tx.blobs);
+            let contracts = tx
+                .blobs
+                .iter()
+                .filter(|blob| !self.contracts.contains_key(&blob.contract_name))
+                .map(|blob| blob.contract_name.0.clone())
+                .collect::<Vec<_>>()
+                .join(", ");
+            bail!(
+                "Blob Transaction contains blobs for unknown contracts: {}",
+                contracts
+            );
         }
 
         let blobs: Vec<UnsettledBlobMetadata> = tx

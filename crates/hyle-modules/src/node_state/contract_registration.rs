@@ -12,9 +12,10 @@ pub fn validate_contract_name_registration(
 ) -> Result<()> {
     // Special case: 'hyle' TLD is allowed to register new TLD contracts (and can't be updated).
     if owner.0 == "hyle" {
-        if new_contract_name.0 != "hyle"
-            && !new_contract_name.0.is_empty()
-            && !new_contract_name.0.contains(".")
+        if new_contract_name.0 == "hyle"
+            || (new_contract_name.0 != "hyle"
+                && !new_contract_name.0.is_empty()
+                && !new_contract_name.0.contains("."))
         {
             return Ok(());
         }
