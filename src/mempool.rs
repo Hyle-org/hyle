@@ -661,54 +661,6 @@ impl Mempool {
         Ok(())
     }
 
-    async fn on_sync_request(
-        &mut self,
-        validator: &ValidatorPublicKey,
-        from_data_proposal_hash: Option<&DataProposalHash>,
-        to_data_proposal_hash: Option<&DataProposalHash>,
-    ) -> anyhow::Result<()> {
-        info!(
-            "{} SyncRequest received from validator {validator} for last_data_proposal_hash {:?}",
-            &self.own_lane_id(),
-            to_data_proposal_hash
-        );
-
-        // Redirect to chan
-
-        let to = to_data_proposal_hash.cloned().or(self
-            .lanes
-            .lanes_tip
-            .get(&self.own_lane_id())
-            .map(|lane_id| lane_id.0.clone()));
-
-        // let own_id = self.own_lane_id();
-        // let lanes_clone = self.lanes.clone();
-
-        // let mut missing_lane_entries = Box::pin(lanes_clone.get_entries_between_hashes(
-        //     &own_id,
-        //     from_data_proposal_hash.cloned(),
-        //     to_data_proposal_hash.cloned(),
-        // ));
-
-        // while let Some(res) = missing_lane_entries.next().await {
-        //     match res {
-        //         Err(e) => info!(
-        //             "Can't send sync reply as there are no missing data proposals found between {:?} and {:?} for {}: {}",
-        //             to_data_proposal_hash, from_data_proposal_hash, self.own_lane_id(), e
-        //         ),
-        //         Ok((metadata, data_proposal)) => {
-        //             debug!(
-        //                 "One missing data proposal on {} is {:?}",
-        //                 validator, metadata
-        //             );
-        //             self.send_sync_reply(validator, metadata, data_proposal)?;
-        //         }
-        //     }
-        // }
-
-        Ok(())
-    }
-
     fn on_poda_update(
         &mut self,
         lane_id: &LaneId,

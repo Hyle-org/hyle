@@ -34,7 +34,7 @@ pub struct MempoolSync {
     /// Crypto handle
     crypto: SharedBlstCrypto,
     /// Metrics handle
-    metrics: MempoolMetrics,
+    _metrics: MempoolMetrics,
     /// Keeping track of last time we sent a reply to the validator and the data proposal hash
     by_pubkey_by_dp_hash: HashMap<ValidatorPublicKey, HashMap<DataProposalHash, TimestampMs>>,
     /// Map containing per data proposal, which validators are interested in a sync reply
@@ -58,7 +58,7 @@ impl MempoolSync {
             lane_id,
             lanes,
             crypto,
-            metrics,
+            _metrics: metrics,
             net_sender,
             sync_request_receiver,
             by_pubkey_by_dp_hash: Default::default(),
