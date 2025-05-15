@@ -990,7 +990,7 @@ impl NodeState {
                 )
             };
             if let OnchainEffect::RegisterContract(effect) = eff {
-                if effect != &data.parameters {
+                if effect != &data.parameters.into() {
                     bail!(
                         "Proof for RegisterContractAction blob #{} does not match the onchain effect",
                         hyle_output.index
@@ -1240,7 +1240,7 @@ pub mod test {
                 program_id: ProgramId(vec![]),
                 state_commitment: StateCommitment(vec![0, 1, 2, 3]),
                 contract_name: name,
-                timeout_window: None,
+                ..Default::default()
             }
             .as_blob("hyle".into(), None, None)],
         )
