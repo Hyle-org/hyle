@@ -1398,7 +1398,8 @@ mod test {
         MIGRATOR.run(&db).await.unwrap();
         sqlx::raw_sql(include_str!("../tests/fixtures/test_data.sql"))
             .execute(&db)
-            .await?;
+            .await
+            .context("insert test data")?;
 
         let mut indexer = new_indexer(db).await;
         let server = setup_test_server(&indexer).await?;

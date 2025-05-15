@@ -1,7 +1,7 @@
 -- fixtures/test_data.sql
 
 -- Inserting test data for the blocks table
-INSERT INTO blocks (hash, parent_hash, height, timestamp)
+INSERT INTO blocks (hash, parent_hash, height, timestamp, total_txs)
 VALUES
     ('block1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'block0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 1, to_timestamp(1632938400), 0),  -- Block 1
     ('block2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'block1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 2, to_timestamp(1632938460), 4);  -- Block 2
