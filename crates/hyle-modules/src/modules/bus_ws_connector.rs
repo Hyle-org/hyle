@@ -89,6 +89,7 @@ impl NodeWebsocketConnector {
             parent_hash: block.parent_hash,
             height: block.block_height.0,
             timestamp: block.block_timestamp.0 as i64,
+            total_txs: block.txs.len() as u64,
         };
 
         vec![WebsocketOutEvent::NewBlock(api_block)]

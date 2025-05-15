@@ -362,17 +362,19 @@ impl Indexer {
         let block_hash = &block.hash;
         let block_height = i64::try_from(block.block_height.0)
             .map_err(|_| anyhow::anyhow!("Block height is too large to fit into an i64"))?;
+        let total_txs = block.txs.len() as i64;
 
         let block_timestamp =
             into_utc_date_time(&block.block_timestamp).context("Block's timestamp is incorrect")?;
 
         sqlx::query(
-            "INSERT INTO blocks (hash, parent_hash, height, timestamp) VALUES ($1, $2, $3, $4)",
+            "INSERT INTO blocks (hash, parent_hash, height, timestamp, total_txs) VALUES ($1, $2, $3, $4, $5)",
         )
         .bind(block_hash)
         .bind(block.parent_hash.clone())
         .bind(block_height)
         .bind(block_timestamp)
+        .bind(total_txs)
         .execute(transaction)
         .await?;
 
@@ -1396,7 +1398,8 @@ mod test {
         MIGRATOR.run(&db).await.unwrap();
         sqlx::raw_sql(include_str!("../tests/fixtures/test_data.sql"))
             .execute(&db)
-            .await?;
+            .await
+            .context("insert test data")?;
 
         let mut indexer = new_indexer(db).await;
         let server = setup_test_server(&indexer).await?;
