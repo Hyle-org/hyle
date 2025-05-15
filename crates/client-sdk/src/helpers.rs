@@ -16,6 +16,7 @@ pub fn register_hyle_contract(
     program_id: ProgramId,
     state_commitment: StateCommitment,
     timeout_window: Option<TimeoutWindow>,
+    constructor_metadata: Option<Vec<u8>>,
 ) -> anyhow::Result<()> {
     builder.add_action(
         "hyle".into(),
@@ -25,6 +26,7 @@ pub fn register_hyle_contract(
             program_id,
             state_commitment,
             timeout_window,
+            constructor_metadata,
         },
         None,
         None,
