@@ -111,24 +111,12 @@ pub struct NodeStateStore {
 // TODO: we should register the 'hyle' TLD in the genesis block.
 impl Default for NodeStateStore {
     fn default() -> Self {
-        let mut ret = Self {
+        Self {
             timeouts: Timeouts::default(),
             current_height: BlockHeight(0),
             contracts: HashMap::new(),
             unsettled_transactions: OrderedTxMap::default(),
-        };
-        // Insert a default hyle-TLD contract
-        ret.contracts.insert(
-            "hyle".into(),
-            Contract {
-                name: "hyle".into(),
-                program_id: ProgramId(vec![]),
-                state: StateCommitment(vec![0]),
-                verifier: Verifier("hyle".to_owned()),
-                timeout_window: TimeoutWindow::NoTimeout,
-            },
-        );
-        ret
+        }
     }
 }
 
