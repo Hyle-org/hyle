@@ -73,6 +73,7 @@ pub struct APIBlock {
     pub parent_hash: ConsensusProposalHash,
     pub height: u64,    // Corresponds to BlockHeight
     pub timestamp: i64, // UNIX timestamp
+    pub total_txs: u64, // Total number of transactions in the block
 }
 
 #[cfg_attr(feature = "sqlx", derive(sqlx::Type))]

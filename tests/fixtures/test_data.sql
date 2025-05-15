@@ -3,8 +3,8 @@
 -- Inserting test data for the blocks table
 INSERT INTO blocks (hash, parent_hash, height, timestamp)
 VALUES
-    ('block1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'block0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 1, to_timestamp(1632938400)),  -- Block 1
-    ('block2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'block1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 2, to_timestamp(1632938460));  -- Block 2
+    ('block1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'block0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 1, to_timestamp(1632938400), 0),  -- Block 1
+    ('block2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'block1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 2, to_timestamp(1632938460), 4);  -- Block 2
 
 -- Inserting test data for the transactions table
 INSERT INTO transactions (tx_hash, parent_dp_hash, block_hash, index, version, transaction_type, transaction_status)

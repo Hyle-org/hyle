@@ -27,6 +27,8 @@ pub struct BlockDb {
     #[sqlx(try_from = "i64")]
     pub height: u64, // Corresponds to BlockHeight
     pub timestamp: NaiveDateTime, // UNIX timestamp
+    #[sqlx(try_from = "i64")]
+    pub total_txs: u64, // Total number of transactions in the block
 }
 
 impl From<BlockDb> for APIBlock {
@@ -36,6 +38,7 @@ impl From<BlockDb> for APIBlock {
             parent_hash: value.parent_hash,
             height: value.height,
             timestamp: value.timestamp.and_utc().timestamp_millis(),
+            total_txs: value.total_txs,
         }
     }
 }
