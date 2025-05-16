@@ -33,7 +33,7 @@ pub fn parse_noir_output(output: &[u8]) -> Result<HyleOutput, Error> {
     debug!("Parsed version: {}", version);
     let initial_state = parse_array(&mut vector)?;
     let next_state = parse_array(&mut vector)?;
-    let identity = parse_variable_string(&mut vector)?;
+    let identity = parse_string_with_len(&mut vector)?;
     let tx_hash = parse_sized_string(&mut vector, 64)?;
     let index = u32::from_str_radix(&vector.remove(0), 16)?;
     debug!("Parsed index: {}", index);
@@ -72,19 +72,18 @@ fn parse_sized_string(vector: &mut Vec<String>, length: usize) -> Result<String,
     Ok(resp)
 }
 
-/// Variable string hash trailing zeros
-/// total length is always 64 (could be set to height if needed)
-/// parsed length is the length of the expected string (without trailing zeros)
-fn parse_variable_string(vector: &mut Vec<String>) -> Result<String, Error> {
+/// Parse a string of variable length, up to a maximum size of 256 bytes.
+/// Returns the string without trailing zeros.
+fn parse_string_with_len(vector: &mut Vec<String>) -> Result<String, Error> {
     let length = usize::from_str_radix(&vector.remove(0), 16)?;
-    let mut field = parse_sized_string(vector, 64)?;
-    if length > 64 {
+    if length > 256 {
         return Err(anyhow::anyhow!(
-            "Invalid contract name length {length}. Max is 64."
+            "Invalid contract name length {length}. Max is 256."
         ));
     }
+    let mut field = parse_sized_string(vector, 256)?;
     field.truncate(length);
-    debug!("Parsed variable string: {}", field);
+    debug!("Parsed string: {}", field);
     Ok(field)
 }
 
@@ -109,20 +108,22 @@ fn parse_blobs(blob_data: &mut Vec<String>) -> Result<IndexedBlobs, Error> {
         let index = usize::from_str_radix(&blob_data.remove(0), 16)?;
         debug!("blob index: {}", index);
 
-        let contract_name = parse_variable_string(blob_data)?;
+        let contract_name = parse_string_with_len(blob_data)?;
 
+        let blob_capacity = usize::from_str_radix(&blob_data.remove(0), 16)?;
         let blob_len = usize::from_str_radix(&blob_data.remove(0), 16)?;
-        debug!("blob len: {}", blob_len);
+        debug!("blob len: {} (capacity: {})", blob_len, blob_capacity);
 
-        let mut blob = Vec::with_capacity(blob_len);
+        let mut blob = Vec::with_capacity(blob_capacity);
 
-        for i in 0..blob_len {
+        for i in 0..blob_capacity {
             let v = &blob_data.remove(0);
             blob.push(
                 u8::from_str_radix(v, 16)
-                    .context(format!("Failed to parse blob data at {i}/{blob_len}"))?,
+                    .context(format!("Failed to parse blob data at {i}/{blob_capacity}"))?,
             );
         }
+        blob.truncate(blob_len);
 
         debug!("blob data: {:?}", blob);
         blobs.push((
