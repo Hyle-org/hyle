@@ -28,6 +28,16 @@ pub struct LanesStorage {
 }
 
 impl LanesStorage {
+    /// Create another set of handles, without the data stored in lanes_tip, to have access and methods to access mempool storage
+    pub fn new_handle(&self) -> LanesStorage {
+        LanesStorage {
+            lanes_tip: Default::default(),
+            db: self.db.clone(),
+            by_hash_metadata: self.by_hash_metadata.clone(),
+            by_hash_data: self.by_hash_data.clone(),
+        }
+    }
+
     pub fn new(
         path: &Path,
         lanes_tip: BTreeMap<LaneId, (DataProposalHash, LaneBytesSize)>,

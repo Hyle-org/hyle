@@ -309,6 +309,8 @@ impl AutobahnTestCtx {
         let consensus = ConsensusTestCtx::build_consensus(&shared_bus, crypto.clone()).await;
         let mempool = MempoolTestCtx::build_mempool(&shared_bus, crypto).await;
 
+        let mempool_sync_request_sender = mempool.start_mempool_sync();
+
         AutobahnTestCtx {
             shared_bus,
             consensus_ctx: ConsensusTestCtx {
@@ -324,6 +326,7 @@ impl AutobahnTestCtx {
                 mempool_event_receiver,
                 mempool_status_event_receiver,
                 mempool,
+                mempool_sync_request_sender,
             },
         }
     }

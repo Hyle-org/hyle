@@ -15,6 +15,7 @@ use super::{
 };
 use crate::model::{DataProposal, DataProposalHash, Hashed};
 
+#[derive(Default)]
 pub struct LanesStorage {
     pub lanes_tip: BTreeMap<LaneId, (DataProposalHash, LaneBytesSize)>,
     // NB: do not iterate on these as they're unordered
@@ -22,6 +23,9 @@ pub struct LanesStorage {
 }
 
 impl LanesStorage {
+    pub fn new_handle(&self) -> LanesStorage {
+        LanesStorage::default()
+    }
     pub fn new(
         _path: &Path,
         lanes_tip: BTreeMap<LaneId, (DataProposalHash, LaneBytesSize)>,

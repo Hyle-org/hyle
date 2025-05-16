@@ -543,10 +543,16 @@ pub mod test {
         let signed_msg2 = create_data_vote(&crypto2, data_proposal.hashed(), size)?;
         let signed_msg3 = create_data_vote(&crypto3, data_proposal.hashed(), size)?;
         ctx.mempool
-            .handle_net_message(crypto2.sign_msg_with_header(signed_msg2)?)
+            .handle_net_message(
+                crypto2.sign_msg_with_header(signed_msg2)?,
+                &ctx.mempool_sync_request_sender,
+            )
             .await?;
         ctx.mempool
-            .handle_net_message(crypto3.sign_msg_with_header(signed_msg3)?)
+            .handle_net_message(
+                crypto3.sign_msg_with_header(signed_msg3)?,
+                &ctx.mempool_sync_request_sender,
+            )
             .await?;
 
         // Assert that PoDAUpdate message is broadcasted
@@ -575,7 +581,10 @@ pub mod test {
         let signed_msg = create_data_vote(&temp_crypto, data_proposal.hashed(), size)?;
         assert!(ctx
             .mempool
-            .handle_net_message(temp_crypto.sign_msg_with_header(signed_msg)?)
+            .handle_net_message(
+                temp_crypto.sign_msg_with_header(signed_msg)?,
+                &ctx.mempool_sync_request_sender,
+            )
             .await
             .is_err());
 
@@ -602,7 +611,10 @@ pub mod test {
         let signed_msg = create_data_vote(&crypto2, data_proposal_hash, size)?;
 
         ctx.mempool
-            .handle_net_message(crypto2.sign_msg_with_header(signed_msg)?)
+            .handle_net_message(
+                crypto2.sign_msg_with_header(signed_msg)?,
+                &ctx.mempool_sync_request_sender,
+            )
             .await
             .expect("should handle net message");
 
@@ -630,7 +642,10 @@ pub mod test {
 
         assert!(ctx
             .mempool
-            .handle_net_message(crypto2.sign_msg_with_header(signed_msg)?)
+            .handle_net_message(
+                crypto2.sign_msg_with_header(signed_msg)?,
+                &ctx.mempool_sync_request_sender,
+            )
             .await
             .is_err());
         Ok(())
