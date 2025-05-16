@@ -956,38 +956,6 @@ pub mod test {
                 .expect("fail to handle event");
         }
 
-        pub fn assert_broadcast(
-            &mut self,
-            description: &str,
-        ) -> Pin<Box<dyn Future<Output = MsgWithHeader<MempoolNetMessage>>>> {
-            #[allow(clippy::expect_fun_call)]
-            let rec = self
-                .out_receiver
-                .try_recv()
-                .expect(format!("{description}: No message broadcasted").as_str());
-
-            match rec {
-                OutboundMessage::BroadcastMessage(net_msg) => {
-                    if let NetMessage::MempoolMessage(msg) = net_msg {
-                        Box::pin(async move { msg })
-                    } else {
-                        println!(
-                            "{description}: Mempool OutboundMessage message is missing, found {}",
-                            net_msg
-                        );
-                        self.assert_broadcast(description)
-                    }
-                }
-                _ => {
-                    println!(
-                        "{description}: Broadcast OutboundMessage message is missing, found {:?}",
-                        rec
-                    );
-                    self.assert_broadcast(description)
-                }
-            }
-        }
-
         #[track_caller]
         pub fn assert_broadcast_only_for(
             &mut self,
@@ -1020,55 +988,98 @@ pub mod test {
                 }
             }
         }
-
         pub fn assert_send(
             &mut self,
             to: &ValidatorPublicKey,
             description: &str,
-        ) -> Pin<Box<dyn Future<Output = MsgWithHeader<MempoolNetMessage>>>> {
-            #[allow(clippy::expect_fun_call)]
-            let rec = self
-                .out_receiver
-                .try_recv()
-                .expect(format!("{description}: No message broadcasted").as_str());
+        ) -> Pin<Box<dyn Future<Output = MsgWithHeader<MempoolNetMessage>> + '_>> {
+            let to = to.clone();
+            let description = description.to_string().clone();
+            Box::pin(async move {
+                #[allow(clippy::expect_fun_call)]
+                let rec =
+                    tokio::time::timeout(Duration::from_millis(1000), self.out_receiver.recv())
+                        .await
+                        .expect(format!("{description}: No message broadcasted").as_str())
+                        .expect(format!("{description}: No message broadcasted").as_str());
 
-            match rec {
-                OutboundMessage::SendMessage { validator_id, msg } => {
-                    if let NetMessage::MempoolMessage(msg) = msg {
-                        if &validator_id != to {
-                            panic!(
+                match rec {
+                    OutboundMessage::SendMessage { validator_id, msg } => {
+                        if let NetMessage::MempoolMessage(msg) = msg {
+                            if validator_id != to {
+                                panic!(
                                 "{description}: Send message was sent to {validator_id} instead of {}",
                                 to
                             );
-                        }
+                            }
 
-                        Box::pin(async move { msg })
-                    } else {
-                        tracing::warn!("{description}: skipping {:?}", msg);
-                        self.assert_send(to, description)
+                            msg
+                        } else {
+                            tracing::warn!("{description}: skipping {:?}", msg);
+                            self.assert_send(&to, description.as_str()).await
+                        }
                     }
-                }
-                OutboundMessage::BroadcastMessage(NetMessage::ConsensusMessage(e)) => {
-                    tracing::warn!("{description}: skipping broadcast message {:?}", e);
-                    self.assert_send(to, description)
-                }
-                OutboundMessage::BroadcastMessage(els) => {
-                    panic!(
-                        "{description}: received broadcast message instead of send {:?}",
-                        els
-                    );
-                }
-                OutboundMessage::BroadcastMessageOnlyFor(_, NetMessage::ConsensusMessage(e)) => {
-                    tracing::warn!("{description}: skipping broadcast message {:?}", e);
-                    self.assert_send(to, description)
-                }
-                OutboundMessage::BroadcastMessageOnlyFor(_, els) => {
-                    panic!(
+                    OutboundMessage::BroadcastMessage(NetMessage::ConsensusMessage(e)) => {
+                        tracing::warn!("{description}: skipping broadcast message {:?}", e);
+                        self.assert_send(&to, description.as_str()).await
+                    }
+                    OutboundMessage::BroadcastMessage(els) => {
+                        panic!(
+                            "{description}: received broadcast message instead of send {:?}",
+                            els
+                        );
+                    }
+                    OutboundMessage::BroadcastMessageOnlyFor(
+                        _,
+                        NetMessage::ConsensusMessage(e),
+                    ) => {
+                        tracing::warn!("{description}: skipping broadcast message {:?}", e);
+                        self.assert_send(&to, description.as_str()).await
+                    }
+                    OutboundMessage::BroadcastMessageOnlyFor(_, els) => {
+                        panic!(
                         "{description}: received broadcast only for message instead of send {:?}",
                         els
                     );
+                    }
                 }
-            }
+            })
+        }
+
+        pub fn assert_broadcast(
+            &mut self,
+            description: &str,
+        ) -> Pin<Box<dyn Future<Output = MsgWithHeader<MempoolNetMessage>> + '_>> {
+            let description = description.to_string().clone();
+            Box::pin(async move {
+                #[allow(clippy::expect_fun_call)]
+                let rec =
+                    tokio::time::timeout(Duration::from_millis(1000), self.out_receiver.recv())
+                        .await
+                        .expect(format!("{description}: No message broadcasted").as_str())
+                        .expect(format!("{description}: No message broadcasted").as_str());
+
+                match rec {
+                    OutboundMessage::BroadcastMessage(net_msg) => {
+                        if let NetMessage::MempoolMessage(msg) = net_msg {
+                            msg
+                        } else {
+                            println!(
+                            "{description}: Mempool OutboundMessage message is missing, found {}",
+                            net_msg
+                        );
+                            self.assert_broadcast(description.as_str()).await
+                        }
+                    }
+                    _ => {
+                        println!(
+                        "{description}: Broadcast OutboundMessage message is missing, found {:?}",
+                        rec
+                    );
+                        self.assert_broadcast(description.as_str()).await
+                    }
+                }
+            })
         }
 
         pub async fn handle_msg(&mut self, msg: &MsgWithHeader<MempoolNetMessage>, _err: &str) {
@@ -1293,17 +1304,17 @@ pub mod test {
         let crypto2 = BlstCrypto::new("2").unwrap();
         ctx.add_trusted_validator(crypto2.validator_pubkey());
 
-        let signed_msg = crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(
-            None,
-            Some(data_proposal.hashed()),
-        ))?;
+        for i in 1..5 {
+            let signed_msg = crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(
+                None,
+                Some(data_proposal.hashed()),
+            ))?;
 
-        ctx.mempool
-            .handle_net_message(signed_msg, &ctx.mempool_sync_request_sender)
-            .await
-            .expect("should handle net message");
-
-        tokio::time::sleep(Duration::from_secs(5)).await;
+            ctx.mempool
+                .handle_net_message(signed_msg, &ctx.mempool_sync_request_sender)
+                .await
+                .expect("should handle net message");
+        }
 
         // Assert that we send a SyncReply
         match ctx
@@ -1316,6 +1327,8 @@ pub mod test {
             }
             _ => panic!("Expected SyncReply message"),
         };
+
+        assert!(ctx.out_receiver.is_empty());
         Ok(())
     }
 
