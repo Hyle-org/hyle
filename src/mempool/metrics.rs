@@ -124,7 +124,7 @@ impl MempoolMetrics {
             1,
             &[
                 KeyValue::new("lane", format!("{}", lane)),
-                KeyValue::new("sender", format!("{}", requester)),
+                KeyValue::new("requester", format!("{}", requester)),
             ],
         );
     }
