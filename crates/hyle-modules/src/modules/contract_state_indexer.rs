@@ -7,7 +7,6 @@ use anyhow::{anyhow, Error, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::contract_indexer::{ContractHandler, ContractStateStore};
 use sdk::*;
-use serde::Serialize;
 use std::{any::TypeId, ops::Deref, path::PathBuf, sync::Arc};
 use tokio::sync::RwLock;
 use tracing::debug;
@@ -45,8 +44,7 @@ pub struct ContractStateIndexerCtx {
 
 impl<State, Event> Module for ContractStateIndexer<State, Event>
 where
-    State: Serialize
-        + Clone
+    State: Clone
         + Sync
         + Send
         + std::fmt::Debug
@@ -112,8 +110,7 @@ where
 
 impl<State, Event> ContractStateIndexer<State, Event>
 where
-    State: Serialize
-        + Clone
+    State: Clone
         + Sync
         + Send
         + std::fmt::Debug
@@ -283,7 +280,7 @@ where
 
     async fn handle_register_contract(&self, contract: RegisterContractEffect) -> Result<()> {
         let state = State::default();
-        tracing::info!(cn = %self.contract_name, "📝 Registered suppored contract '{}' with initial state '{state:?}'", contract.contract_name);
+        tracing::info!(cn = %self.contract_name, "📝 Registered suppored contract '{}'", contract.contract_name);
         self.store.write().await.state = Some(state);
         Ok(())
     }
@@ -293,7 +290,6 @@ where
 mod tests {
     use client_sdk::transaction_builder::TxExecutorHandler;
     use sdk::*;
-    use serde::Deserialize;
     use utoipa::openapi::OpenApi;
 
     use super::*;
@@ -303,7 +299,7 @@ mod tests {
     use crate::node_state::{NodeState, NodeStateStore};
     use std::sync::Arc;
 
-    #[derive(Clone, Debug, Default, BorshSerialize, BorshDeserialize, Serialize, Deserialize)]
+    #[derive(Clone, Debug, Default, BorshSerialize, BorshDeserialize)]
     struct MockState(Vec<u8>);
 
     impl TryFrom<StateCommitment> for MockState {
