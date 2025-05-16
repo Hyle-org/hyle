@@ -42,7 +42,7 @@ fn handle_register_blob(
     )?;
 
     // Check it's not already registered
-    if contracts.contains_key(&reg.contract_name)
+    if reg.contract_name.0 != "hyle" && contracts.contains_key(&reg.contract_name)
         || contract_changes.contains_key(&reg.contract_name)
     {
         bail!("Contract {} is already registered", reg.contract_name.0);

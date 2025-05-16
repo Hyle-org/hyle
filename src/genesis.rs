@@ -418,6 +418,7 @@ impl Genesis {
         .build();
 
         let mut map = BTreeMap::default();
+        map.insert("hyle".into(), ProgramId(vec![0, 0, 0, 0]));
         map.insert("blst".into(), NativeVerifiers::Blst.into());
         map.insert("sha3_256".into(), NativeVerifiers::Sha3_256.into());
         map.insert("secp256k1".into(), NativeVerifiers::Secp256k1.into());
@@ -431,6 +432,16 @@ impl Genesis {
         );
 
         let mut register_tx = ProvableBlobTx::new("hyle@hyle".into());
+
+        register_hyle_contract(
+            &mut register_tx,
+            "hyle".into(),
+            "hyle".into(),
+            ProgramId(vec![0, 0, 0, 0]),
+            StateCommitment::default(),
+            Some(TimeoutWindow::NoTimeout),
+        )
+        .expect("register hyle");
 
         register_hyle_contract(
             &mut register_tx,

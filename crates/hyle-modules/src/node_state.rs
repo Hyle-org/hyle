@@ -117,7 +117,6 @@ impl Default for NodeStateStore {
             contracts: HashMap::new(),
             unsettled_transactions: OrderedTxMap::default(),
         };
-        // Insert a default hyle-TLD contract
         ret.contracts.insert(
             "hyle".into(),
             Contract {
@@ -370,7 +369,17 @@ impl NodeState {
             .iter()
             .any(|blob| !self.contracts.contains_key(&blob.contract_name))
         {
-            bail!("Blob Transaction contains blobs for unknown contracts");
+            let contracts = tx
+                .blobs
+                .iter()
+                .filter(|blob| !self.contracts.contains_key(&blob.contract_name))
+                .map(|blob| blob.contract_name.0.clone())
+                .collect::<Vec<_>>()
+                .join(", ");
+            bail!(
+                "Blob Transaction contains blobs for unknown contracts: {}",
+                contracts
+            );
         }
 
         let blobs: Vec<UnsettledBlobMetadata> = tx
