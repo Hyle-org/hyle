@@ -484,13 +484,13 @@ impl Genesis {
 
         register_hyle_contract(
             &mut register_tx,
-            "smt_token".into(),
+            "oranj".into(),
             hyle_model::verifiers::RISC0_1.into(),
             smt_token_program_id.clone().into(),
             ctx.hyllar.commit(),
             None,
         )
-        .expect("register smt_token");
+        .expect("register oranj");
 
         register_hyle_contract(
             &mut register_tx,
