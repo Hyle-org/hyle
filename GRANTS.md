@@ -38,8 +38,14 @@ Please contact us [through this form](https://docs.google.com/forms/d/e/1FAIpQLS
 
 ### Apps
 
-- A [provable play-by-email games engine](https://github.com/MatteoMer/provable-email-game-engine)
+- [Proof of residency](https://github.com/rutefig/proof-of-residency)
+- [Housing applications](https://github.com/teddav/zk-tenant)
 
 ### Utilities
 
-- [Proof of residency](https://github.com/rutefig/proof-of-residency)
+- [Provable play-by-email games engine](https://github.com/MatteoMer/provable-email-game-engine)
+- [2D-Doc verification in Noir](https://github.com/teddav/tdd.nr)
+
+### Research 
+
+- [p256 proving benchmark](https://github.com/vladfdp/p256-proving-benchmark)
