@@ -25,90 +25,17 @@ This repository hosts the **work-in-progress Rust client** for the [Hyli](https:
 
 ## 🚀 Getting Started
 
-### With Cargo
-
-#### Start a Single-Node Devnet
-
-To launch a single-node devnet (consensus disabled) for building and debugging smart contracts:
-
-```bash
-cargo build
-HYLE_RUN_INDEXER=false cargo run
-```
-
-Note: if you need sp1 verifier, enable the feature: `sp1`
-
-```sh
-cargo run -F sp1
-```
-
-#### Run with Indexer
-
-To run the indexer, you can use the `--pg` node argument:
+For a single-node devnet (consensus disabled) with an indexer, clone the hyli repository and run:
 
 ```sh
 cargo run -- --pg
 ```
 
-It will start a postgres server for you, and will close it (with all its data) whenever you stop the node.
-This is usefull during development.
+This command starts a temporary PostgreSQL server and erases its data when you stop the node.
 
-If you want data persistance, you can run the PostgreSQL server:
+For alternative setups, optional features, and advanced configurations, check out the [devnet reference page](https://docs.hyli.org/reference/devnet/).
 
-```bash
-# Start PostgreSQL with default configuration:
-docker run -d --rm --name pg_hyli -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres
-```
-
-and then in the `hyli` root:
-
-```sh
-cargo run
-```
-
-### Configuration
-
-You can configure Hyli using environment variables or a configuration file:
-
-#### Using a Configuration File
-
-Copy the default configuration file to the directory where the node will run:
-
-```bash
-cp ./src/utils/conf_defaults.toml config.toml
-```
-
-If a file named `config.toml` is present, it will be automatically loaded at node startup.
-
-#### Using Environment Variables
-
-Examples of configuration via environment variables:
-
-```bash
-HYLE_RUN_INDEXER=false
-HYLE_CONSENSUS__SLOT_DURATION=100
-```
-
----
-
-## 🐳 Getting Started with Docker
-
-### Build Locally
-
-```bash
-# Build the dependency image, this is a cache layer for faster iteration builds
-docker build . -t hyle-dep -f Dockerfile.dependencies
-# Build the node image
-docker build . -t hyle
-```
-
-### Run Locally with Docker
-
-```bash
-docker run -v ./db:/hyle/data -e HYLE_RUN_INDEXER=false -p 4321:4321 -p 1234:1234 hyle
-```
-
-> 🛠️ **Note**: If you encounter permission issues with the `/hyle/data` volume, add the `--privileged` flag.
+To write and deploy apps on the devnet, look at [our quickstart guide](https://docs.hyli.org/quickstart/)!
 
 ---
 
