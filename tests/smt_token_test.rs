@@ -39,7 +39,7 @@ mod e2e_smt_token {
         // TODO: indexer toutes les transactions hihi
         // let token: SmtToken = ctx
         //     .indexer_client()
-        //     .fetch_current_state(&"smt_token".into())
+        //     .fetch_current_state(&"oranj".into())
         //     .await?;
         let smt_token = SmtTokenProvableState::default();
 
@@ -49,7 +49,7 @@ mod e2e_smt_token {
         })
         // Replace prover binaries for non-reproducible mode.
         .with_prover("hydentity".into(), Risc0Prover::new(HYDENTITY_ELF))
-        .with_prover("smt_token".into(), Risc0Prover::new(SMT_TOKEN_ELF))
+        .with_prover("oranj".into(), Risc0Prover::new(SMT_TOKEN_ELF))
         .build();
 
         info!("➡️  Sending blob to register bob identity");
@@ -82,7 +82,7 @@ mod e2e_smt_token {
 
         executor.smt_token.transfer(
             &mut tx,
-            "smt_token".into(),
+            "oranj".into(),
             FAUCET_ID.into(),
             "bob@hydentity".into(),
             25,
@@ -107,7 +107,7 @@ mod e2e_smt_token {
 
         // let state: SmtToken = ctx
         //     .indexer_client()
-        //     .fetch_current_state(&"smt_token".into())
+        //     .fetch_current_state(&"oranj".into())
         //     .await?;
         let state = executor.smt_token.get_state();
         assert_eq!(

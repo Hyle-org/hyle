@@ -42,8 +42,8 @@ async fn main() {
     );
 
     let token_action = SmtTokenAction::Transfer {
-        sender_account: account1,
-        recipient_account: account2,
+        sender: account1.address,
+        recipient: account2.address,
         amount: 100,
     };
 
