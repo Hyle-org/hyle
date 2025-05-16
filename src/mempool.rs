@@ -1304,7 +1304,21 @@ pub mod test {
         let crypto2 = BlstCrypto::new("2").unwrap();
         ctx.add_trusted_validator(crypto2.validator_pubkey());
 
-        for i in 1..5 {
+        for _ in 1..5 {
+            let signed_msg = crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(
+                None,
+                Some(data_proposal.hashed()),
+            ))?;
+
+            ctx.mempool
+                .handle_net_message(signed_msg, &ctx.mempool_sync_request_sender)
+                .await
+                .expect("should handle net message");
+        }
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        for _ in 1..5 {
             let signed_msg = crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(
                 None,
                 Some(data_proposal.hashed()),
