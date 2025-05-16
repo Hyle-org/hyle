@@ -151,6 +151,18 @@ impl MempoolMetrics {
         );
     }
 
+    /// MempoolSync: Prepare a sync reply to *send*
+    pub fn mempool_sync_failure(&self, lane: &LaneId, requester: &ValidatorPublicKey) {
+        self.mempool_sync.add(
+            1,
+            &[
+                KeyValue::new("lane", format!("{}", lane)),
+                KeyValue::new("requester", format!("{}", requester)),
+                KeyValue::new("status", "failure"),
+            ],
+        );
+    }
+
     /// MempoolSync: Throttle a sync reply instead of preparing it
     pub fn mempool_sync_throttled(&self, lane: &LaneId, requester: &ValidatorPublicKey) {
         self.mempool_sync.add(

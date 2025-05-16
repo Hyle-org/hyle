@@ -88,19 +88,6 @@ impl MempoolSync {
         }
     }
 
-    /// Update the timestamp in the map, so we don't emit replies before some time
-    fn start_throttling_for(
-        &mut self,
-        validator: ValidatorPublicKey,
-        data_proposal_hash: DataProposalHash,
-    ) {
-        let now = TimestampMsClock::now();
-        self.by_pubkey_by_dp_hash
-            .entry(validator)
-            .or_default()
-            .insert(data_proposal_hash, now);
-    }
-
     /// Reply can be emitted because
     /// - it has never been emitted before
     /// - it was emitted a long time ago
@@ -159,7 +146,11 @@ impl MempoolSync {
 
     /// Try to send replies based on what is stored in the todo hashmap. Every time a reply is sent, it stored a timestamp to throttle upcoming SyncRequests, and remove it from the todo hashmap
     async fn send_replies(&mut self) {
-        for (dp_hash, (md, validators)) in self.todo.clone().into_iter() {
+        let mut todo = HashMap::new();
+
+        std::mem::swap(&mut self.todo, &mut todo);
+
+        for (dp_hash, (metadata, validators)) in todo.into_iter() {
             for validator in validators.into_iter() {
                 if self.should_throttle(&validator, &dp_hash) {
                     self.metrics
@@ -167,7 +158,13 @@ impl MempoolSync {
                 } else {
                     self.metrics
                         .mempool_sync_processed(&self.lane_id, &validator);
-                    self.start_throttling_for(validator.clone(), dp_hash.clone());
+
+                    // Update last dissemination time
+                    let now = TimestampMsClock::now();
+                    self.by_pubkey_by_dp_hash
+                        .entry(validator.clone())
+                        .or_default()
+                        .insert(dp_hash.clone(), now);
 
                     if let Ok(Some(data_proposal)) = log_error!(
                         self.lanes.get_dp_by_hash(&self.lane_id, &dp_hash),
@@ -176,29 +173,31 @@ impl MempoolSync {
                         let signed_reply =
                             self.crypto
                                 .sign_msg_with_header(MempoolNetMessage::SyncReply(
-                                    md.clone(),
+                                    metadata.clone(),
                                     data_proposal,
                                 ));
 
                         if let Ok(signed_reply) = signed_reply {
-                            _ = log_error!(
+                            if log_error!(
                                 self.net_sender
                                     .send(OutboundMessage::send(validator.clone(), signed_reply)),
                                 "Sending MempoolNetMessage::SyncReply msg on the bus"
-                            );
+                            )
+                            .is_ok()
+                            {
+                                // In case of success, we don't put back this reply in the todo map
+                                continue;
+                            }
                         }
                     }
 
-                    // Clean from the todo list
-                    let mut empty = false;
-                    if let Some(entry) = self.todo.get_mut(&dp_hash) {
-                        entry.1.remove(&validator);
-                        empty = entry.1.is_empty();
-                    }
+                    self.metrics.mempool_sync_failure(&self.lane_id, &validator);
 
-                    if empty {
-                        self.todo.remove(&dp_hash);
-                    }
+                    self.todo
+                        .entry(dp_hash.clone())
+                        .or_insert((metadata.clone(), Default::default()))
+                        .1
+                        .insert(validator);
                 }
             }
         }
