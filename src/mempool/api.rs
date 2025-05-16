@@ -162,6 +162,7 @@ pub async fn register_contract(
                 Some(timeout) => Some(TimeoutWindow::Timeout(BlockHeight(timeout))),
                 None => None,
             },
+            constructor_metadata: payload.constructor_metadata,
         }
         .as_blob(owner, None, None)],
     );

@@ -140,7 +140,7 @@ pub async fn setup(hyllar: Hyllar, url: String, verifier: String) -> Result<()> 
             verifier: verifier.into(),
             program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
             state_commitment: hyllar.commit(),
-            timeout_window: Some(TimeoutWindow::default()),
+            ..Default::default()
         }
         .as_blob("hyle".into(), None, None)],
     );
@@ -438,7 +438,7 @@ pub async fn long_running_test(node_url: String, use_test_verifier: bool) -> Res
                         random_hydentity_contract
                     ))
                     .commit(),
-                    timeout_window: None,
+                    ..Default::default()
                 }
                 .as_blob("hyle".into(), None, None),
                 RegisterContractAction {
@@ -446,7 +446,7 @@ pub async fn long_running_test(node_url: String, use_test_verifier: bool) -> Res
                     verifier: verifier.clone(),
                     program_id: hyle_contracts::HYDENTITY_ID.to_vec().into(),
                     state_commitment: Hydentity::default().commit(),
-                    timeout_window: None,
+                    ..Default::default()
                 }
                 .as_blob("hyle".into(), None, None),
             ],
@@ -647,6 +647,7 @@ pub async fn send_massive_blob(users: u32, url: String) -> Result<()> {
             program_id: hyle_contracts::HYLLAR_ID.to_vec().into(),
             state_commitment: StateCommitment(vec![1]),
             timeout_window: Some(TimeoutWindow::Timeout(hyle_contract_sdk::BlockHeight(2))),
+            ..Default::default()
         }
         .as_blob("hyle".into(), None, None)],
     );

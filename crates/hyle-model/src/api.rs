@@ -28,13 +28,14 @@ pub struct NetworkStats {
     pub graph_block_time: Vec<(i64, f64)>, // Graph data for block time
 }
 
-#[derive(Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Default, Serialize, Deserialize, ToSchema)]
 pub struct APIRegisterContract {
     pub verifier: Verifier,
     pub program_id: ProgramId,
     pub state_commitment: StateCommitment,
     pub contract_name: ContractName,
     pub timeout_window: Option<u64>,
+    pub constructor_metadata: Option<Vec<u8>>,
 }
 
 /// Copy from Staking contract
