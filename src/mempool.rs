@@ -1347,6 +1347,94 @@ pub mod test {
     }
 
     #[test_log::test(tokio::test)]
+    async fn test_receiving_sync_requests_multiple_dps() -> Result<()> {
+        let mut ctx = MempoolTestCtx::new("mempool").await;
+
+        // Store the DP locally.
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
+        let data_proposal = ctx.create_data_proposal(None, &[register_tx.clone()]);
+        ctx.process_new_data_proposal(data_proposal.clone())?;
+
+        let data_proposal2 =
+            ctx.create_data_proposal(Some(data_proposal.hashed()), &[register_tx.clone()]);
+        ctx.process_new_data_proposal(data_proposal2.clone())?;
+
+        // Since mempool is alone, no broadcast
+        let (..) = ctx.last_lane_entry(&LaneId(ctx.validator_pubkey().clone()));
+
+        // Add new validator
+        let crypto2 = BlstCrypto::new("2").unwrap();
+        ctx.add_trusted_validator(crypto2.validator_pubkey());
+
+        // Sync request for the interval up to data proposal
+        for _ in 1..3 {
+            let signed_msg = crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(
+                None,
+                Some(data_proposal.hashed()),
+            ))?;
+
+            ctx.mempool
+                .handle_net_message(signed_msg, &ctx.mempool_sync_request_sender)
+                .await
+                .expect("should handle net message");
+        }
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // Sync request for the whole interval
+        for _ in 1..3 {
+            let signed_msg = crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(
+                None,
+                Some(data_proposal2.hashed()),
+            ))?;
+
+            ctx.mempool
+                .handle_net_message(signed_msg, &ctx.mempool_sync_request_sender)
+                .await
+                .expect("should handle net message");
+        }
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // Sync request for the whole interval
+        for _ in 1..3 {
+            let signed_msg =
+                crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(None, None))?;
+
+            ctx.mempool
+                .handle_net_message(signed_msg, &ctx.mempool_sync_request_sender)
+                .await
+                .expect("should handle net message");
+        }
+
+        // Assert that we send a SyncReply #1
+        match ctx
+            .assert_send(crypto2.validator_pubkey(), "SyncReply")
+            .await
+            .msg
+        {
+            MempoolNetMessage::SyncReply(_metadata, data_proposal_r) => {
+                assert_eq!(data_proposal_r, data_proposal);
+            }
+            _ => panic!("Expected SyncReply message"),
+        };
+        // Assert that we send a SyncReply #2
+        match ctx
+            .assert_send(crypto2.validator_pubkey(), "SyncReply")
+            .await
+            .msg
+        {
+            MempoolNetMessage::SyncReply(_metadata, data_proposal_r) => {
+                assert_eq!(data_proposal_r, data_proposal2);
+            }
+            _ => panic!("Expected SyncReply message"),
+        };
+
+        assert!(ctx.out_receiver.is_empty());
+        Ok(())
+    }
+
+    #[test_log::test(tokio::test)]
     async fn test_receiving_sync_reply() -> Result<()> {
         let mut ctx = MempoolTestCtx::new("mempool").await;
 
