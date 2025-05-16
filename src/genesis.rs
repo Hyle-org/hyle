@@ -24,6 +24,7 @@ use hyle_modules::{
 };
 use hyllar::{client::tx_executor_handler::transfer, Hyllar, FAUCET_ID};
 use serde::{Deserialize, Serialize};
+use smt_token::account::AccountSMT;
 use staking::{
     client::tx_executor_handler::{delegate, deposit_for_fees, stake},
     state::Staking,
@@ -482,12 +483,14 @@ impl Genesis {
         )
         .expect("register hyllar");
 
+        let smt = AccountSMT::default();
+        let root = *smt.0.root();
         register_hyle_contract(
             &mut register_tx,
             "oranj".into(),
             hyle_model::verifiers::RISC0_1.into(),
             smt_token_program_id.clone().into(),
-            ctx.hyllar.commit(),
+            StateCommitment(Into::<[u8; 32]>::into(root).to_vec()),
             None,
         )
         .expect("register oranj");
