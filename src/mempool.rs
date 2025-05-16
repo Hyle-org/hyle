@@ -609,6 +609,12 @@ impl Mempool {
     ) -> Result<()> {
         trace!("SyncReply from validator {sender_validator}");
 
+        // TODO: Introduce lane ids in sync reply
+        self.metrics.sync_reply_receive(
+            &LaneId(sender_validator.clone()),
+            self.crypto.validator_pubkey(),
+        );
+
         // TODO: this isn't necessarily the case - another validator could have sent us data for this lane.
         let lane_id = &LaneId(sender_validator.clone());
         let lane_operator = self.get_lane_operator(lane_id);
@@ -722,7 +728,7 @@ impl Mempool {
             validator, from_data_proposal_hash, to_data_proposal_hash
         );
         self.metrics
-            .add_sync_request(self.crypto.validator_pubkey(), validator);
+            .sync_request_send(lane_id, self.crypto.validator_pubkey());
         self.send_net_message(
             validator.clone(),
             MempoolNetMessage::SyncRequest(

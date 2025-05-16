@@ -34,7 +34,7 @@ pub struct MempoolSync {
     /// Crypto handle
     crypto: SharedBlstCrypto,
     /// Metrics handle
-    _metrics: MempoolMetrics,
+    metrics: MempoolMetrics,
     /// Keeping track of last time we sent a reply to the validator and the data proposal hash
     by_pubkey_by_dp_hash: HashMap<ValidatorPublicKey, HashMap<DataProposalHash, TimestampMs>>,
     /// Map containing per data proposal, which validators are interested in a sync reply
@@ -58,7 +58,7 @@ impl MempoolSync {
             lane_id,
             lanes,
             crypto,
-            _metrics: metrics,
+            metrics,
             net_sender,
             sync_request_receiver,
             by_pubkey_by_dp_hash: Default::default(),
@@ -160,12 +160,17 @@ impl MempoolSync {
     async fn send_replies(&mut self) {
         for (dp_hash, (md, validators)) in self.todo.clone().into_iter() {
             for validator in validators.into_iter() {
-                if !self.should_throttle(&validator, &dp_hash) {
+                if self.should_throttle(&validator, &dp_hash) {
+                    self.metrics
+                        .mempool_sync_throttled(&self.lane_id, &validator);
+                } else {
+                    self.metrics
+                        .mempool_sync_processed(&self.lane_id, &validator);
                     self.start_throttling_for(validator.clone(), dp_hash.clone());
 
                     if let Ok(Some(data_proposal)) = log_error!(
                         self.lanes.get_dp_by_hash(&self.lane_id, &dp_hash),
-                        "Getting data proposal for SyncReply"
+                        "Getting data proposal for to prepare a SyncReply"
                     ) {
                         let signed_reply =
                             self.crypto
@@ -175,7 +180,6 @@ impl MempoolSync {
                                 ));
 
                         if let Ok(signed_reply) = signed_reply {
-                            // self.metrics.add_sync_reply(&own_id.0, &validator, 1);
                             _ = log_error!(
                                 self.net_sender
                                     .send(OutboundMessage::send(validator.clone(), signed_reply)),
