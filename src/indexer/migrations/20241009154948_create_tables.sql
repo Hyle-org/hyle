@@ -4,6 +4,7 @@ CREATE TABLE blocks (
     parent_hash TEXT NOT NULL,      -- Parent block hash (BlockHash)
     height BIGINT NOT NULL,         -- Corresponds to BlockHeight (u64)
     timestamp TIMESTAMP(3) NOT NULL,   -- UNIX timestamp (u64)
+    total_txs BIGINT NOT NULL,         -- Total number of transactions in the block
     UNIQUE (height),                -- Ensure each block height is unique
     CHECK (length(hash) = 64),      -- Ensure the hash is exactly 64
     CHECK (height >= 0)             -- Ensure the height is positive
