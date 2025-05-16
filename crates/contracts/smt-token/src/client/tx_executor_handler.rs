@@ -71,7 +71,7 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 let mut recipient_account = self
                     .get_account(&recipient)
                     .map_err(|e| e.to_string())?
-                    .unwrap_or_default();
+                    .unwrap_or(Account::new(recipient, 0));
 
                 let sender_key = sender_account.get_key();
                 let recipient_key = recipient_account.get_key();
@@ -103,7 +103,7 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 let mut recipient_account = self
                     .get_account(&recipient)
                     .map_err(|e| e.to_string())?
-                    .unwrap_or_default();
+                    .unwrap_or(Account::new(recipient, 0));
 
                 let owner_key = owner_account.get_key();
                 let recipient_key = recipient_account.get_key();
