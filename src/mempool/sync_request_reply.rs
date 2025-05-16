@@ -9,7 +9,7 @@ use hyle_model::{utils::TimestampMs, DataProposalHash, LaneId, ValidatorPublicKe
 use hyle_modules::{log_error, log_warn};
 use hyle_net::clock::TimestampMsClock;
 use tokio::pin;
-use tracing::info;
+use tracing::{debug, info, warn};
 
 use crate::p2p::network::{HeaderSigner, OutboundMessage};
 
@@ -69,19 +69,16 @@ impl MempoolSync {
     pub async fn start(&mut self) -> anyhow::Result<()> {
         info!("Starting MempoolSync");
 
-        let mut batched_replies_interval = tokio::time::interval(Duration::from_secs(1));
+        let mut batched_replies_interval = tokio::time::interval(Duration::from_millis(200));
         loop {
             tokio::select! {
                 Some(sync_request) = self.sync_request_receiver.recv() => {
-
-                    tracing::warn!("SyncRequest received");
                     _ = log_error!(
                         self.unfold_sync_request_interval(sync_request).await,
                         "Unfolding SyncRequest interval"
                     );
                 }
                 _ = batched_replies_interval.tick() => {
-                    tracing::info!("Sending replies");
                     self.send_replies().await;
                 }
             }
@@ -146,6 +143,10 @@ impl MempoolSync {
 
     /// Try to send replies based on what is stored in the todo hashmap. Every time a reply is sent, it stored a timestamp to throttle upcoming SyncRequests, and remove it from the todo hashmap
     async fn send_replies(&mut self) {
+        if self.todo.is_empty() {
+            return;
+        }
+
         let mut todo = HashMap::new();
 
         std::mem::swap(&mut self.todo, &mut todo);
@@ -153,6 +154,10 @@ impl MempoolSync {
         for (dp_hash, (metadata, validators)) in todo.into_iter() {
             for validator in validators.into_iter() {
                 if self.should_throttle(&validator, &dp_hash) {
+                    debug!(
+                        "Throttling reply for DP Hash: {} to: {}",
+                        &dp_hash, &validator
+                    );
                     self.metrics
                         .mempool_sync_throttled(&self.lane_id, &validator);
                 } else {
@@ -185,12 +190,17 @@ impl MempoolSync {
                             )
                             .is_ok()
                             {
+                                debug!("Sent reply for DP Hash: {} to: {}", &dp_hash, &validator);
                                 // In case of success, we don't put back this reply in the todo map
                                 continue;
                             }
                         }
                     }
 
+                    warn!(
+                        "Could not send reply for DP Hash: {} to: {}, retrying later.",
+                        &dp_hash, &validator
+                    );
                     self.metrics.mempool_sync_failure(&self.lane_id, &validator);
 
                     self.todo
