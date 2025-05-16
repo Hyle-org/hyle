@@ -28,6 +28,7 @@ pub struct SyncRequest {
 
 /// Submodule of Mempool dedicated to SyncRequest/SyncReply handling
 pub struct MempoolSync {
+    // TODO: Remove after putting lane id in sync request/sync reply
     lane_id: LaneId,
     /// Storage handle
     lanes: LanesStorage,
