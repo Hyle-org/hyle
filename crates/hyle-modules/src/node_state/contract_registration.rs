@@ -13,9 +13,7 @@ pub fn validate_contract_name_registration(
     // Special case: 'hyle' TLD is allowed to register new TLD contracts (and can't be updated).
     if owner.0 == "hyle" {
         if new_contract_name.0 == "hyle"
-            || (new_contract_name.0 != "hyle"
-                && !new_contract_name.0.is_empty()
-                && !new_contract_name.0.contains("."))
+            || !new_contract_name.0.is_empty() && !new_contract_name.0.contains(".")
         {
             return Ok(());
         }
@@ -113,7 +111,7 @@ mod test {
         assert!(validate_contract_name_registration(&"hyle".into(), &"newtld".into()).is_ok());
         assert!(validate_contract_name_registration(&"hyle".into(), &"".into()).is_err());
         assert!(validate_contract_name_registration(&"hyle".into(), &".".into()).is_err());
-        assert!(validate_contract_name_registration(&"hyle".into(), &"hyle".into()).is_err());
+        assert!(validate_contract_name_registration(&"hyle".into(), &"hyle".into()).is_ok());
     }
 
     #[test]
