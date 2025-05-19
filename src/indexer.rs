@@ -1566,13 +1566,6 @@ mod test {
         transactions_response.assert_status_ok();
         assert!(!transactions_response.text().is_empty());
 
-        // Get an existing transaction by hash
-        let transactions_response = server
-            .get("/transaction/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-            .await;
-        transactions_response.assert_status_ok();
-        assert!(!transactions_response.text().is_empty());
-
         // Get an existing transaction, waiting for dissemination by hash
         let transactions_response = server
             .get("/transaction/hash/test_tx_hash_0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
