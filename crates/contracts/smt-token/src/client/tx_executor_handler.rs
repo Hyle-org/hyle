@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use anyhow::anyhow;
 use client_sdk::{
     helpers::risc0::Risc0Prover,
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder, TxExecutorHandler},
@@ -67,7 +68,7 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 let mut sender_account = self
                     .get_account(&sender)
                     .map_err(|e| e.to_string())?
-                    .unwrap();
+                    .ok_or("Sender account not found")?;
                 let mut recipient_account = self
                     .get_account(&recipient)
                     .map_err(|e| e.to_string())?
@@ -99,7 +100,7 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 let mut owner_account = self
                     .get_account(&owner)
                     .map_err(|e| e.to_string())?
-                    .unwrap();
+                    .ok_or("Owner account not found")?;
                 let mut recipient_account = self
                     .get_account(&recipient)
                     .map_err(|e| e.to_string())?
@@ -129,7 +130,7 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 let mut owner_account = self
                     .get_account(&owner)
                     .map_err(|e| e.to_string())?
-                    .unwrap();
+                    .ok_or("Owner account not found")?;
                 let owner_key = owner_account.get_key();
                 owner_account.update_allowances(spender.clone(), amount);
                 if let Err(e) = self.0.update(owner_key, owner_account) {
@@ -175,7 +176,7 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 let sender_account = self
                     .get_account(&sender)
                     .map_err(|e| e.to_string())?
-                    .unwrap();
+                    .ok_or("Sender account not found")?;
                 let recipient_account = self
                     .get_account(&recipient)
                     .map_err(|e| e.to_string())?
@@ -200,7 +201,7 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 let owner_account = self
                     .get_account(&owner)
                     .map_err(|e| e.to_string())?
-                    .unwrap();
+                    .ok_or("Owner account not found")?;
                 let recipient_account = self
                     .get_account(&recipient)
                     .map_err(|e| e.to_string())?
@@ -224,7 +225,7 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 let owner_account = self
                     .get_account(&owner)
                     .map_err(|e| e.to_string())?
-                    .unwrap();
+                    .ok_or("Owner account not found")?;
                 let key = owner_account.get_key();
                 BorshableMerkleProof(
                     self.0
