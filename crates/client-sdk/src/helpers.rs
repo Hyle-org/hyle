@@ -119,7 +119,7 @@ pub mod sp1 {
 
     enum ProverType {
         Local(EnvProver),
-        Network(NetworkProver),
+        Network(Box<NetworkProver>),
     }
 
     impl SP1Prover {
@@ -142,7 +142,7 @@ pub mod sp1 {
                     Self {
                         pk,
                         vk,
-                        client: ProverType::Network(client),
+                        client: ProverType::Network(Box::new(client)),
                     }
                 }
                 _ => {
