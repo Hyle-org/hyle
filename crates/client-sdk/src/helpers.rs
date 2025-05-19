@@ -104,21 +104,58 @@ pub mod risc0 {
 
 #[cfg(feature = "sp1")]
 pub mod sp1 {
-    use sp1_sdk::{EnvProver, ProverClient, SP1ProvingKey, SP1Stdin, SP1VerifyingKey};
+    use sp1_sdk::{
+        network::builder::NetworkProverBuilder, EnvProver, NetworkProver, Prover, ProverClient,
+        SP1ProvingKey, SP1Stdin, SP1VerifyingKey,
+    };
 
     use super::*;
 
     pub struct SP1Prover {
         pk: SP1ProvingKey,
         pub vk: SP1VerifyingKey,
-        client: EnvProver,
+        client: ProverType,
     }
+
+    enum ProverType {
+        Local(EnvProver),
+        Network(Box<NetworkProver>),
+    }
+
     impl SP1Prover {
-        pub fn new(binary: &[u8]) -> Self {
-            // Setup the program for proving.
-            let client = ProverClient::from_env();
-            let (pk, vk) = client.setup(binary);
-            Self { client, pk, vk }
+        pub async fn new(binary: &[u8]) -> Self {
+            let prover_type = std::env::var("SP1_PROVER").unwrap_or_default();
+
+            match prover_type.to_lowercase().as_str() {
+                "network" => {
+                    // Setup the program for network proving
+                    let client = NetworkProverBuilder::default().build();
+                    let local_client = ProverClient::builder().mock().build();
+                    let (pk, vk) = local_client.setup(binary);
+
+                    tracing::info!("Registering sp1 program on network");
+                    client
+                        .register_program(&vk, binary)
+                        .await
+                        .expect("registering program");
+
+                    Self {
+                        pk,
+                        vk,
+                        client: ProverType::Network(Box::new(client)),
+                    }
+                }
+                _ => {
+                    // Setup the program for local proving
+                    let client = ProverClient::from_env();
+                    let (pk, vk) = client.setup(binary);
+                    Self {
+                        pk,
+                        vk,
+                        client: ProverType::Local(client),
+                    }
+                }
+            }
         }
 
         pub fn program_id(&self) -> Result<sdk::ProgramId> {
@@ -135,13 +172,22 @@ pub mod sp1 {
             let encoded = borsh::to_vec(&(commitment_metadata, calldatas))?;
             stdin.write_vec(encoded);
 
-            // Generate the proof
-            let proof = self
-                .client
-                .prove(&self.pk, &stdin)
-                //.compressed()
-                .run()
-                .expect("failed to generate proof");
+            // Generate the proof based on the prover type
+            let proof = match &self.client {
+                ProverType::Local(client) => client
+                    .prove(&self.pk, &stdin)
+                    .compressed()
+                    .run()
+                    .expect("failed to generate proof"),
+                ProverType::Network(client) => client
+                    .prove(&self.pk, &stdin)
+                    // Core proofs are limite to 5M cycles
+                    .compressed()
+                    // Reserved strategy is better for higher usage throughput
+                    .strategy(sp1_sdk::network::FulfillmentStrategy::Reserved)
+                    .run()
+                    .expect("failed to generate proof"),
+            };
 
             let encoded_receipt = bincode::serialize(&proof)?;
             Ok(ProofData(encoded_receipt))
