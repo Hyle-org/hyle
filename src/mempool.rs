@@ -19,12 +19,11 @@ use api::RestApiMessage;
 use block_construction::BlockUnderConstruction;
 use borsh::{BorshDeserialize, BorshSerialize};
 use client_sdk::tcp_client::TcpServerMessage;
-use futures::StreamExt;
 use hyle_contract_sdk::{ContractName, ProgramId, Verifier};
 use hyle_crypto::SharedBlstCrypto;
 use hyle_modules::{
     bus::SharedMessageBus, log_error, log_warn, module_bus_client, module_handle_messages,
-    modules::Module,
+    modules::Module, utils::static_type_map::Pick,
 };
 use hyle_net::ordered_join_set::OrderedJoinSet;
 use metrics::MempoolMetrics;
@@ -39,6 +38,7 @@ use std::{
     time::Duration,
 };
 use storage::{LaneEntryMetadata, Storage};
+use sync_request_reply::{MempoolSync, SyncRequest};
 use tokio::task::JoinSet;
 use verify_tx::DataProposalVerdict;
 // Pick one of the two implementations
@@ -54,6 +54,7 @@ pub mod own_lane;
 pub mod storage;
 pub mod storage_fjall;
 pub mod storage_memory;
+pub mod sync_request_reply;
 pub mod verifiers;
 pub mod verify_tx;
 
@@ -337,6 +338,8 @@ impl Mempool {
         new_dp_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         disseminate_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
+        let sync_request_sender = self.start_mempool_sync();
+
         // TODO: Recompute optimistic node_state for contract registrations.
         module_handle_messages! {
             on_bus self.bus,
@@ -345,7 +348,7 @@ impl Mempool {
                 self.processing_dps.is_empty() && self.processing_txs.is_empty() && self.own_data_proposal_in_preparation.is_empty()
             },
             listen<MsgWithHeader<MempoolNetMessage>> cmd => {
-                let _ = log_error!(self.handle_net_message(cmd).await, "Handling MempoolNetMessage in Mempool");
+                let _ = log_error!(self.handle_net_message(cmd, &sync_request_sender).await, "Handling MempoolNetMessage in Mempool");
             }
             listen<RestApiMessage> cmd => {
                 let _ = log_error!(self.handle_api_message(cmd), "Handling API Message in Mempool");
@@ -420,6 +423,26 @@ impl Mempool {
         }
 
         Ok(())
+    }
+
+    pub fn start_mempool_sync(&self) -> tokio::sync::mpsc::Sender<SyncRequest> {
+        let (sync_request_sender, sync_request_receiver) =
+            tokio::sync::mpsc::channel::<SyncRequest>(30);
+        let net_sender =
+            Pick::<tokio::sync::broadcast::Sender<OutboundMessage>>::get(&self.bus).clone();
+
+        let mut mempool_sync = MempoolSync::create(
+            self.own_lane_id().clone(),
+            self.lanes.new_handle(),
+            self.crypto.clone(),
+            self.metrics.clone(),
+            net_sender,
+            sync_request_receiver,
+        );
+
+        tokio::spawn(async move { mempool_sync.start().await });
+
+        sync_request_sender
     }
 
     fn handle_contract_registration(&mut self, effect: RegisterContractEffect) {
@@ -515,7 +538,11 @@ impl Mempool {
         }
     }
 
-    async fn handle_net_message(&mut self, msg: MsgWithHeader<MempoolNetMessage>) -> Result<()> {
+    async fn handle_net_message(
+        &mut self,
+        msg: MsgWithHeader<MempoolNetMessage>,
+        sync_request_sender: &tokio::sync::mpsc::Sender<SyncRequest>,
+    ) -> Result<()> {
         let validator = &msg.header.signature.validator;
         // TODO: adapt can_rejoin test to emit a stake tx before turning on the joining node
         // if !self.validators.contains(validator) {
@@ -539,12 +566,32 @@ impl Mempool {
                 self.on_poda_update(&lane_id, &data_proposal_hash, signatures)?
             }
             MempoolNetMessage::SyncRequest(from_data_proposal_hash, to_data_proposal_hash) => {
-                self.on_sync_request(
-                    validator,
-                    from_data_proposal_hash.as_ref(),
-                    to_data_proposal_hash.as_ref(),
-                )
-                .await?;
+                info!(
+                    "{} SyncRequest received from validator {validator} for last_data_proposal_hash {:?}",
+                    &self.own_lane_id(),
+                    to_data_proposal_hash
+                );
+
+                // Redirect to chan
+
+                let Some(to) = to_data_proposal_hash.or(self
+                    .lanes
+                    .lanes_tip
+                    .get(&self.own_lane_id())
+                    .map(|lane_id| lane_id.0.clone()))
+                else {
+                    info!("Nothing to do for this SyncRequest");
+                    return Ok(());
+                };
+
+                sync_request_sender
+                    .send(SyncRequest {
+                        from: from_data_proposal_hash,
+                        to,
+                        validator: validator.clone(),
+                    })
+                    .await
+                    .context("Sending SyncRequest to Mempool submodule")?;
             }
             MempoolNetMessage::SyncReply(metadata, data_proposal) => {
                 self.on_sync_reply(validator, metadata, data_proposal)
@@ -561,6 +608,12 @@ impl Mempool {
         data_proposal: DataProposal,
     ) -> Result<()> {
         trace!("SyncReply from validator {sender_validator}");
+
+        // TODO: Introduce lane ids in sync reply
+        self.metrics.sync_reply_receive(
+            &LaneId(sender_validator.clone()),
+            self.crypto.validator_pubkey(),
+        );
 
         // TODO: this isn't necessarily the case - another validator could have sent us data for this lane.
         let lane_id = &LaneId(sender_validator.clone());
@@ -610,46 +663,6 @@ impl Mempool {
         self.try_to_send_full_signed_blocks()
             .await
             .context("Try process queued CCP")?;
-
-        Ok(())
-    }
-
-    async fn on_sync_request(
-        &mut self,
-        validator: &ValidatorPublicKey,
-        from_data_proposal_hash: Option<&DataProposalHash>,
-        to_data_proposal_hash: Option<&DataProposalHash>,
-    ) -> anyhow::Result<()> {
-        info!(
-            "{} SyncRequest received from validator {validator} for last_data_proposal_hash {:?}",
-            &self.own_lane_id(),
-            to_data_proposal_hash
-        );
-
-        let own_id = self.own_lane_id();
-        let lanes_clone = self.lanes.clone();
-
-        let mut missing_lane_entries = Box::pin(lanes_clone.get_entries_between_hashes(
-            &own_id,
-            from_data_proposal_hash.cloned(),
-            to_data_proposal_hash.cloned(),
-        ));
-
-        while let Some(res) = missing_lane_entries.next().await {
-            match res {
-                Err(e) => info!(
-                    "Can't send sync reply as there are no missing data proposals found between {:?} and {:?} for {}: {}",
-                    to_data_proposal_hash, from_data_proposal_hash, self.own_lane_id(), e
-                ),
-                Ok((metadata, data_proposal)) => {
-                    debug!(
-                        "One missing data proposal on {} is {:?}",
-                        validator, metadata
-                    );
-                    self.send_sync_reply(validator, metadata, data_proposal)?;
-                }
-            }
-        }
 
         Ok(())
     }
@@ -715,29 +728,13 @@ impl Mempool {
             validator, from_data_proposal_hash, to_data_proposal_hash
         );
         self.metrics
-            .add_sync_request(self.crypto.validator_pubkey(), validator);
+            .sync_request_send(lane_id, self.crypto.validator_pubkey());
         self.send_net_message(
             validator.clone(),
             MempoolNetMessage::SyncRequest(
                 from_data_proposal_hash.cloned(),
                 to_data_proposal_hash.cloned(),
             ),
-        )?;
-        Ok(())
-    }
-
-    fn send_sync_reply(
-        &mut self,
-        validator: &ValidatorPublicKey,
-        metadata: LaneEntryMetadata,
-        data_proposal: DataProposal,
-    ) -> Result<()> {
-        // cleanup previously tracked sent sync request
-        self.metrics
-            .add_sync_reply(self.crypto.validator_pubkey(), validator, 1);
-        self.send_net_message(
-            validator.clone(),
-            MempoolNetMessage::SyncReply(metadata, data_proposal),
         )?;
         Ok(())
     }
@@ -823,6 +820,7 @@ pub mod test {
     pub struct MempoolTestCtx {
         pub name: String,
         pub out_receiver: Receiver<OutboundMessage>,
+        pub mempool_sync_request_sender: tokio::sync::mpsc::Sender<SyncRequest>,
         pub mempool_event_receiver: Receiver<MempoolBlockEvent>,
         pub mempool_status_event_receiver: Receiver<MempoolStatusEvent>,
         pub mempool: Mempool,
@@ -854,12 +852,13 @@ pub mod test {
             let mempool_event_receiver = get_receiver::<MempoolBlockEvent>(&shared_bus).await;
             let mempool_status_event_receiver =
                 get_receiver::<MempoolStatusEvent>(&shared_bus).await;
-
             let mempool = Self::build_mempool(&shared_bus, crypto).await;
+            let mempool_sync_request_sender = mempool.start_mempool_sync();
 
             MempoolTestCtx {
                 name: name.to_string(),
                 out_receiver,
+                mempool_sync_request_sender,
                 mempool_event_receiver,
                 mempool_status_event_receiver,
                 mempool,
@@ -931,9 +930,13 @@ pub mod test {
                 || self.mempool.disseminate_data_proposals(None).await?)
         }
 
-        pub async fn handle_poda_update(&mut self, net_message: MsgWithHeader<MempoolNetMessage>) {
+        pub async fn handle_poda_update(
+            &mut self,
+            net_message: MsgWithHeader<MempoolNetMessage>,
+            sync_request_sender: &tokio::sync::mpsc::Sender<SyncRequest>,
+        ) {
             self.mempool
-                .handle_net_message(net_message)
+                .handle_net_message(net_message, sync_request_sender)
                 .await
                 .expect("fail to handle net message");
         }
@@ -951,38 +954,6 @@ pub mod test {
             self.mempool
                 .handle_internal_event(event)
                 .expect("fail to handle event");
-        }
-
-        pub fn assert_broadcast(
-            &mut self,
-            description: &str,
-        ) -> Pin<Box<dyn Future<Output = MsgWithHeader<MempoolNetMessage>>>> {
-            #[allow(clippy::expect_fun_call)]
-            let rec = self
-                .out_receiver
-                .try_recv()
-                .expect(format!("{description}: No message broadcasted").as_str());
-
-            match rec {
-                OutboundMessage::BroadcastMessage(net_msg) => {
-                    if let NetMessage::MempoolMessage(msg) = net_msg {
-                        Box::pin(async move { msg })
-                    } else {
-                        println!(
-                            "{description}: Mempool OutboundMessage message is missing, found {}",
-                            net_msg
-                        );
-                        self.assert_broadcast(description)
-                    }
-                }
-                _ => {
-                    println!(
-                        "{description}: Broadcast OutboundMessage message is missing, found {:?}",
-                        rec
-                    );
-                    self.assert_broadcast(description)
-                }
-            }
         }
 
         #[track_caller]
@@ -1017,61 +988,104 @@ pub mod test {
                 }
             }
         }
-
         pub fn assert_send(
             &mut self,
             to: &ValidatorPublicKey,
             description: &str,
-        ) -> Pin<Box<dyn Future<Output = MsgWithHeader<MempoolNetMessage>>>> {
-            #[allow(clippy::expect_fun_call)]
-            let rec = self
-                .out_receiver
-                .try_recv()
-                .expect(format!("{description}: No message broadcasted").as_str());
+        ) -> Pin<Box<dyn Future<Output = MsgWithHeader<MempoolNetMessage>> + '_>> {
+            let to = to.clone();
+            let description = description.to_string().clone();
+            Box::pin(async move {
+                #[allow(clippy::expect_fun_call)]
+                let rec =
+                    tokio::time::timeout(Duration::from_millis(1000), self.out_receiver.recv())
+                        .await
+                        .expect(format!("{description}: No message broadcasted").as_str())
+                        .expect(format!("{description}: No message broadcasted").as_str());
 
-            match rec {
-                OutboundMessage::SendMessage { validator_id, msg } => {
-                    if let NetMessage::MempoolMessage(msg) = msg {
-                        if &validator_id != to {
-                            panic!(
+                match rec {
+                    OutboundMessage::SendMessage { validator_id, msg } => {
+                        if let NetMessage::MempoolMessage(msg) = msg {
+                            if validator_id != to {
+                                panic!(
                                 "{description}: Send message was sent to {validator_id} instead of {}",
                                 to
                             );
-                        }
+                            }
 
-                        Box::pin(async move { msg })
-                    } else {
-                        tracing::warn!("{description}: skipping {:?}", msg);
-                        self.assert_send(to, description)
+                            msg
+                        } else {
+                            tracing::warn!("{description}: skipping {:?}", msg);
+                            self.assert_send(&to, description.as_str()).await
+                        }
                     }
-                }
-                OutboundMessage::BroadcastMessage(NetMessage::ConsensusMessage(e)) => {
-                    tracing::warn!("{description}: skipping broadcast message {:?}", e);
-                    self.assert_send(to, description)
-                }
-                OutboundMessage::BroadcastMessage(els) => {
-                    panic!(
-                        "{description}: received broadcast message instead of send {:?}",
-                        els
-                    );
-                }
-                OutboundMessage::BroadcastMessageOnlyFor(_, NetMessage::ConsensusMessage(e)) => {
-                    tracing::warn!("{description}: skipping broadcast message {:?}", e);
-                    self.assert_send(to, description)
-                }
-                OutboundMessage::BroadcastMessageOnlyFor(_, els) => {
-                    panic!(
+                    OutboundMessage::BroadcastMessage(NetMessage::ConsensusMessage(e)) => {
+                        tracing::warn!("{description}: skipping broadcast message {:?}", e);
+                        self.assert_send(&to, description.as_str()).await
+                    }
+                    OutboundMessage::BroadcastMessage(els) => {
+                        panic!(
+                            "{description}: received broadcast message instead of send {:?}",
+                            els
+                        );
+                    }
+                    OutboundMessage::BroadcastMessageOnlyFor(
+                        _,
+                        NetMessage::ConsensusMessage(e),
+                    ) => {
+                        tracing::warn!("{description}: skipping broadcast message {:?}", e);
+                        self.assert_send(&to, description.as_str()).await
+                    }
+                    OutboundMessage::BroadcastMessageOnlyFor(_, els) => {
+                        panic!(
                         "{description}: received broadcast only for message instead of send {:?}",
                         els
                     );
+                    }
                 }
-            }
+            })
+        }
+
+        pub fn assert_broadcast(
+            &mut self,
+            description: &str,
+        ) -> Pin<Box<dyn Future<Output = MsgWithHeader<MempoolNetMessage>> + '_>> {
+            let description = description.to_string().clone();
+            Box::pin(async move {
+                #[allow(clippy::expect_fun_call)]
+                let rec =
+                    tokio::time::timeout(Duration::from_millis(1000), self.out_receiver.recv())
+                        .await
+                        .expect(format!("{description}: No message broadcasted").as_str())
+                        .expect(format!("{description}: No message broadcasted").as_str());
+
+                match rec {
+                    OutboundMessage::BroadcastMessage(net_msg) => {
+                        if let NetMessage::MempoolMessage(msg) = net_msg {
+                            msg
+                        } else {
+                            println!(
+                            "{description}: Mempool OutboundMessage message is missing, found {}",
+                            net_msg
+                        );
+                            self.assert_broadcast(description.as_str()).await
+                        }
+                    }
+                    _ => {
+                        println!(
+                        "{description}: Broadcast OutboundMessage message is missing, found {:?}",
+                        rec
+                    );
+                        self.assert_broadcast(description.as_str()).await
+                    }
+                }
+            })
         }
 
         pub async fn handle_msg(&mut self, msg: &MsgWithHeader<MempoolNetMessage>, _err: &str) {
             debug!("📥 {} Handling message: {:?}", self.name, msg);
             self.mempool
-                .handle_net_message(msg.clone())
+                .handle_net_message(msg.clone(), &self.mempool_sync_request_sender)
                 .await
                 .expect("should handle net msg");
         }
@@ -1290,15 +1304,31 @@ pub mod test {
         let crypto2 = BlstCrypto::new("2").unwrap();
         ctx.add_trusted_validator(crypto2.validator_pubkey());
 
-        let signed_msg = crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(
-            None,
-            Some(data_proposal.hashed()),
-        ))?;
+        for _ in 1..5 {
+            let signed_msg = crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(
+                None,
+                Some(data_proposal.hashed()),
+            ))?;
 
-        ctx.mempool
-            .handle_net_message(signed_msg)
-            .await
-            .expect("should handle net message");
+            ctx.mempool
+                .handle_net_message(signed_msg, &ctx.mempool_sync_request_sender)
+                .await
+                .expect("should handle net message");
+        }
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        for _ in 1..5 {
+            let signed_msg = crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(
+                None,
+                Some(data_proposal.hashed()),
+            ))?;
+
+            ctx.mempool
+                .handle_net_message(signed_msg, &ctx.mempool_sync_request_sender)
+                .await
+                .expect("should handle net message");
+        }
 
         // Assert that we send a SyncReply
         match ctx
@@ -1311,6 +1341,96 @@ pub mod test {
             }
             _ => panic!("Expected SyncReply message"),
         };
+
+        assert!(ctx.out_receiver.is_empty());
+        Ok(())
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_receiving_sync_requests_multiple_dps() -> Result<()> {
+        let mut ctx = MempoolTestCtx::new("mempool").await;
+
+        // Store the DP locally.
+        let register_tx = make_register_contract_tx(ContractName::new("test1"));
+        let data_proposal = ctx.create_data_proposal(None, &[register_tx.clone()]);
+        ctx.process_new_data_proposal(data_proposal.clone())?;
+
+        let data_proposal2 =
+            ctx.create_data_proposal(Some(data_proposal.hashed()), &[register_tx.clone()]);
+        ctx.process_new_data_proposal(data_proposal2.clone())?;
+
+        // Since mempool is alone, no broadcast
+        let (..) = ctx.last_lane_entry(&LaneId(ctx.validator_pubkey().clone()));
+
+        // Add new validator
+        let crypto2 = BlstCrypto::new("2").unwrap();
+        ctx.add_trusted_validator(crypto2.validator_pubkey());
+
+        // Sync request for the interval up to data proposal
+        for _ in 1..3 {
+            let signed_msg = crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(
+                None,
+                Some(data_proposal.hashed()),
+            ))?;
+
+            ctx.mempool
+                .handle_net_message(signed_msg, &ctx.mempool_sync_request_sender)
+                .await
+                .expect("should handle net message");
+        }
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // Sync request for the whole interval
+        for _ in 1..3 {
+            let signed_msg = crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(
+                None,
+                Some(data_proposal2.hashed()),
+            ))?;
+
+            ctx.mempool
+                .handle_net_message(signed_msg, &ctx.mempool_sync_request_sender)
+                .await
+                .expect("should handle net message");
+        }
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // Sync request for the whole interval
+        for _ in 1..3 {
+            let signed_msg =
+                crypto2.sign_msg_with_header(MempoolNetMessage::SyncRequest(None, None))?;
+
+            ctx.mempool
+                .handle_net_message(signed_msg, &ctx.mempool_sync_request_sender)
+                .await
+                .expect("should handle net message");
+        }
+
+        // Assert that we send a SyncReply #1
+        match ctx
+            .assert_send(crypto2.validator_pubkey(), "SyncReply")
+            .await
+            .msg
+        {
+            MempoolNetMessage::SyncReply(_metadata, data_proposal_r) => {
+                assert_eq!(data_proposal_r, data_proposal);
+            }
+            _ => panic!("Expected SyncReply message"),
+        };
+        // Assert that we send a SyncReply #2
+        match ctx
+            .assert_send(crypto2.validator_pubkey(), "SyncReply")
+            .await
+            .msg
+        {
+            MempoolNetMessage::SyncReply(_metadata, data_proposal_r) => {
+                assert_eq!(data_proposal_r, data_proposal2);
+            }
+            _ => panic!("Expected SyncReply message"),
+        };
+
+        assert!(ctx.out_receiver.is_empty());
         Ok(())
     }
 
@@ -1341,7 +1461,10 @@ pub mod test {
             data_proposal.clone(),
         ))?;
 
-        let handle = ctx.mempool.handle_net_message(signed_msg.clone()).await;
+        let handle = ctx
+            .mempool
+            .handle_net_message(signed_msg.clone(), &ctx.mempool_sync_request_sender)
+            .await;
         assert_eq!(
             handle.expect_err("should fail").to_string(),
             format!(
@@ -1363,7 +1486,10 @@ pub mod test {
         ))?;
 
         // This actually fails - we don't know how to handle it
-        let handle = ctx.mempool.handle_net_message(signed_msg.clone()).await;
+        let handle = ctx
+            .mempool
+            .handle_net_message(signed_msg.clone(), &ctx.mempool_sync_request_sender)
+            .await;
         assert_eq!(
             handle.expect_err("should fail").to_string(),
             format!(
@@ -1385,7 +1511,10 @@ pub mod test {
         ))?;
 
         // This actually fails - we don't know how to handle it
-        let handle = ctx.mempool.handle_net_message(signed_msg.clone()).await;
+        let handle = ctx
+            .mempool
+            .handle_net_message(signed_msg.clone(), &ctx.mempool_sync_request_sender)
+            .await;
         assert_eq!(
             handle.expect_err("should fail").to_string(),
             format!(
@@ -1407,7 +1536,10 @@ pub mod test {
         ))?;
 
         // This actually fails - we don't know how to handle it
-        let handle = ctx.mempool.handle_net_message(signed_msg.clone()).await;
+        let handle = ctx
+            .mempool
+            .handle_net_message(signed_msg.clone(), &ctx.mempool_sync_request_sender)
+            .await;
         assert_eq!(
             handle.expect_err("should fail").to_string(),
             format!(
@@ -1428,7 +1560,10 @@ pub mod test {
             data_proposal.clone(),
         ))?;
 
-        let handle = ctx.mempool.handle_net_message(signed_msg.clone()).await;
+        let handle = ctx
+            .mempool
+            .handle_net_message(signed_msg.clone(), &ctx.mempool_sync_request_sender)
+            .await;
         assert_ok!(handle, "Should handle net message");
 
         // Assert that the lane entry was added
