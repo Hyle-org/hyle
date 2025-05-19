@@ -315,7 +315,7 @@ pub async fn get_transactions(
             FROM transactions t
             LEFT JOIN blocks b ON t.block_hash = b.hash
             WHERE b.height <= $1 and b.height > $2 AND t.transaction_type = 'blob_transaction'
-            ORDER BY b.height DESC, t.created_at DESC, t.index DESC
+            ORDER BY b.height DESC, t.index DESC
             LIMIT $3
             "#,
             )
@@ -328,7 +328,7 @@ pub async fn get_transactions(
             FROM transactions t
             LEFT JOIN blocks b ON t.block_hash = b.hash
             WHERE t.transaction_type = 'blob_transaction'
-            ORDER BY b.height DESC, t.created_at DESC, t.index DESC
+            ORDER BY b.height DESC, t.index DESC
             LIMIT $1
             "#,
             )
@@ -368,7 +368,7 @@ pub async fn get_transactions_by_contract(
             JOIN blobs b ON t.tx_hash = b.tx_hash
             LEFT JOIN blocks bl ON t.block_hash = bl.hash
             WHERE b.contract_name = $1 AND bl.height <= $2 AND bl.height > $3 AND t.transaction_type = 'blob_transaction'
-            ORDER BY bl.height DESC, t.created_at DESC, t.index DESC
+            ORDER BY bl.height DESC, t.index DESC
             LIMIT $4
             "#,
         )
@@ -383,7 +383,7 @@ pub async fn get_transactions_by_contract(
             JOIN blobs b ON t.tx_hash = b.tx_hash AND t.parent_dp_hash = b.parent_dp_hash
             LEFT JOIN blocks bl ON t.block_hash = bl.hash
             WHERE b.contract_name = $1 AND t.transaction_type = 'blob_transaction'
-            ORDER BY bl.height DESC, t.created_at DESC, t.index DESC
+            ORDER BY bl.height DESC, t.index DESC
             LIMIT $2
             "#,
         )
@@ -421,7 +421,7 @@ pub async fn get_transactions_by_height(
         FROM transactions t
         JOIN blocks b ON t.block_hash = b.hash
         WHERE b.height = $1 AND t.transaction_type = 'blob_transaction'
-        ORDER BY t.created_at DESC, t.index DESC
+        ORDER BY t.index DESC
         "#,
         )
         .bind(height)
@@ -453,13 +453,6 @@ pub async fn get_transaction_with_hash(
     let transaction = log_error!(
         sqlx::query_as::<_, TransactionDb>(
             r#"
-WITH latest_dp_for_this_tx_hash AS (
-  SELECT parent_dp_hash
-  FROM transactions
-  WHERE tx_hash = $1
-  ORDER BY created_at DESC
-  LIMIT 1
-)
 SELECT
     tx_hash,
     version,
@@ -473,8 +466,8 @@ FROM transactions t
 LEFT JOIN blocks b ON t.block_hash = b.hash
 WHERE t.transaction_type = 'blob_transaction'
   AND t.tx_hash = $1
-  AND t.parent_dp_hash = (SELECT parent_dp_hash FROM latest_dp_for_this_tx_hash)
-ORDER BY created_at DESC, index DESC;
+ORDER BY block_height DESC, index DESC
+LIMIT 1;
         "#,
         )
         .bind(tx_hash)
@@ -509,12 +502,11 @@ pub async fn get_transaction_events(
     let rows = log_error!(
         sqlx::query(
             r#"
-WITH latest_dp_for_this_tx_hash AS (
-    SELECT parent_dp_hash
-    FROM transactions
-    WHERE tx_hash = $1
-    ORDER BY created_at DESC
-    LIMIT 1
+WITH latest_height_for_this_tx_hash AS (
+  SELECT MAX(block_height) as max_height
+  FROM transactions
+  WHERE tx_hash = $1
+    AND transaction_type = 'blob_transaction'
 )
 
 SELECT 
@@ -527,13 +519,9 @@ LEFT JOIN blocks b
     ON t.block_hash = b.hash
 WHERE 
     t.tx_hash = $1
-    AND t.parent_dp_hash = (
-        SELECT parent_dp_hash 
-        FROM latest_dp_for_this_tx_hash
-    )
+    AND t.block_height = (SELECT max_height FROM latest_height_for_this_tx_hash)
 ORDER BY 
     b.height DESC,
-    t.created_at DESC,
     t.index DESC;
 "#,
         )
@@ -686,14 +674,13 @@ pub async fn get_blobs_by_tx_hash(
     let blobs = log_error!(
         sqlx::query_as::<_, BlobDb>(
             r#"
-WITH latest_dp_for_this_tx_hash AS (
-  SELECT parent_dp_hash
+WITH latest_height_for_this_tx_hash AS (
+  SELECT MAX(block_height) as max_height
   FROM transactions
   WHERE tx_hash = $1
     AND transaction_type = 'blob_transaction'
-  ORDER BY created_at DESC
-  LIMIT 1
 )
+
 SELECT 
       blobs.*,
       array_remove(ARRAY_AGG(blob_proof_outputs.hyle_output), NULL) AS proof_outputs
@@ -703,8 +690,11 @@ LEFT JOIN
 	ON blobs.parent_dp_hash = blob_proof_outputs.blob_parent_dp_hash 
     	   AND blobs.tx_hash = blob_proof_outputs.blob_tx_hash 
     	   AND blobs.blob_index = blob_proof_outputs.blob_index
+JOIN
+     transactions
+        ON transactions.parent_dp_hash = blobs.parent_dp_hash AND transactions.tx_hash = blobs.tx_hash
 WHERE blobs.tx_hash = $1
-     AND blobs.parent_dp_hash = (SELECT parent_dp_hash FROM latest_dp_for_this_tx_hash)
+     AND transactions.block_height = (SELECT max_height FROM latest_height_for_this_tx_hash)
 GROUP BY
       blobs.parent_dp_hash,
       blobs.tx_hash,
@@ -742,15 +732,6 @@ pub async fn get_blob(
     let blob = log_error!(
         sqlx::query_as::<_, BlobDb>(
             r#"
-WITH latest_dp_for_this_tx_hash AS (
-  SELECT parent_dp_hash
-  FROM transactions
-  WHERE tx_hash = $1
-    AND transaction_type = 'blob_transaction'
-  ORDER BY created_at DESC
-  LIMIT 1
-)
-
 SELECT 
   blobs.*, 
   array_remove(ARRAY_AGG(blob_proof_outputs.hyle_output), NULL) AS proof_outputs
@@ -759,17 +740,18 @@ LEFT JOIN blob_proof_outputs
   ON blobs.parent_dp_hash = blob_proof_outputs.blob_parent_dp_hash
   AND blobs.tx_hash = blob_proof_outputs.blob_tx_hash
   AND blobs.blob_index = blob_proof_outputs.blob_index
-WHERE 
+JOIN transactions
+  ON blobs.parent_dp_hash = transactions.parent_dp_hash AND blobs.tx_hash = transactions.tx_hash
+WHERE
   blobs.tx_hash = $1
   AND blobs.blob_index = $2
-  AND blobs.parent_dp_hash = (
-    SELECT parent_dp_hash 
-    FROM latest_dp_for_this_tx_hash
-  )
 GROUP BY 
   blobs.parent_dp_hash, 
   blobs.tx_hash, 
-  blobs.blob_index; 
+  blobs.blob_index,
+  transactions.block_height
+ORDER BY transactions.block_height DESC
+LIMIT 1;
 "#,
         )
         .bind(tx_hash)
@@ -931,7 +913,7 @@ pub async fn get_proofs(
             FROM transactions t
             LEFT JOIN blocks b ON t.block_hash = b.hash
             WHERE b.height <= $1 and b.height > $2 AND t.transaction_type = 'proof_transaction'
-            ORDER BY b.height DESC, t.created_at DESC, t.index DESC
+            ORDER BY b.height DESC, t.index DESC
             LIMIT $3
             "#,
             )
@@ -944,7 +926,7 @@ pub async fn get_proofs(
             FROM transactions t
             LEFT JOIN blocks b ON t.block_hash = b.hash
             WHERE t.transaction_type = 'proof_transaction'
-            ORDER BY b.height DESC, t.created_at DESC, t.index DESC
+            ORDER BY b.height DESC, t.index DESC
             LIMIT $1
             "#,
             )
@@ -982,7 +964,7 @@ pub async fn get_proofs_by_height(
         FROM transactions t
         JOIN blocks b ON t.block_hash = b.hash
         WHERE b.height = $1 AND t.transaction_type = 'proof_transaction'
-        ORDER BY t.created_at DESC, t.index DESC
+        ORDER BY t.index DESC
         "#,
         )
         .bind(height)
@@ -1014,15 +996,6 @@ pub async fn get_proof_with_hash(
     let transaction = log_error!(
         sqlx::query_as::<_, TransactionDb>(
             r#"
-WITH latest_dp_for_this_tx_hash AS (
-  SELECT parent_dp_hash
-  FROM transactions
-  WHERE tx_hash = $1
-    AND transaction_type = 'proof_transaction'
-  ORDER BY created_at DESC
-  LIMIT 1
-)
-
 SELECT 
     tx_hash,
     version,
@@ -1037,12 +1010,9 @@ LEFT JOIN blocks b
     ON transactions.block_hash = b.hash
 WHERE 
     tx_hash = $1
-    AND parent_dp_hash = (
-        SELECT parent_dp_hash 
-        FROM latest_dp_for_this_tx_hash
-    )
     AND transaction_type = 'proof_transaction'
-ORDER BY index DESC;
+ORDER BY block_height DESC, index DESC
+LIMIT 1;
 "#,
         )
         .bind(tx_hash)

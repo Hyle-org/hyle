@@ -455,6 +455,8 @@ impl Indexer {
         let mut transaction: sqlx::PgTransaction = self.state.db.begin().await?;
 
         self.insert_block(transaction.deref_mut(), &block).await?;
+        let block_height = i64::try_from(block.block_height.0)
+            .map_err(|_| anyhow::anyhow!("Block height is too large to fit into an i64"))?;
 
         let mut i: i32 = 0;
         #[allow(clippy::explicit_counter_loop)]
@@ -475,9 +477,9 @@ impl Indexer {
 
             // Make sure transaction exists (Missed Mempool Status event)
             log_warn!(sqlx::query(
-                "INSERT INTO transactions (tx_hash, parent_dp_hash, version, transaction_type, transaction_status, block_hash, index)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                ON CONFLICT(tx_hash, parent_dp_hash) DO UPDATE SET transaction_status=$5, block_hash=$6, index=$7",
+                "INSERT INTO transactions (tx_hash, parent_dp_hash, version, transaction_type, transaction_status, block_hash, block_height, index)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                ON CONFLICT(tx_hash, parent_dp_hash) DO UPDATE SET transaction_status=$5, block_hash=$6, block_height=$7, index=$8",
             )
             .bind(tx_hash)
             .bind(parent_data_proposal_hash.clone())
@@ -485,6 +487,7 @@ impl Indexer {
             .bind(tx_type.clone())
             .bind(tx_status.clone())
             .bind(block.hash.clone())
+            .bind(block_height)
             .bind(i)
             .execute(&mut *transaction)
             .await,
@@ -1502,7 +1505,7 @@ mod test {
                 .first()
                 .unwrap()
                 .height,
-            2
+            3
         );
         let transactions_response = server.get("/blocks?nb_results=1&start_block=1").await;
         transactions_response.assert_status_ok();
