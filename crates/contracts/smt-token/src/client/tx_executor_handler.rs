@@ -172,7 +172,7 @@ impl TxExecutorHandler for SmtTokenProvableState {
             SmtTokenAction::Transfer {
                 sender,
                 recipient,
-                amount,
+                amount: _,
             } => {
                 let sender_account = self
                     .get_account(&sender)
@@ -181,7 +181,7 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 let recipient_account = self
                     .get_account(&recipient)
                     .map_err(|e| e.to_string())?
-                    .unwrap_or(Account::new(recipient, amount));
+                    .unwrap_or(Account::new(recipient, 0));
 
                 // Create keys for the accounts
                 let key1 = sender_account.get_key();
