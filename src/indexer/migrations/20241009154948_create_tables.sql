@@ -14,6 +14,7 @@ CREATE TYPE transaction_type AS ENUM ('blob_transaction', 'proof_transaction', '
 CREATE TYPE transaction_status AS ENUM ('data_proposal_created','waiting_dissemination','success', 'failure', 'sequenced', 'timed_out');
 
 CREATE TABLE transactions (
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,	
     parent_dp_hash TEXT NOT NULL,                           -- Data Proposal hash
     tx_hash TEXT NOT NULL,
     version INT NOT NULL,
@@ -84,6 +85,7 @@ CREATE TABLE contract_state (
 );
 
 CREATE TABLE transaction_state_events (
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,	
     block_hash TEXT NOT NULL REFERENCES blocks(hash) ON DELETE CASCADE,
     index INT,
     tx_hash TEXT NOT NULL,

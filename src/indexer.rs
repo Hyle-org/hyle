@@ -287,12 +287,12 @@ impl Indexer {
                     VALUES ($1, $2, $3, $4, 'waiting_dissemination')
                     ON CONFLICT(tx_hash, parent_dp_hash) DO NOTHING",
                 )
-                .bind(tx_hash)
-                .bind(parent_data_proposal_hash_db.clone())
-                .bind(version)
-                .bind(tx_type)
-                .execute(&mut *transaction)
-                .await?;
+                    .bind(tx_hash)
+                    .bind(parent_data_proposal_hash_db.clone())
+                    .bind(version)
+                    .bind(tx_type)
+                    .execute(&mut *transaction)
+                    .await?;
 
                 _ = log_warn!(
                     self.insert_tx_data(
@@ -818,7 +818,7 @@ mod test {
     use assert_json_diff::assert_json_include;
     use axum_test::TestServer;
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateCommitment, TxHash};
-    use hyle_model::api::{APIBlock, APIContract, APITransaction};
+    use hyle_model::api::{APIBlob, APIBlock, APIContract, APITransaction};
     use serde_json::json;
     use std::future::IntoFuture;
     use utils::TimestampMs;
@@ -1335,6 +1335,7 @@ mod test {
         // Test proof transaction endpoints
         let proofs_response = server.get("/proofs").await;
         proofs_response.assert_status_ok();
+        dbg!(proofs_response.json::<serde_json::Value>());
         assert_json_include!(
             actual: proofs_response.json::<serde_json::Value>(),
             expected: json!([
@@ -1348,6 +1349,8 @@ mod test {
 
         let proofs_by_height = server.get("/proofs/block/1").await;
         proofs_by_height.assert_status_ok();
+        dbg!(proofs_by_height.json::<serde_json::Value>());
+
         assert_json_include!(
             actual: proofs_by_height.json::<serde_json::Value>(),
             expected: json!([
@@ -1376,6 +1379,87 @@ mod test {
             .get("/proof/hash/1111111111111111111111111111111111111111111111111111111111111111")
             .await;
         non_existent_proof.assert_status_not_found();
+
+        Ok(())
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_indexer_api_doubles() -> Result<()> {
+        let container = Postgres::default()
+            .with_tag("17-alpine")
+            .start()
+            .await
+            .unwrap();
+        let db = PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&format!(
+                "postgresql://postgres:postgres@localhost:{}/postgres",
+                container.get_host_port_ipv4(5432).await.unwrap()
+            ))
+            .await
+            .unwrap();
+        MIGRATOR.run(&db).await.unwrap();
+        sqlx::raw_sql(include_str!("../tests/fixtures/test_data.sql"))
+            .execute(&db)
+            .await
+            .context("insert test data")?;
+
+        let indexer = new_indexer(db).await;
+        let server = setup_test_server(&indexer).await?;
+
+        // Multiple txs with same hash
+        let transactions_response = server
+            .get("/transaction/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .await;
+
+        transactions_response.assert_status_ok();
+
+        let result = transactions_response.json::<APITransaction>();
+
+        // Parent dp hash should match the most recent tx (the latest inserted)
+        assert_eq!(
+            result.parent_dp_hash.0,
+            "dp_hashbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string()
+        );
+
+        // Get blobs by tx hash
+
+        let transactions_response = server
+            .get("/blobs/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .await;
+
+        transactions_response.assert_status_ok();
+        let result = transactions_response.json::<Vec<APIBlob>>();
+
+        assert!(result.len() == 1);
+        assert_eq!(
+            result.first().unwrap().data,
+            "{\"data\": \"blob_data_2_bis\"}".as_bytes()
+        );
+
+        // Get blob by tx hash
+
+        let transactions_response = server
+            .get("/blob/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/index/0")
+            .await;
+
+        transactions_response.assert_status_ok();
+        let result = transactions_response.json::<APIBlob>();
+
+        assert_eq!(result.data, "{\"data\": \"blob_data_2_bis\"}".as_bytes());
+
+        // Get proof by tx hash
+
+        let transactions_response = server
+            .get("/proof/hash/test_tx_hash_3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .await;
+
+        transactions_response.assert_status_ok();
+        let result = transactions_response.json::<APITransaction>();
+        assert_eq!(
+            result.parent_dp_hash.0,
+            "dp_hashbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string()
+        );
 
         Ok(())
     }
@@ -1478,6 +1562,13 @@ mod test {
         // Get an existing transaction by hash
         let transactions_response = server
             .get("/transaction/hash/test_tx_hash_1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .await;
+        transactions_response.assert_status_ok();
+        assert!(!transactions_response.text().is_empty());
+
+        // Get an existing transaction by hash
+        let transactions_response = server
+            .get("/transaction/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             .await;
         transactions_response.assert_status_ok();
         assert!(!transactions_response.text().is_empty());
