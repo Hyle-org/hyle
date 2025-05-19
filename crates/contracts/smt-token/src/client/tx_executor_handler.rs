@@ -7,7 +7,6 @@ use client_sdk::{
 };
 use sdk::{
     merkle_utils::BorshableMerkleProof,
-    tracing::debug,
     utils::{as_hyle_output, parse_calldata},
     Calldata, ContractName, HyleOutput, Identity, StateCommitment, StructuredBlob,
 };
@@ -165,7 +164,6 @@ impl TxExecutorHandler for SmtTokenProvableState {
                     return Err(format!("Failed to parse blob: {:?}", blob));
                 }
             };
-        debug!("Parsed blob: {:?}", parsed_blob);
 
         let action = parsed_blob.data.parameters;
 
