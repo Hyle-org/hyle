@@ -1335,7 +1335,6 @@ mod test {
         // Test proof transaction endpoints
         let proofs_response = server.get("/proofs").await;
         proofs_response.assert_status_ok();
-        dbg!(proofs_response.json::<serde_json::Value>());
         assert_json_include!(
             actual: proofs_response.json::<serde_json::Value>(),
             expected: json!([
@@ -1349,7 +1348,6 @@ mod test {
 
         let proofs_by_height = server.get("/proofs/block/1").await;
         proofs_by_height.assert_status_ok();
-        dbg!(proofs_by_height.json::<serde_json::Value>());
 
         assert_json_include!(
             actual: proofs_by_height.json::<serde_json::Value>(),
