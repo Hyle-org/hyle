@@ -60,10 +60,19 @@ impl TxExecutorHandler for SmtTokenProvableState {
 
         let output = match action {
             SmtTokenAction::Transfer {
-                mut sender_account,
-                mut recipient_account,
+                sender,
+                recipient,
                 amount,
             } => {
+                let mut sender_account = self
+                    .get_account(&sender)
+                    .map_err(|e| e.to_string())?
+                    .ok_or(format!("Sender account {} not found", sender))?;
+                let mut recipient_account = self
+                    .get_account(&recipient)
+                    .map_err(|e| e.to_string())?
+                    .unwrap_or(Account::new(recipient, 0));
+
                 let sender_key = sender_account.get_key();
                 let recipient_key = recipient_account.get_key();
 
@@ -82,11 +91,20 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 ))
             }
             SmtTokenAction::TransferFrom {
-                mut owner_account,
+                owner,
                 spender: _,
-                mut recipient_account,
+                recipient,
                 amount,
             } => {
+                let mut owner_account = self
+                    .get_account(&owner)
+                    .map_err(|e| e.to_string())?
+                    .ok_or(format!("Owner account {} not found", owner))?;
+                let mut recipient_account = self
+                    .get_account(&recipient)
+                    .map_err(|e| e.to_string())?
+                    .unwrap_or(Account::new(recipient, 0));
+
                 let owner_key = owner_account.get_key();
                 let recipient_key = recipient_account.get_key();
 
@@ -104,10 +122,14 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 ))
             }
             SmtTokenAction::Approve {
-                mut owner_account,
+                owner,
                 spender,
                 amount,
             } => {
+                let mut owner_account = self
+                    .get_account(&owner)
+                    .map_err(|e| e.to_string())?
+                    .ok_or(format!("Owner account {} not found", owner))?;
                 let owner_key = owner_account.get_key();
                 owner_account.update_allowances(spender.clone(), amount);
                 if let Err(e) = self.0.update(owner_key, owner_account) {
@@ -141,57 +163,94 @@ impl TxExecutorHandler for SmtTokenProvableState {
                     return Err(format!("Failed to parse blob: {:?}", blob));
                 }
             };
+
         let action = parsed_blob.data.parameters;
 
         let root = *self.0.root();
-        let proof = match action {
+        let (proof, sender, recipient) = match action {
             SmtTokenAction::Transfer {
-                sender_account,
-                recipient_account,
+                sender,
+                recipient,
                 amount: _,
             } => {
+                let sender_account = self
+                    .get_account(&sender)
+                    .map_err(|e| e.to_string())?
+                    .ok_or(format!("Sender account {} not found", sender))?;
+                let recipient_account = self
+                    .get_account(&recipient)
+                    .map_err(|e| e.to_string())?
+                    .unwrap_or(Account::new(recipient, 0));
+
                 // Create keys for the accounts
                 let key1 = sender_account.get_key();
                 let key2 = recipient_account.get_key();
 
-                BorshableMerkleProof(
-                    self.0
-                        .merkle_proof(vec![key1, key2])
-                        .expect("Failed to generate proof"),
+                (
+                    BorshableMerkleProof(
+                        self.0
+                            .merkle_proof(vec![key1, key2])
+                            .expect("Failed to generate proof"),
+                    ),
+                    sender_account,
+                    recipient_account,
                 )
             }
             SmtTokenAction::TransferFrom {
-                owner_account,
+                owner,
                 spender: _,
-                recipient_account,
-                amount: _,
+                recipient,
+                amount,
             } => {
+                let owner_account = self
+                    .get_account(&owner)
+                    .map_err(|e| e.to_string())?
+                    .ok_or(format!("Owner account {} not found", owner))?;
+                let recipient_account = self
+                    .get_account(&recipient)
+                    .map_err(|e| e.to_string())?
+                    .unwrap_or(Account::new(recipient, amount));
+
                 // Create keys for the accounts
                 let key1 = owner_account.get_key();
                 let key2 = recipient_account.get_key();
 
-                BorshableMerkleProof(
-                    self.0
-                        .merkle_proof(vec![key1, key2])
-                        .expect("Failed to generate proof"),
+                (
+                    BorshableMerkleProof(
+                        self.0
+                            .merkle_proof(vec![key1, key2])
+                            .expect("Failed to generate proof"),
+                    ),
+                    owner_account,
+                    recipient_account,
                 )
             }
             SmtTokenAction::Approve {
-                owner_account,
+                owner,
                 spender: _,
                 amount: _,
             } => {
+                let owner_account = self
+                    .get_account(&owner)
+                    .map_err(|e| e.to_string())?
+                    .ok_or(format!("Owner account {} not found", owner))?;
                 let key = owner_account.get_key();
-                BorshableMerkleProof(
-                    self.0
-                        .merkle_proof(vec![key])
-                        .expect("Failed to generate proof"),
+                (
+                    BorshableMerkleProof(
+                        self.0
+                            .merkle_proof(vec![key])
+                            .expect("Failed to generate proof"),
+                    ),
+                    owner_account.clone(),
+                    owner_account,
                 )
             }
         };
         borsh::to_vec(&SmtTokenContract {
             commitment: StateCommitment(Into::<[u8; 32]>::into(root).to_vec()),
             proof,
+            sender,
+            recipient,
         })
         .map_err(|e| e.to_string())
     }
@@ -229,11 +288,11 @@ impl SmtTokenProvableState {
         builder.add_action(
             contract_name,
             SmtTokenAction::Transfer {
-                sender_account,
-                recipient_account,
+                sender: sender_account.address.clone(),
+                recipient: recipient_account.address.clone(),
                 amount,
             },
-            None,
+            SmtTokenContract::build_private_input(sender_account, recipient_account),
             None,
             None,
         )?;
@@ -264,12 +323,12 @@ impl SmtTokenProvableState {
         builder.add_action(
             contract_name,
             SmtTokenAction::TransferFrom {
-                owner_account,
+                owner: owner_account.address.clone(),
                 spender,
-                recipient_account,
+                recipient: recipient_account.address.clone(),
                 amount,
             },
-            None,
+            SmtTokenContract::build_private_input(owner_account, recipient_account),
             None,
             None,
         )?;
@@ -293,11 +352,11 @@ impl SmtTokenProvableState {
         builder.add_action(
             contract_name,
             SmtTokenAction::Approve {
-                owner_account,
+                owner: owner_account.address.clone(),
                 spender,
                 amount,
             },
-            None,
+            SmtTokenContract::build_private_input(owner_account.clone(), owner_account),
             None,
             None,
         )?;

@@ -424,7 +424,7 @@ impl Genesis {
         map.insert("sha3_256".into(), NativeVerifiers::Sha3_256.into());
         map.insert("secp256k1".into(), NativeVerifiers::Secp256k1.into());
         map.insert("hyllar".into(), ProgramId(hyllar_program_id.clone()));
-        map.insert("smt_token".into(), ProgramId(smt_token_program_id.clone()));
+        map.insert("oranj".into(), ProgramId(smt_token_program_id.clone()));
         map.insert("hydentity".into(), ProgramId(hydentity_program_id.clone()));
         map.insert("staking".into(), ProgramId(staking_program_id.clone()));
         map.insert(
