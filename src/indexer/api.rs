@@ -510,19 +510,32 @@ pub async fn get_transaction_events(
         sqlx::query(
             r#"
 WITH latest_dp_for_this_tx_hash AS (
-  SELECT parent_dp_hash
-  FROM transactions
-  WHERE tx_hash = $1
-  ORDER BY created_at DESC
-  LIMIT 1
+    SELECT parent_dp_hash
+    FROM transactions
+    WHERE tx_hash = $1
+    ORDER BY created_at DESC
+    LIMIT 1
 )
 
-SELECT t.block_hash, b.height, t.tx_hash, t.events
+SELECT 
+    t.block_hash,
+    b.height,
+    t.tx_hash,
+    t.events
 FROM transaction_state_events t
-LEFT JOIN blocks b ON t.block_hash = b.hash
-WHERE tx_hash = $1 AND parent_dp_hash = (SELECT parent_dp_hash FROM latest_dp_for_this_tx_hash)
-ORDER BY b.height DESC, created_at DESC, index DESC;
-        "#,
+LEFT JOIN blocks b 
+    ON t.block_hash = b.hash
+WHERE 
+    t.tx_hash = $1
+    AND t.parent_dp_hash = (
+        SELECT parent_dp_hash 
+        FROM latest_dp_for_this_tx_hash
+    )
+ORDER BY 
+    b.height DESC,
+    t.created_at DESC,
+    t.index DESC;
+"#,
         )
         .bind(tx_hash)
         .fetch_all(&state.db)
