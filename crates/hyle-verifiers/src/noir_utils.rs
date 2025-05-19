@@ -3,12 +3,18 @@ use hyle_model::{Blob, BlobIndex, HyleOutput, IndexedBlobs, StateCommitment, TxH
 use tracing::debug;
 
 /// Extracts the public inputs from the output of `reconstruct_honk_proof`.
-pub fn extract_public_inputs(proof_with_public_inputs: &[u8]) -> &[u8] {
-    // The first 4 bytes represent the proof size as a big-endian 32-bit unsigned integer.
-    let proof_len = u32::from_be_bytes(proof_with_public_inputs[0..4].try_into().unwrap()) as usize;
-    // The public inputs are located between the proof size and the proof itself.
-    let public_inputs_end = proof_with_public_inputs.len() - proof_len;
-    &proof_with_public_inputs[4..public_inputs_end]
+pub fn extract_public_inputs<'a>(
+    proof_with_public_inputs: &'a [u8],
+    vkey: &[u8],
+) -> Option<&'a [u8]> {
+    // We need to know the number of public inputs, and that's in the vkey.
+    // See barretenberg/plonk/proof_system/verification_key/verification_key.hpp
+    // This is msgpack encoded, but we can safely just parse the third u64 (for now anyways).
+    let num_public_inputs = vkey
+        .get(16..24)
+        .map(|x| u64::from_be_bytes(x.try_into().unwrap()))?;
+
+    proof_with_public_inputs.get(4..(4 + num_public_inputs * 32) as usize)
 }
 
 /// Reverses the flattening process by splitting a `Vec<u8>` into a vector of sanitized hex-encoded strings
@@ -25,9 +31,12 @@ pub fn deflatten_fields(flattened_fields: &[u8]) -> Vec<String> {
     result
 }
 
-pub fn parse_noir_output(output: &[u8]) -> Result<HyleOutput, Error> {
+pub fn parse_noir_output(output: &[u8], vkey: &[u8]) -> Result<HyleOutput, Error> {
     // let mut public_outputs: Vec<String> = serde_json::from_str(&output_json)?;
-    let mut vector = deflatten_fields(extract_public_inputs(output));
+    let Some(public_inputs) = extract_public_inputs(output, vkey) else {
+        return Err(anyhow::anyhow!("Failed to extract public inputs"));
+    };
+    let mut vector = deflatten_fields(public_inputs);
 
     let version = u32::from_str_radix(&vector.remove(0), 16)?;
     debug!("Parsed version: {}", version);
@@ -56,7 +65,11 @@ pub fn parse_noir_output(output: &[u8]) -> Result<HyleOutput, Error> {
         success,
         state_reads: vec![],
         onchain_effects: vec![],
-        program_outputs: vec![],
+        // Parse the remained as an array, if any
+        program_outputs: match vector.len() {
+            0 => vec![],
+            _ => parse_array(&mut vector).unwrap_or_default(),
+        },
     })
 }
 
