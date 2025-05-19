@@ -75,7 +75,7 @@ impl<Contract> AutoProverCtx<Contract> {
     }
 
     #[cfg(feature = "sp1")]
-    pub fn sp1(
+    pub async fn sp1(
         data_directory: PathBuf,
         elf: &'static [u8],
         contract_name: ContractName,
@@ -88,7 +88,7 @@ impl<Contract> AutoProverCtx<Contract> {
         Self {
             data_directory,
             start_height,
-            prover: Arc::new(client_sdk::helpers::sp1::SP1Prover::new(elf)),
+            prover: Arc::new(client_sdk::helpers::sp1::SP1Prover::new(elf).await),
             contract_name,
             node,
             default_state: Contract::default(),
