@@ -39,6 +39,8 @@ async fn main() {
     let smt_token = SmtTokenContract::new(
         StateCommitment(Into::<[u8; 32]>::into(root).to_vec()),
         BorshableMerkleProof(merkle_proof),
+        account1.clone(),
+        account2.clone(),
     );
 
     let token_action = SmtTokenAction::Transfer {
