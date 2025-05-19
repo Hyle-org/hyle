@@ -21,21 +21,21 @@ pub const TOTAL_SUPPLY: u128 = 100_000_000_000;
 pub const FAUCET_ID: &str = "faucet@hydentity";
 
 /// Enum representing possible calls to Token contract functions.
-#[derive(Clone, PartialEq, BorshDeserialize, BorshSerialize)]
+#[derive(Debug, Clone, PartialEq, BorshDeserialize, BorshSerialize)]
 pub enum SmtTokenAction {
     Transfer {
-        sender_account: Account,
-        recipient_account: Account,
+        sender: Identity,
+        recipient: Identity,
         amount: u128,
     },
     TransferFrom {
-        owner_account: Account,
+        owner: Identity,
         spender: Identity,
-        recipient_account: Account,
+        recipient: Identity,
         amount: u128,
     },
     Approve {
-        owner_account: Account,
+        owner: Identity,
         spender: Identity,
         amount: u128,
     },
@@ -47,34 +47,51 @@ pub enum SmtTokenAction {
 pub struct SmtTokenContract {
     pub commitment: sdk::StateCommitment,
     pub proof: BorshableMerkleProof,
+    pub sender: Account,
+    pub recipient: Account,
 }
 
 impl SmtTokenContract {
-    pub fn new(commitment: sdk::StateCommitment, proof: BorshableMerkleProof) -> Self {
-        SmtTokenContract { commitment, proof }
+    pub fn new(
+        commitment: sdk::StateCommitment,
+        proof: BorshableMerkleProof,
+        sender: Account,
+        recipient: Account,
+    ) -> Self {
+        SmtTokenContract {
+            commitment,
+            proof,
+            sender,
+            recipient,
+        }
+    }
+
+    pub fn build_private_input(sender: Account, recipient: Account) -> Option<Vec<u8>> {
+        Some(borsh::to_vec(&(sender, recipient)).expect("Failed to encode private input"))
     }
 }
 
 impl ZkContract for SmtTokenContract {
     fn execute(&mut self, calldata: &Calldata) -> RunResult {
         let (action, execution_ctx) = parse_calldata::<SmtTokenAction>(calldata)?;
+
         let output = match action {
             SmtTokenAction::Transfer {
-                sender_account,
-                recipient_account,
+                sender,
+                recipient,
                 amount,
-            } => self.transfer(sender_account, recipient_account, amount),
+            } => self.transfer(sender, recipient, amount),
             SmtTokenAction::TransferFrom {
-                owner_account,
+                owner,
                 spender,
-                recipient_account,
+                recipient,
                 amount,
-            } => self.transfer_from(owner_account, spender, recipient_account, amount),
+            } => self.transfer_from(owner, spender, recipient, amount),
             SmtTokenAction::Approve {
-                owner_account,
+                owner,
                 spender,
                 amount,
-            } => self.approve(owner_account, spender, amount),
+            } => self.approve(owner, spender, amount),
         };
 
         match output {
@@ -97,10 +114,19 @@ impl SmtTokenContract {
 impl SmtTokenContract {
     pub fn transfer(
         &mut self,
-        mut sender_account: Account,
-        mut recipient_account: Account,
+        sender: Identity,
+        recipient: Identity,
         amount: u128,
     ) -> Result<String, String> {
+        let sender_account = &mut self.sender;
+        let recipient_account = &mut self.recipient;
+
+        if sender_account.address != sender {
+            return Err("Sender address mismatch".to_string());
+        }
+        if recipient_account.address != recipient {
+            return Err("Recipient address mismatch".to_string());
+        }
         let sender_key = sender_account.get_key();
         let recipient_key = recipient_account.get_key();
 
@@ -147,11 +173,20 @@ impl SmtTokenContract {
 
     pub fn transfer_from(
         &mut self,
-        owner_account: Account,
+        owner: Identity,
         spender: Identity,
-        recipient_account: Account,
+        recipient: Identity,
         amount: u128,
     ) -> Result<String, String> {
+        let owner_account = &self.sender;
+        let recipient_account = &self.recipient;
+
+        if owner_account.address != owner {
+            return Err("Owner address mismatch".to_string());
+        }
+        if recipient_account.address != recipient {
+            return Err("Recipient address mismatch".to_string());
+        }
         if owner_account.allowances.get(&spender).unwrap_or(&0) < &amount {
             return Err(format!(
                 "Allowance exceeded for spender={} owner={} allowance={}",
@@ -161,16 +196,20 @@ impl SmtTokenContract {
             ));
         }
 
-        self.transfer(owner_account, recipient_account, amount)
+        self.transfer(owner, recipient, amount)
         // TODO: update allowance
     }
 
     pub fn approve(
         &mut self,
-        mut owner_account: Account,
+        owner: Identity,
         spender: Identity,
         amount: u128,
     ) -> Result<String, String> {
+        let owner_account = &mut self.sender;
+        if owner_account.address != owner {
+            return Err("Owner address mismatch".to_string());
+        }
         let owner_key = owner_account.get_key();
 
         let verified = self
@@ -259,6 +298,8 @@ mod tests {
         let mut smt_token = SmtTokenContract::new(
             StateCommitment(Into::<[u8; 32]>::into(root).to_vec()),
             BorshableMerkleProof(proof.clone()),
+            account1.clone(),
+            account2.clone(),
         );
 
         // Verify the existence proof
@@ -274,7 +315,7 @@ mod tests {
 
         // Transfer 100 tokens from account1 to account2 in the contract
         smt_token
-            .transfer(account1.clone(), account2.clone(), 100)
+            .transfer(account1.address.clone(), account2.address.clone(), 100)
             .unwrap();
 
         // Transfer 100 tokens from account1 to account2
@@ -323,6 +364,8 @@ mod tests {
         let mut smt_token = SmtTokenContract::new(
             StateCommitment(Into::<[u8; 32]>::into(root).to_vec()),
             BorshableMerkleProof(proof.clone()),
+            account1.clone(),
+            account2.clone(),
         );
 
         // Verify the existence proof
@@ -342,7 +385,7 @@ mod tests {
 
         // Transfer 100 tokens from account1 to account2 in the contract
         smt_token
-            .transfer(account1.clone(), account2.clone(), 100)
+            .transfer(account1.address.clone(), account2.address.clone(), 100)
             .unwrap();
 
         // Transfer 100 tokens from account1 to account2
@@ -395,6 +438,8 @@ mod tests {
         let mut smt_token = SmtTokenContract::new(
             StateCommitment(Into::<[u8; 32]>::into(root).to_vec()),
             BorshableMerkleProof(proof.clone()),
+            owner_account.clone(),
+            recipient_account.clone(),
         );
 
         // Verify the existence proof
@@ -414,9 +459,9 @@ mod tests {
         // Transfer 200 tokens from owner to recipient via spender in the contract
         smt_token
             .transfer_from(
-                owner_account.clone(),
+                owner_account.address.clone(),
                 spender.clone(),
-                recipient_account.clone(),
+                recipient_account.address.clone(),
                 200,
             )
             .unwrap();
@@ -467,6 +512,8 @@ mod tests {
         let mut smt_token = SmtTokenContract::new(
             StateCommitment(Into::<[u8; 32]>::into(root).to_vec()),
             BorshableMerkleProof(proof.clone()),
+            owner_account.clone(),
+            owner_account.clone(),
         );
 
         // Verify the existence proof
@@ -479,7 +526,7 @@ mod tests {
 
         // Approve 500 tokens for spender in the contract
         smt_token
-            .approve(owner_account.clone(), spender.clone(), 500)
+            .approve(owner_account.address.clone(), spender.clone(), 500)
             .unwrap();
 
         // Update allowance
