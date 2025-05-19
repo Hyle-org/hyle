@@ -3,7 +3,7 @@ use std::{fmt::Debug, path::PathBuf, sync::Arc};
 use crate::bus::{BusClientSender, SharedMessageBus};
 use crate::{log_error, module_bus_client, module_handle_messages, modules::Module};
 use anyhow::{anyhow, Context, Result};
-use borsh::{BorshDeserialize, BorshSerialize};
+use borsh::BorshDeserialize;
 use client_sdk::{
     helpers::ClientSdkProver, rest_client::NodeApiHttpClient,
     transaction_builder::TxExecutorHandler,
@@ -23,14 +23,22 @@ use tracing::{debug, error, info, warn};
 /// multiple blocks.
 /// This module requires the ELF to support multiproof. i.e. it requires the ELF to read
 /// a `Vec<Calldata>` as input.
-pub struct AutoProver<Contract: Send + Sync + Clone + 'static> {
-    bus: AutoProverBusClient<Contract>,
+pub struct AutoProverModule<Contract: Send + Sync + Clone + 'static> {
+    bus: SharedMessageBus,
     ctx: Arc<AutoProverCtx<Contract>>,
-    store: AutoProverStore<Contract>,
+    store: Vec<AutoProver<Contract>>,
 }
 
-#[derive(Default, BorshSerialize, BorshDeserialize)]
-pub struct AutoProverStore<Contract> {
+pub struct AutoProver<Contract: Send + Sync + Clone + 'static> {
+    bus: AutoProverBusClient<Contract>,
+    prover: Arc<dyn ClientSdkProver<Vec<Calldata>> + Send + Sync>,
+    node: Arc<NodeApiHttpClient>,
+
+    contract_name: ContractName,
+    default_state: Contract,
+    start_height: BlockHeight,
+
+    // Needed to handle proving logic
     unsettled_txs: Vec<(BlobTransaction, TxContext)>,
     state_history: Vec<(TxHash, Contract)>,
     contract: Contract,
@@ -40,17 +48,16 @@ module_bus_client! {
 #[derive(Debug)]
 pub struct AutoProverBusClient<Contract: Send + Sync + Clone + 'static> {
     sender(AutoProverEvent<Contract>),
+    receiver(AutoProverEvent<Contract>),
     receiver(NodeStateEvent),
 }
 }
 
 pub struct AutoProverCtx<Contract> {
     pub data_directory: PathBuf,
-    pub start_height: BlockHeight,
     pub prover: Arc<dyn ClientSdkProver<Vec<Calldata>> + Send + Sync>,
-    pub contract_name: ContractName,
     pub node: Arc<NodeApiHttpClient>,
-    pub default_state: Contract,
+    pub contracts: Vec<(ContractName, Contract, BlockHeight)>,
 }
 
 impl<Contract> AutoProverCtx<Contract> {
@@ -58,7 +65,7 @@ impl<Contract> AutoProverCtx<Contract> {
     pub fn risc0(
         data_directory: PathBuf,
         elf: &'static [u8],
-        contract_name: ContractName,
+        contracts: Vec<(ContractName, Contract, BlockHeight)>,
         node: Arc<NodeApiHttpClient>,
     ) -> Self
     where
@@ -66,11 +73,9 @@ impl<Contract> AutoProverCtx<Contract> {
     {
         Self {
             data_directory,
-            start_height: BlockHeight(0),
             prover: Arc::new(client_sdk::helpers::risc0::Risc0Prover::new(elf)),
-            contract_name,
+            contracts,
             node,
-            default_state: Contract::default(),
         }
     }
 
@@ -78,8 +83,7 @@ impl<Contract> AutoProverCtx<Contract> {
     pub fn sp1(
         data_directory: PathBuf,
         elf: &'static [u8],
-        contract_name: ContractName,
-        start_height: BlockHeight,
+        contracts: Vec<(ContractName, Contract, BlockHeight)>,
         node: Arc<NodeApiHttpClient>,
     ) -> Self
     where
@@ -87,11 +91,9 @@ impl<Contract> AutoProverCtx<Contract> {
     {
         Self {
             data_directory,
-            start_height,
             prover: Arc::new(client_sdk::helpers::sp1::SP1Prover::new(elf)),
-            contract_name,
+            contracts,
             node,
-            default_state: Contract::default(),
         }
     }
 }
@@ -104,42 +106,77 @@ pub enum AutoProverEvent<Contract> {
     /// Event sent when a blob is executed as success
     /// proof will be generated & sent to the node
     SuccessTx(TxHash, Contract),
+    /// Event sent in order to add an AutoProver for that contract
+    ProveContract(ContractName, Contract),
 }
 
-impl<Contract> Module for AutoProver<Contract>
+impl<Contract> Module for AutoProverModule<Contract>
 where
     Contract: TxExecutorHandler + BorshDeserialize + Debug + Send + Sync + Clone + 'static,
 {
     type Context = Arc<AutoProverCtx<Contract>>;
 
     async fn build(bus: SharedMessageBus, ctx: Self::Context) -> Result<Self> {
-        let bus = AutoProverBusClient::<Contract>::new_from_bus(bus.new_handle()).await;
-
-        let file = ctx
-            .data_directory
-            .join(format!("autoprover_{}.bin", ctx.contract_name).as_str());
-
-        let store = match Self::load_from_disk::<AutoProverStore<Contract>>(file.as_path()) {
-            Some(store) => store,
-            None => AutoProverStore::<Contract> {
-                contract: ctx.default_state.clone(),
+        let bus = bus.new_handle();
+        let mut store = vec![];
+        for (contract_name, default_state, start_height) in ctx.contracts.iter() {
+            let bus = AutoProverBusClient::<Contract>::new_from_bus(bus.new_handle()).await;
+            store.push(AutoProver {
+                bus,
+                prover: ctx.prover.clone(),
+                node: ctx.node.clone(),
+                contract_name: contract_name.clone(),
+                default_state: default_state.clone(),
+                start_height: *start_height,
                 unsettled_txs: vec![],
                 state_history: vec![],
-            },
-        };
+                contract: default_state.clone(),
+            });
+        }
 
-        Ok(AutoProver { bus, store, ctx })
+        Ok(AutoProverModule { bus, store, ctx })
     }
 
     async fn run(&mut self) -> Result<()> {
+        let mut bus = AutoProverBusClient::<Contract>::new_from_bus(self.bus.new_handle()).await;
         module_handle_messages! {
-            on_bus self.bus,
+            on_bus bus,
             listen<NodeStateEvent> event => {
                 _ = log_error!(self.handle_node_state_event(event).await, "handle note state event")
             }
-
+            listen<AutoProverEvent<Contract>> event => {
+                if let AutoProverEvent::ProveContract(contract_name, initial_state) = event {
+                    let bus = AutoProverBusClient::<Contract>::new_from_bus(self.bus.new_handle()).await;
+                    self.store.push(AutoProver {
+                        bus,
+                        prover: self.ctx.prover.clone(),
+                        node: self.ctx.node.clone(),
+                        contract_name: contract_name.clone(),
+                        default_state: initial_state.clone(),
+                        start_height: BlockHeight(0),
+                        unsettled_txs: vec![],
+                        state_history: vec![],
+                        contract: initial_state.clone(),
+                    });
+                }
+            }
         };
 
+        Ok(())
+    }
+}
+
+impl<Contract> AutoProverModule<Contract>
+where
+    Contract: TxExecutorHandler + Debug + Clone + Send + Sync + 'static,
+{
+    async fn handle_node_state_event(&mut self, event: NodeStateEvent) -> Result<()> {
+        let NodeStateEvent::NewBlock(block) = event;
+        for autoprover in self.store.iter_mut() {
+            autoprover
+                .handle_processed_block(block.as_ref().clone())
+                .await?;
+        }
         Ok(())
     }
 }
@@ -148,13 +185,6 @@ impl<Contract> AutoProver<Contract>
 where
     Contract: TxExecutorHandler + Debug + Clone + Send + Sync + 'static,
 {
-    async fn handle_node_state_event(&mut self, event: NodeStateEvent) -> Result<()> {
-        let NodeStateEvent::NewBlock(block) = event;
-        self.handle_processed_block(*block).await?;
-
-        Ok(())
-    }
-
     async fn handle_processed_block(&mut self, block: Block) -> Result<()> {
         let mut blobs = vec![];
         for (_, tx) in block.txs {
@@ -162,7 +192,7 @@ where
                 if tx
                     .blobs
                     .iter()
-                    .all(|b| b.contract_name != self.ctx.contract_name)
+                    .all(|b| b.contract_name != self.contract_name)
                 {
                     continue;
                 }
@@ -204,18 +234,18 @@ where
     ) -> Vec<(BlobIndex, BlobTransaction, TxContext)> {
         let mut blobs = vec![];
         for (index, blob) in tx.blobs.iter().enumerate() {
-            if blob.contract_name == self.ctx.contract_name {
+            if blob.contract_name == self.contract_name {
                 blobs.push((index.into(), tx.clone(), tx_ctx.clone()));
             }
         }
-        self.store.unsettled_txs.push((tx, tx_ctx));
+        self.unsettled_txs.push((tx, tx_ctx));
         blobs
     }
 
     fn settle_tx_success(&mut self, tx: &TxHash) -> Result<()> {
-        let pos = self.store.state_history.iter().position(|(h, _)| h == tx);
+        let pos = self.state_history.iter().position(|(h, _)| h == tx);
         if let Some(pos) = pos {
-            self.store.state_history = self.store.state_history.split_off(pos);
+            self.state_history = self.state_history.split_off(pos);
         }
         self.settle_tx(tx);
         Ok(())
@@ -224,19 +254,18 @@ where
     fn settle_tx_failed(&mut self, tx: &TxHash) -> Result<()> {
         if let Some(pos) = self.settle_tx(tx) {
             self.handle_all_next_blobs(pos, tx)?;
-            self.store.state_history.retain(|(h, _)| h != tx);
+            self.state_history.retain(|(h, _)| h != tx);
         }
         Ok(())
     }
 
     fn settle_tx(&mut self, hash: &TxHash) -> Option<usize> {
         let tx = self
-            .store
             .unsettled_txs
             .iter()
             .position(|(t, _)| t.hashed() == *hash);
         if let Some(pos) = tx {
-            self.store.unsettled_txs.remove(pos);
+            self.unsettled_txs.remove(pos);
             return Some(pos);
         }
         None
@@ -244,35 +273,34 @@ where
 
     fn handle_all_next_blobs(&mut self, idx: usize, failed_tx: &TxHash) -> Result<()> {
         let prev_state = self
-            .store
             .state_history
             .iter()
             .enumerate()
             .find(|(_, (h, _))| h == failed_tx)
             .and_then(|(i, _)| {
                 if i > 0 {
-                    self.store.state_history.get(i - 1)
+                    self.state_history.get(i - 1)
                 } else {
                     None
                 }
             });
         if let Some((_, contract)) = prev_state {
-            debug!(cn =% self.ctx.contract_name, tx_hash =% failed_tx, "Reverting to previous state: {:?}", contract);
-            self.store.contract = contract.clone();
+            debug!(cn =% self.contract_name, tx_hash =% failed_tx, "Reverting to previous state: {:?}", contract);
+            self.contract = contract.clone();
         } else {
-            warn!(cn =% self.ctx.contract_name, tx_hash =% failed_tx, "Reverting to default state");
-            self.store.contract = self.ctx.default_state.clone();
+            warn!(cn =% self.contract_name, tx_hash =% failed_tx, "Reverting to default state");
+            self.contract = self.default_state.clone();
         }
         let mut blobs = vec![];
-        for (tx, ctx) in self.store.unsettled_txs.clone().iter().skip(idx) {
+        for (tx, ctx) in self.unsettled_txs.clone().iter().skip(idx) {
             for (index, blob) in tx.blobs.iter().enumerate() {
-                if blob.contract_name == self.ctx.contract_name {
+                if blob.contract_name == self.contract_name {
                     debug!(
-                        cn =% self.ctx.contract_name,
+                        cn =% self.contract_name,
                         "Re-execute blob for tx {} after a previous tx failure",
                         tx.hashed()
                     );
-                    self.store.state_history.retain(|(h, _)| h != &tx.hashed());
+                    self.state_history.retain(|(h, _)| h != &tx.hashed());
                     blobs.push((index.into(), tx.clone(), ctx.clone()));
                 }
             }
@@ -288,7 +316,7 @@ where
         let mut initial_commitment_metadata = None;
         let len = blobs.len();
         for (blob_index, tx, tx_ctx) in blobs {
-            let old_tx = tx_ctx.block_height.0 < self.ctx.start_height.0;
+            let old_tx = tx_ctx.block_height.0 < self.start_height.0;
 
             let blob = tx.blobs.get(blob_index.0).ok_or_else(|| {
                 anyhow!("Failed to get blob {} from tx {}", blob_index, tx.hashed())
@@ -297,7 +325,6 @@ where
             let tx_hash = tx.hashed();
 
             let state = self
-                .store
                 .contract
                 .build_commitment_metadata(blob)
                 .map_err(|e| anyhow!(e))
@@ -319,15 +346,10 @@ where
                 tx_blob_count: blobs.len(),
             };
 
-            match self
-                .store
-                .contract
-                .handle(&calldata)
-                .map_err(|e| anyhow!(e))
-            {
+            match self.contract.handle(&calldata).map_err(|e| anyhow!(e)) {
                 Err(e) => {
                     info!(
-                        cn =% self.ctx.contract_name,
+                        cn =% self.contract_name,
                         tx_hash =% tx.hashed(),
                         "Error while executing contract: {e}"
                     );
@@ -338,7 +360,7 @@ where
                 }
                 Ok(msg) => {
                     info!(
-                        cn =% self.ctx.contract_name,
+                        cn =% self.contract_name,
                         tx_hash =% tx.hashed(),
                         "Executed contract: {}",
                         String::from_utf8_lossy(&msg.program_outputs)
@@ -346,15 +368,14 @@ where
                     if !old_tx {
                         self.bus.send(AutoProverEvent::SuccessTx(
                             tx_hash.clone(),
-                            self.store.contract.clone(),
+                            self.contract.clone(),
                         ))?;
                     }
                 }
             }
 
-            self.store
-                .state_history
-                .push((tx_hash.clone(), self.store.contract.clone()));
+            self.state_history
+                .push((tx_hash.clone(), self.contract.clone()));
 
             if old_tx {
                 continue;
@@ -371,9 +392,9 @@ where
             return Ok(());
         };
 
-        let node_client = self.ctx.node.clone();
-        let prover = self.ctx.prover.clone();
-        let contract_name = self.ctx.contract_name.clone();
+        let node_client = self.node.clone();
+        let prover = self.prover.clone();
+        let contract_name = self.contract_name.clone();
         tokio::task::spawn(async move {
             let mut retries = 0;
             const MAX_RETRIES: u32 = 30;
