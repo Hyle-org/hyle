@@ -24,6 +24,7 @@ use hyle_modules::{
 };
 use hyllar::{client::tx_executor_handler::transfer, Hyllar, FAUCET_ID};
 use serde::{Deserialize, Serialize};
+use smt_token::account::AccountSMT;
 use staking::{
     client::tx_executor_handler::{delegate, deposit_for_fees, stake},
     state::Staking,
@@ -423,7 +424,7 @@ impl Genesis {
         map.insert("sha3_256".into(), NativeVerifiers::Sha3_256.into());
         map.insert("secp256k1".into(), NativeVerifiers::Secp256k1.into());
         map.insert("hyllar".into(), ProgramId(hyllar_program_id.clone()));
-        map.insert("smt_token".into(), ProgramId(smt_token_program_id.clone()));
+        map.insert("oranj".into(), ProgramId(smt_token_program_id.clone()));
         map.insert("hydentity".into(), ProgramId(hydentity_program_id.clone()));
         map.insert("staking".into(), ProgramId(staking_program_id.clone()));
         map.insert(
@@ -493,15 +494,17 @@ impl Genesis {
         )
         .expect("register hyllar");
 
+        let smt = AccountSMT::default();
+        let root = *smt.0.root();
         register_hyle_contract(
             &mut register_tx,
-            "smt_token".into(),
+            "oranj".into(),
             hyle_model::verifiers::RISC0_1.into(),
             smt_token_program_id.clone().into(),
-            ctx.hyllar.commit(),
+            StateCommitment(Into::<[u8; 32]>::into(root).to_vec()),
             None,
         )
-        .expect("register smt_token");
+        .expect("register oranj");
 
         register_hyle_contract(
             &mut register_tx,
