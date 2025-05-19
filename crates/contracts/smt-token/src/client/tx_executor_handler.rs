@@ -168,7 +168,7 @@ impl TxExecutorHandler for SmtTokenProvableState {
         let action = parsed_blob.data.parameters;
 
         let root = *self.0.root();
-        let proof = match action {
+        let (proof, sender, recipient) = match action {
             SmtTokenAction::Transfer {
                 sender,
                 recipient,
@@ -187,10 +187,14 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 let key1 = sender_account.get_key();
                 let key2 = recipient_account.get_key();
 
-                BorshableMerkleProof(
-                    self.0
-                        .merkle_proof(vec![key1, key2])
-                        .expect("Failed to generate proof"),
+                (
+                    BorshableMerkleProof(
+                        self.0
+                            .merkle_proof(vec![key1, key2])
+                            .expect("Failed to generate proof"),
+                    ),
+                    sender_account,
+                    recipient_account,
                 )
             }
             SmtTokenAction::TransferFrom {
@@ -212,10 +216,14 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 let key1 = owner_account.get_key();
                 let key2 = recipient_account.get_key();
 
-                BorshableMerkleProof(
-                    self.0
-                        .merkle_proof(vec![key1, key2])
-                        .expect("Failed to generate proof"),
+                (
+                    BorshableMerkleProof(
+                        self.0
+                            .merkle_proof(vec![key1, key2])
+                            .expect("Failed to generate proof"),
+                    ),
+                    owner_account,
+                    recipient_account,
                 )
             }
             SmtTokenAction::Approve {
@@ -228,16 +236,22 @@ impl TxExecutorHandler for SmtTokenProvableState {
                     .map_err(|e| e.to_string())?
                     .ok_or(format!("Owner account {} not found", owner))?;
                 let key = owner_account.get_key();
-                BorshableMerkleProof(
-                    self.0
-                        .merkle_proof(vec![key])
-                        .expect("Failed to generate proof"),
+                (
+                    BorshableMerkleProof(
+                        self.0
+                            .merkle_proof(vec![key])
+                            .expect("Failed to generate proof"),
+                    ),
+                    owner_account.clone(),
+                    owner_account,
                 )
             }
         };
         borsh::to_vec(&SmtTokenContract {
             commitment: StateCommitment(Into::<[u8; 32]>::into(root).to_vec()),
             proof,
+            sender,
+            recipient,
         })
         .map_err(|e| e.to_string())
     }
