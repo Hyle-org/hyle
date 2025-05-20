@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use anyhow::{anyhow, bail, Context, Result};
 use client_sdk::{
@@ -165,7 +165,7 @@ impl TxExecutorHandler for SmtTokenProvableState {
         let action = parsed_blob.data.parameters;
 
         let root = *self.0.root();
-        let (proof, sender, recipient) = match action {
+        let (proof, accounts) = match action {
             SmtTokenAction::Transfer {
                 sender,
                 recipient,
@@ -188,8 +188,10 @@ impl TxExecutorHandler for SmtTokenProvableState {
                             .merkle_proof(vec![key1, key2])
                             .expect("Failed to generate proof"),
                     ),
-                    sender_account,
-                    recipient_account,
+                    BTreeMap::from([
+                        (sender_account.address.clone(), sender_account.clone()),
+                        (recipient_account.address.clone(), recipient_account),
+                    ]),
                 )
             }
             SmtTokenAction::TransferFrom {
@@ -215,8 +217,10 @@ impl TxExecutorHandler for SmtTokenProvableState {
                             .merkle_proof(vec![key1, key2])
                             .expect("Failed to generate proof"),
                     ),
-                    owner_account,
-                    recipient_account,
+                    BTreeMap::from([
+                        (owner_account.address.clone(), owner_account.clone()),
+                        (recipient_account.address.clone(), recipient_account),
+                    ]),
                 )
             }
             SmtTokenAction::Approve {
@@ -234,17 +238,15 @@ impl TxExecutorHandler for SmtTokenProvableState {
                             .merkle_proof(vec![key])
                             .expect("Failed to generate proof"),
                     ),
-                    owner_account.clone(),
-                    owner_account,
+                    BTreeMap::from([(owner_account.address.clone(), owner_account)]),
                 )
             }
         };
-        borsh::to_vec(&SmtTokenContract {
-            commitment: StateCommitment(Into::<[u8; 32]>::into(root).to_vec()),
+        borsh::to_vec(&SmtTokenContract::new(
+            StateCommitment(Into::<[u8; 32]>::into(root).to_vec()),
             proof,
-            sender,
-            recipient,
-        })
+            accounts,
+        ))
         .context("Failed to serialize SMT Token contract")
     }
 
@@ -253,6 +255,23 @@ impl TxExecutorHandler for SmtTokenProvableState {
         _metadata: &Option<Vec<u8>>,
     ) -> Result<Self> {
         Ok(Self::default())
+    }
+
+    fn merge_commitment_metadata(
+        &self,
+        initial: Vec<u8>,
+        next: Vec<u8>,
+    ) -> anyhow::Result<Vec<u8>, String> {
+        let mut initial_commitment: SmtTokenContract =
+            borsh::from_slice(&initial).map_err(|e| e.to_string())?;
+        let next_commitment: SmtTokenContract =
+            borsh::from_slice(&next).map_err(|e| e.to_string())?;
+
+        initial_commitment
+            .steps
+            .insert(0, next_commitment.steps[0].clone());
+
+        borsh::to_vec(&initial_commitment).map_err(|e| e.to_string())
     }
 }
 
@@ -292,7 +311,7 @@ impl SmtTokenProvableState {
                 recipient: recipient_account.address.clone(),
                 amount,
             },
-            SmtTokenContract::build_private_input(sender_account, recipient_account),
+            None,
             None,
             None,
         )?;
@@ -328,7 +347,7 @@ impl SmtTokenProvableState {
                 recipient: recipient_account.address.clone(),
                 amount,
             },
-            SmtTokenContract::build_private_input(owner_account, recipient_account),
+            None,
             None,
             None,
         )?;
@@ -356,7 +375,7 @@ impl SmtTokenProvableState {
                 spender,
                 amount,
             },
-            SmtTokenContract::build_private_input(owner_account.clone(), owner_account),
+            None,
             None,
             None,
         )?;

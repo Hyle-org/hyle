@@ -356,6 +356,16 @@ pub trait TxExecutorHandler {
     /// that will be used to execute the program in the zkvm.
     fn build_commitment_metadata(&self, blob: &Blob) -> anyhow::Result<Vec<u8>>;
 
+    /// This function is used to merge the commitment metadata of the contract.
+    /// Used for contracts that use only a partial state like MerkleTrie.
+    fn merge_commitment_metadata(
+        &self,
+        initial: Vec<u8>,
+        _next: Vec<u8>,
+    ) -> Result<Vec<u8>, String> {
+        Ok(initial)
+    }
+
     /// Parse a registration blob and construct the initial state of the contract
     fn construct_state(
         register_blob: &RegisterContractEffect,
