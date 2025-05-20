@@ -264,13 +264,8 @@ impl TxExecutorHandler for SmtTokenProvableState {
     ) -> anyhow::Result<Vec<u8>, String> {
         let mut initial_commitment: SmtTokenContract =
             borsh::from_slice(&initial).map_err(|e| e.to_string())?;
-        sdk::info!("Initial Commitment: {:?}", initial_commitment.commitment);
-        initial_commitment.initialize()?;
-
-        let mut next_commitment: SmtTokenContract =
+        let next_commitment: SmtTokenContract =
             borsh::from_slice(&next).map_err(|e| e.to_string())?;
-        sdk::info!("Next Commitment: {:?}", next_commitment.commitment);
-        next_commitment.initialize()?;
 
         initial_commitment
             .steps
