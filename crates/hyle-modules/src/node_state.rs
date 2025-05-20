@@ -331,6 +331,13 @@ impl NodeState {
                 .contracts
                 .get(&blob.contract_name)
                 .map(|c| c.timeout_window.clone())
+                .or({
+                    if blob.contract_name.0 == "hyle" {
+                        Some(TimeoutWindow::Timeout(BlockHeight(2)))
+                    } else {
+                        None
+                    }
+                })
             {
                 timeout = match (timeout, contract_timeout) {
                     (TimeoutWindow::NoTimeout, contract_timeout) => contract_timeout,
