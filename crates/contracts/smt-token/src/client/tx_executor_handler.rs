@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use client_sdk::{
     helpers::risc0::Risc0Prover,
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder, TxExecutorHandler},
@@ -68,12 +68,10 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 amount,
             } => {
                 let mut sender_account = self
-                    .get_account(&sender)
-                    .map_err(|e| e.to_string())?
-                    .ok_or(format!("Sender account {} not found", sender))?;
+                    .get_account(&sender)?
+                    .ok_or(anyhow!("Sender account {} not found", sender))?;
                 let mut recipient_account = self
-                    .get_account(&recipient)
-                    .map_err(|e| e.to_string())?
+                    .get_account(&recipient)?
                     .unwrap_or(Account::new(recipient, 0));
 
                 let sender_key = sender_account.get_key();
@@ -100,12 +98,10 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 amount,
             } => {
                 let mut owner_account = self
-                    .get_account(&owner)
-                    .map_err(|e| e.to_string())?
-                    .ok_or(format!("Owner account {} not found", owner))?;
+                    .get_account(&owner)?
+                    .ok_or(anyhow!("Owner account {} not found", owner))?;
                 let mut recipient_account = self
-                    .get_account(&recipient)
-                    .map_err(|e| e.to_string())?
+                    .get_account(&recipient)?
                     .unwrap_or(Account::new(recipient, 0));
 
                 let owner_key = owner_account.get_key();
@@ -130,9 +126,8 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 amount,
             } => {
                 let mut owner_account = self
-                    .get_account(&owner)
-                    .map_err(|e| e.to_string())?
-                    .ok_or(format!("Owner account {} not found", owner))?;
+                    .get_account(&owner)?
+                    .ok_or(anyhow!("Owner account {} not found", owner))?;
                 let owner_key = owner_account.get_key();
                 owner_account.update_allowances(spender.clone(), amount);
                 if let Err(e) = self.0.update(owner_key, owner_account) {
@@ -177,12 +172,10 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 amount: _,
             } => {
                 let sender_account = self
-                    .get_account(&sender)
-                    .map_err(|e| e.to_string())?
-                    .ok_or(format!("Sender account {} not found", sender))?;
+                    .get_account(&sender)?
+                    .ok_or(anyhow!("Sender account {} not found", sender))?;
                 let recipient_account = self
-                    .get_account(&recipient)
-                    .map_err(|e| e.to_string())?
+                    .get_account(&recipient)?
                     .unwrap_or(Account::new(recipient, 0));
 
                 // Create keys for the accounts
@@ -206,12 +199,10 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 amount,
             } => {
                 let owner_account = self
-                    .get_account(&owner)
-                    .map_err(|e| e.to_string())?
-                    .ok_or(format!("Owner account {} not found", owner))?;
+                    .get_account(&owner)?
+                    .ok_or(anyhow!("Owner account {} not found", owner))?;
                 let recipient_account = self
-                    .get_account(&recipient)
-                    .map_err(|e| e.to_string())?
+                    .get_account(&recipient)?
                     .unwrap_or(Account::new(recipient, amount));
 
                 // Create keys for the accounts
@@ -234,9 +225,8 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 amount: _,
             } => {
                 let owner_account = self
-                    .get_account(&owner)
-                    .map_err(|e| e.to_string())?
-                    .ok_or(format!("Owner account {} not found", owner))?;
+                    .get_account(&owner)?
+                    .ok_or(anyhow!("Owner account {} not found", owner))?;
                 let key = owner_account.get_key();
                 (
                     BorshableMerkleProof(

@@ -441,6 +441,7 @@ impl Genesis {
             ProgramId(vec![0, 0, 0, 0]),
             StateCommitment::default(),
             Some(TimeoutWindow::NoTimeout),
+            None,
         )
         .expect("register hyle");
 
