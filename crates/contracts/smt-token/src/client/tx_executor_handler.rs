@@ -249,8 +249,42 @@ impl TxExecutorHandler for SmtTokenProvableState {
         borsh::to_vec(&SmtTokenContract {
             commitment: StateCommitment(Into::<[u8; 32]>::into(root).to_vec()),
             proof,
-            sender,
-            recipient,
+            accounts: HashMap::from([
+                (sender.address.clone(), sender),
+                (recipient.address.clone(), recipient),
+            ]),
+        })
+        .map_err(|e| e.to_string())
+    }
+
+    fn merge_commitment_metadata(
+        &self,
+        initial: Vec<u8>,
+        next: Vec<u8>,
+    ) -> anyhow::Result<Vec<u8>, String> {
+        let initial_commitment: SmtTokenContract =
+            borsh::from_slice(&initial).map_err(|e| e.to_string())?;
+        let next_commitment: SmtTokenContract =
+            borsh::from_slice(&next).map_err(|e| e.to_string())?;
+
+        let keys = initial_commitment
+            .accounts
+            .values()
+            .chain(next_commitment.accounts.values())
+            .map(|account| account.get_key())
+            .collect::<Vec<_>>();
+
+        let accounts = initial_commitment
+            .accounts
+            .iter()
+            .chain(next_commitment.accounts.iter())
+            .map(|(key, account)| (key.clone(), account.clone()))
+            .collect::<HashMap<_, _>>();
+
+        borsh::to_vec(&SmtTokenContract {
+            commitment: initial_commitment.commitment,
+            proof: BorshableMerkleProof(self.0.merkle_proof(keys).map_err(|e| e.to_string())?),
+            accounts,
         })
         .map_err(|e| e.to_string())
     }

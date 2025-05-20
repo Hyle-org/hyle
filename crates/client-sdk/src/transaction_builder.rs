@@ -352,6 +352,14 @@ pub trait TxExecutorHandler {
     /// It provides the minimum information necessary to construct the commitment_medata field of the input
     /// that will be used to execute the program in the zkvm.
     fn build_commitment_metadata(&self, blob: &Blob) -> Result<Vec<u8>, String>;
+
+    fn merge_commitment_metadata(
+        &self,
+        initial: Vec<u8>,
+        _next: Vec<u8>,
+    ) -> Result<Vec<u8>, String> {
+        Ok(initial)
+    }
 }
 
 /// Macro to easily define the full state of a TxExecutor

@@ -307,6 +307,17 @@ where
 
             if initial_commitment_metadata.is_none() {
                 initial_commitment_metadata = Some(commitment_metadata.clone());
+            } else {
+                initial_commitment_metadata = Some(
+                    self.store
+                        .contract
+                        .merge_commitment_metadata(
+                            initial_commitment_metadata.unwrap(),
+                            commitment_metadata,
+                        )
+                        .map_err(|e| anyhow!(e))
+                        .context("Merging commitment_metadata")?,
+                );
             }
 
             let calldata = Calldata {
