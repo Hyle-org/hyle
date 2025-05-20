@@ -534,10 +534,11 @@ impl Indexer {
             debug!("Inserting transaction state event {tx_hash}: {serialized_events}");
 
             log_warn!(sqlx::query(
-                "INSERT INTO transaction_state_events (block_hash, index, tx_hash, parent_dp_hash, events)
-                VALUES ($1, $2, $3, $4, $5::jsonb)",
+                "INSERT INTO transaction_state_events (block_hash, block_height, index, tx_hash, parent_dp_hash, events)
+                VALUES ($1, $2, $3, $4, $5, $6::jsonb)",
             )
             .bind(block.hash.clone())
+            .bind(block_height)
             .bind(i)
             .bind(tx_hash_db)
             .bind(parent_data_proposal_hash)
@@ -821,7 +822,7 @@ mod test {
     use assert_json_diff::assert_json_include;
     use axum_test::TestServer;
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateCommitment, TxHash};
-    use hyle_model::api::{APIBlob, APIBlock, APIContract, APITransaction};
+    use hyle_model::api::{APIBlob, APIBlock, APIContract, APITransaction, APITransactionEvents};
     use serde_json::json;
     use std::future::IntoFuture;
     use utils::TimestampMs;
@@ -1460,6 +1461,28 @@ mod test {
         assert_eq!(
             result.parent_dp_hash.0,
             "dp_hashbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string()
+        );
+
+        // Get transaction state event
+
+        let transactions_response = server
+            .get("/transaction/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/events")
+            .await;
+
+        transactions_response.assert_status_ok();
+        let result = transactions_response.json::<Vec<APITransactionEvents>>();
+
+        assert_eq!(
+            result,
+            vec![APITransactionEvents {
+                block_hash: ConsensusProposalHash(
+                    "block2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()
+                ),
+                block_height: BlockHeight(2),
+                events: vec![serde_json::json!({
+                    "name": "Sequenced"
+                })]
+            }]
         );
 
         Ok(())
