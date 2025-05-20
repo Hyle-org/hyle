@@ -795,8 +795,28 @@ async fn test_tx_with_hyle_blob_should_have_specific_timeout() {
     let mut register_c1 = make_register_contract_tx_with_actions(c1.clone(), vec![blob_a1]);
     let tx_hash = register_c1.hashed();
 
-    const TIMEOUT_WINDOW_FOR_HYLE: BlockHeight = BlockHeight(2);
     let block = state.craft_block_and_handle(100, vec![register_a1.into(), register_c1.into()]);
+
+    // Assert no timeout
+    assert_eq!(block.timed_out_txs, vec![]);
+
+    // Time out
+    let block = state.craft_block_and_handle(102, vec![]);
+
+    // Assert that tx has timed out
+    assert_eq!(block.timed_out_txs, vec![tx_hash.clone()]);
+}
+
+#[test_log::test(tokio::test)]
+async fn test_tx_with_hyle_blob_should_have_specific_timeout_in_same_tx() {
+    let mut state = new_node_state().await;
+    let a1 = ContractName::new("a1");
+    let blob_a1 = new_blob("a1");
+    let mut register_and_blob_a1 =
+        make_register_contract_tx_with_actions(a1.clone(), vec![blob_a1]);
+    let tx_hash = register_and_blob_a1.hashed();
+
+    let block = state.craft_block_and_handle(100, vec![register_and_blob_a1.into()]);
 
     // Assert no timeout
     assert_eq!(block.timed_out_txs, vec![]);

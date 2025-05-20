@@ -124,7 +124,7 @@ impl Default for NodeStateStore {
                 program_id: ProgramId(vec![]),
                 state: StateCommitment(vec![0]),
                 verifier: Verifier("hyle".to_owned()),
-                timeout_window: TimeoutWindow::NoTimeout,
+                timeout_window: TimeoutWindow::Timeout(BlockHeight(2)),
             },
         );
         ret
@@ -331,13 +331,6 @@ impl NodeState {
                 .contracts
                 .get(&blob.contract_name)
                 .map(|c| c.timeout_window.clone())
-                .or({
-                    if blob.contract_name.0 == "hyle" {
-                        Some(TimeoutWindow::Timeout(BlockHeight(2)))
-                    } else {
-                        None
-                    }
-                })
             {
                 timeout = match (timeout, contract_timeout) {
                     (TimeoutWindow::NoTimeout, contract_timeout) => contract_timeout,
