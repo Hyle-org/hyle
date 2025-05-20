@@ -40,6 +40,71 @@ async fn happy_path_with_tx_context() {
 }
 
 #[test_log::test(tokio::test)]
+async fn native_blobs_should_not_block_settlement() {
+    let mut state = new_node_state().await;
+    let c1 = ContractName::new("c1");
+    let register_c1 = make_register_contract_effect(c1.clone());
+    let n1 = ContractName::new("n1");
+    let register_n1 = make_register_native_contract_effect(n1.clone());
+    state.handle_register_contract_effect(&register_c1);
+    state.handle_register_contract_effect(&register_n1);
+
+    let identity_1 = Identity::new("test@c1");
+    let blob_tx_1 = BlobTransaction::new(
+        identity_1.clone(),
+        vec![new_blob("c1"), new_native_blob("n1", identity_1.clone())],
+    );
+
+    let blob_tx_id_1 = blob_tx_1.hashed();
+
+    let ctx = bogus_tx_context();
+    state
+        .handle_blob_tx(DataProposalHash::default(), &blob_tx_1, ctx.clone())
+        .unwrap();
+
+    let hyle_output_1 = make_hyle_output(blob_tx_1.clone(), BlobIndex(0));
+    let verified_proof_1 = new_proof_tx(&c1, &hyle_output_1, &blob_tx_id_1);
+
+    // Register another tx depending on native contract
+
+    let d1 = ContractName::new("d1");
+    let register_d1 = make_register_contract_effect(d1.clone());
+    state.handle_register_contract_effect(&register_d1);
+
+    let identity_2 = Identity::new("test@d1");
+    let blob_tx_2 = BlobTransaction::new(
+        identity_2.clone(),
+        vec![new_blob("d1"), new_native_blob("n1", identity_2.clone())],
+    );
+
+    let blob_tx_id_2 = blob_tx_2.hashed();
+
+    state
+        .handle_blob_tx(DataProposalHash::default(), &blob_tx_2, ctx.clone())
+        .unwrap();
+
+    let hyle_output_2 = make_hyle_output(blob_tx_2.clone(), BlobIndex(0));
+    let verified_proof_2 = new_proof_tx(&c1, &hyle_output_2, &blob_tx_id_2);
+
+    // Create a block by settling the second tx without verifying the first
+    // Native contract should not block
+    let block = state.craft_block_and_handle(1, vec![verified_proof_2.into()]);
+    assert_eq!(block.blob_proof_outputs.len(), 1);
+    assert_eq!(block.failed_txs.len(), 0);
+    assert_eq!(block.successful_txs.len(), 1);
+
+    // Check state transitionned correctly
+    assert_eq!(state.contracts.get(&d1).unwrap().state.0, vec![4, 5, 6]);
+
+    // Now settle the first one
+    let block = state.craft_block_and_handle(2, vec![verified_proof_1.into()]);
+    assert_eq!(block.blob_proof_outputs.len(), 1);
+    assert_eq!(block.failed_txs.len(), 0);
+    assert_eq!(block.successful_txs.len(), 1);
+    assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
+}
+
+#[test_log::test(tokio::test)]
 async fn blob_tx_without_blobs() {
     let mut state = new_node_state().await;
     let identity = Identity::new("test@c1");

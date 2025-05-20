@@ -1227,6 +1227,8 @@ pub mod test {
 
     use super::*;
     use hyle_net::clock::TimestampMsClock;
+    use sdk::verifiers::ShaBlob;
+    use sha3::Digest;
 
     async fn new_node_state() -> NodeState {
         NodeState {
@@ -1239,6 +1241,26 @@ pub mod test {
         Blob {
             contract_name: ContractName::new(contract),
             data: BlobData(vec![0, 1, 2, 3]),
+        }
+    }
+
+    fn new_native_blob(contract: &str, identity: Identity) -> Blob {
+        let data = vec![0, 1, 2, 3];
+        let mut hasher = sha3::Sha3_256::new();
+        hasher.update(&data);
+        let sha = hasher.finalize().to_vec();
+
+        let data = ShaBlob {
+            identity,
+            data,
+            sha,
+        };
+
+        let data = borsh::to_vec(&data).unwrap();
+
+        Blob {
+            contract_name: ContractName::new(contract),
+            data: BlobData(data),
         }
     }
 
@@ -1259,6 +1281,18 @@ pub mod test {
     pub fn make_register_contract_effect(contract_name: ContractName) -> RegisterContractEffect {
         RegisterContractEffect {
             verifier: "test".into(),
+            program_id: ProgramId(vec![]),
+            state_commitment: StateCommitment(vec![0, 1, 2, 3]),
+            contract_name,
+            timeout_window: None,
+        }
+    }
+
+    pub fn make_register_native_contract_effect(
+        contract_name: ContractName,
+    ) -> RegisterContractEffect {
+        RegisterContractEffect {
+            verifier: Verifier("sha3_256".to_string()),
             program_id: ProgramId(vec![]),
             state_commitment: StateCommitment(vec![0, 1, 2, 3]),
             contract_name,
