@@ -124,6 +124,12 @@ pub trait ZkContract {
     fn execute(&mut self, calldata: &Calldata) -> RunResult;
 
     fn commit(&self) -> StateCommitment;
+
+    /// A function executed before the contract is executed.
+    /// This might be used to do verifications on the state before validating calldatas.
+    fn initialize(&mut self) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 pub const fn to_u8_array(val: &[u32; 8]) -> [u8; 32] {
