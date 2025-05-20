@@ -16,6 +16,7 @@ pub fn register_hyle_contract(
     program_id: ProgramId,
     state_commitment: StateCommitment,
     timeout_window: Option<TimeoutWindow>,
+    constructor_metadata: Option<Vec<u8>>,
 ) -> anyhow::Result<()> {
     builder.add_action(
         "hyle".into(),
@@ -25,6 +26,7 @@ pub fn register_hyle_contract(
             program_id,
             state_commitment,
             timeout_window,
+            constructor_metadata,
         },
         None,
         None,
@@ -233,11 +235,11 @@ pub mod test {
             let hos = calldatas
                 .iter()
                 .map(|calldata| self.contract.lock().unwrap().handle(calldata))
-                .collect::<Result<Vec<_>, String>>();
+                .collect::<Result<Vec<_>>>();
             Box::pin(async move {
                 match hos {
                     Ok(hos) => Ok(ProofData(borsh::to_vec(&hos).unwrap())),
-                    Err(e) => Err(anyhow::anyhow!(e)),
+                    Err(e) => Err(e),
                 }
             })
         }

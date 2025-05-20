@@ -50,13 +50,16 @@ fn handle_register_blob(
 
     contract_changes.insert(
         reg.contract_name.clone(),
-        SideEffect::Register(Contract {
-            name: reg.contract_name.clone(),
-            program_id: reg.program_id.clone(),
-            state: reg.state_commitment.clone(),
-            verifier: reg.verifier.clone(),
-            timeout_window: reg.timeout_window.clone().unwrap_or_default(),
-        }),
+        SideEffect::Register(
+            Contract {
+                name: reg.contract_name.clone(),
+                program_id: reg.program_id.clone(),
+                state: reg.state_commitment.clone(),
+                verifier: reg.verifier.clone(),
+                timeout_window: reg.timeout_window.clone().unwrap_or_default(),
+            },
+            reg.constructor_metadata.clone(),
+        ),
     );
     Ok(())
 }

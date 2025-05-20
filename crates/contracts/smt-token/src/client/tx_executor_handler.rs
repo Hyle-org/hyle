@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use anyhow::{anyhow, bail, Context, Result};
 use client_sdk::{
     helpers::risc0::Risc0Prover,
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutorBuilder, TxExecutorHandler},
@@ -7,7 +8,8 @@ use client_sdk::{
 use sdk::{
     merkle_utils::BorshableMerkleProof,
     utils::{as_hyle_output, parse_calldata},
-    Calldata, ContractName, HyleOutput, Identity, StateCommitment, StructuredBlob,
+    Calldata, ContractName, HyleOutput, Identity, RegisterContractEffect, StateCommitment,
+    StructuredBlob,
 };
 
 pub mod metadata {
@@ -53,10 +55,11 @@ impl TxExecutorHandler for SmtTokenProvableState {
     /// !!! WARNINGS !!!
     /// This function is only here to keep track of the balances.
     /// No checks are done to verify that this is a legit action.
-    fn handle(&mut self, calldata: &Calldata) -> Result<HyleOutput, String> {
+    fn handle(&mut self, calldata: &Calldata) -> Result<HyleOutput> {
         let root = *self.0.root();
         let initial_state_commitment = StateCommitment(Into::<[u8; 32]>::into(root).to_vec());
-        let (action, execution_ctx) = parse_calldata::<SmtTokenAction>(calldata)?;
+        let (action, execution_ctx) =
+            parse_calldata::<SmtTokenAction>(calldata).map_err(|e| anyhow::anyhow!(e))?;
 
         let output = match action {
             SmtTokenAction::Transfer {
@@ -65,12 +68,10 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 amount,
             } => {
                 let mut sender_account = self
-                    .get_account(&sender)
-                    .map_err(|e| e.to_string())?
-                    .ok_or(format!("Sender account {} not found", sender))?;
+                    .get_account(&sender)?
+                    .ok_or(anyhow!("Sender account {} not found", sender))?;
                 let mut recipient_account = self
-                    .get_account(&recipient)
-                    .map_err(|e| e.to_string())?
+                    .get_account(&recipient)?
                     .unwrap_or(Account::new(recipient, 0));
 
                 let sender_key = sender_account.get_key();
@@ -80,10 +81,10 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 recipient_account.balance += amount;
 
                 if let Err(e) = self.0.update(sender_key, sender_account) {
-                    return Err(format!("Failed to update sender account: {e}"));
+                    bail!("Failed to update sender account: {e}");
                 }
                 if let Err(e) = self.0.update(recipient_key, recipient_account.clone()) {
-                    return Err(format!("Failed to update recipient account: {e}"));
+                    bail!("Failed to update recipient account: {e}");
                 }
                 Ok(format!(
                     "Transferred {} to {}",
@@ -97,12 +98,10 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 amount,
             } => {
                 let mut owner_account = self
-                    .get_account(&owner)
-                    .map_err(|e| e.to_string())?
-                    .ok_or(format!("Owner account {} not found", owner))?;
+                    .get_account(&owner)?
+                    .ok_or(anyhow!("Owner account {} not found", owner))?;
                 let mut recipient_account = self
-                    .get_account(&recipient)
-                    .map_err(|e| e.to_string())?
+                    .get_account(&recipient)?
                     .unwrap_or(Account::new(recipient, 0));
 
                 let owner_key = owner_account.get_key();
@@ -111,10 +110,10 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 owner_account.balance -= amount;
                 recipient_account.balance += amount;
                 if let Err(e) = self.0.update(owner_key, owner_account) {
-                    return Err(format!("Failed to update owner account: {e}"));
+                    bail!("Failed to update owner account: {e}");
                 }
                 if let Err(e) = self.0.update(recipient_key, recipient_account.clone()) {
-                    return Err(format!("Failed to update recipient account: {e}"));
+                    bail!("Failed to update recipient account: {e}");
                 }
                 Ok(format!(
                     "Transferred {} to {}",
@@ -127,13 +126,12 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 amount,
             } => {
                 let mut owner_account = self
-                    .get_account(&owner)
-                    .map_err(|e| e.to_string())?
-                    .ok_or(format!("Owner account {} not found", owner))?;
+                    .get_account(&owner)?
+                    .ok_or(anyhow!("Owner account {} not found", owner))?;
                 let owner_key = owner_account.get_key();
                 owner_account.update_allowances(spender.clone(), amount);
                 if let Err(e) = self.0.update(owner_key, owner_account) {
-                    return Err(format!("Failed to update owner account: {e}"));
+                    bail!("Failed to update owner account: {e}");
                 }
                 Ok(format!("Approved {} to {}", amount, spender))
             }
@@ -155,12 +153,12 @@ impl TxExecutorHandler for SmtTokenProvableState {
 
     /// This function provides the metadata needed to reconstruct the SMT Token contract's state.
     /// This state is made up of the rootHash of the MerkleTrie, and the merkle proof used to prove the accounts used in the action.
-    fn build_commitment_metadata(&self, blob: &sdk::Blob) -> Result<Vec<u8>, String> {
+    fn build_commitment_metadata(&self, blob: &sdk::Blob) -> Result<Vec<u8>> {
         let parsed_blob: StructuredBlob<SmtTokenAction> =
             match StructuredBlob::try_from(blob.clone()) {
                 Ok(v) => v,
                 Err(_) => {
-                    return Err(format!("Failed to parse blob: {:?}", blob));
+                    bail!("Failed to parse blob: {:?}", blob);
                 }
             };
 
@@ -174,12 +172,10 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 amount: _,
             } => {
                 let sender_account = self
-                    .get_account(&sender)
-                    .map_err(|e| e.to_string())?
-                    .ok_or(format!("Sender account {} not found", sender))?;
+                    .get_account(&sender)?
+                    .ok_or(anyhow!("Sender account {} not found", sender))?;
                 let recipient_account = self
-                    .get_account(&recipient)
-                    .map_err(|e| e.to_string())?
+                    .get_account(&recipient)?
                     .unwrap_or(Account::new(recipient, 0));
 
                 // Create keys for the accounts
@@ -203,12 +199,10 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 amount,
             } => {
                 let owner_account = self
-                    .get_account(&owner)
-                    .map_err(|e| e.to_string())?
-                    .ok_or(format!("Owner account {} not found", owner))?;
+                    .get_account(&owner)?
+                    .ok_or(anyhow!("Owner account {} not found", owner))?;
                 let recipient_account = self
-                    .get_account(&recipient)
-                    .map_err(|e| e.to_string())?
+                    .get_account(&recipient)?
                     .unwrap_or(Account::new(recipient, amount));
 
                 // Create keys for the accounts
@@ -231,9 +225,8 @@ impl TxExecutorHandler for SmtTokenProvableState {
                 amount: _,
             } => {
                 let owner_account = self
-                    .get_account(&owner)
-                    .map_err(|e| e.to_string())?
-                    .ok_or(format!("Owner account {} not found", owner))?;
+                    .get_account(&owner)?
+                    .ok_or(anyhow!("Owner account {} not found", owner))?;
                 let key = owner_account.get_key();
                 (
                     BorshableMerkleProof(
@@ -252,7 +245,14 @@ impl TxExecutorHandler for SmtTokenProvableState {
             sender,
             recipient,
         })
-        .map_err(|e| e.to_string())
+        .context("Failed to serialize SMT Token contract")
+    }
+
+    fn construct_state(
+        _register_blob: &RegisterContractEffect,
+        _metadata: &Option<Vec<u8>>,
+    ) -> Result<Self> {
+        Ok(Self::default())
     }
 }
 
