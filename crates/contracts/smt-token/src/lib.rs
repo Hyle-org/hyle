@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use account::Account;
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -49,14 +49,14 @@ pub enum SmtTokenAction {
 pub struct SmtTokenContract {
     pub commitment: sdk::StateCommitment,
     pub proof: BorshableMerkleProof,
-    pub accounts: HashMap<Identity, Account>,
+    pub accounts: BTreeMap<Identity, Account>,
 }
 
 impl SmtTokenContract {
     pub fn new(
         commitment: sdk::StateCommitment,
         proof: BorshableMerkleProof,
-        accounts: HashMap<Identity, Account>,
+        accounts: BTreeMap<Identity, Account>,
     ) -> Self {
         SmtTokenContract {
             commitment,
@@ -116,7 +116,7 @@ impl ZkContract for SmtTokenContract {
             .expect("Failed to verify proof");
 
         if !verified {
-            Err("Failed to verify proof".to_string())
+            Err("Merkle proof invalid".to_string())
         } else {
             Ok(())
         }

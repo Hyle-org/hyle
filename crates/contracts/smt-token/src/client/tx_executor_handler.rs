@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use client_sdk::{
     helpers::risc0::Risc0Prover,
@@ -249,7 +249,7 @@ impl TxExecutorHandler for SmtTokenProvableState {
         borsh::to_vec(&SmtTokenContract {
             commitment: StateCommitment(Into::<[u8; 32]>::into(root).to_vec()),
             proof,
-            accounts: HashMap::from([
+            accounts: BTreeMap::from([
                 (sender.address.clone(), sender),
                 (recipient.address.clone(), recipient),
             ]),
@@ -272,7 +272,7 @@ impl TxExecutorHandler for SmtTokenProvableState {
             .iter()
             .chain(next_commitment.accounts.iter())
             .map(|(key, account)| (key.clone(), account.clone()))
-            .collect::<HashMap<_, _>>();
+            .collect::<BTreeMap<_, _>>();
 
         let keys = accounts.values().map(|a| a.get_key()).collect::<Vec<_>>();
 
