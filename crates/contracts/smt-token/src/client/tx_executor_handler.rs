@@ -7,7 +7,7 @@ use client_sdk::{
 use sdk::{
     merkle_utils::BorshableMerkleProof,
     utils::{as_hyle_output, parse_calldata},
-    Calldata, ContractName, HyleOutput, Identity, StateCommitment, StructuredBlob,
+    Calldata, ContractName, HyleOutput, Identity, StateCommitment, StructuredBlob, ZkContract,
 };
 
 pub mod metadata {
@@ -167,7 +167,7 @@ impl TxExecutorHandler for SmtTokenProvableState {
         let action = parsed_blob.data.parameters;
 
         let root = *self.0.root();
-        let (proof, sender, recipient) = match action {
+        let (proof, accounts) = match action {
             SmtTokenAction::Transfer {
                 sender,
                 recipient,
@@ -192,8 +192,10 @@ impl TxExecutorHandler for SmtTokenProvableState {
                             .merkle_proof(vec![key1, key2])
                             .expect("Failed to generate proof"),
                     ),
-                    sender_account,
-                    recipient_account,
+                    BTreeMap::from([
+                        (sender_account.address.clone(), sender_account.clone()),
+                        (recipient_account.address.clone(), recipient_account),
+                    ]),
                 )
             }
             SmtTokenAction::TransferFrom {
@@ -221,8 +223,10 @@ impl TxExecutorHandler for SmtTokenProvableState {
                             .merkle_proof(vec![key1, key2])
                             .expect("Failed to generate proof"),
                     ),
-                    owner_account,
-                    recipient_account,
+                    BTreeMap::from([
+                        (owner_account.address.clone(), owner_account.clone()),
+                        (recipient_account.address.clone(), recipient_account),
+                    ]),
                 )
             }
             SmtTokenAction::Approve {
@@ -241,19 +245,15 @@ impl TxExecutorHandler for SmtTokenProvableState {
                             .merkle_proof(vec![key])
                             .expect("Failed to generate proof"),
                     ),
-                    owner_account.clone(),
-                    owner_account,
+                    BTreeMap::from([(owner_account.address.clone(), owner_account)]),
                 )
             }
         };
-        borsh::to_vec(&SmtTokenContract {
-            commitment: StateCommitment(Into::<[u8; 32]>::into(root).to_vec()),
+        borsh::to_vec(&SmtTokenContract::new(
+            StateCommitment(Into::<[u8; 32]>::into(root).to_vec()),
             proof,
-            accounts: BTreeMap::from([
-                (sender.address.clone(), sender),
-                (recipient.address.clone(), recipient),
-            ]),
-        })
+            accounts,
+        ))
         .map_err(|e| e.to_string())
     }
 
@@ -262,26 +262,21 @@ impl TxExecutorHandler for SmtTokenProvableState {
         initial: Vec<u8>,
         next: Vec<u8>,
     ) -> anyhow::Result<Vec<u8>, String> {
-        let initial_commitment: SmtTokenContract =
+        let mut initial_commitment: SmtTokenContract =
             borsh::from_slice(&initial).map_err(|e| e.to_string())?;
-        let next_commitment: SmtTokenContract =
+        sdk::info!("Initial Commitment: {:?}", initial_commitment.commitment);
+        initial_commitment.initialize()?;
+
+        let mut next_commitment: SmtTokenContract =
             borsh::from_slice(&next).map_err(|e| e.to_string())?;
+        sdk::info!("Next Commitment: {:?}", next_commitment.commitment);
+        next_commitment.initialize()?;
 
-        let accounts = initial_commitment
-            .accounts
-            .iter()
-            .chain(next_commitment.accounts.iter())
-            .map(|(key, account)| (key.clone(), account.clone()))
-            .collect::<BTreeMap<_, _>>();
+        initial_commitment
+            .steps
+            .insert(0, next_commitment.steps[0].clone());
 
-        let keys = accounts.values().map(|a| a.get_key()).collect::<Vec<_>>();
-
-        borsh::to_vec(&SmtTokenContract {
-            commitment: initial_commitment.commitment,
-            proof: BorshableMerkleProof(self.0.merkle_proof(keys).map_err(|e| e.to_string())?),
-            accounts,
-        })
-        .map_err(|e| e.to_string())
+        borsh::to_vec(&initial_commitment).map_err(|e| e.to_string())
     }
 }
 
@@ -321,7 +316,7 @@ impl SmtTokenProvableState {
                 recipient: recipient_account.address.clone(),
                 amount,
             },
-            SmtTokenContract::build_private_input(sender_account, recipient_account),
+            None,
             None,
             None,
         )?;
@@ -357,7 +352,7 @@ impl SmtTokenProvableState {
                 recipient: recipient_account.address.clone(),
                 amount,
             },
-            SmtTokenContract::build_private_input(owner_account, recipient_account),
+            None,
             None,
             None,
         )?;
@@ -385,7 +380,7 @@ impl SmtTokenProvableState {
                 spender,
                 amount,
             },
-            SmtTokenContract::build_private_input(owner_account.clone(), owner_account),
+            None,
             None,
             None,
         )?;
