@@ -502,13 +502,6 @@ pub async fn get_transaction_events(
     let rows = log_error!(
         sqlx::query(
             r#"
-WITH latest_height_for_this_tx_hash AS (
-  SELECT MAX(block_height) as max_height
-  FROM transactions
-  WHERE tx_hash = $1
-    AND transaction_type = 'blob_transaction'
-)
-
 SELECT 
     t.block_hash,
     b.height,
@@ -519,10 +512,11 @@ LEFT JOIN blocks b
     ON t.block_hash = b.hash
 WHERE 
     t.tx_hash = $1
-    AND t.block_height = (SELECT max_height FROM latest_height_for_this_tx_hash)
+    AND t.block_height = b.height
 ORDER BY 
     b.height DESC,
-    t.index DESC;
+    t.index DESC
+LIMIT 1;
 "#,
         )
         .bind(tx_hash)
