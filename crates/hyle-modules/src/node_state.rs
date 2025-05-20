@@ -386,7 +386,7 @@ impl NodeState {
             .blobs
             .iter()
             .enumerate()
-            .map(|(index, blob)| {
+            .filter_map(|(index, blob)| {
                 tracing::trace!("Handling blob - {:?}", blob);
                 if let Some(Ok(verifier)) = self
                     .contracts
@@ -400,19 +400,18 @@ impl NodeState {
                         verifier,
                     );
                     tracing::trace!("Native verifier in blob tx - {:?}", hyle_output);
-                    return UnsettledBlobMetadata {
-                        blob: blob.clone(),
-                        possible_proofs: vec![(verifier.into(), hyle_output)],
-                    };
+                    // Verifier contracts won't be updated
+                    // FIXME: When we need stateful native contracts
+                    return None;
                 } else if blob.contract_name.0 == "hyle" {
                     // 'hyle' is a special case -> See settlement logic.
                 } else {
                     should_try_and_settle = false;
                 }
-                UnsettledBlobMetadata {
+                Some(UnsettledBlobMetadata {
                     blob: blob.clone(),
                     possible_proofs: vec![],
-                }
+                })
             })
             .collect();
 
