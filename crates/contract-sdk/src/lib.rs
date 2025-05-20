@@ -124,6 +124,22 @@ pub trait ZkContract {
     fn execute(&mut self, calldata: &Calldata) -> RunResult;
 
     fn commit(&self) -> StateCommitment;
+
+    /// A function executed before the contract is executed.
+    /// This might be done to do verifications on the state before validating calldatas.
+    /// For example, to verify a merkle proof on a trie. Usefull to reduce cycles in case
+    /// of transaction batching.
+    fn initialize(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// A function executed after the contract is executed.
+    /// This might be done to build the final state commitment.
+    /// For example, to update the root hash of a MerkleTrie.
+    /// Usefull to reduce cycles in case of transaction batching.
+    fn finalize(&mut self) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 pub const fn to_u8_array(val: &[u32; 8]) -> [u8; 32] {

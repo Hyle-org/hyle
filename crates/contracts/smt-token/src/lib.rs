@@ -99,6 +99,29 @@ impl ZkContract for SmtTokenContract {
         }
     }
 
+    fn initialize(&mut self) -> Result<(), String> {
+        let verified = self
+            .proof
+            .0
+            .clone()
+            .verify::<SHA256Hasher>(
+                &TryInto::<[u8; 32]>::try_into(self.commitment.0.clone())
+                    .unwrap()
+                    .into(),
+                self.accounts
+                    .values()
+                    .map(|v| (v.get_key(), v.to_h256()))
+                    .collect(),
+            )
+            .expect("Failed to verify proof");
+
+        if !verified {
+            Err("Failed to verify proof".to_string())
+        } else {
+            Ok(())
+        }
+    }
+
     fn commit(&self) -> sdk::StateCommitment {
         self.commitment.clone()
     }
@@ -117,62 +140,31 @@ impl SmtTokenContract {
         recipient: Identity,
         amount: u128,
     ) -> Result<String, String> {
-        {
-            let sender_account = self
-                .accounts
-                .get(&sender)
-                .ok_or_else(|| "Sender account not found".to_string())?;
-            let recipient_account = self
-                .accounts
-                .get(&recipient)
-                .ok_or_else(|| "Recipient account not found".to_string())?;
-
-            let sender_key = sender_account.get_key();
-            let recipient_key = recipient_account.get_key();
-
-            let verified = self
-                .proof
-                .0
-                .clone()
-                .verify::<SHA256Hasher>(
-                    &TryInto::<[u8; 32]>::try_into(self.commitment.0.clone())
-                        .unwrap()
-                        .into(),
-                    vec![
-                        (sender_key, sender_account.to_h256()),
-                        (recipient_key, recipient_account.to_h256()),
-                    ],
-                )
-                .expect("Failed to verify proof");
-
-            if !verified {
-                return Err("Failed to verify proof".to_string());
-            }
-        }
-
         // update sender and recipient balances
-        self.accounts.get_mut(&sender).unwrap().balance -= amount;
-        self.accounts.get_mut(&recipient).unwrap().balance += amount;
-
-        let sender_account = self.accounts.get(&sender).unwrap();
-        let recipient_account = self.accounts.get(&recipient).unwrap();
+        self.accounts
+            .get_mut(&sender)
+            .ok_or_else(|| "Sender account not found".to_string())?
+            .balance -= amount;
+        self.accounts
+            .get_mut(&recipient)
+            .ok_or_else(|| "Recipient account not found".to_string())?
+            .balance += amount;
 
         let new_root = self
             .proof
             .0
             .clone()
-            .compute_root::<SHA256Hasher>(vec![
-                (sender_account.get_key(), sender_account.to_h256()),
-                (recipient_account.get_key(), recipient_account.to_h256()),
-            ])
+            .compute_root::<SHA256Hasher>(
+                self.accounts
+                    .values()
+                    .map(|v| (v.get_key(), v.to_h256()))
+                    .collect(),
+            )
             .expect("Failed to compute new root");
 
         self.commitment = StateCommitment(Into::<[u8; 32]>::into(new_root).to_vec());
 
-        Ok(format!(
-            "Transferred {} to {}",
-            amount, recipient_account.address
-        ))
+        Ok(format!("Transferred {} to {}", amount, recipient))
     }
 
     pub fn transfer_from(
@@ -216,44 +208,21 @@ impl SmtTokenContract {
         spender: Identity,
         amount: u128,
     ) -> Result<String, String> {
-        {
-            let owner_account = self
-                .accounts
-                .get(&owner)
-                .ok_or_else(|| "Owner account not found".to_string())?;
-
-            let owner_key = owner_account.get_key();
-
-            let verified = self
-                .proof
-                .0
-                .clone()
-                .verify::<SHA256Hasher>(
-                    &TryInto::<[u8; 32]>::try_into(self.commitment.0.clone())
-                        .unwrap()
-                        .into(),
-                    vec![(owner_key, owner_account.to_h256())],
-                )
-                .expect("Failed to verify proof");
-
-            if !verified {
-                return Err("Failed to verify proof".to_string());
-            }
-        }
-
         self.accounts
             .get_mut(&owner)
-            .unwrap()
+            .ok_or_else(|| "Owner account not found".to_string())?
             .update_allowances(spender.clone(), amount);
-
-        let owner_account = self.accounts.get(&owner).unwrap();
-        let owner_key = owner_account.get_key();
 
         let new_root = self
             .proof
             .0
             .clone()
-            .compute_root::<SHA256Hasher>(vec![(owner_key, owner_account.to_h256())])
+            .compute_root::<SHA256Hasher>(
+                self.accounts
+                    .values()
+                    .map(|v| (v.get_key(), v.to_h256()))
+                    .collect(),
+            )
             .expect("Failed to compute new root");
 
         self.commitment = StateCommitment(Into::<[u8; 32]>::into(new_root).to_vec());
