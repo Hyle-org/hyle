@@ -367,7 +367,7 @@ impl Mempool {
                         tracing::error!("Error processing block in mempool: {:?}", e);
                     }
                 }
-                for (_, contract) in block.registered_contracts {
+                for (_, contract, _) in block.registered_contracts {
                     self.handle_contract_registration(contract);
                 }
             }
@@ -1249,7 +1249,7 @@ pub mod test {
                 program_id: ProgramId(vec![]),
                 state_commitment: StateCommitment(vec![0, 1, 2, 3]),
                 contract_name: name,
-                timeout_window: None,
+                ..Default::default()
             }
             .as_blob("hyle".into(), None, None)],
         )

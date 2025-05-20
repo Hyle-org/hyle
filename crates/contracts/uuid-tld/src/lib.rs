@@ -73,7 +73,7 @@ impl ZkContract for UuidTld {
             return Ok((
                 format!("registered {} ({})", uuid, uuid.as_u128()),
                 exec_ctx,
-                vec![OnchainEffect::RegisterContract(action)],
+                vec![OnchainEffect::RegisterContract(action.into())],
             ));
         }
 

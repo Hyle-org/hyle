@@ -450,20 +450,32 @@ pub async fn get_transaction_with_hash(
     Path(tx_hash): Path<String>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<APITransaction>, StatusCode> {
-    let transaction = log_error!(sqlx::query_as::<_, TransactionDb>(
-        r#"
-        SELECT tx_hash, version, transaction_type, transaction_status, parent_dp_hash, block_hash, index, b.timestamp
-        FROM transactions
-        LEFT JOIN blocks b ON transactions.block_hash = b.hash
-        WHERE tx_hash = $1 AND transaction_type = 'blob_transaction'
-        ORDER BY index DESC
+    let transaction = log_error!(
+        sqlx::query_as::<_, TransactionDb>(
+            r#"
+SELECT
+    tx_hash,
+    version,
+    transaction_type,
+    transaction_status,
+    parent_dp_hash,
+    block_hash,
+    index,
+    b.timestamp
+FROM transactions t
+LEFT JOIN blocks b ON t.block_hash = b.hash
+WHERE t.transaction_type = 'blob_transaction'
+  AND t.tx_hash = $1
+ORDER BY block_height DESC, index DESC
+LIMIT 1;
         "#,
+        )
+        .bind(tx_hash)
+        .fetch_optional(&state.db)
+        .await
+        .map(|db| db.map(|test| { Into::<APITransaction>::into(test) })),
+        "Failed to fetch transaction by hash"
     )
-    .bind(tx_hash)
-    .fetch_optional(&state.db)
-    .await
-    .map(|db| db.map(Into::<APITransaction>::into)),
-    "Failed to fetch transaction by hash")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match transaction {
@@ -490,12 +502,28 @@ pub async fn get_transaction_events(
     let rows = log_error!(
         sqlx::query(
             r#"
-        SELECT t.block_hash, b.height, t.tx_hash, t.events
-        FROM transaction_state_events t
-        LEFT JOIN blocks b ON t.block_hash = b.hash
-        WHERE tx_hash = $1
-        ORDER BY (b.height, index) DESC;
-        "#,
+WITH latest_height_for_this_tx_hash AS (
+  SELECT MAX(block_height) as max_height
+  FROM transactions
+  WHERE tx_hash = $1
+    AND transaction_type = 'blob_transaction'
+)
+
+SELECT 
+    t.block_hash,
+    b.height,
+    t.tx_hash,
+    t.events
+FROM transaction_state_events t
+LEFT JOIN blocks b 
+    ON t.block_hash = b.hash
+WHERE 
+    t.tx_hash = $1
+    AND t.block_height = (SELECT max_height FROM latest_height_for_this_tx_hash)
+ORDER BY 
+    b.height DESC,
+    t.index DESC;
+"#,
         )
         .bind(tx_hash)
         .fetch_all(&state.db)
@@ -643,22 +671,43 @@ pub async fn get_blobs_by_tx_hash(
     Path(tx_hash): Path<String>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<Vec<APIBlob>>, StatusCode> {
-    let blobs = log_error!(sqlx::query_as::<_, BlobDb>(
-        r#"
-        SELECT blobs.*, array_remove(ARRAY_AGG(blob_proof_outputs.hyle_output), NULL) AS proof_outputs
-        FROM blobs
-        LEFT JOIN blob_proof_outputs ON blobs.parent_dp_hash = blob_proof_outputs.blob_parent_dp_hash 
-            AND blobs.tx_hash = blob_proof_outputs.blob_tx_hash 
-            AND blobs.blob_index = blob_proof_outputs.blob_index
-        WHERE blobs.tx_hash = $1
-        GROUP BY blobs.parent_dp_hash, blobs.tx_hash, blobs.blob_index, blobs.identity
-        "#,
+    let blobs = log_error!(
+        sqlx::query_as::<_, BlobDb>(
+            r#"
+WITH latest_height_for_this_tx_hash AS (
+  SELECT MAX(block_height) as max_height
+  FROM transactions
+  WHERE tx_hash = $1
+    AND transaction_type = 'blob_transaction'
+)
+
+SELECT 
+      blobs.*,
+      array_remove(ARRAY_AGG(blob_proof_outputs.hyle_output), NULL) AS proof_outputs
+FROM blobs
+LEFT JOIN
+     blob_proof_outputs
+	ON blobs.parent_dp_hash = blob_proof_outputs.blob_parent_dp_hash 
+    	   AND blobs.tx_hash = blob_proof_outputs.blob_tx_hash 
+    	   AND blobs.blob_index = blob_proof_outputs.blob_index
+JOIN
+     transactions
+        ON transactions.parent_dp_hash = blobs.parent_dp_hash AND transactions.tx_hash = blobs.tx_hash
+WHERE blobs.tx_hash = $1
+     AND transactions.block_height = (SELECT max_height FROM latest_height_for_this_tx_hash)
+GROUP BY
+      blobs.parent_dp_hash,
+      blobs.tx_hash,
+      blobs.blob_index,
+      blobs.identity
+"#,
+        )
+        .bind(tx_hash)
+        .fetch_all(&state.db)
+        .await
+        .map(|db| db.into_iter().map(Into::<APIBlob>::into).collect()),
+        "Failed to fetch blobs by tx hash"
     )
-    .bind(tx_hash)
-    .fetch_all(&state.db)
-    .await
-    .map(|db| db.into_iter().map(Into::<APIBlob>::into).collect()),
-    "Failed to fetch blobs by tx hash")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(blobs))
@@ -680,23 +729,38 @@ pub async fn get_blob(
     Path((tx_hash, blob_index)): Path<(String, i32)>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<APIBlob>, StatusCode> {
-    let blob = log_error!(sqlx::query_as::<_, BlobDb>(
-        r#"
-        SELECT blobs.*, array_remove(ARRAY_AGG(blob_proof_outputs.hyle_output), NULL) AS proof_outputs
-        FROM blobs
-        LEFT JOIN blob_proof_outputs ON blobs.parent_dp_hash = blob_proof_outputs.blob_parent_dp_hash 
-            AND blobs.tx_hash = blob_proof_outputs.blob_tx_hash 
-            AND blobs.blob_index = blob_proof_outputs.blob_index
-        WHERE blobs.tx_hash = $1 AND blobs.blob_index = $2
-        GROUP BY blobs.parent_dp_hash, blobs.tx_hash, blobs.blob_index, blobs.identity
-        "#,
+    let blob = log_error!(
+        sqlx::query_as::<_, BlobDb>(
+            r#"
+SELECT 
+  blobs.*, 
+  array_remove(ARRAY_AGG(blob_proof_outputs.hyle_output), NULL) AS proof_outputs
+FROM blobs
+LEFT JOIN blob_proof_outputs 
+  ON blobs.parent_dp_hash = blob_proof_outputs.blob_parent_dp_hash
+  AND blobs.tx_hash = blob_proof_outputs.blob_tx_hash
+  AND blobs.blob_index = blob_proof_outputs.blob_index
+JOIN transactions
+  ON blobs.parent_dp_hash = transactions.parent_dp_hash AND blobs.tx_hash = transactions.tx_hash
+WHERE
+  blobs.tx_hash = $1
+  AND blobs.blob_index = $2
+GROUP BY 
+  blobs.parent_dp_hash, 
+  blobs.tx_hash, 
+  blobs.blob_index,
+  transactions.block_height
+ORDER BY transactions.block_height DESC
+LIMIT 1;
+"#,
+        )
+        .bind(tx_hash)
+        .bind(blob_index)
+        .fetch_optional(&state.db)
+        .await
+        .map(|db| db.map(Into::<APIBlob>::into)),
+        "Failed to fetch blob"
     )
-    .bind(tx_hash)
-    .bind(blob_index)
-    .fetch_optional(&state.db)
-    .await
-    .map(|db| db.map(Into::<APIBlob>::into)),
-    "Failed to fetch blob")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match blob {
@@ -721,8 +785,8 @@ pub async fn list_contracts(
             r#"
         SELECT
           c.*,
-          COUNT(DISTINCT t.tx_hash)                             AS total_tx,
-          COUNT(DISTINCT t.tx_hash) 
+          COUNT(DISTINCT (t.tx_hash, t.parent_dp_hash))                             AS total_tx,
+          COUNT(DISTINCT (t.tx_hash, t.parent_dp_hash)) 
             FILTER (WHERE t.transaction_status = 'sequenced')   AS unsettled_tx
         FROM contracts AS c
         LEFT JOIN blobs AS b
@@ -763,8 +827,8 @@ pub async fn get_contract(
             r#"
         SELECT
           c.*,
-          COUNT(DISTINCT t.tx_hash)                             AS total_tx,
-          COUNT(DISTINCT t.tx_hash) 
+          COUNT(DISTINCT (t.tx_hash, t.parent_dp_hash))                             AS total_tx,
+          COUNT(DISTINCT (t.tx_hash, t.parent_dp_hash)) 
             FILTER (WHERE t.transaction_status = 'sequenced')   AS unsettled_tx
         FROM contracts AS c
         LEFT JOIN blobs AS b
@@ -929,20 +993,34 @@ pub async fn get_proof_with_hash(
     Path(tx_hash): Path<String>,
     State(state): State<IndexerApiState>,
 ) -> Result<Json<APITransaction>, StatusCode> {
-    let transaction = log_error!(sqlx::query_as::<_, TransactionDb>(
-        r#"
-        SELECT tx_hash, version, transaction_type, transaction_status, parent_dp_hash, block_hash, index, b.timestamp
-        FROM transactions
-        LEFT JOIN blocks b ON transactions.block_hash = b.hash
-        WHERE tx_hash = $1 AND transaction_type = 'proof_transaction'
-        ORDER BY index DESC
-        "#,
+    let transaction = log_error!(
+        sqlx::query_as::<_, TransactionDb>(
+            r#"
+SELECT 
+    tx_hash,
+    version,
+    transaction_type,
+    transaction_status,
+    parent_dp_hash,
+    block_hash,
+    index,
+    b.timestamp
+FROM transactions
+LEFT JOIN blocks b 
+    ON transactions.block_hash = b.hash
+WHERE 
+    tx_hash = $1
+    AND transaction_type = 'proof_transaction'
+ORDER BY block_height DESC, index DESC
+LIMIT 1;
+"#,
+        )
+        .bind(tx_hash)
+        .fetch_optional(&state.db)
+        .await
+        .map(|db| db.map(Into::<APITransaction>::into)),
+        "Failed to fetch proof by hash"
     )
-    .bind(tx_hash)
-    .fetch_optional(&state.db)
-    .await
-    .map(|db| db.map(Into::<APITransaction>::into)),
-    "Failed to fetch proof by hash")
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     match transaction {

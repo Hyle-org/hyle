@@ -71,7 +71,7 @@ async fn test_full_settlement_flow() -> Result<()> {
             program_id: ProgramId(vec![1, 2, 3]),
             state_commitment: StateCommitment(vec![7, 7, 7]),
             contract_name: "c2.hyle".into(),
-            timeout_window: None,
+            ..Default::default()
         })
         .await
         .unwrap();
@@ -194,7 +194,7 @@ async fn test_tx_settlement_duplicates() -> Result<()> {
             program_id: ProgramId(vec![1, 2, 3]),
             state_commitment: StateCommitment(vec![7, 7, 7]),
             contract_name: "c2.hyle".into(),
-            timeout_window: None,
+            ..Default::default()
         })
         .await
         .unwrap();
