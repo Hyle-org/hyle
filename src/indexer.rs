@@ -1206,7 +1206,12 @@ mod test {
             TransactionStatusDb::DataProposalCreated,
         )
         .await;
-        assert_tx_not_found(&server, proof_tx_1_wd.hashed()).await;
+        assert_tx_status(
+            &server,
+            proof_tx_1_wd.hashed(),
+            TransactionStatusDb::DataProposalCreated,
+        )
+        .await;
 
         let mut signed_block = SignedBlock::default();
         signed_block.consensus_proposal.timestamp = TimestampMs(12345);
@@ -1240,7 +1245,12 @@ mod test {
             TransactionStatusDb::Sequenced,
         )
         .await;
-        assert_tx_not_found(&server, proof_tx_1_wd.hashed()).await;
+        assert_tx_status(
+            &server,
+            proof_tx_1_wd.hashed(),
+            TransactionStatusDb::Success,
+        )
+        .await;
 
         // Check a mempool status event does not change a Success/Sequenced status
         indexer
