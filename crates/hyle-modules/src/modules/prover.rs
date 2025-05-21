@@ -348,6 +348,13 @@ where
                 .push((tx_hash.clone(), self.store.contract.clone()));
 
             if old_tx {
+                debug!(
+                    cn =% self.ctx.contract_name,
+                    tx_hash =% tx.hashed(),
+                    tx_height =% tx_ctx.block_height,
+                    tx_height_proved =% self.store.proved_height,
+                    "Skipping old tx",
+                );
                 continue;
             }
 
