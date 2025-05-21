@@ -27,7 +27,7 @@ use hyle_modules::{
 };
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use sqlx::{PgExecutor, QueryBuilder, Row};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::DerefMut;
 use tokio::select;
 use tokio::sync::{broadcast, mpsc};
@@ -310,9 +310,18 @@ impl Indexer {
                 data_proposal_hash: _,
                 txs_metadatas,
             } => {
+                let mut seen = HashSet::new();
+                let unique_txs_metadatas: Vec<_> = txs_metadatas
+                    .into_iter()
+                    .filter(|value| {
+                        let key = (value.id.1.clone(), value.id.0.clone());
+                        seen.insert(key)
+                    })
+                    .collect();
+
                 let mut query_builder = QueryBuilder::new("INSERT INTO transactions (tx_hash, parent_dp_hash, version, transaction_type, transaction_status)");
 
-                query_builder.push_values(txs_metadatas, |mut b, value| {
+                query_builder.push_values(unique_txs_metadatas, |mut b, value| {
                     let tx_type: TransactionTypeDb = value.transaction_kind.into();
                     let version = log_error!(
                         i32::try_from(value.version).map_err(|_| anyhow::anyhow!(
@@ -1169,6 +1178,7 @@ mod test {
                 register_tx_1_wd.clone(),
                 register_tx_2_wd.clone(),
                 blob_transaction_wd.clone(),
+                blob_transaction_wd.clone(),
                 proof_tx_1_wd.clone(),
             ],
         );
@@ -1178,6 +1188,7 @@ mod test {
             txs_metadatas: vec![
                 register_tx_1_wd.metadata(parent_data_proposal_hash.clone()),
                 register_tx_2_wd.metadata(parent_data_proposal_hash.clone()),
+                blob_transaction_wd.metadata(parent_data_proposal_hash.clone()),
                 blob_transaction_wd.metadata(parent_data_proposal_hash.clone()),
                 proof_tx_1_wd.metadata(parent_data_proposal_hash.clone()),
             ],
@@ -1342,7 +1353,7 @@ mod test {
         assert_json_include!(
             actual: proofs_response.json::<serde_json::Value>(),
             expected: json!([
-                { "index": 3, "transaction_type": "ProofTransaction", "transaction_status": "Success", "block_hash": block_2_hash },
+                { "index": 4, "transaction_type": "ProofTransaction", "transaction_status": "Success", "block_hash": block_2_hash },
                 { "index": 7, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
                 { "index": 6, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
                 { "index": 4, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
@@ -1370,7 +1381,7 @@ mod test {
         assert_json_include!(
             actual: proof_by_hash.json::<serde_json::Value>(),
             expected: json!({
-                "index": 3,
+                "index": 4,
                 "transaction_type": "ProofTransaction",
                 "transaction_status": "Success"
             })
