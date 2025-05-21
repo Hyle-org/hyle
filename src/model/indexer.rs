@@ -8,7 +8,7 @@ use hyle_model::api::{
     TransactionTypeDb,
 };
 use hyle_model::utils::TimestampMs;
-use hyle_model::{ConsensusProposalHash, DataProposalHash};
+use hyle_model::{BlockHeight, ConsensusProposalHash, DataProposalHash};
 use serde::{Deserialize, Serialize};
 
 use sqlx::postgres::PgRow;
@@ -168,7 +168,7 @@ impl From<ContractDb> for APIContract {
             contract_name: val.contract_name,
             total_tx: val.total_tx,
             unsettled_tx: val.unsettled_tx,
-            earliest_unsettled: val.earliest_unsettled.map(|a| a as u64),
+            earliest_unsettled: val.earliest_unsettled.map(|a| BlockHeight(a as u64)),
         }
     }
 }
