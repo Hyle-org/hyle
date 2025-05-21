@@ -364,33 +364,33 @@ impl NodeState {
         let mut should_try_and_settle = true;
 
         // For now, reject blob Tx with blobs for unknown contracts.
-        // if tx.blobs.iter().any(|blob| {
-        //     !self.contracts.contains_key(&blob.contract_name)
-        //         && tx.blobs.iter().all(|b| {
-        //             if b.contract_name.0 != "hyle" {
-        //                 return true;
-        //             } else if let Ok(res) =
-        //                 StructuredBlobData::<RegisterContractAction>::try_from(b.data.clone())
-        //             {
-        //                 if res.parameters.contract_name == blob.contract_name {
-        //                     return false;
-        //                 }
-        //             }
-        //             true
-        //         })
-        // }) {
-        //     let contracts = tx
-        //         .blobs
-        //         .iter()
-        //         .filter(|blob| !self.contracts.contains_key(&blob.contract_name))
-        //         .map(|blob| blob.contract_name.0.clone())
-        //         .collect::<Vec<_>>()
-        //         .join(", ");
-        //     bail!(
-        //         "Blob Transaction contains blobs for unknown contracts: {}",
-        //         contracts
-        //     );
-        // }
+        if tx.blobs.iter().any(|blob| {
+            !self.contracts.contains_key(&blob.contract_name)
+                && tx.blobs.iter().all(|b| {
+                    if b.contract_name.0 != "hyle" {
+                        return true;
+                    } else if let Ok(res) =
+                        StructuredBlobData::<RegisterContractAction>::try_from(b.data.clone())
+                    {
+                        if res.parameters.contract_name == blob.contract_name {
+                            return false;
+                        }
+                    }
+                    true
+                })
+        }) {
+            let contracts = tx
+                .blobs
+                .iter()
+                .filter(|blob| !self.contracts.contains_key(&blob.contract_name))
+                .map(|blob| blob.contract_name.0.clone())
+                .collect::<Vec<_>>()
+                .join(", ");
+            bail!(
+                "Blob Transaction contains blobs for unknown contracts: {}",
+                contracts
+            );
+        }
 
         let blobs: Vec<UnsettledBlobMetadata> = tx
             .blobs
