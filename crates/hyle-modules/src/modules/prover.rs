@@ -66,7 +66,14 @@ pub enum AutoProverEvent<Contract> {
 
 impl<Contract> Module for AutoProver<Contract>
 where
-    Contract: TxExecutorHandler + BorshDeserialize + Debug + Send + Sync + Clone + 'static,
+    Contract: TxExecutorHandler
+        + BorshSerialize
+        + BorshDeserialize
+        + Debug
+        + Send
+        + Sync
+        + Clone
+        + 'static,
 {
     type Context = Arc<AutoProverCtx<Contract>>;
 
@@ -98,6 +105,17 @@ where
             }
 
         };
+
+        let _ = log_error!(
+            Self::save_on_disk::<AutoProverStore<Contract>>(
+                self.ctx
+                    .data_directory
+                    .join(format!("prover_{}.bin", self.ctx.contract_name))
+                    .as_path(),
+                &self.store,
+            ),
+            "Saving prover"
+        );
 
         Ok(())
     }
@@ -140,6 +158,7 @@ where
             }
         }
         self.prove_supported_blob(blobs)?;
+        self.store.proved_height = block.block_height;
 
         for tx in block.successful_txs {
             self.settle_tx_success(&tx)?;
