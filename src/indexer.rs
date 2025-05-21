@@ -1217,12 +1217,7 @@ mod test {
             TransactionStatusDb::DataProposalCreated,
         )
         .await;
-        assert_tx_status(
-            &server,
-            proof_tx_1_wd.hashed(),
-            TransactionStatusDb::DataProposalCreated,
-        )
-        .await;
+        assert_tx_not_found(&server, proof_tx_1_wd.hashed()).await;
 
         let mut signed_block = SignedBlock::default();
         signed_block.consensus_proposal.timestamp = TimestampMs(12345);
@@ -1256,12 +1251,7 @@ mod test {
             TransactionStatusDb::Sequenced,
         )
         .await;
-        assert_tx_status(
-            &server,
-            proof_tx_1_wd.hashed(),
-            TransactionStatusDb::Success,
-        )
-        .await;
+        assert_tx_not_found(&server, proof_tx_1_wd.hashed()).await;
 
         // Check a mempool status event does not change a Success/Sequenced status
         indexer
@@ -1447,7 +1437,7 @@ mod test {
         // Multiple txs with same hash -- one not yet in a block, should return the pending one
 
         let transactions_response = server
-            .get("/transaction/hash/test_tx_hash_3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .get("/proof/hash/test_tx_hash_3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             .await;
         transactions_response.assert_status_ok();
         let result = transactions_response.json::<APITransaction>();

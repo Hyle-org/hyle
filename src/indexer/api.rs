@@ -464,7 +464,7 @@ SELECT
     b.timestamp
 FROM transactions t
 LEFT JOIN blocks b ON t.block_hash = b.hash
-WHERE t.tx_hash = $1
+WHERE t.tx_hash = $1 AND transaction_type='blob_transaction'
 ORDER BY block_height DESC, index DESC
 LIMIT 1;
         "#,
