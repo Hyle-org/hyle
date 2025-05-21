@@ -550,9 +550,9 @@ async fn test_unknown_contract_and_delete_cleanup() {
 
 #[test_log::test(tokio::test)]
 async fn test_custom_timeout_then_upgrade_with_none() {
-    let mut state = new_node_state().await;
-
     let c1 = ContractName::new("c1");
+
+    let mut state = new_node_state_with_timeout_whitelist(vec![c1.clone()]).await;
     let register_c1 = make_register_contract_tx(c1.clone());
 
     // Register the contract
