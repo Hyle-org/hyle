@@ -34,6 +34,7 @@ pub struct AutoProverStore<Contract> {
     unsettled_txs: Vec<(BlobTransaction, TxContext)>,
     state_history: Vec<(TxHash, Contract)>,
     contract: Contract,
+    proved_height: BlockHeight,
 }
 
 module_bus_client! {
@@ -82,6 +83,7 @@ where
                 contract: ctx.default_state.clone(),
                 unsettled_txs: vec![],
                 state_history: vec![],
+                proved_height: ctx.start_height,
             },
         };
 
@@ -245,7 +247,7 @@ where
         let mut initial_commitment_metadata = None;
         let len = blobs.len();
         for (blob_index, tx, tx_ctx) in blobs {
-            let old_tx = tx_ctx.block_height.0 < self.ctx.start_height.0;
+            let old_tx = tx_ctx.block_height.0 < self.store.proved_height.0;
 
             let blob = tx.blobs.get(blob_index.0).ok_or_else(|| {
                 anyhow!("Failed to get blob {} from tx {}", blob_index, tx.hashed())
