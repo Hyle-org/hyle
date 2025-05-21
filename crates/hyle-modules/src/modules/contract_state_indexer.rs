@@ -299,6 +299,7 @@ mod tests {
     use crate::bus::SharedMessageBus;
     use crate::node_state::metrics::NodeStateMetrics;
     use crate::node_state::{NodeState, NodeStateStore};
+    use std::collections::HashSet;
     use std::sync::Arc;
 
     #[derive(Clone, Debug, Default, BorshSerialize, BorshDeserialize)]
@@ -465,6 +466,7 @@ mod tests {
 
         let mut node_state = NodeState {
             metrics: NodeStateMetrics::global("test".to_string(), "test"),
+            timeout_whitelist: HashSet::new(),
             store: NodeStateStore::default(),
         };
         let block = node_state

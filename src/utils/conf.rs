@@ -139,6 +139,9 @@ pub struct Conf {
 
     /// Websocket configuration
     pub websocket: NodeWebSocketConfig,
+
+    /// NodeState timeout whitelist (freely define timeout/notimeout)
+    pub timeout_whitelist: Vec<String>,
 }
 
 impl Conf {

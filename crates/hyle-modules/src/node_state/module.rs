@@ -9,6 +9,7 @@ use crate::module_handle_messages;
 use crate::modules::{module_bus_client, Module, SharedBuildApiCtx};
 use anyhow::{Context, Result};
 use sdk::*;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use tracing::info;
 
@@ -43,6 +44,7 @@ pub struct NodeStateBusClient {
 
 pub struct NodeStateCtx {
     pub node_id: String,
+    pub timeout_whitelist: Vec<ContractName>,
     pub data_directory: PathBuf,
     pub api: SharedBuildApiCtx,
 }
@@ -67,7 +69,11 @@ impl Module for NodeStateModule {
             info!("📝 Loaded contract state for {}", name);
         }
 
-        let node_state = NodeState { store, metrics };
+        let node_state = NodeState {
+            store,
+            timeout_whitelist: HashSet::from_iter(ctx.timeout_whitelist),
+            metrics,
+        };
         let bus = NodeStateBusClient::new_from_bus(bus.new_handle()).await;
 
         Ok(Self {

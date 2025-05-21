@@ -292,6 +292,7 @@ impl NodeIntegrationCtx {
             NodeStateCtx {
                 node_id: config.id.clone(),
                 data_directory: config.data_directory.clone(),
+                timeout_whitelist: vec![],
                 api: ctx.api.clone(),
             },
             &mut mocks,

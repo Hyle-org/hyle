@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 
 use anyhow::Result;
-use sdk::{BlockHeight, Hashed, SignedBlock};
+use sdk::{BlockHeight, ContractName, Hashed, SignedBlock};
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -32,6 +32,7 @@ pub struct DAListener {
 pub struct DAListenerConf {
     pub data_directory: PathBuf,
     pub da_read_from: String,
+    pub timeout_whitelist: Vec<ContractName>,
     pub start_block: Option<BlockHeight>,
 }
 
@@ -47,6 +48,7 @@ impl Module for DAListener {
 
         let node_state = NodeState {
             store: node_state_store,
+            timeout_whitelist: HashSet::from_iter(ctx.timeout_whitelist.clone()),
             metrics: NodeStateMetrics::global("da_listener".to_string(), "da_listener"),
         };
 

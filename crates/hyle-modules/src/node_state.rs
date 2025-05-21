@@ -9,7 +9,7 @@ use metrics::NodeStateMetrics;
 use ordered_tx_map::OrderedTxMap;
 use sdk::verifiers::NativeVerifiers;
 use sdk::*;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use timeouts::Timeouts;
 use tracing::{debug, error, info, trace};
 
@@ -70,6 +70,7 @@ enum BlobTxHandled {
 #[derive(Debug, Clone)]
 pub struct NodeState {
     pub metrics: NodeStateMetrics,
+    pub timeout_whitelist: HashSet<ContractName>,
     pub store: NodeStateStore,
 }
 
@@ -77,6 +78,7 @@ impl NodeState {
     pub fn create(node_id: String, module_name: &'static str) -> Self {
         NodeState {
             metrics: NodeStateMetrics::global(node_id, module_name),
+            timeout_whitelist: HashSet::new(),
             store: NodeStateStore::default(),
         }
     }
@@ -338,9 +340,20 @@ impl NodeState {
                         TimeoutWindow::Timeout(a.min(b))
                     }
                     _ => TimeoutWindow::NoTimeout,
+                };
+
+                // If the contract is not in whitelist, set timeout to max 100, and 100 if set to NoTimeout
+                if !self.timeout_whitelist.contains(&blob.contract_name) {
+                    timeout = match timeout {
+                        TimeoutWindow::NoTimeout => TimeoutWindow::Timeout(BlockHeight(100)),
+                        TimeoutWindow::Timeout(value) => {
+                            TimeoutWindow::Timeout(BlockHeight(value.0.min(100)))
+                        }
+                    };
                 }
             }
         }
+
         timeout
     }
 
@@ -1232,6 +1245,17 @@ pub mod test {
     async fn new_node_state() -> NodeState {
         NodeState {
             metrics: NodeStateMetrics::global("test".to_string(), "test"),
+            timeout_whitelist: HashSet::default(),
+            store: NodeStateStore::default(),
+        }
+    }
+
+    async fn new_node_state_with_timeout_whitelist(
+        timeout_whitelist: Vec<ContractName>,
+    ) -> NodeState {
+        NodeState {
+            metrics: NodeStateMetrics::global("test".to_string(), "test"),
+            timeout_whitelist: HashSet::from_iter(timeout_whitelist),
             store: NodeStateStore::default(),
         }
     }
@@ -1251,6 +1275,24 @@ pub mod test {
                 program_id: ProgramId(vec![]),
                 state_commitment: StateCommitment(vec![0, 1, 2, 3]),
                 contract_name: name,
+                ..Default::default()
+            }
+            .as_blob("hyle".into(), None, None)],
+        )
+    }
+
+    pub fn make_register_contract_tx_with_timeout_window(
+        name: ContractName,
+        timeout_window: TimeoutWindow,
+    ) -> BlobTransaction {
+        BlobTransaction::new(
+            "hyle@hyle",
+            vec![RegisterContractAction {
+                verifier: "test".into(),
+                program_id: ProgramId(vec![]),
+                state_commitment: StateCommitment(vec![0, 1, 2, 3]),
+                contract_name: name,
+                timeout_window: Some(timeout_window),
                 ..Default::default()
             }
             .as_blob("hyle".into(), None, None)],

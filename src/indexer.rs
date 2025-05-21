@@ -1066,6 +1066,7 @@ mod test {
 
         let mut node_state = NodeState {
             store: NodeStateStore::default(),
+            timeout_whitelist: Default::default(),
             metrics: NodeStateMetrics::global("test".to_string(), "test"),
         };
 

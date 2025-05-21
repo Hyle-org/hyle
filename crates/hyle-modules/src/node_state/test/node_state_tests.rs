@@ -548,6 +548,143 @@ async fn test_auto_settle_next_txs_after_settle() {
         vec![tx_a_hash, tx_b_hash, tx_d_hash, tx_c_hash]
     );
 }
+
+#[test_log::test(tokio::test)]
+async fn test_contract_not_in_timeout_whitelist_low_timeout() {
+    let mut state = new_node_state().await;
+    let c1 = ContractName::new("c1");
+    let register_c1 = make_register_contract_tx_with_timeout_window(
+        c1.clone(),
+        TimeoutWindow::Timeout(BlockHeight(30)),
+    );
+
+    // First basic test - Time out a TX.
+    let blob_tx = BlobTransaction::new(Identity::new("test@c1"), vec![new_blob(&c1.0)]);
+
+    let blob_tx_hash = blob_tx.hashed();
+
+    state.craft_block_and_handle(3, vec![register_c1.into()]);
+
+    let blob_tx = BlobTransaction::new(Identity::new("test@c1"), vec![new_blob(&c1.0)]);
+
+    state.craft_block_and_handle(4, vec![blob_tx.into()]);
+
+    // Should trigger timeout at 30 timeout window
+    let timed_out_tx_hashes = state.craft_block_and_handle(34, vec![]).timed_out_txs;
+
+    // Check that the transaction has timed out
+    assert!(timed_out_tx_hashes.contains(&blob_tx_hash));
+    assert!(state.unsettled_transactions.get(&blob_tx_hash).is_none());
+}
+
+#[test_log::test(tokio::test)]
+async fn test_contract_not_in_timeout_whitelist_notimeout() {
+    let mut state = new_node_state().await;
+    let c1 = ContractName::new("c1");
+    let register_c1 =
+        make_register_contract_tx_with_timeout_window(c1.clone(), TimeoutWindow::NoTimeout);
+
+    // First basic test - Time out a TX.
+    let blob_tx = BlobTransaction::new(Identity::new("test@c1"), vec![new_blob(&c1.0)]);
+
+    let blob_tx_hash = blob_tx.hashed();
+
+    state.craft_block_and_handle(3, vec![register_c1.into()]);
+
+    let blob_tx = BlobTransaction::new(Identity::new("test@c1"), vec![new_blob(&c1.0)]);
+
+    state.craft_block_and_handle(4, vec![blob_tx.into()]);
+
+    // Should trigger timeout at 100 since c1 is not in the whitelist
+    let timed_out_tx_hashes = state.craft_block_and_handle(104, vec![]).timed_out_txs;
+
+    // Check that the transaction has timed out
+    assert!(timed_out_tx_hashes.contains(&blob_tx_hash));
+    assert!(state.unsettled_transactions.get(&blob_tx_hash).is_none());
+}
+
+#[test_log::test(tokio::test)]
+async fn test_contract_not_in_timeout_whitelist_too_high() {
+    let mut state = new_node_state().await;
+    let c1 = ContractName::new("c1");
+    let register_c1 = make_register_contract_tx_with_timeout_window(
+        c1.clone(),
+        TimeoutWindow::Timeout(BlockHeight(101)),
+    );
+
+    // First basic test - Time out a TX.
+    let blob_tx = BlobTransaction::new(Identity::new("test@c1"), vec![new_blob(&c1.0)]);
+
+    let blob_tx_hash = blob_tx.hashed();
+
+    state.craft_block_and_handle(3, vec![register_c1.into()]);
+
+    let blob_tx = BlobTransaction::new(Identity::new("test@c1"), vec![new_blob(&c1.0)]);
+
+    state.craft_block_and_handle(4, vec![blob_tx.into()]);
+
+    // Should trigger timeout at 100 since c1 is not in the whitelist
+    let timed_out_tx_hashes = state.craft_block_and_handle(104, vec![]).timed_out_txs;
+
+    // Check that the transaction has timed out
+    assert!(timed_out_tx_hashes.contains(&blob_tx_hash));
+    assert!(state.unsettled_transactions.get(&blob_tx_hash).is_none());
+}
+
+#[test_log::test(tokio::test)]
+async fn test_contract_in_timeout_whitelist() {
+    let c1 = ContractName::new("c1");
+    let mut state = new_node_state_with_timeout_whitelist(vec![c1.clone()]).await;
+    let register_c1 = make_register_contract_tx_with_timeout_window(
+        c1.clone(),
+        TimeoutWindow::Timeout(BlockHeight(200)),
+    );
+
+    // First basic test - Time out a TX.
+    let blob_tx = BlobTransaction::new(Identity::new("test@c1"), vec![new_blob(&c1.0)]);
+
+    let blob_tx_hash = blob_tx.hashed();
+
+    state.craft_block_and_handle(3, vec![register_c1.into()]);
+
+    let blob_tx = BlobTransaction::new(Identity::new("test@c1"), vec![new_blob(&c1.0)]);
+
+    state.craft_block_and_handle(4, vec![blob_tx.into()]);
+
+    // Should trigger timeout at 100 since c1 is not in the whitelist
+    let timed_out_tx_hashes = state.craft_block_and_handle(204, vec![]).timed_out_txs;
+
+    // Check that the transaction has timed out
+    assert!(timed_out_tx_hashes.contains(&blob_tx_hash));
+    assert!(state.unsettled_transactions.get(&blob_tx_hash).is_none());
+}
+
+#[test_log::test(tokio::test)]
+async fn test_contract_in_timeout_whitelist_notimeout() {
+    let c1 = ContractName::new("c1");
+    let mut state = new_node_state_with_timeout_whitelist(vec![c1.clone()]).await;
+    let register_c1 =
+        make_register_contract_tx_with_timeout_window(c1.clone(), TimeoutWindow::NoTimeout);
+
+    // First basic test - Time out a TX.
+    let blob_tx = BlobTransaction::new(Identity::new("test@c1"), vec![new_blob(&c1.0)]);
+
+    let blob_tx_hash = blob_tx.hashed();
+
+    state.craft_block_and_handle(3, vec![register_c1.into()]);
+
+    let blob_tx = BlobTransaction::new(Identity::new("test@c1"), vec![new_blob(&c1.0)]);
+
+    state.craft_block_and_handle(4, vec![blob_tx.into()]);
+
+    // Should trigger timeout at 100 since c1 is not in the whitelist
+    let timed_out_tx_hashes = state.craft_block_and_handle(999999, vec![]).timed_out_txs;
+
+    // Check that the transaction has timed out
+    assert!(timed_out_tx_hashes.is_empty());
+    assert!(state.unsettled_transactions.get(&blob_tx_hash).is_some());
+}
+
 #[test_log::test(tokio::test)]
 async fn test_tx_timeout_simple() {
     let mut state = new_node_state().await;

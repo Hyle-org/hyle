@@ -27,6 +27,9 @@ run_indexer = true
 database_url = "postgres://postgres:postgres@localhost:5432/postgres"
 da_read_from = "127.0.0.1:4141"
 
+# NodeState timeout whitelist to allow specific contracts to set timeouts arbitrarly
+timeout_whitelist = []
+
 [p2p]
 # "FullValidator" runs a full node, "LaneManager" skips consensus, or "None" to disable most modules.
 mode = "FullValidator"
@@ -68,3 +71,4 @@ ws_path = "/ws"
 health_path = "/ws_health"
 peer_check_interval = 100
 events = ["node_state", "new_block", "new_tx"]
+

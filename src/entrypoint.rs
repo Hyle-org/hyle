@@ -300,6 +300,12 @@ async fn common_main(
             .build_module::<NodeStateModule>(NodeStateCtx {
                 node_id: config.id.clone(),
                 data_directory: config.data_directory.clone(),
+                timeout_whitelist: config
+                    .timeout_whitelist
+                    .clone()
+                    .into_iter()
+                    .map(|timeout| timeout.into())
+                    .collect(),
                 api: build_api_ctx.clone(),
             })
             .await?;
@@ -329,6 +335,12 @@ async fn common_main(
                 data_directory: config.data_directory.clone(),
                 da_read_from: config.da_read_from.clone(),
                 start_block: None,
+                timeout_whitelist: config
+                    .timeout_whitelist
+                    .clone()
+                    .into_iter()
+                    .map(|timeout| timeout.into())
+                    .collect(),
             })
             .await?;
     }
