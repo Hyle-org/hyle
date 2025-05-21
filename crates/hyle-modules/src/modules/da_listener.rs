@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 
 use anyhow::Result;
-use sdk::{BlockHeight, ContractName, Hashed, SignedBlock};
+use sdk::{BlockHeight, ContractName, Hashed, MempoolStatusEvent, SignedBlock};
 use tracing::{debug, error, info, warn};
 
 use crate::{
@@ -17,6 +17,7 @@ module_bus_client! {
 #[derive(Debug)]
 struct DAListenerBusClient {
     sender(NodeStateEvent),
+    sender(MempoolStatusEvent),
 }
 }
 
@@ -225,8 +226,13 @@ impl DAListener {
     }
 
     async fn processing_next_frame(&mut self, event: DataAvailabilityEvent) -> Result<()> {
-        if let DataAvailabilityEvent::SignedBlock(block) = event {
-            self.process_block(block).await?;
+        match event {
+            DataAvailabilityEvent::SignedBlock(block) => {
+                self.process_block(block).await?;
+            }
+            DataAvailabilityEvent::MempoolStatusEvent(mempool_status_event) => {
+                self.bus.send(mempool_status_event)?;
+            }
         }
 
         Ok(())
