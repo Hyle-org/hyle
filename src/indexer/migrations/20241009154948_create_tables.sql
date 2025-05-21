@@ -86,6 +86,7 @@ CREATE TABLE contract_state (
 
 CREATE TABLE transaction_state_events (
     block_hash TEXT NOT NULL REFERENCES blocks(hash) ON DELETE CASCADE,
+    block_height INT,
     index INT,
     tx_hash TEXT NOT NULL,
     parent_dp_hash TEXT NOT NULL,
