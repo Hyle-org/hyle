@@ -124,7 +124,7 @@ impl Default for NodeStateStore {
                 program_id: ProgramId(vec![]),
                 state: StateCommitment(vec![0]),
                 verifier: Verifier("hyle".to_owned()),
-                timeout_window: TimeoutWindow::Timeout(BlockHeight(2)),
+                timeout_window: TimeoutWindow::Timeout(BlockHeight(5)),
             },
         );
         ret
@@ -364,21 +364,11 @@ impl NodeState {
         let mut should_try_and_settle = true;
 
         // For now, reject blob Tx with blobs for unknown contracts.
-        if tx.blobs.iter().any(|blob| {
-            !self.contracts.contains_key(&blob.contract_name)
-                && tx.blobs.iter().all(|b| {
-                    if b.contract_name.0 != "hyle" {
-                        return true;
-                    } else if let Ok(res) =
-                        StructuredBlobData::<RegisterContractAction>::try_from(b.data.clone())
-                    {
-                        if res.parameters.contract_name == blob.contract_name {
-                            return false;
-                        }
-                    }
-                    true
-                })
-        }) {
+        if tx
+            .blobs
+            .iter()
+            .any(|blob| !self.contracts.contains_key(&blob.contract_name))
+        {
             let contracts = tx
                 .blobs
                 .iter()

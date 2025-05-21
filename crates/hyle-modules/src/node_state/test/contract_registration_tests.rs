@@ -197,6 +197,7 @@ async fn test_register_contract_composition() {
 
     assert_eq!(state.contracts.len(), 2);
 
+    error!("careful there");
     // Send a third one that will fail early on settlement of the second because duplication
     // (and thus test the early-failure settlement path)
 
