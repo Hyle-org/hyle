@@ -158,7 +158,9 @@ where
             }
         }
         self.prove_supported_blob(blobs)?;
-        self.store.proved_height = block.block_height;
+        if block.block_height.0 > self.store.proved_height.0 {
+            self.store.proved_height = block.block_height;
+        }
 
         for tx in block.successful_txs {
             self.settle_tx_success(&tx)?;
