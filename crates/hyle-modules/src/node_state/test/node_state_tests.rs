@@ -241,7 +241,7 @@ async fn native_blobs_should_fail_tx_if_failure_and_not_block_c1() {
 
 // First blob is the native one
 #[test_log::test(tokio::test)]
-async fn native_blobs_should_fail_tx_if_failure_and_native_blob_is_first() {
+async fn native_blobs_first_is_regular_second_is_native() {
     let mut state = new_node_state().await;
     let c1 = ContractName::new("c1");
     let register_c1 = make_register_contract_effect(c1.clone());
@@ -312,7 +312,7 @@ async fn native_blobs_should_fail_tx_if_failure_and_native_blob_is_first() {
 }
 
 #[test_log::test(tokio::test)]
-async fn native_blobs_should_fail_tx_if_failure_if_regular_blob_not_settled() {
+async fn native_blobs_should_fail_tx_if_failure_if_regular_blob_settled_as_failed() {
     let mut state = new_node_state().await;
 
     let c1 = ContractName::new("c1");
@@ -326,7 +326,7 @@ async fn native_blobs_should_fail_tx_if_failure_if_regular_blob_not_settled() {
     let identity_1 = Identity::new("test@c1");
     let blob_tx_1 = BlobTransaction::new(
         identity_1.clone(),
-        vec![new_native_blob("n1", identity_1.clone()), new_blob("c1")],
+        vec![new_blob("c1"), new_native_blob("n1", identity_1.clone())],
     );
 
     let blob_tx_id_1 = blob_tx_1.hashed();
@@ -346,7 +346,7 @@ async fn native_blobs_should_fail_tx_if_failure_if_regular_blob_not_settled() {
     // Submitting a proof for c1 should do nothing (no settlement)
     let block = state.craft_block_and_handle(2, vec![verified_proof_1.clone().into()]);
     assert_eq!(block.blob_proof_outputs.len(), 1);
-    assert_eq!(block.failed_txs.len(), 0);
+    assert_eq!(block.failed_txs.len(), 1);
     assert_eq!(block.successful_txs.len(), 0);
 
     // Check state did not transition
