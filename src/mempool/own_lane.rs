@@ -507,6 +507,7 @@ pub mod test {
             MempoolStatusEvent::DataProposalCreated { data_proposal_hash, txs_metadatas } => {
                 assert_eq!(data_proposal_hash, dp.hashed());
                 assert_eq!(txs_metadatas.len(), dp.txs.len());
+                assert_eq!(txs_metadatas.len(), 1);
             }
         );
 
