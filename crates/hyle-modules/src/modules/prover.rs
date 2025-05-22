@@ -4,10 +4,8 @@ use crate::bus::{BusClientSender, SharedMessageBus};
 use crate::{log_error, module_bus_client, module_handle_messages, modules::Module};
 use anyhow::{anyhow, Context, Result};
 use borsh::{BorshDeserialize, BorshSerialize};
-use client_sdk::{
-    helpers::ClientSdkProver, rest_client::NodeApiHttpClient,
-    transaction_builder::TxExecutorHandler,
-};
+use client_sdk::rest_client::NodeApiClient;
+use client_sdk::{helpers::ClientSdkProver, transaction_builder::TxExecutorHandler};
 use sdk::{
     BlobIndex, BlobTransaction, Block, BlockHeight, Calldata, ContractName, Hashed, NodeStateEvent,
     ProofTransaction, TransactionData, TxContext, TxHash, HYLE_TESTNET_CHAIN_ID,
@@ -50,7 +48,7 @@ pub struct AutoProverCtx<Contract> {
     pub start_height: BlockHeight,
     pub prover: Arc<dyn ClientSdkProver<Vec<Calldata>> + Send + Sync>,
     pub contract_name: ContractName,
-    pub node: Arc<NodeApiHttpClient>,
+    pub node: Arc<dyn NodeApiClient + Send + Sync>,
     pub default_state: Contract,
 }
 
@@ -387,7 +385,7 @@ where
                             proof,
                         };
                         let _ = log_error!(
-                            node_client.send_tx_proof(&tx).await,
+                            node_client.send_tx_proof(tx).await,
                             "failed to send proof to node"
                         );
                         info!("✅ Proved {len} txs");
@@ -418,3 +416,69 @@ where
         Ok(())
     }
 }
+
+// #[cfg(test)]
+// mod tests {
+//     use crate::bus::metrics::BusMetrics;
+//
+//     use super::*;
+//     use client_sdk::helpers::test::MockProver;
+//     use client_sdk::rest_client::NodeApiHttpClient;
+//     use sdk::Blob;
+//     use std::sync::Arc;
+//     use tempfile::tempdir;
+//
+//     #[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
+//     struct TestContract {
+//         value: u32,
+//     }
+//
+//     impl TxExecutorHandler for TestContract {
+//         fn build_commitment_metadata(&self, _blob: &Blob) -> Result<Vec<u8>> {
+//             borsh::to_vec(self).map_err(Into::into)
+//         }
+//
+//         fn handle(&mut self, calldata: &Calldata) -> Result<sdk::HyleOutput> {
+//             self.value += 1;
+//             let initial_state = self.commit();
+//             let next_state = self.commit();
+//             Ok(sdk::utils::as_hyle_output(
+//                 initial_state,
+//                 next_state,
+//                 calldata,
+//                 &mut vec![],
+//             ))
+//         }
+//
+//         fn construct_state(
+//             _register_blob: &RegisterContractEffect,
+//             _metadata: &Option<Vec<u8>>,
+//         ) -> Result<Self> {
+//             Ok(Self::default())
+//         }
+//     }
+//
+//     #[tokio::test]
+//     async fn test_auto_prover_basic() -> Result<()> {
+//         let temp_dir = tempdir()?;
+//         let data_dir = temp_dir.path().to_path_buf();
+//
+//         let ctx = Arc::new(AutoProverCtx {
+//             data_directory: data_dir,
+//             start_height: BlockHeight(0),
+//             prover: Arc::new(MockProver {}),
+//             contract_name: ContractName("test".into()),
+//             node: Arc::new(NodeApiHttpClient::new("http://localhost:8080")),
+//             default_state: TestContract::default(),
+//         });
+//
+//         let bus = SharedMessageBus::new(BusMetrics::global("default".to_string()));
+//         let auto_prover = AutoProver::<TestContract>::build(bus.new_handle(), ctx).await?;
+//
+//         // Test that the auto prover was created successfully
+//         assert_eq!(auto_prover.store.proved_height, BlockHeight(0));
+//         assert_eq!(auto_prover.store.contract.value, 0);
+//
+//         Ok(())
+//     }
+// }

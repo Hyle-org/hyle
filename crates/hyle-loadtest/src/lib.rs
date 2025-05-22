@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::Result;
 use client_sdk::helpers::risc0::Risc0Prover;
 use client_sdk::helpers::test::{MockProver, TxExecutorTestProver};
-use client_sdk::rest_client::NodeApiHttpClient;
+use client_sdk::rest_client::{NodeApiClient, NodeApiHttpClient};
 use client_sdk::tcp_client::{TcpApiClient, TcpServerMessage};
 use client_sdk::transaction_builder::{
     ProvableBlobTx, StateUpdater, TxExecutor, TxExecutorBuilder, TxExecutorHandler,
@@ -382,7 +382,7 @@ pub async fn send_transaction<S: StateUpdater>(
     let blobs = transaction.blobs.clone();
     let tx_hash = loop {
         match client
-            .send_tx_blob(&BlobTransaction::new(identity.clone(), blobs.clone()))
+            .send_tx_blob(BlobTransaction::new(identity.clone(), blobs.clone()))
             .await
         {
             Ok(res) => break res,
@@ -397,7 +397,7 @@ pub async fn send_transaction<S: StateUpdater>(
     for proof in provable_tx.iter_prove() {
         let tx = proof.await.unwrap();
         loop {
-            match client.send_tx_proof(&tx).await {
+            match client.send_tx_proof(tx.clone()).await {
                 Ok(_) => break,
                 Err(e) => {
                     tracing::warn!("Error when sending tx blob, waiting before retry {:?}", e);
@@ -452,7 +452,7 @@ pub async fn long_running_test(node_url: String, use_test_verifier: bool) -> Res
             ],
         );
 
-        client.send_tx_blob(&tx).await?;
+        client.send_tx_blob(tx).await?;
 
         tokio::time::sleep(Duration::from_secs(5)).await;
 
