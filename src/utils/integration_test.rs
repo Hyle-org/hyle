@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{bail, Context, Result};
 use axum::Router;
-use client_sdk::rest_client::NodeApiHttpClient;
+use client_sdk::rest_client::{NodeApiClient, NodeApiHttpClient};
 use hyle_model::api::NodeInfo;
 use hyle_model::TxHash;
 use hyle_modules::modules::{BuildApiContextInner, ModulesHandler};

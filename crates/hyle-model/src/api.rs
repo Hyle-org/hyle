@@ -39,7 +39,7 @@ pub struct APIRegisterContract {
 }
 
 /// Copy from Staking contract
-#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Serialize, Deserialize, ToSchema, Clone, PartialEq, Eq)]
 pub struct APIStaking {
     pub stakes: BTreeMap<Identity, u128>,
     pub delegations: BTreeMap<ValidatorPublicKey, Vec<Identity>>,
@@ -61,7 +61,7 @@ pub struct APIFeesBalance {
     pub cumul_size: LaneBytesSize,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Serialize, Deserialize, ToSchema, Clone, PartialEq, Eq)]
 pub struct APIFees {
     /// Balance of each validator
     pub balances: BTreeMap<ValidatorPublicKey, APIFeesBalance>,

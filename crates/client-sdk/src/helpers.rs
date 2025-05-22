@@ -202,40 +202,41 @@ pub mod sp1 {
 }
 
 pub mod test {
-    use crate::transaction_builder::TxExecutorHandler;
+    use borsh::BorshDeserialize;
+    use sdk::ZkContract;
 
     use super::*;
 
     /// Generates valid proofs for the 'test' verifier using the TxExecutor
-    pub struct TxExecutorTestProver<C: TxExecutorHandler> {
-        contract: std::sync::Arc<std::sync::Mutex<C>>,
+    pub struct TxExecutorTestProver<C: ZkContract> {
+        phantom: std::marker::PhantomData<C>,
     }
 
-    impl<C: TxExecutorHandler> TxExecutorTestProver<C> {
-        pub fn new(contract: C) -> Self {
+    impl<C: ZkContract> TxExecutorTestProver<C> {
+        pub fn new() -> Self {
             Self {
-                contract: std::sync::Arc::new(std::sync::Mutex::new(contract)),
+                phantom: std::marker::PhantomData,
             }
         }
     }
 
-    impl<C: TxExecutorHandler> ClientSdkProver<Vec<Calldata>> for TxExecutorTestProver<C> {
+    impl<C: ZkContract> Default for TxExecutorTestProver<C> {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl<C: ZkContract + BorshDeserialize + 'static> ClientSdkProver<Vec<Calldata>>
+        for TxExecutorTestProver<C>
+    {
         fn prove(
             &self,
-            _commitment_metadata: Vec<u8>,
+            commitment_metadata: Vec<u8>,
             calldatas: Vec<Calldata>,
         ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<ProofData>> + Send + '_>>
         {
-            let hos = calldatas
-                .iter()
-                .map(|calldata| self.contract.lock().unwrap().handle(calldata))
-                .collect::<Result<Vec<_>>>();
-            Box::pin(async move {
-                match hos {
-                    Ok(hos) => Ok(ProofData(borsh::to_vec(&hos).unwrap())),
-                    Err(e) => Err(e),
-                }
-            })
+            let hos = sdk::guest::execute::<C>(&commitment_metadata, &calldatas);
+            Box::pin(async move { Ok(ProofData(borsh::to_vec(&hos).unwrap())) })
         }
     }
 

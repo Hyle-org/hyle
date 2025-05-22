@@ -1237,7 +1237,7 @@ pub mod test {
     use sdk::verifiers::ShaBlob;
     use sha3::Digest;
 
-    async fn new_node_state() -> NodeState {
+    pub(crate) async fn new_node_state() -> NodeState {
         NodeState {
             metrics: NodeStateMetrics::global("test".to_string(), "test"),
             store: NodeStateStore::default(),

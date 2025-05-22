@@ -1,7 +1,7 @@
 use anyhow::Context;
 use assert_cmd::prelude::*;
 use client_sdk::{
-    rest_client::IndexerApiHttpClient,
+    rest_client::{IndexerApiHttpClient, NodeApiClient},
     transaction_builder::{ProvableBlobTx, StateUpdater, TxExecutor},
 };
 
@@ -247,14 +247,14 @@ pub async fn send_transaction<S: StateUpdater>(
     let identity = transaction.identity.clone();
     let blobs = transaction.blobs.clone();
     let tx_hash = client
-        .send_tx_blob(&BlobTransaction::new(identity, blobs))
+        .send_tx_blob(BlobTransaction::new(identity, blobs))
         .await
         .unwrap();
 
     let provable_tx = ctx.process(transaction).unwrap();
     for proof in provable_tx.iter_prove() {
         let tx = proof.await.unwrap();
-        client.send_tx_proof(&tx).await.unwrap();
+        client.send_tx_proof(tx).await.unwrap();
     }
     tx_hash
 }
