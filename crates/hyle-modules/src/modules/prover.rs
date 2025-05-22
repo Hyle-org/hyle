@@ -10,7 +10,7 @@ use sdk::{
     BlobIndex, BlobTransaction, Block, BlockHeight, Calldata, ContractName, Hashed, NodeStateEvent,
     ProofTransaction, TransactionData, TxContext, TxHash, HYLE_TESTNET_CHAIN_ID,
 };
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 /// `AutoProver` is a module that handles the proving of transactions
 /// It listens to the node state events and processes all blobs in the block's transactions
@@ -32,6 +32,7 @@ pub struct AutoProverStore<Contract> {
     unsettled_txs: Vec<(BlobTransaction, TxContext)>,
     state_history: Vec<(TxHash, Contract)>,
     contract: Contract,
+    start_proving_at: BlockHeight,
     proved_height: BlockHeight,
 }
 
@@ -88,6 +89,7 @@ where
                 contract: ctx.default_state.clone(),
                 unsettled_txs: vec![],
                 state_history: vec![],
+                start_proving_at: ctx.start_height,
                 proved_height: ctx.start_height,
             },
         };
@@ -101,8 +103,9 @@ where
             listen<NodeStateEvent> event => {
                 _ = log_error!(self.handle_node_state_event(event).await, "handle note state event")
             }
-
         };
+
+        self.store.start_proving_at = self.store.proved_height;
 
         let _ = log_error!(
             Self::save_on_disk::<AutoProverStore<Contract>>(
@@ -132,6 +135,13 @@ where
 
     async fn handle_processed_block(&mut self, block: Block) -> Result<()> {
         let mut blobs = vec![];
+        debug!(
+            cn =% self.ctx.contract_name,
+            block_height =% block.block_height,
+            "Processing block {}",
+            block.block_height
+        );
+        trace!(cn =% self.ctx.contract_name, "Processing block {:?}", block);
         for (_, tx) in block.txs {
             if let TransactionData::Blob(tx) = tx.transaction_data {
                 if tx
@@ -262,11 +272,16 @@ where
         &mut self,
         blobs: Vec<(BlobIndex, BlobTransaction, TxContext)>,
     ) -> Result<()> {
+        debug!(
+            cn =% self.ctx.contract_name,
+            "Proving {} blobs",
+            blobs.len()
+        );
         let mut calldatas = vec![];
         let mut initial_commitment_metadata = None;
         let len = blobs.len();
         for (blob_index, tx, tx_ctx) in blobs {
-            let old_tx = tx_ctx.block_height.0 < self.store.proved_height.0;
+            let old_tx = tx_ctx.block_height.0 < self.store.start_proving_at.0;
 
             let blob = tx.blobs.get(blob_index.0).ok_or_else(|| {
                 anyhow!("Failed to get blob {} from tx {}", blob_index, tx.hashed())
@@ -307,6 +322,10 @@ where
                 tx_ctx: Some(tx_ctx.clone()),
                 tx_blob_count: blobs.len(),
             };
+            debug!(
+                "🐛 Executing with calldata: {calldata:?} on state {:?}",
+                self.store.contract
+            );
 
             match self
                 .store
@@ -350,7 +369,7 @@ where
                     cn =% self.ctx.contract_name,
                     tx_hash =% tx.hashed(),
                     tx_height =% tx_ctx.block_height,
-                    tx_height_proved =% self.store.proved_height,
+                    tx_height_proved =% self.store.start_proving_at,
                     "Skipping old tx",
                 );
                 continue;
@@ -417,68 +436,217 @@ where
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::bus::metrics::BusMetrics;
-//
-//     use super::*;
-//     use client_sdk::helpers::test::MockProver;
-//     use client_sdk::rest_client::NodeApiHttpClient;
-//     use sdk::Blob;
-//     use std::sync::Arc;
-//     use tempfile::tempdir;
-//
-//     #[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
-//     struct TestContract {
-//         value: u32,
-//     }
-//
-//     impl TxExecutorHandler for TestContract {
-//         fn build_commitment_metadata(&self, _blob: &Blob) -> Result<Vec<u8>> {
-//             borsh::to_vec(self).map_err(Into::into)
-//         }
-//
-//         fn handle(&mut self, calldata: &Calldata) -> Result<sdk::HyleOutput> {
-//             self.value += 1;
-//             let initial_state = self.commit();
-//             let next_state = self.commit();
-//             Ok(sdk::utils::as_hyle_output(
-//                 initial_state,
-//                 next_state,
-//                 calldata,
-//                 &mut vec![],
-//             ))
-//         }
-//
-//         fn construct_state(
-//             _register_blob: &RegisterContractEffect,
-//             _metadata: &Option<Vec<u8>>,
-//         ) -> Result<Self> {
-//             Ok(Self::default())
-//         }
-//     }
-//
-//     #[tokio::test]
-//     async fn test_auto_prover_basic() -> Result<()> {
-//         let temp_dir = tempdir()?;
-//         let data_dir = temp_dir.path().to_path_buf();
-//
-//         let ctx = Arc::new(AutoProverCtx {
-//             data_directory: data_dir,
-//             start_height: BlockHeight(0),
-//             prover: Arc::new(MockProver {}),
-//             contract_name: ContractName("test".into()),
-//             node: Arc::new(NodeApiHttpClient::new("http://localhost:8080")),
-//             default_state: TestContract::default(),
-//         });
-//
-//         let bus = SharedMessageBus::new(BusMetrics::global("default".to_string()));
-//         let auto_prover = AutoProver::<TestContract>::build(bus.new_handle(), ctx).await?;
-//
-//         // Test that the auto prover was created successfully
-//         assert_eq!(auto_prover.store.proved_height, BlockHeight(0));
-//         assert_eq!(auto_prover.store.contract.value, 0);
-//
-//         Ok(())
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use crate::{
+        bus::metrics::BusMetrics,
+        node_state::{test::new_node_state, NodeState},
+    };
+
+    use super::*;
+    use client_sdk::helpers::test::TxExecutorTestProver;
+    use client_sdk::rest_client::test::NodeApiMockClient;
+    use sdk::*;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+
+    #[derive(Debug, Clone, Default, BorshSerialize, BorshDeserialize)]
+    struct TestContract {
+        value: u32,
+    }
+
+    impl ZkContract for TestContract {
+        fn execute(&mut self, calldata: &Calldata) -> sdk::RunResult {
+            let (action, execution_ctx) = sdk::utils::parse_raw_calldata::<u32>(calldata)?;
+            tracing::info!(
+                "Executing contract (val = {}) with action: {:?}",
+                self.value,
+                action
+            );
+            self.value += action;
+            Ok(("ok".to_string(), execution_ctx, vec![]))
+        }
+
+        fn commit(&self) -> sdk::StateCommitment {
+            sdk::StateCommitment(
+                borsh::to_vec(self)
+                    .map_err(|e| anyhow!(e))
+                    .context("Failed to commit state")
+                    .unwrap(),
+            )
+        }
+    }
+
+    impl TxExecutorHandler for TestContract {
+        fn build_commitment_metadata(&self, _blob: &Blob) -> Result<Vec<u8>> {
+            borsh::to_vec(self).map_err(Into::into)
+        }
+
+        fn handle(&mut self, calldata: &Calldata) -> Result<sdk::HyleOutput> {
+            let initial_state = self.commit();
+            let mut res = self.execute(calldata);
+            let next_state = self.commit();
+            Ok(sdk::utils::as_hyle_output(
+                initial_state,
+                next_state,
+                calldata,
+                &mut res,
+            ))
+        }
+
+        fn construct_state(
+            _register_blob: &RegisterContractEffect,
+            _metadata: &Option<Vec<u8>>,
+        ) -> Result<Self> {
+            Ok(Self::default())
+        }
+    }
+
+    async fn setup() -> Result<(NodeState, AutoProver<TestContract>, Arc<NodeApiMockClient>)> {
+        let mut node_state = new_node_state().await;
+        let register = RegisterContractEffect {
+            verifier: "test".into(),
+            program_id: ProgramId(vec![]),
+            state_commitment: TestContract::default().commit(),
+            contract_name: "test".into(),
+            timeout_window: Some(TimeoutWindow::Timeout(BlockHeight(5))),
+        };
+        node_state.handle_register_contract_effect(&register);
+
+        let temp_dir = tempdir()?;
+        let data_dir = temp_dir.path().to_path_buf();
+        let api_client = Arc::new(NodeApiMockClient::new());
+
+        let ctx = Arc::new(AutoProverCtx {
+            data_directory: data_dir,
+            start_height: BlockHeight(0),
+            prover: Arc::new(TxExecutorTestProver::<TestContract>::new()),
+            contract_name: ContractName("test".into()),
+            node: api_client.clone(),
+            default_state: TestContract::default(),
+        });
+
+        let bus = SharedMessageBus::new(BusMetrics::global("default".to_string()));
+        let auto_prover = AutoProver::<TestContract>::build(bus.new_handle(), ctx).await?;
+
+        Ok((node_state, auto_prover, api_client))
+    }
+
+    async fn get_txs(api_client: &Arc<NodeApiMockClient>) -> Vec<Transaction> {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let mut gard = api_client.pending_proofs.lock().unwrap();
+        let txs = gard.drain(..).collect::<Vec<ProofTransaction>>();
+        txs.into_iter()
+            .map(|t| {
+                let hyle_outputs = borsh::from_slice::<Vec<HyleOutput>>(&t.proof.0)
+                    .context("parsing test proof")
+                    .unwrap();
+                for hyle_output in &hyle_outputs {
+                    debug!(
+                        "Initial state: {:?}, Next state: {:?}",
+                        hyle_output.initial_state, hyle_output.next_state
+                    );
+                }
+
+                let proven_blobs = hyle_outputs
+                    .into_iter()
+                    .map(|hyle_output| {
+                        let blob_tx_hash = hyle_output.tx_hash.clone();
+                        BlobProofOutput {
+                            hyle_output,
+                            program_id: ProgramId(vec![]),
+                            blob_tx_hash,
+                            original_proof_hash: t.proof.hashed(),
+                        }
+                    })
+                    .collect();
+                VerifiedProofTransaction {
+                    contract_name: t.contract_name.clone(),
+                    proven_blobs,
+                    proof_hash: t.proof.hashed(),
+                    proof_size: t.estimate_size(),
+                    proof: Some(t.proof),
+                    is_recursive: false,
+                }
+                .into()
+            })
+            .collect()
+    }
+
+    fn new_blob_tx(val: u32) -> Transaction {
+        // random id to have a different tx hash
+        let id: usize = rand::random();
+        BlobTransaction::new(
+            format!("{id}@test"),
+            vec![Blob {
+                contract_name: "test".into(),
+                data: BlobData(borsh::to_vec(&val).unwrap()),
+            }],
+        )
+        .into()
+    }
+
+    fn read_contract_state(node_state: &NodeState) -> TestContract {
+        let state = node_state
+            .contracts
+            .get(&"test".into())
+            .unwrap()
+            .state
+            .clone();
+
+        borsh::from_slice::<TestContract>(&state.0).expect("Failed to decode contract state")
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_auto_prover_basic() -> Result<()> {
+        let (mut node_state, mut auto_prover, api_client) = setup().await?;
+
+        tracing::info!("✨ Block 1");
+        let block_1 = node_state.craft_block_and_handle(1, vec![new_blob_tx(1)]);
+
+        auto_prover.handle_processed_block(block_1).await?;
+
+        let proofs = get_txs(&api_client).await;
+        assert_eq!(proofs.len(), 1);
+
+        tracing::info!("✨ Block 2");
+        node_state.craft_block_and_handle(2, proofs);
+
+        assert_eq!(read_contract_state(&node_state).value, 1);
+
+        tracing::info!("✨ Block 3");
+        let block_3 = node_state.craft_block_and_handle(
+            3,
+            vec![
+                new_blob_tx(3), /* this one will timeout */
+                new_blob_tx(3),
+            ],
+        );
+        auto_prover.handle_processed_block(block_3).await?;
+
+        // Proofs 3 won't be sent, to trigger a timeout
+        let proofs_3 = get_txs(&api_client).await;
+        assert_eq!(proofs_3.len(), 1);
+
+        tracing::info!("✨ Block 4");
+        let block_4 = node_state
+            .craft_block_and_handle(4, vec![new_blob_tx(4), new_blob_tx(4), new_blob_tx(4)]);
+        auto_prover.handle_processed_block(block_4).await?;
+        let proofs_4 = get_txs(&api_client).await;
+        assert_eq!(proofs_4.len(), 1);
+
+        for i in 5..10 {
+            tracing::info!("✨ Block {i}");
+            let block = node_state.craft_block_and_handle(i, vec![]);
+            auto_prover.handle_processed_block(block).await?;
+        }
+
+        let proofs = get_txs(&api_client).await;
+        assert_eq!(proofs.len(), 1);
+
+        let _block_11 = node_state.craft_block_and_handle(11, proofs);
+        assert_eq!(read_contract_state(&node_state).value, 16);
+
+        Ok(())
+    }
+}

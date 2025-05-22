@@ -468,14 +468,11 @@ pub async fn long_running_test(node_url: String, use_test_verifier: bool) -> Res
             tx_ctx = tx_ctx
                 .with_prover(
                     random_hydentity_contract.clone(),
-                    TxExecutorTestProver::new(Hydentity::default()),
+                    TxExecutorTestProver::<Hyllar>::new(),
                 )
                 .with_prover(
                     random_hyllar_contract.clone(),
-                    TxExecutorTestProver::new(Hyllar::custom(format!(
-                        "faucet@{}",
-                        random_hydentity_contract
-                    ))),
+                    TxExecutorTestProver::<Hyllar>::new(),
                 );
         } else {
             // Replace prover binaries for non-reproducible mode.
