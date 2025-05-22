@@ -107,15 +107,14 @@ pub mod risc0 {
 #[cfg(feature = "sp1")]
 pub mod sp1 {
     use sp1_sdk::{
-        network::builder::NetworkProverBuilder, EnvProver, NetworkProver, Prover, ProverClient,
-        SP1ProvingKey, SP1Stdin, SP1VerifyingKey,
+        network::builder::NetworkProverBuilder, EnvProver, NetworkProver, ProverClient,
+        SP1ProvingKey, SP1Stdin,
     };
 
     use super::*;
 
     pub struct SP1Prover {
         pk: SP1ProvingKey,
-        pub vk: SP1VerifyingKey,
         client: ProverType,
     }
 
@@ -125,35 +124,30 @@ pub mod sp1 {
     }
 
     impl SP1Prover {
-        pub async fn new(binary: &[u8]) -> Self {
+        pub async fn new(pk: SP1ProvingKey) -> Self {
             let prover_type = std::env::var("SP1_PROVER").unwrap_or_default();
 
             match prover_type.to_lowercase().as_str() {
                 "network" => {
                     // Setup the program for network proving
                     let client = NetworkProverBuilder::default().build();
-                    let local_client = ProverClient::builder().mock().build();
-                    let (pk, vk) = local_client.setup(binary);
 
                     tracing::info!("Registering sp1 program on network");
                     client
-                        .register_program(&vk, binary)
+                        .register_program(&pk.vk, &pk.elf)
                         .await
                         .expect("registering program");
 
                     Self {
                         pk,
-                        vk,
                         client: ProverType::Network(Box::new(client)),
                     }
                 }
                 _ => {
                     // Setup the program for local proving
                     let client = ProverClient::from_env();
-                    let (pk, vk) = client.setup(binary);
                     Self {
                         pk,
-                        vk,
                         client: ProverType::Local(client),
                     }
                 }
@@ -161,7 +155,7 @@ pub mod sp1 {
         }
 
         pub fn program_id(&self) -> Result<sdk::ProgramId> {
-            Ok(sdk::ProgramId(serde_json::to_vec(&self.vk)?))
+            Ok(sdk::ProgramId(serde_json::to_vec(&self.pk.vk)?))
         }
 
         pub async fn prove<T: BorshSerialize>(
