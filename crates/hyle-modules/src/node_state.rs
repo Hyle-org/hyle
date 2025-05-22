@@ -402,7 +402,14 @@ impl NodeState {
                     tracing::trace!("Native verifier in blob tx - {:?}", hyle_output);
                     // Verifier contracts won't be updated
                     // FIXME: When we need stateful native contracts
-                    return None;
+                    if hyle_output.success {
+                        return None;
+                    } else {
+                        return Some(UnsettledBlobMetadata {
+                            blob: blob.clone(),
+                            possible_proofs: vec![(verifier.into(), hyle_output)],
+                        });
+                    }
                 } else if blob.contract_name.0 == "hyle" {
                     // 'hyle' is a special case -> See settlement logic.
                 } else {
@@ -1257,6 +1264,15 @@ pub mod test {
         };
 
         let data = borsh::to_vec(&data).unwrap();
+
+        Blob {
+            contract_name: ContractName::new(contract),
+            data: BlobData(data),
+        }
+    }
+
+    fn new_failing_native_blob(contract: &str, identity: Identity) -> Blob {
+        let data = vec![0, 1, 2, 3];
 
         Blob {
             contract_name: ContractName::new(contract),
