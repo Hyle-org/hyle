@@ -464,7 +464,7 @@ mod tests {
                 action
             );
             self.value += action;
-            Ok(("ok".to_string(), execution_ctx, vec![]))
+            Ok(("ok".to_string().into_bytes(), execution_ctx, vec![]))
         }
 
         fn commit(&self) -> sdk::StateCommitment {
