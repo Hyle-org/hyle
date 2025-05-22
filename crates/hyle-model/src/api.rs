@@ -176,7 +176,7 @@ pub struct APIContract {
     pub contract_name: String, // Contract name
     pub total_tx: u64,    // Total number of transactions associated with the contract
     pub unsettled_tx: u64, // Total number of unsettled transactions
-    pub earliest_unsettled: Option<BlockHeight>, // Timestamp of the earliest unsettled transaction
+    pub earliest_unsettled: Option<BlockHeight>, // Earliest unsettled transaction block height
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
