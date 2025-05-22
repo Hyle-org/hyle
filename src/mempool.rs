@@ -104,7 +104,7 @@ pub struct MempoolStore {
     // on cancellation
     #[borsh(skip)]
     processing_txs: OrderedJoinSet<Result<Transaction>>,
-    waiting_dissemination_txs: Vec<Transaction>,
+    waiting_dissemination_txs: BTreeMap<TxHash, Transaction>,
     #[borsh(skip)]
     own_data_proposal_in_preparation: JoinSet<(DataProposalHash, DataProposal)>,
     buffered_proposals: BTreeMap<LaneId, Vec<DataProposal>>,
