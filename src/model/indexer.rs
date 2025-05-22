@@ -8,7 +8,7 @@ use hyle_model::api::{
     TransactionTypeDb,
 };
 use hyle_model::utils::TimestampMs;
-use hyle_model::{ConsensusProposalHash, DataProposalHash};
+use hyle_model::{BlockHeight, ConsensusProposalHash, DataProposalHash};
 use serde::{Deserialize, Serialize};
 
 use sqlx::postgres::PgRow;
@@ -155,6 +155,7 @@ pub struct ContractDb {
     pub total_tx: u64, // Total number of transactions associated with the contract
     #[sqlx(try_from = "i64")]
     pub unsettled_tx: u64, // Total number of unsettled transactions
+    pub earliest_unsettled: Option<i64>, // Block height of the earliest unsettled transaction
 }
 
 impl From<ContractDb> for APIContract {
@@ -167,6 +168,7 @@ impl From<ContractDb> for APIContract {
             contract_name: val.contract_name,
             total_tx: val.total_tx,
             unsettled_tx: val.unsettled_tx,
+            earliest_unsettled: val.earliest_unsettled.map(|a| BlockHeight(a as u64)),
         }
     }
 }
