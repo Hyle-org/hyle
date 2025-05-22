@@ -331,7 +331,7 @@ impl DerefMut for NodeApiHttpClient {
 }
 
 #[allow(dead_code)]
-mod test {
+pub mod test {
     use sdk::Hashed;
 
     use super::*;
@@ -345,6 +345,8 @@ mod test {
         pub staking_state: Arc<Mutex<APIStaking>>,
         pub contracts: Arc<Mutex<std::collections::HashMap<ContractName, Contract>>>,
         pub unsettled_txs: Arc<Mutex<std::collections::HashMap<TxHash, UnsettledBlobTransaction>>>,
+        pub pending_proofs: Arc<Mutex<Vec<ProofTransaction>>>,
+        pub pending_blobs: Arc<Mutex<Vec<BlobTransaction>>>,
     }
 
     impl NodeApiMockClient {
@@ -365,6 +367,8 @@ mod test {
                 staking_state: Arc::new(Mutex::new(APIStaking::default())),
                 contracts: Arc::new(Mutex::new(std::collections::HashMap::new())),
                 unsettled_txs: Arc::new(Mutex::new(std::collections::HashMap::new())),
+                pending_proofs: Arc::new(Mutex::new(vec![])),
+                pending_blobs: Arc::new(Mutex::new(vec![])),
             }
         }
 
@@ -396,6 +400,12 @@ mod test {
         }
     }
 
+    impl Default for NodeApiMockClient {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     impl NodeApiClient for NodeApiMockClient {
         fn register_contract(
             &self,
@@ -408,6 +418,7 @@ mod test {
             &self,
             tx: BlobTransaction,
         ) -> Pin<Box<dyn Future<Output = Result<TxHash>> + Send + '_>> {
+            self.pending_blobs.lock().unwrap().push(tx.clone());
             Box::pin(async move { Ok(tx.hashed()) })
         }
 
@@ -415,6 +426,7 @@ mod test {
             &self,
             tx: ProofTransaction,
         ) -> Pin<Box<dyn Future<Output = Result<TxHash>> + Send + '_>> {
+            self.pending_proofs.lock().unwrap().push(tx.clone());
             Box::pin(async move { Ok(tx.hashed()) })
         }
 
