@@ -141,7 +141,7 @@ impl TxExecutorHandler for SmtTokenProvableState {
 
         let mut res = match output {
             Err(e) => Err(e),
-            Ok(output) => Ok((output, execution_ctx, vec![])),
+            Ok(output) => Ok((output.into_bytes(), execution_ctx, vec![])),
         };
         Ok(as_hyle_output(
             initial_state_commitment,
@@ -176,17 +176,21 @@ impl TxExecutorHandler for SmtTokenProvableState {
                     .ok_or(anyhow!("Sender account {} not found", sender))?;
                 let recipient_account = self
                     .get_account(&recipient)?
-                    .unwrap_or(Account::new(recipient, 0));
+                    .unwrap_or(Account::new(recipient.clone(), 0));
 
                 // Create keys for the accounts
                 let key1 = sender_account.get_key();
                 let key2 = recipient_account.get_key();
 
+                let keys = if sender == recipient {
+                    vec![key1]
+                } else {
+                    vec![key1, key2]
+                };
+
                 (
                     BorshableMerkleProof(
-                        self.0
-                            .merkle_proof(vec![key1, key2])
-                            .expect("Failed to generate proof"),
+                        self.0.merkle_proof(keys).expect("Failed to generate proof"),
                     ),
                     BTreeMap::from([
                         (sender_account.address.clone(), sender_account.clone()),
@@ -205,17 +209,21 @@ impl TxExecutorHandler for SmtTokenProvableState {
                     .ok_or(anyhow!("Owner account {} not found", owner))?;
                 let recipient_account = self
                     .get_account(&recipient)?
-                    .unwrap_or(Account::new(recipient, amount));
+                    .unwrap_or(Account::new(recipient.clone(), amount));
 
                 // Create keys for the accounts
                 let key1 = owner_account.get_key();
                 let key2 = recipient_account.get_key();
 
+                let keys = if owner == recipient {
+                    vec![key1]
+                } else {
+                    vec![key1, key2]
+                };
+
                 (
                     BorshableMerkleProof(
-                        self.0
-                            .merkle_proof(vec![key1, key2])
-                            .expect("Failed to generate proof"),
+                        self.0.merkle_proof(keys).expect("Failed to generate proof"),
                     ),
                     BTreeMap::from([
                         (owner_account.address.clone(), owner_account.clone()),
