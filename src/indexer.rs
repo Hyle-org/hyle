@@ -1396,6 +1396,8 @@ mod test {
         Ok(())
     }
 
+    // In case of duplicate tx hash, should return information of the tx with the highest block height
+    // or index (position in the block)
     #[test_log::test(tokio::test)]
     async fn test_indexer_api_doubles() -> Result<()> {
         let container = Postgres::default()
@@ -1420,30 +1422,38 @@ mod test {
         let indexer = new_indexer(db).await;
         let server = setup_test_server(&indexer).await?;
 
-        // Multiple txs with same hash
+        // Multiple txs with same hash -- all in different blocks
+
         let transactions_response = server
             .get("/transaction/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             .await;
-
         transactions_response.assert_status_ok();
-
         let result = transactions_response.json::<APITransaction>();
-
-        // Parent dp hash should match the most recent tx (the latest inserted)
         assert_eq!(
             result.parent_dp_hash.0,
             "dp_hashbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string()
         );
+
+        // Multiple txs with same hash -- one not yet in a block, should return the pending one
+
+        let transactions_response = server
+            .get("/proof/hash/test_tx_hash_3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .await;
+        transactions_response.assert_status_ok();
+        let result = transactions_response.json::<APITransaction>();
+        assert_eq!(
+            result.parent_dp_hash.0,
+            "dp_hashbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string()
+        );
+        assert_eq!(result.block_hash, None);
 
         // Get blobs by tx hash
 
         let transactions_response = server
             .get("/blobs/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             .await;
-
         transactions_response.assert_status_ok();
         let result = transactions_response.json::<Vec<APIBlob>>();
-
         assert!(result.len() == 1);
         assert_eq!(
             result.first().unwrap().data,
@@ -1455,10 +1465,8 @@ mod test {
         let transactions_response = server
             .get("/blob/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/index/0")
             .await;
-
         transactions_response.assert_status_ok();
         let result = transactions_response.json::<APIBlob>();
-
         assert_eq!(result.data, "{\"data\": \"blob_data_2_bis\"}".as_bytes());
 
         // Get proof by tx hash
@@ -1466,32 +1474,30 @@ mod test {
         let transactions_response = server
             .get("/proof/hash/test_tx_hash_3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             .await;
-
         transactions_response.assert_status_ok();
         let result = transactions_response.json::<APITransaction>();
         assert_eq!(
             result.parent_dp_hash.0,
             "dp_hashbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string()
         );
+        assert_eq!(result.block_hash, None);
 
-        // Get transaction state event
+        // Get transaction state event, the latest one
 
         let transactions_response = server
             .get("/transaction/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/events")
             .await;
-
         transactions_response.assert_status_ok();
         let result = transactions_response.json::<Vec<APITransactionEvents>>();
-
         assert_eq!(
             result,
             vec![APITransactionEvents {
                 block_hash: ConsensusProposalHash(
-                    "block2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()
+                    "block3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()
                 ),
-                block_height: BlockHeight(2),
+                block_height: BlockHeight(3),
                 events: vec![serde_json::json!({
-                    "name": "Sequenced"
+                    "name": "Success"
                 })]
             }]
         );
