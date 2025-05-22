@@ -785,6 +785,7 @@ async fn test_tx_reset_timeout_on_tx_settlement() {
     );
 }
 
+// Check hyle-modules/src/node_state.rs l127 for the timeout window value
 #[test_log::test(tokio::test)]
 async fn test_tx_with_hyle_blob_should_have_specific_timeout() {
     let hyle_timeout_window = BlockHeight(5);
@@ -816,8 +817,7 @@ async fn test_tx_with_hyle_blob_should_have_specific_timeout_in_same_tx() {
     let mut state = new_node_state().await;
     let a1 = ContractName::new("a1");
     let blob_a1 = new_blob("a1");
-    let mut register_and_blob_a1 =
-        make_register_contract_tx_with_actions(a1.clone(), vec![blob_a1]);
+    let register_and_blob_a1 = make_register_contract_tx_with_actions(a1.clone(), vec![blob_a1]);
     let tx_hash = register_and_blob_a1.hashed();
 
     let block = state.craft_block_and_handle(100, vec![register_and_blob_a1.into()]);
