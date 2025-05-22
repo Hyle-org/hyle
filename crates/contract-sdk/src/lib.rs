@@ -101,7 +101,7 @@ impl ZkContract for MyContract {
 
         let output = self.execute_action(action)?;
 
-        Ok((output, exec_ctx, vec![]))
+        Ok((output.into_bytes(), exec_ctx, vec![]))
     }
     fn commit(&self) -> StateCommitment {
         StateCommitment(vec![])
