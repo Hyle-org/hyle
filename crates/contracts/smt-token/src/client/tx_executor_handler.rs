@@ -141,7 +141,7 @@ impl TxExecutorHandler for SmtTokenProvableState {
 
         let mut res = match output {
             Err(e) => Err(e),
-            Ok(output) => Ok((output, execution_ctx, vec![])),
+            Ok(output) => Ok((output.into_bytes(), execution_ctx, vec![])),
         };
         Ok(as_hyle_output(
             initial_state_commitment,

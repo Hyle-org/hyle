@@ -172,7 +172,7 @@ pub fn as_hyle_output(
                 state_reads: vec![],
                 tx_ctx: calldata.tx_ctx.clone(),
                 onchain_effects: core::mem::take(onchain_effects),
-                program_outputs: core::mem::take(program_output).into_bytes(),
+                program_outputs: core::mem::take(program_output),
             }
         }
         Err(message) => fail(calldata, initial_state_commitment, message),
