@@ -65,7 +65,7 @@ macro_rules! info {
     }
 }
 
-pub type RunResult = Result<(String, ExecutionContext, Vec<OnchainEffect>), String>;
+pub type RunResult = Result<(Vec<u8>, ExecutionContext, Vec<OnchainEffect>), String>;
 
 /**
 This trait is used to define the contract's entrypoint.
