@@ -619,6 +619,7 @@ mod tests {
             3,
             vec![
                 new_blob_tx(3), /* this one will timeout */
+                new_blob_tx(3), /* this one will timeout */
                 new_blob_tx(3),
             ],
         );
@@ -635,16 +636,16 @@ mod tests {
         let proofs_4 = get_txs(&api_client).await;
         assert_eq!(proofs_4.len(), 1);
 
-        for i in 5..10 {
+        for i in 5..15 {
             tracing::info!("✨ Block {i}");
             let block = node_state.craft_block_and_handle(i, vec![]);
             auto_prover.handle_processed_block(block).await?;
         }
 
         let proofs = get_txs(&api_client).await;
-        assert_eq!(proofs.len(), 1);
+        assert_eq!(proofs.len(), 2);
 
-        let _block_11 = node_state.craft_block_and_handle(11, proofs);
+        let _block_11 = node_state.craft_block_and_handle(16, proofs);
         assert_eq!(read_contract_state(&node_state).value, 16);
 
         Ok(())
