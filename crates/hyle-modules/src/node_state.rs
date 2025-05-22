@@ -1229,7 +1229,7 @@ pub mod test {
     use super::*;
     use hyle_net::clock::TimestampMsClock;
 
-    async fn new_node_state() -> NodeState {
+    pub(crate) async fn new_node_state() -> NodeState {
         NodeState {
             metrics: NodeStateMetrics::global("test".to_string(), "test"),
             store: NodeStateStore::default(),
