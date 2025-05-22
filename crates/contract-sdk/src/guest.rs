@@ -140,6 +140,17 @@ where
     let mut initial_state_commitment = contract.commit();
 
     let mut outputs = Vec::with_capacity(calldata.len());
+    if let Err(e) = contract.initialize() {
+        for calldata in calldata.iter() {
+            outputs.push(as_hyle_output(
+                initial_state_commitment.clone(),
+                initial_state_commitment.clone(),
+                calldata,
+                &mut Err(e.clone()),
+            ));
+        }
+        return outputs;
+    }
     for calldata in calldata.iter() {
         let mut res: RunResult = contract.execute(calldata);
 
