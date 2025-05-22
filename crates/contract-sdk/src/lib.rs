@@ -65,7 +65,7 @@ macro_rules! info {
     }
 }
 
-pub type RunResult = Result<(String, ExecutionContext, Vec<OnchainEffect>), String>;
+pub type RunResult = Result<(Vec<u8>, ExecutionContext, Vec<OnchainEffect>), String>;
 
 /**
 This trait is used to define the contract's entrypoint.
@@ -101,7 +101,7 @@ impl ZkContract for MyContract {
 
         let output = self.execute_action(action)?;
 
-        Ok((output, exec_ctx, vec![]))
+        Ok((output.into_bytes(), exec_ctx, vec![]))
     }
     fn commit(&self) -> StateCommitment {
         StateCommitment(vec![])
