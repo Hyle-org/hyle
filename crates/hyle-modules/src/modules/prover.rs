@@ -53,49 +53,6 @@ pub struct AutoProverCtx<Contract> {
     pub default_state: Contract,
 }
 
-impl<Contract> AutoProverCtx<Contract> {
-    #[cfg(feature = "risc0")]
-    pub fn risc0(
-        data_directory: PathBuf,
-        elf: &'static [u8],
-        contract_name: ContractName,
-        node: Arc<NodeApiHttpClient>,
-    ) -> Self
-    where
-        Contract: Default,
-    {
-        Self {
-            data_directory,
-            start_height: BlockHeight(0),
-            prover: Arc::new(client_sdk::helpers::risc0::Risc0Prover::new(elf)),
-            contract_name,
-            node,
-            default_state: Contract::default(),
-        }
-    }
-
-    #[cfg(feature = "sp1")]
-    pub async fn sp1(
-        data_directory: PathBuf,
-        elf: &'static [u8],
-        contract_name: ContractName,
-        start_height: BlockHeight,
-        node: Arc<NodeApiHttpClient>,
-    ) -> Self
-    where
-        Contract: Default,
-    {
-        Self {
-            data_directory,
-            start_height,
-            prover: Arc::new(client_sdk::helpers::sp1::SP1Prover::new(elf).await),
-            contract_name,
-            node,
-            default_state: Contract::default(),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum AutoProverEvent<Contract> {
     /// Event sent when a blob is executed as failed
