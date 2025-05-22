@@ -34,6 +34,7 @@ pub struct AutoProverStore<Contract> {
     unsettled_txs: Vec<(BlobTransaction, TxContext)>,
     state_history: Vec<(TxHash, Contract)>,
     contract: Contract,
+    proved_height: BlockHeight,
 }
 
 module_bus_client! {
@@ -65,7 +66,14 @@ pub enum AutoProverEvent<Contract> {
 
 impl<Contract> Module for AutoProver<Contract>
 where
-    Contract: TxExecutorHandler + BorshDeserialize + Debug + Send + Sync + Clone + 'static,
+    Contract: TxExecutorHandler
+        + BorshSerialize
+        + BorshDeserialize
+        + Debug
+        + Send
+        + Sync
+        + Clone
+        + 'static,
 {
     type Context = Arc<AutoProverCtx<Contract>>;
 
@@ -82,6 +90,7 @@ where
                 contract: ctx.default_state.clone(),
                 unsettled_txs: vec![],
                 state_history: vec![],
+                proved_height: ctx.start_height,
             },
         };
 
@@ -96,6 +105,17 @@ where
             }
 
         };
+
+        let _ = log_error!(
+            Self::save_on_disk::<AutoProverStore<Contract>>(
+                self.ctx
+                    .data_directory
+                    .join(format!("prover_{}.bin", self.ctx.contract_name))
+                    .as_path(),
+                &self.store,
+            ),
+            "Saving prover"
+        );
 
         Ok(())
     }
@@ -138,6 +158,9 @@ where
             }
         }
         self.prove_supported_blob(blobs)?;
+        if block.block_height.0 > self.store.proved_height.0 {
+            self.store.proved_height = block.block_height;
+        }
 
         for tx in block.successful_txs {
             self.settle_tx_success(&tx)?;
@@ -245,7 +268,7 @@ where
         let mut initial_commitment_metadata = None;
         let len = blobs.len();
         for (blob_index, tx, tx_ctx) in blobs {
-            let old_tx = tx_ctx.block_height.0 < self.ctx.start_height.0;
+            let old_tx = tx_ctx.block_height.0 < self.store.proved_height.0;
 
             let blob = tx.blobs.get(blob_index.0).ok_or_else(|| {
                 anyhow!("Failed to get blob {} from tx {}", blob_index, tx.hashed())
@@ -325,6 +348,13 @@ where
                 .push((tx_hash.clone(), self.store.contract.clone()));
 
             if old_tx {
+                debug!(
+                    cn =% self.ctx.contract_name,
+                    tx_hash =% tx.hashed(),
+                    tx_height =% tx_ctx.block_height,
+                    tx_height_proved =% self.store.proved_height,
+                    "Skipping old tx",
+                );
                 continue;
             }
 
