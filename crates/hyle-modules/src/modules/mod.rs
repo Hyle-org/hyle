@@ -24,6 +24,7 @@ pub mod contract_state_indexer;
 pub mod da_listener;
 pub mod prover;
 pub mod rest;
+pub mod rollup_executor;
 pub mod websocket;
 
 #[derive(Default)]
