@@ -189,6 +189,11 @@ pub trait NodeApiClient {
         contract_name: ContractName,
     ) -> Pin<Box<dyn Future<Output = Result<Contract>> + Send + '_>>;
 
+    fn get_settled_height(
+        &self,
+        contract_name: ContractName,
+    ) -> Pin<Box<dyn Future<Output = Result<BlockHeight>> + Send + '_>>;
+
     fn get_unsettled_tx(
         &self,
         blob_tx_hash: TxHash,
@@ -314,6 +319,20 @@ impl NodeApiClient for NodeApiHttpClient {
             self.get(&format!("v1/unsettled_tx/{blob_tx_hash}"))
                 .await
                 .context(format!("getting tx {}", blob_tx_hash))
+        })
+    }
+
+    fn get_settled_height(
+        &self,
+        contract_name: ContractName,
+    ) -> Pin<Box<dyn Future<Output = Result<BlockHeight>> + Send + '_>> {
+        Box::pin(async move {
+            self.get(&format!("v1/contract/{contract_name}/settled_height"))
+                .await
+                .context(format!(
+                    "getting earliest unsettled height for contract {}",
+                    contract_name
+                ))
         })
     }
 }
@@ -482,6 +501,13 @@ pub mod test {
                     .cloned()
                     .ok_or_else(|| anyhow::anyhow!("Unsettled transaction not found"))
             })
+        }
+
+        fn get_settled_height(
+            &self,
+            _contract_name: ContractName,
+        ) -> Pin<Box<dyn Future<Output = Result<BlockHeight>> + Send + '_>> {
+            todo!()
         }
     }
 }
