@@ -120,7 +120,8 @@ SELECT
     parent_dp_hash,
     block_hash,
     index,
-    b.timestamp
+    b.timestamp,
+    lane_id
 FROM transactions
 LEFT JOIN blocks b 
     ON transactions.block_hash = b.hash
