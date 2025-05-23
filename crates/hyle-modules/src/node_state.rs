@@ -7,7 +7,7 @@ use contract_registration::{validate_contract_name_registration, validate_state_
 use hyle_tld::handle_blob_for_hyle_tld;
 use metrics::NodeStateMetrics;
 use ordered_tx_map::OrderedTxMap;
-use sdk::verifiers::NativeVerifiers;
+use sdk::verifiers::{NativeVerifiers, NATIVE_VERIFIERS_CONTRACT_LIST};
 use sdk::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use timeouts::Timeouts;
@@ -624,17 +624,33 @@ impl NodeState {
 
         let updated_contracts = BTreeMap::new();
 
-        let result = match Self::settle_blobs_recursively(
-            &self.contracts,
-            updated_contracts,
-            unsettled_tx.blobs.iter(),
-            vec![],
-            events,
-            &self.metrics,
-        ) {
-            Some(res) => res,
-            None => {
-                bail!("Tx: {} is not ready to settle.", unsettled_tx.hash);
+        let result = if
+        /*
+        Fail fast: try to find a stateless (native verifiers are considered stateless for now) contract
+        with a hyle output to success false (in all possible combinations)
+        */
+        unsettled_tx.blobs.iter().any(|blob| {
+            NATIVE_VERIFIERS_CONTRACT_LIST.contains(&blob.blob.contract_name.0.as_str())
+                && blob
+                    .possible_proofs
+                    .iter()
+                    .any(|possible_proof| !possible_proof.1.success)
+        }) {
+            debug!("Settling fast as failed because native blob was failed");
+            Err(())
+        } else {
+            match Self::settle_blobs_recursively(
+                &self.contracts,
+                updated_contracts,
+                unsettled_tx.blobs.iter(),
+                vec![],
+                events,
+                &self.metrics,
+            ) {
+                Some(res) => res,
+                None => {
+                    bail!("Tx: {} is not ready to settle.", unsettled_tx.hash);
+                }
             }
         };
 

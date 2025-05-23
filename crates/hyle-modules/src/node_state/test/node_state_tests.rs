@@ -143,7 +143,7 @@ async fn assert_two_transactions_with_same_contract_using_same_native_contract_s
     let c1 = ContractName::new("c1");
     let register_c1 = make_register_contract_effect(c1.clone());
     state.handle_register_contract_effect(&register_c1);
-    let n1 = ContractName::new("n1");
+    let n1 = ContractName::new("sha3_256");
     let register_n1 = make_register_native_contract_effect(n1.clone());
     state.handle_register_contract_effect(&register_n1);
 
@@ -153,9 +153,9 @@ async fn assert_two_transactions_with_same_contract_using_same_native_contract_s
     let mut blobs = vec![new_blob("c1")];
 
     if native_failure {
-        blobs.push(new_failing_native_blob("n1", identity_1.clone()));
+        blobs.push(new_failing_native_blob("sha3_256", identity_1.clone()));
     } else {
-        blobs.push(new_native_blob("n1", identity_1.clone()));
+        blobs.push(new_native_blob("sha3_256", identity_1.clone()));
     }
 
     if blob_order_reversed {
@@ -165,7 +165,10 @@ async fn assert_two_transactions_with_same_contract_using_same_native_contract_s
     let blob_tx_1 = BlobTransaction::new(identity_1.clone(), blobs);
     let blob_tx_2 = BlobTransaction::new(
         identity_2.clone(),
-        vec![new_blob("c1"), new_native_blob("n1", identity_2.clone())],
+        vec![
+            new_blob("c1"),
+            new_native_blob("sha3_256", identity_2.clone()),
+        ],
     );
 
     let blob_tx_id_1 = blob_tx_1.hashed();
@@ -187,7 +190,7 @@ async fn assert_two_transactions_with_same_contract_using_same_native_contract_s
         // Submitting a proof for c1 should do nothing (no settlement)
         let block = state.craft_block_and_handle(2, vec![verified_proof_1.clone().into()]);
         assert_eq!(block.blob_proof_outputs.len(), 1);
-        assert_eq!(block.failed_txs.len(), 0);
+        assert_eq!(block.failed_txs.len(), 1);
         assert_eq!(block.successful_txs.len(), 0);
 
         assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);
