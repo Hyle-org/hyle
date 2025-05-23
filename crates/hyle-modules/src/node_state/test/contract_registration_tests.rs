@@ -216,11 +216,11 @@ async fn test_register_contract_composition() {
 
     assert_eq!(state.contracts.len(), 2);
 
-    let block = state.craft_block_and_handle(105, vec![proof_tx.clone().into()]);
+    let mut block = state.craft_block_and_handle(105, vec![proof_tx.clone().into()]);
 
     check_block_is_ok(&block);
 
-    let block = state.craft_block_and_handle(202, vec![]);
+    let block = state.craft_block_and_handle(102 + 5, vec![]);
 
     check_block_is_ok(&block);
 

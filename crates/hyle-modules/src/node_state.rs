@@ -124,7 +124,7 @@ impl Default for NodeStateStore {
                 program_id: ProgramId(vec![]),
                 state: StateCommitment(vec![0]),
                 verifier: Verifier("hyle".to_owned()),
-                timeout_window: TimeoutWindow::NoTimeout,
+                timeout_window: TimeoutWindow::Timeout(BlockHeight(5)),
             },
         );
         ret
@@ -1255,6 +1255,25 @@ pub mod test {
             }
             .as_blob("hyle".into(), None, None)],
         )
+    }
+    pub fn make_register_contract_tx_with_actions(
+        name: ContractName,
+        blobs: Vec<Blob>,
+    ) -> BlobTransaction {
+        let list = [
+            vec![RegisterContractAction {
+                verifier: "test".into(),
+                program_id: ProgramId(vec![]),
+                state_commitment: StateCommitment(vec![0, 1, 2, 3]),
+                contract_name: name,
+                ..Default::default()
+            }
+            .as_blob("hyle".into(), None, None)],
+            blobs,
+        ]
+        .concat();
+
+        BlobTransaction::new("hyle@hyle", list)
     }
 
     pub fn make_register_contract_effect(contract_name: ContractName) -> RegisterContractEffect {
