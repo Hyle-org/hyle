@@ -150,13 +150,12 @@ where
 
     async fn handle_processed_block(&mut self, block: Block) -> Result<()> {
         let mut blobs = vec![];
-        debug!(
+        trace!(
             cn =% self.ctx.contract_name,
             block_height =% block.block_height,
             "Processing block {}",
             block.block_height
         );
-        trace!(cn =% self.ctx.contract_name, "Processing block {:?}", block);
         for (_, tx) in block.txs {
             if let TransactionData::Blob(tx) = tx.transaction_data {
                 if tx
