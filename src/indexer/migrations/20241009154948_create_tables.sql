@@ -4,6 +4,7 @@ CREATE TABLE blocks (
     parent_hash TEXT NOT NULL,      -- Parent block hash (BlockHash)
     height BIGINT NOT NULL,         -- Corresponds to BlockHeight (u64)
     timestamp TIMESTAMP(3) NOT NULL,   -- UNIX timestamp (u64)
+    total_txs BIGINT NOT NULL,         -- Total number of transactions in the block
     UNIQUE (height),                -- Ensure each block height is unique
     CHECK (length(hash) = 64),      -- Ensure the hash is exactly 64
     CHECK (height >= 0)             -- Ensure the height is positive
@@ -19,6 +20,8 @@ CREATE TABLE transactions (
     transaction_type transaction_type NOT NULL,      -- Field to identify the type of transaction (used for joins)
     transaction_status transaction_status NOT NULL,  -- Field to identify the status of the transaction
     block_hash TEXT REFERENCES blocks(hash) ON DELETE CASCADE,
+    block_height INT,
+    lane_id TEXT,                           -- Lane ID
     index INT,                              -- Index of the transaction within the block
     PRIMARY KEY (parent_dp_hash, tx_hash),
     CHECK (length(tx_hash) = 64)
@@ -84,6 +87,7 @@ CREATE TABLE contract_state (
 
 CREATE TABLE transaction_state_events (
     block_hash TEXT NOT NULL REFERENCES blocks(hash) ON DELETE CASCADE,
+    block_height INT,
     index INT,
     tx_hash TEXT NOT NULL,
     parent_dp_hash TEXT NOT NULL,

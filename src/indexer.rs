@@ -2,10 +2,10 @@
 
 mod api;
 
-use crate::model::*;
 use crate::node_state::module::NodeStateEvent;
+use crate::{model::*, utils::conf::SharedConf};
 use anyhow::{bail, Context, Error, Result};
-use api::IndexerAPI;
+use api::*;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -15,20 +15,21 @@ use axum::{
     routing::get,
     Router,
 };
+use chrono::{DateTime, Utc};
 use futures::{SinkExt, StreamExt};
 use hyle_contract_sdk::TxHash;
 use hyle_model::api::{
     BlobWithStatus, TransactionStatusDb, TransactionTypeDb, TransactionWithBlobs,
 };
+use hyle_model::utils::TimestampMs;
 use hyle_modules::{
     bus::SharedMessageBus,
     log_error, log_warn, module_handle_messages,
     modules::{module_bus_client, Module, SharedBuildApiCtx},
-    utils::conf::SharedConf,
 };
 use sqlx::{postgres::PgPoolOptions, PgPool, Pool, Postgres};
 use sqlx::{PgExecutor, QueryBuilder, Row};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::DerefMut;
 use tokio::select;
 use tokio::sync::{broadcast, mpsc};
@@ -288,12 +289,12 @@ impl Indexer {
                     VALUES ($1, $2, $3, $4, 'waiting_dissemination')
                     ON CONFLICT(tx_hash, parent_dp_hash) DO NOTHING",
                 )
-                .bind(tx_hash)
-                .bind(parent_data_proposal_hash_db.clone())
-                .bind(version)
-                .bind(tx_type)
-                .execute(&mut *transaction)
-                .await?;
+                    .bind(tx_hash)
+                    .bind(parent_data_proposal_hash_db.clone())
+                    .bind(version)
+                    .bind(tx_type)
+                    .execute(&mut *transaction)
+                    .await?;
 
                 _ = log_warn!(
                     self.insert_tx_data(
@@ -311,9 +312,18 @@ impl Indexer {
                 data_proposal_hash: _,
                 txs_metadatas,
             } => {
+                let mut seen = HashSet::new();
+                let unique_txs_metadatas: Vec<_> = txs_metadatas
+                    .into_iter()
+                    .filter(|value| {
+                        let key = (value.id.1.clone(), value.id.0.clone());
+                        seen.insert(key)
+                    })
+                    .collect();
+
                 let mut query_builder = QueryBuilder::new("INSERT INTO transactions (tx_hash, parent_dp_hash, version, transaction_type, transaction_status)");
 
-                query_builder.push_values(txs_metadatas, |mut b, value| {
+                query_builder.push_values(unique_txs_metadatas, |mut b, value| {
                     let tx_type: TransactionTypeDb = value.transaction_kind.into();
                     let version = log_error!(
                         i32::try_from(value.version).map_err(|_| anyhow::anyhow!(
@@ -363,17 +373,19 @@ impl Indexer {
         let block_hash = &block.hash;
         let block_height = i64::try_from(block.block_height.0)
             .map_err(|_| anyhow::anyhow!("Block height is too large to fit into an i64"))?;
+        let total_txs = block.txs.len() as i64;
 
         let block_timestamp =
             into_utc_date_time(&block.block_timestamp).context("Block's timestamp is incorrect")?;
 
         sqlx::query(
-            "INSERT INTO blocks (hash, parent_hash, height, timestamp) VALUES ($1, $2, $3, $4)",
+            "INSERT INTO blocks (hash, parent_hash, height, timestamp, total_txs) VALUES ($1, $2, $3, $4, $5)",
         )
         .bind(block_hash)
         .bind(block.parent_hash.clone())
         .bind(block_height)
         .bind(block_timestamp)
+        .bind(total_txs)
         .execute(transaction)
         .await?;
 
@@ -454,6 +466,8 @@ impl Indexer {
         let mut transaction: sqlx::PgTransaction = self.state.db.begin().await?;
 
         self.insert_block(transaction.deref_mut(), &block).await?;
+        let block_height = i64::try_from(block.block_height.0)
+            .map_err(|_| anyhow::anyhow!("Block height is too large to fit into an i64"))?;
 
         let mut i: i32 = 0;
         #[allow(clippy::explicit_counter_loop)]
@@ -469,14 +483,21 @@ impl Indexer {
                 TransactionData::VerifiedProof(_) => TransactionStatusDb::Success,
             };
 
+            let lane_id: LaneIdDb = block
+                .lane_ids
+                .get(&tx_id.1)
+                .context(format!("No lane id present for tx {}", tx_id))?
+                .clone()
+                .into();
+
             let parent_data_proposal_hash: &DataProposalHashDb = &tx_id.0.into();
             let tx_hash: &TxHashDb = &tx_id.1.into();
 
             // Make sure transaction exists (Missed Mempool Status event)
             log_warn!(sqlx::query(
-                "INSERT INTO transactions (tx_hash, parent_dp_hash, version, transaction_type, transaction_status, block_hash, index)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                ON CONFLICT(tx_hash, parent_dp_hash) DO UPDATE SET transaction_status=$5, block_hash=$6, index=$7",
+                "INSERT INTO transactions (tx_hash, parent_dp_hash, version, transaction_type, transaction_status, block_hash, block_height, index, lane_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                ON CONFLICT(tx_hash, parent_dp_hash) DO UPDATE SET transaction_status=$5, block_hash=$6, block_height=$7, index=$8",
             )
             .bind(tx_hash)
             .bind(parent_data_proposal_hash.clone())
@@ -484,7 +505,9 @@ impl Indexer {
             .bind(tx_type.clone())
             .bind(tx_status.clone())
             .bind(block.hash.clone())
+            .bind(block_height)
             .bind(i)
+            .bind(lane_id)
             .execute(&mut *transaction)
             .await,
             "Inserting transaction {:?}", tx_hash)?;
@@ -530,10 +553,11 @@ impl Indexer {
             debug!("Inserting transaction state event {tx_hash}: {serialized_events}");
 
             log_warn!(sqlx::query(
-                "INSERT INTO transaction_state_events (block_hash, index, tx_hash, parent_dp_hash, events)
-                VALUES ($1, $2, $3, $4, $5::jsonb)",
+                "INSERT INTO transaction_state_events (block_hash, block_height, index, tx_hash, parent_dp_hash, events)
+                VALUES ($1, $2, $3, $4, $5, $6::jsonb)",
             )
             .bind(block.hash.clone())
+            .bind(block_height)
             .bind(i)
             .bind(tx_hash_db)
             .bind(parent_data_proposal_hash)
@@ -692,7 +716,7 @@ impl Indexer {
         }
 
         // After TXes as it refers to those (for now)
-        for (tx_hash, contract) in block.registered_contracts {
+        for (tx_hash, contract, _) in block.registered_contracts {
             let verifier = &contract.verifier.0;
             let program_id = &contract.program_id.0;
             let state_commitment = &contract.state_commitment.0;
@@ -812,12 +836,17 @@ impl std::ops::Deref for Indexer {
     }
 }
 
+pub fn into_utc_date_time(ts: &TimestampMs) -> Result<DateTime<Utc>> {
+    DateTime::from_timestamp_millis(ts.0.try_into().context("Converting u64 into i64")?)
+        .context("Converting i64 into UTC DateTime")
+}
+
 #[cfg(test)]
 mod test {
     use assert_json_diff::assert_json_include;
     use axum_test::TestServer;
     use hyle_contract_sdk::{BlobIndex, HyleOutput, Identity, ProgramId, StateCommitment, TxHash};
-    use hyle_model::api::{APIBlock, APIContract, APITransaction};
+    use hyle_model::api::{APIBlob, APIBlock, APIContract, APITransaction, APITransactionEvents};
     use serde_json::json;
     use std::future::IntoFuture;
     use utils::TimestampMs;
@@ -1164,6 +1193,7 @@ mod test {
                 register_tx_1_wd.clone(),
                 register_tx_2_wd.clone(),
                 blob_transaction_wd.clone(),
+                blob_transaction_wd.clone(),
                 proof_tx_1_wd.clone(),
             ],
         );
@@ -1173,6 +1203,7 @@ mod test {
             txs_metadatas: vec![
                 register_tx_1_wd.metadata(parent_data_proposal_hash.clone()),
                 register_tx_2_wd.metadata(parent_data_proposal_hash.clone()),
+                blob_transaction_wd.metadata(parent_data_proposal_hash.clone()),
                 blob_transaction_wd.metadata(parent_data_proposal_hash.clone()),
                 proof_tx_1_wd.metadata(parent_data_proposal_hash.clone()),
             ],
@@ -1337,7 +1368,7 @@ mod test {
         assert_json_include!(
             actual: proofs_response.json::<serde_json::Value>(),
             expected: json!([
-                { "index": 3, "transaction_type": "ProofTransaction", "transaction_status": "Success", "block_hash": block_2_hash },
+                { "index": 4, "transaction_type": "ProofTransaction", "transaction_status": "Success", "block_hash": block_2_hash },
                 { "index": 7, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
                 { "index": 6, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
                 { "index": 4, "transaction_type": "ProofTransaction", "transaction_status": "Success" },
@@ -1347,6 +1378,7 @@ mod test {
 
         let proofs_by_height = server.get("/proofs/block/1").await;
         proofs_by_height.assert_status_ok();
+
         assert_json_include!(
             actual: proofs_by_height.json::<serde_json::Value>(),
             expected: json!([
@@ -1364,7 +1396,7 @@ mod test {
         assert_json_include!(
             actual: proof_by_hash.json::<serde_json::Value>(),
             expected: json!({
-                "index": 3,
+                "index": 4,
                 "transaction_type": "ProofTransaction",
                 "transaction_status": "Success"
             })
@@ -1375,6 +1407,115 @@ mod test {
             .get("/proof/hash/1111111111111111111111111111111111111111111111111111111111111111")
             .await;
         non_existent_proof.assert_status_not_found();
+
+        Ok(())
+    }
+
+    // In case of duplicate tx hash, should return information of the tx with the highest block height
+    // or index (position in the block)
+    #[test_log::test(tokio::test)]
+    async fn test_indexer_api_doubles() -> Result<()> {
+        let container = Postgres::default()
+            .with_tag("17-alpine")
+            .start()
+            .await
+            .unwrap();
+        let db = PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&format!(
+                "postgresql://postgres:postgres@localhost:{}/postgres",
+                container.get_host_port_ipv4(5432).await.unwrap()
+            ))
+            .await
+            .unwrap();
+        MIGRATOR.run(&db).await.unwrap();
+        sqlx::raw_sql(include_str!("../tests/fixtures/test_data.sql"))
+            .execute(&db)
+            .await
+            .context("insert test data")?;
+
+        let indexer = new_indexer(db).await;
+        let server = setup_test_server(&indexer).await?;
+
+        // Multiple txs with same hash -- all in different blocks
+
+        let transactions_response = server
+            .get("/transaction/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .await;
+        transactions_response.assert_status_ok();
+        let result = transactions_response.json::<APITransaction>();
+        assert_eq!(
+            result.parent_dp_hash.0,
+            "dp_hashbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string()
+        );
+
+        // Multiple txs with same hash -- one not yet in a block, should return the pending one
+
+        let transactions_response = server
+            .get("/proof/hash/test_tx_hash_3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .await;
+        transactions_response.assert_status_ok();
+        let result = transactions_response.json::<APITransaction>();
+        assert_eq!(
+            result.parent_dp_hash.0,
+            "dp_hashbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string()
+        );
+        assert_eq!(result.block_hash, None);
+
+        // Get blobs by tx hash
+
+        let transactions_response = server
+            .get("/blobs/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .await;
+        transactions_response.assert_status_ok();
+        let result = transactions_response.json::<Vec<APIBlob>>();
+        assert!(result.len() == 1);
+        assert_eq!(
+            result.first().unwrap().data,
+            "{\"data\": \"blob_data_2_bis\"}".as_bytes()
+        );
+
+        // Get blob by tx hash
+
+        let transactions_response = server
+            .get("/blob/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/index/0")
+            .await;
+        transactions_response.assert_status_ok();
+        let result = transactions_response.json::<APIBlob>();
+        assert_eq!(result.data, "{\"data\": \"blob_data_2_bis\"}".as_bytes());
+
+        // Get proof by tx hash
+
+        let transactions_response = server
+            .get("/proof/hash/test_tx_hash_3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .await;
+        transactions_response.assert_status_ok();
+        let result = transactions_response.json::<APITransaction>();
+        assert_eq!(
+            result.parent_dp_hash.0,
+            "dp_hashbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string()
+        );
+        assert_eq!(result.block_hash, None);
+
+        // Get transaction state event, the latest one
+
+        let transactions_response = server
+            .get("/transaction/hash/test_tx_hash_2aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/events")
+            .await;
+        transactions_response.assert_status_ok();
+        let result = transactions_response.json::<Vec<APITransactionEvents>>();
+        assert_eq!(
+            result,
+            vec![APITransactionEvents {
+                block_hash: ConsensusProposalHash(
+                    "block3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string()
+                ),
+                block_height: BlockHeight(3),
+                events: vec![serde_json::json!({
+                    "name": "Success"
+                })]
+            }]
+        );
 
         Ok(())
     }
@@ -1397,7 +1538,8 @@ mod test {
         MIGRATOR.run(&db).await.unwrap();
         sqlx::raw_sql(include_str!("../tests/fixtures/test_data.sql"))
             .execute(&db)
-            .await?;
+            .await
+            .context("insert test data")?;
 
         let mut indexer = new_indexer(db).await;
         let server = setup_test_server(&indexer).await?;
@@ -1418,7 +1560,7 @@ mod test {
                 .first()
                 .unwrap()
                 .height,
-            2
+            3
         );
         let transactions_response = server.get("/blocks?nb_results=1&start_block=1").await;
         transactions_response.assert_status_ok();
