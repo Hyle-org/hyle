@@ -483,13 +483,20 @@ impl Indexer {
                 TransactionData::VerifiedProof(_) => TransactionStatusDb::Success,
             };
 
+            let lane_id: LaneIdDb = block
+                .lane_ids
+                .get(&tx_id.1)
+                .context(format!("No lane id present for tx {}", tx_id))?
+                .clone()
+                .into();
+
             let parent_data_proposal_hash: &DataProposalHashDb = &tx_id.0.into();
             let tx_hash: &TxHashDb = &tx_id.1.into();
 
             // Make sure transaction exists (Missed Mempool Status event)
             log_warn!(sqlx::query(
-                "INSERT INTO transactions (tx_hash, parent_dp_hash, version, transaction_type, transaction_status, block_hash, block_height, index)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                "INSERT INTO transactions (tx_hash, parent_dp_hash, version, transaction_type, transaction_status, block_hash, block_height, index, lane_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 ON CONFLICT(tx_hash, parent_dp_hash) DO UPDATE SET transaction_status=$5, block_hash=$6, block_height=$7, index=$8",
             )
             .bind(tx_hash)
@@ -500,6 +507,7 @@ impl Indexer {
             .bind(block.hash.clone())
             .bind(block_height)
             .bind(i)
+            .bind(lane_id)
             .execute(&mut *transaction)
             .await,
             "Inserting transaction {:?}", tx_hash)?;

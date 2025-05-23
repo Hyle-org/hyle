@@ -96,6 +96,44 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for TxHashDb {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct LaneIdDb(pub LaneId);
+
+impl From<LaneId> for LaneIdDb {
+    fn from(tx_hash: LaneId) -> Self {
+        LaneIdDb(tx_hash)
+    }
+}
+
+impl Type<Postgres> for LaneIdDb {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        <String as Type<Postgres>>::type_info()
+    }
+}
+impl sqlx::Encode<'_, sqlx::Postgres> for LaneIdDb {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> std::result::Result<
+        sqlx::encode::IsNull,
+        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
+    > {
+        <String as sqlx::Encode<sqlx::Postgres>>::encode_by_ref(&hex::encode(&self.0 .0 .0), buf)
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for LaneIdDb {
+    fn decode(
+        value: sqlx::postgres::PgValueRef<'r>,
+    ) -> std::result::Result<
+        LaneIdDb,
+        std::boxed::Box<(dyn std::error::Error + std::marker::Send + std::marker::Sync + 'static)>,
+    > {
+        let inner = <String as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
+        Ok(LaneIdDb(LaneId(ValidatorPublicKey(hex::decode(inner)?))))
+    }
+}
+
 #[derive(Debug)]
 pub struct TransactionDb {
     // Struct for the transactions table
@@ -107,6 +145,7 @@ pub struct TransactionDb {
     pub transaction_type: TransactionTypeDb,       // Type of transaction
     pub transaction_status: TransactionStatusDb,   // Status of the transaction
     pub timestamp: Option<NaiveDateTime>,          // Timestamp of the transaction (block timestamp)
+    pub lane_id: Option<LaneIdDb>,                 // Lane ID of the transaction
 }
 
 impl<'r> FromRow<'r, PgRow> for TransactionDb {
@@ -131,6 +170,8 @@ impl<'r> FromRow<'r, PgRow> for TransactionDb {
             ),
         };
         let timestamp: Option<NaiveDateTime> = row.try_get("timestamp")?;
+        let lane_id: Option<LaneIdDb> = row.try_get("lane_id")?;
+
         Ok(TransactionDb {
             tx_hash,
             parent_dp_hash,
@@ -140,6 +181,7 @@ impl<'r> FromRow<'r, PgRow> for TransactionDb {
             transaction_type,
             transaction_status,
             timestamp,
+            lane_id,
         })
     }
 }
@@ -158,6 +200,7 @@ impl From<TransactionDb> for APITransaction {
             transaction_type: val.transaction_type,
             transaction_status: val.transaction_status,
             timestamp,
+            lane_id: val.lane_id.map(|l| l.0),
         }
     }
 }
@@ -328,7 +371,8 @@ SELECT
     parent_dp_hash,
     block_hash,
     index,
-    b.timestamp
+    b.timestamp,
+    lane_id
 FROM transactions t
 LEFT JOIN blocks b ON t.block_hash = b.hash
 WHERE t.tx_hash = $1 AND transaction_type='blob_transaction'
