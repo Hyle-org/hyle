@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 
 use crate::{
     utils::TimestampMs, BlockHash, BlockHeight, ConsensusProposalHash, ContractName,
-    DataProposalHash, Identity, LaneBytesSize, ProgramId, StateCommitment, Transaction,
+    DataProposalHash, Identity, LaneBytesSize, LaneId, ProgramId, StateCommitment, Transaction,
     TransactionKind, TxHash, ValidatorPublicKey, Verifier,
 };
 
@@ -132,6 +132,7 @@ pub struct APITransaction {
     pub block_hash: Option<ConsensusProposalHash>, // Corresponds to the block hash
     pub index: Option<u32>,                        // Index of the transaction within the block
     pub timestamp: Option<TimestampMs>,            // Timestamp of the transaction (block timestamp)
+    pub lane_id: Option<LaneId>,                   // Lane ID where the transaction got disseminated
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq, Eq)]

@@ -21,6 +21,7 @@ CREATE TABLE transactions (
     transaction_status transaction_status NOT NULL,  -- Field to identify the status of the transaction
     block_hash TEXT REFERENCES blocks(hash) ON DELETE CASCADE,
     block_height INT,
+    lane_id TEXT,                           -- Lane ID
     index INT,                              -- Index of the transaction within the block
     PRIMARY KEY (parent_dp_hash, tx_hash),
     CHECK (length(tx_hash) = 64)
