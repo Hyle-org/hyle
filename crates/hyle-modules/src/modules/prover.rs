@@ -188,12 +188,14 @@ where
                 blobs.extend(self.handle_blob(tx, tx_ctx));
             }
         }
-        debug!(
-            cn =% self.ctx.contract_name,
-            "Found {} txs in block {} with provable blobs",
-            blobs.len(),
-            block.block_height
-        );
+        if !blobs.is_empty() {
+            debug!(
+                cn =% self.ctx.contract_name,
+                "Found {} txs in block {} with provable blobs",
+                blobs.len(),
+                block.block_height
+            );
+        }
         if let Some(catching_up) = self.catching_up {
             let empty = blobs.is_empty();
             self.catching_blobs.extend(blobs);
@@ -321,6 +323,9 @@ where
         &mut self,
         blobs: Vec<(BlobIndex, BlobTransaction, TxContext)>,
     ) -> Result<()> {
+        if blobs.is_empty() {
+            return Ok(());
+        }
         debug!(
             cn =% self.ctx.contract_name,
             "Proving {} blobs",
