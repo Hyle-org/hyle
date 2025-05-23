@@ -150,12 +150,21 @@ where
 
     async fn handle_processed_block(&mut self, block: Block) -> Result<()> {
         let mut blobs = vec![];
-        trace!(
-            cn =% self.ctx.contract_name,
-            block_height =% block.block_height,
-            "Processing block {}",
-            block.block_height
-        );
+        if block.block_height.0 % 1000 == 0 {
+            info!(
+                cn =% self.ctx.contract_name,
+                block_height =% block.block_height,
+                "Processing block {}",
+                block.block_height
+            );
+        } else {
+            trace!(
+                cn =% self.ctx.contract_name,
+                block_height =% block.block_height,
+                "Processing block {}",
+                block.block_height
+            );
+        }
         for (_, tx) in block.txs {
             if let TransactionData::Blob(tx) = tx.transaction_data {
                 if tx
@@ -179,32 +188,31 @@ where
                 blobs.extend(self.handle_blob(tx, tx_ctx));
             }
         }
-        if !blobs.is_empty() {
-            debug!(
-                cn =% self.ctx.contract_name,
-                "Found {} txs in block {} with provable blobs",
-                blobs.len(),
-                block.block_height
-            );
-            if let Some(catching_up) = self.catching_up {
-                self.catching_blobs.extend(blobs);
-                if block.block_height.0 < catching_up.0 {
-                    debug!(
-                        "Catching up block {}/{}. Proving delayed.",
-                        block.block_height, catching_up
-                    );
-                } else {
-                    debug!(
-                        "Catching up block {}/{}. Proving now.",
-                        block.block_height, catching_up
-                    );
-                    self.catching_up = None;
-                    let blobs = self.catching_blobs.drain(..).collect();
-                    self.prove_supported_blob(blobs)?;
-                }
+        debug!(
+            cn =% self.ctx.contract_name,
+            "Found {} txs in block {} with provable blobs",
+            blobs.len(),
+            block.block_height
+        );
+        if let Some(catching_up) = self.catching_up {
+            let empty = blobs.is_empty();
+            self.catching_blobs.extend(blobs);
+            if block.block_height.0 < catching_up.0 && !empty {
+                debug!(
+                    "Catching up block {}/{}. Proving delayed.",
+                    block.block_height, catching_up
+                );
             } else {
+                debug!(
+                    "Catching up block {}/{}. Proving now.",
+                    block.block_height, catching_up
+                );
+                self.catching_up = None;
+                let blobs = self.catching_blobs.drain(..).collect();
                 self.prove_supported_blob(blobs)?;
             }
+        } else {
+            self.prove_supported_blob(blobs)?;
         }
 
         if block.block_height.0 > self.proved_height.0 {
