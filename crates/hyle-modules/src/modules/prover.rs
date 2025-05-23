@@ -364,10 +364,6 @@ where
                 tx_ctx: Some(tx_ctx.clone()),
                 tx_blob_count: blobs.len(),
             };
-            debug!(
-                "🐛 Executing with calldata: {calldata:?} on state {:?}",
-                self.store.contract
-            );
 
             match self
                 .store
