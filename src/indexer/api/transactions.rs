@@ -371,7 +371,8 @@ SELECT
     parent_dp_hash,
     block_hash,
     index,
-    b.timestamp
+    b.timestamp,
+    lane_id
 FROM transactions t
 LEFT JOIN blocks b ON t.block_hash = b.hash
 WHERE t.tx_hash = $1 AND transaction_type='blob_transaction'
