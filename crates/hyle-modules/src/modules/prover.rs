@@ -25,6 +25,9 @@ pub struct AutoProver<Contract: Send + Sync + Clone + 'static> {
     bus: AutoProverBusClient<Contract>,
     ctx: Arc<AutoProverCtx<Contract>>,
     store: AutoProverStore<Contract>,
+    proved_height: BlockHeight,
+    catching_up: Option<BlockHeight>,
+    catching_blobs: Vec<(BlobIndex, BlobTransaction, TxContext)>,
 }
 
 #[derive(Default, BorshSerialize, BorshDeserialize)]
@@ -33,7 +36,6 @@ pub struct AutoProverStore<Contract> {
     state_history: Vec<(TxHash, Contract)>,
     contract: Contract,
     start_proving_at: BlockHeight,
-    proved_height: BlockHeight,
 }
 
 module_bus_client! {
@@ -90,11 +92,24 @@ where
                 unsettled_txs: vec![],
                 state_history: vec![],
                 start_proving_at: ctx.start_height,
-                proved_height: ctx.start_height,
             },
         };
 
-        Ok(AutoProver { bus, store, ctx })
+        let current_block = ctx.node.get_block_height().await?;
+        let catching_up = if store.start_proving_at.0 < current_block.0 {
+            Some(current_block)
+        } else {
+            None
+        };
+
+        Ok(AutoProver {
+            bus,
+            store,
+            proved_height: ctx.start_height,
+            ctx,
+            catching_up,
+            catching_blobs: vec![],
+        })
     }
 
     async fn run(&mut self) -> Result<()> {
@@ -105,7 +120,7 @@ where
             }
         };
 
-        self.store.start_proving_at = self.store.proved_height;
+        self.store.start_proving_at = self.proved_height;
 
         let _ = log_error!(
             Self::save_on_disk::<AutoProverStore<Contract>>(
@@ -165,9 +180,28 @@ where
                 blobs.extend(self.handle_blob(tx, tx_ctx));
             }
         }
-        self.prove_supported_blob(blobs)?;
-        if block.block_height.0 > self.store.proved_height.0 {
-            self.store.proved_height = block.block_height;
+        if let Some(catching_up) = self.catching_up {
+            self.catching_blobs.extend(blobs);
+            if block.block_height.0 < catching_up.0 {
+                debug!(
+                    "Catching up block {}/{}. Proving delayed.",
+                    block.block_height, catching_up
+                );
+            } else {
+                debug!(
+                    "Catching up block {}/{}. Proving now.",
+                    block.block_height, catching_up
+                );
+                self.catching_up = None;
+                let blobs = self.catching_blobs.drain(..).collect();
+                self.prove_supported_blob(blobs)?;
+            }
+        } else {
+            self.prove_supported_blob(blobs)?;
+        }
+
+        if block.block_height.0 > self.proved_height.0 {
+            self.proved_height = block.block_height;
         }
 
         for tx in block.successful_txs {
