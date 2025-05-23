@@ -5,7 +5,7 @@ mod api;
 use crate::node_state::module::NodeStateEvent;
 use crate::{model::*, utils::conf::SharedConf};
 use anyhow::{bail, Context, Error, Result};
-use api::IndexerAPI;
+use api::*;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -15,11 +15,13 @@ use axum::{
     routing::get,
     Router,
 };
+use chrono::{DateTime, Utc};
 use futures::{SinkExt, StreamExt};
 use hyle_contract_sdk::TxHash;
 use hyle_model::api::{
     BlobWithStatus, TransactionStatusDb, TransactionTypeDb, TransactionWithBlobs,
 };
+use hyle_model::utils::TimestampMs;
 use hyle_modules::{
     bus::SharedMessageBus,
     log_error, log_warn, module_handle_messages,
@@ -824,6 +826,11 @@ impl std::ops::Deref for Indexer {
     fn deref(&self) -> &Self::Target {
         &self.state.db
     }
+}
+
+pub fn into_utc_date_time(ts: &TimestampMs) -> Result<DateTime<Utc>> {
+    DateTime::from_timestamp_millis(ts.0.try_into().context("Converting u64 into i64")?)
+        .context("Converting i64 into UTC DateTime")
 }
 
 #[cfg(test)]

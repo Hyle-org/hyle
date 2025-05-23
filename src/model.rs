@@ -6,10 +6,6 @@ use hyle_modules::modules::SharedBuildApiCtx;
 // Re-export
 pub use hyle_model::*;
 
-mod indexer;
-
-pub use indexer::*;
-
 use crate::utils::conf::SharedConf;
 
 #[derive(Clone)]
