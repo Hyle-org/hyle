@@ -39,8 +39,10 @@ async fn happy_path_with_tx_context() {
     assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
 }
 
-#[test_log::test(tokio::test)]
-async fn native_blobs_should_not_block_settlement_if_success() {
+async fn assert_two_transactions_with_different_contracts_using_same_native_contract_settle_whatever_the_native_blob_output(
+    native_failure: bool,
+    blob_order_reversed: bool,
+) {
     let mut state = new_node_state().await;
     let c1 = ContractName::new("c1");
     let register_c1 = make_register_contract_effect(c1.clone());
@@ -50,10 +52,19 @@ async fn native_blobs_should_not_block_settlement_if_success() {
     state.handle_register_contract_effect(&register_n1);
 
     let identity_1 = Identity::new("test@c1");
-    let blob_tx_1 = BlobTransaction::new(
-        identity_1.clone(),
-        vec![new_blob("c1"), new_native_blob("n1", identity_1.clone())],
-    );
+    let mut blobs = vec![new_blob("c1")];
+
+    if native_failure {
+        blobs.push(new_failing_native_blob("n1", identity_1.clone()));
+    } else {
+        blobs.push(new_native_blob("n1", identity_1.clone()));
+    }
+
+    if blob_order_reversed {
+        blobs.reverse();
+    }
+
+    let blob_tx_1 = BlobTransaction::new(identity_1.clone(), blobs);
 
     let blob_tx_id_1 = blob_tx_1.hashed();
 
@@ -105,80 +116,29 @@ async fn native_blobs_should_not_block_settlement_if_success() {
 }
 
 #[test_log::test(tokio::test)]
-async fn native_blobs_should_fail_tx_if_failure() {
-    let mut state = new_node_state().await;
-    let c1 = ContractName::new("c1");
-    let register_c1 = make_register_contract_effect(c1.clone());
-    state.handle_register_contract_effect(&register_c1);
-    let n1 = ContractName::new("n1");
-    let register_n1 = make_register_native_contract_effect(n1.clone());
-    state.handle_register_contract_effect(&register_n1);
-
-    let identity_1 = Identity::new("test@c1");
-    let blob_tx_1 = BlobTransaction::new(
-        identity_1.clone(),
-        vec![
-            new_blob("c1"),
-            new_failing_native_blob("n1", identity_1.clone()),
-        ],
-    );
-
-    let blob_tx_id_1 = blob_tx_1.hashed();
-
-    let ctx = bogus_tx_context();
-
-    let hyle_output_1 = make_hyle_output(blob_tx_1.clone(), BlobIndex(0));
-    let verified_proof_1 = new_proof_tx(&c1, &hyle_output_1, &blob_tx_id_1);
-
-    // Register another tx depending on native contract
-
-    let c2 = ContractName::new("c2");
-    let register_c2 = make_register_contract_effect(c2.clone());
-    state.handle_register_contract_effect(&register_c2);
-
-    let identity_2 = Identity::new("test@c2");
-    let blob_tx_2 = BlobTransaction::new(
-        identity_2.clone(),
-        vec![new_blob("c2"), new_native_blob("n1", identity_2.clone())],
-    );
-
-    let blob_tx_id_2 = blob_tx_2.hashed();
-
-    // Submit failing tx with native blob failing
-    let block =
-        state.craft_block_and_handle(1, vec![blob_tx_1.clone().into(), blob_tx_2.clone().into()]);
-    assert_eq!(block.blob_proof_outputs.len(), 0);
-    assert_eq!(block.failed_txs.len(), 0);
-    assert_eq!(block.successful_txs.len(), 0);
-
-    // Submitting a proof for c1 should do nothing (no settlement)
-    let block = state.craft_block_and_handle(2, vec![verified_proof_1.clone().into()]);
-    assert_eq!(block.blob_proof_outputs.len(), 1);
-    assert_eq!(block.failed_txs.len(), 0);
-    assert_eq!(block.successful_txs.len(), 0);
-
-    assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);
-
-    let hyle_output_2 = make_hyle_output(blob_tx_2.clone(), BlobIndex(0));
-    let verified_proof_2 = new_proof_tx(&c2, &hyle_output_2, &blob_tx_id_2);
-
-    // Settlement of the second tx should be ok
-    let block = state.craft_block_and_handle(3, vec![verified_proof_2.into()]);
-    assert_eq!(block.blob_proof_outputs.len(), 1);
-    assert_eq!(block.failed_txs.len(), 0);
-    assert_eq!(block.successful_txs.len(), 1);
-
-    // Check state did not transition
-    assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);
-
-    // D1 should now have transitioned
-    assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
+async fn native_blobs_should_not_block_settlement_of_different_contracts_if_failure() {
+    assert_two_transactions_with_different_contracts_using_same_native_contract_settle_whatever_the_native_blob_output(true, false);
 }
 
-// First Tx contains 2 blobs: one for c1 success, one for n1 failing
-// Second contains the same, but all are valid, it should be settled and not blocked by the previous one
 #[test_log::test(tokio::test)]
-async fn native_blobs_should_fail_tx_if_failure_and_not_block_c1() {
+async fn native_blobs_should_not_block_settlement_of_different_contracts_if_failure_reversed() {
+    assert_two_transactions_with_different_contracts_using_same_native_contract_settle_whatever_the_native_blob_output(true, true);
+}
+
+#[test_log::test(tokio::test)]
+async fn native_blobs_should_not_block_settlement_of_different_contracts_if_success() {
+    assert_two_transactions_with_different_contracts_using_same_native_contract_settle_whatever_the_native_blob_output(false, false);
+}
+
+#[test_log::test(tokio::test)]
+async fn native_blobs_should_not_block_settlement_of_different_contracts_if_success_reversed() {
+    assert_two_transactions_with_different_contracts_using_same_native_contract_settle_whatever_the_native_blob_output(false, true);
+}
+
+async fn assert_two_transactions_with_same_contract_using_same_native_contract_settle_whatever_the_native_blob_output(
+    native_failure: bool,
+    blob_order_reversed: bool,
+) {
     let mut state = new_node_state().await;
     let c1 = ContractName::new("c1");
     let register_c1 = make_register_contract_effect(c1.clone());
@@ -188,98 +148,34 @@ async fn native_blobs_should_fail_tx_if_failure_and_not_block_c1() {
     state.handle_register_contract_effect(&register_n1);
 
     let identity_1 = Identity::new("test@c1");
-    let blob_tx_1 = BlobTransaction::new(
-        identity_1.clone(),
-        vec![
-            new_blob("c1"),
-            new_failing_native_blob("n1", identity_1.clone()),
-        ],
-    );
+    let identity_2 = Identity::new("test2@c1");
 
-    let blob_tx_id_1 = blob_tx_1.hashed();
+    let mut blobs = vec![new_blob("c1")];
 
-    let ctx = bogus_tx_context();
+    if native_failure {
+        blobs.push(new_failing_native_blob("n1", identity_1.clone()));
+    } else {
+        blobs.push(new_native_blob("n1", identity_1.clone()));
+    }
 
-    let hyle_output_1 = make_hyle_output(blob_tx_1.clone(), BlobIndex(0));
-    let verified_proof_1 = new_proof_tx(&c1, &hyle_output_1, &blob_tx_id_1);
+    if blob_order_reversed {
+        blobs.reverse();
+    }
 
-    let identity_2 = Identity::new("test@c1");
+    let blob_tx_1 = BlobTransaction::new(identity_1.clone(), blobs);
     let blob_tx_2 = BlobTransaction::new(
         identity_2.clone(),
         vec![new_blob("c1"), new_native_blob("n1", identity_2.clone())],
     );
 
-    let blob_tx_id_2 = blob_tx_2.hashed();
-
-    // Submit failing tx with native blob failing
-    let block =
-        state.craft_block_and_handle(1, vec![blob_tx_1.clone().into(), blob_tx_2.clone().into()]);
-    assert_eq!(block.blob_proof_outputs.len(), 0);
-    assert_eq!(block.failed_txs.len(), 0);
-    assert_eq!(block.successful_txs.len(), 0);
-
-    // Submitting a proof for c1 should do nothing (no settlement)
-    let block = state.craft_block_and_handle(2, vec![verified_proof_1.clone().into()]);
-    assert_eq!(block.blob_proof_outputs.len(), 1);
-    assert_eq!(block.failed_txs.len(), 0);
-    assert_eq!(block.successful_txs.len(), 0);
-
-    assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);
-
-    let hyle_output_2 = make_hyle_output(blob_tx_2.clone(), BlobIndex(0));
-    let verified_proof_2 = new_proof_tx(&c1, &hyle_output_2, &blob_tx_id_2);
-
-    // Settlement of the second tx should be ok
-    let block = state.craft_block_and_handle(3, vec![verified_proof_2.into()]);
-    assert_eq!(block.blob_proof_outputs.len(), 1);
-    assert_eq!(block.failed_txs.len(), 0);
-    assert_eq!(block.successful_txs.len(), 0);
-
-    // Check state did not transition
-    assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);
-}
-
-// First blob is the native one
-#[test_log::test(tokio::test)]
-async fn native_blobs_first_is_regular_second_is_native() {
-    let mut state = new_node_state().await;
-    let c1 = ContractName::new("c1");
-    let register_c1 = make_register_contract_effect(c1.clone());
-    state.handle_register_contract_effect(&register_c1);
-    let n1 = ContractName::new("n1");
-    let register_n1 = make_register_native_contract_effect(n1.clone());
-    state.handle_register_contract_effect(&register_n1);
-
-    let identity_1 = Identity::new("test@c1");
-    let blob_tx_1 = BlobTransaction::new(
-        identity_1.clone(),
-        vec![
-            new_failing_native_blob("n1", identity_1.clone()),
-            new_blob("c1"),
-        ],
-    );
-
     let blob_tx_id_1 = blob_tx_1.hashed();
+    let blob_tx_id_2 = blob_tx_2.hashed();
 
     let ctx = bogus_tx_context();
 
     let hyle_output_1 = make_hyle_output(blob_tx_1.clone(), BlobIndex(0));
     let verified_proof_1 = new_proof_tx(&c1, &hyle_output_1, &blob_tx_id_1);
 
-    // Register another tx depending on native contract
-
-    let c2 = ContractName::new("c2");
-    let register_c2 = make_register_contract_effect(c2.clone());
-    state.handle_register_contract_effect(&register_c2);
-
-    let identity_2 = Identity::new("test@c2");
-    let blob_tx_2 = BlobTransaction::new(
-        identity_2.clone(),
-        vec![new_native_blob("n1", identity_2.clone()), new_blob("c2")],
-    );
-
-    let blob_tx_id_2 = blob_tx_2.hashed();
-
     // Submit failing tx with native blob failing
     let block =
         state.craft_block_and_handle(1, vec![blob_tx_1.clone().into(), blob_tx_2.clone().into()]);
@@ -287,28 +183,64 @@ async fn native_blobs_first_is_regular_second_is_native() {
     assert_eq!(block.failed_txs.len(), 0);
     assert_eq!(block.successful_txs.len(), 0);
 
-    // Submitting a proof for c1 should do nothing (no settlement)
-    let block = state.craft_block_and_handle(2, vec![verified_proof_1.clone().into()]);
-    assert_eq!(block.blob_proof_outputs.len(), 1);
-    assert_eq!(block.failed_txs.len(), 0);
-    assert_eq!(block.successful_txs.len(), 0);
+    if native_failure {
+        // Submitting a proof for c1 should do nothing (no settlement)
+        let block = state.craft_block_and_handle(2, vec![verified_proof_1.clone().into()]);
+        assert_eq!(block.blob_proof_outputs.len(), 1);
+        assert_eq!(block.failed_txs.len(), 0);
+        assert_eq!(block.successful_txs.len(), 0);
 
-    assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);
+        assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);
 
-    let hyle_output_2 = make_hyle_output(blob_tx_2.clone(), BlobIndex(0));
-    let verified_proof_2 = new_proof_tx(&c2, &hyle_output_2, &blob_tx_id_2);
+        let hyle_output_2 = make_hyle_output(blob_tx_2.clone(), BlobIndex(0));
+        let verified_proof_2 = new_proof_tx(&c1, &hyle_output_2, &blob_tx_id_2);
 
-    // Settlement of the second tx should be ok
-    let block = state.craft_block_and_handle(3, vec![verified_proof_2.into()]);
-    assert_eq!(block.blob_proof_outputs.len(), 1);
-    assert_eq!(block.failed_txs.len(), 0);
-    assert_eq!(block.successful_txs.len(), 1);
+        let block = state.craft_block_and_handle(3, vec![verified_proof_2.into()]);
+        // Check state did not transition
 
-    // Check state did not transition
-    assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![0, 1, 2, 3]);
+        // Settlement of the second tx should be ok
+        assert_eq!(block.blob_proof_outputs.len(), 1);
+        assert_eq!(block.failed_txs.len(), 0);
+        assert_eq!(block.successful_txs.len(), 1);
 
-    // D1 should now have transitioned
-    assert_eq!(state.contracts.get(&c2).unwrap().state.0, vec![4, 5, 6]);
+        // Second tx should settle
+        assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
+    } else {
+        let block = state.craft_block_and_handle(2, vec![verified_proof_1.clone().into()]);
+        assert_eq!(block.blob_proof_outputs.len(), 1);
+        assert_eq!(block.failed_txs.len(), 0);
+        assert_eq!(block.successful_txs.len(), 1);
+
+        assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
+
+        let hyle_output_2 = make_hyle_output(blob_tx_2.clone(), BlobIndex(0));
+        let verified_proof_2 = new_proof_tx(&c1, &hyle_output_2, &blob_tx_id_2);
+
+        let block = state.craft_block_and_handle(3, vec![verified_proof_2.into()]);
+
+        // verified_proof_2 was not right, the state of c1 was updated
+        assert_eq!(state.contracts.get(&c1).unwrap().state.0, vec![4, 5, 6]);
+    }
+}
+
+#[test_log::test(tokio::test)]
+async fn native_blobs_should_not_block_settlement_of_one_contract_if_failure() {
+    assert_two_transactions_with_same_contract_using_same_native_contract_settle_whatever_the_native_blob_output(true, false).await;
+}
+
+#[test_log::test(tokio::test)]
+async fn native_blobs_should_not_block_settlement_of_one_contract_if_failure_reversed() {
+    assert_two_transactions_with_same_contract_using_same_native_contract_settle_whatever_the_native_blob_output(true, true).await;
+}
+
+#[test_log::test(tokio::test)]
+async fn native_blobs_should_not_block_settlement_of_one_contract_if_success() {
+    assert_two_transactions_with_same_contract_using_same_native_contract_settle_whatever_the_native_blob_output(false, false).await;
+}
+
+#[test_log::test(tokio::test)]
+async fn native_blobs_should_not_block_settlement_of_one_contract_if_success_reversed() {
+    assert_two_transactions_with_same_contract_using_same_native_contract_settle_whatever_the_native_blob_output(false, true).await;
 }
 
 #[test_log::test(tokio::test)]
