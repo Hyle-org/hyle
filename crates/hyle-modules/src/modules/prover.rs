@@ -269,6 +269,24 @@ where
     }
 
     fn settle_tx(&mut self, hash: &TxHash) -> Option<usize> {
+        if !self.catching_blobs.is_empty() {
+            let (_, blob_transaction, _) = self.catching_blobs.remove(0);
+            if blob_transaction.hashed() != *hash {
+                error!(
+                    "First catching blob {} does not match the settled tx {}",
+                    blob_transaction.hashed(),
+                    hash
+                );
+            } else {
+                debug!(
+                    cn =% self.ctx.contract_name,
+                    tx_hash =% blob_transaction.hashed(),
+                    "Catching blob {} removed from the queue",
+                    blob_transaction.hashed()
+                );
+            }
+        }
+
         let tx = self
             .store
             .unsettled_txs
@@ -295,12 +313,20 @@ where
                     None
                 }
             });
-        if let Some((_, contract)) = prev_state {
-            debug!(cn =% self.ctx.contract_name, tx_hash =% failed_tx, "Reverting to previous state: {:?}", contract);
+        if let Some((prev_tx_hash, contract)) = prev_state {
+            debug!(cn =% self.ctx.contract_name, tx_hash =% failed_tx, "Reverting to previous state from tx {prev_tx_hash}");
             self.store.contract = contract.clone();
         } else {
             warn!(cn =% self.ctx.contract_name, tx_hash =% failed_tx, "Reverting to default state");
             self.store.contract = self.ctx.default_state.clone();
+        }
+        if self.catching_up.is_some() {
+            debug!(
+                cn =% self.ctx.contract_name,
+                tx_hash =% failed_tx,
+                "Catching up, not re-executing blobs"
+            );
+            return Ok(());
         }
         let mut blobs = vec![];
         for (tx, ctx) in self.store.unsettled_txs.clone().iter().skip(idx) {
