@@ -126,7 +126,7 @@ where
             Self::save_on_disk::<AutoProverStore<Contract>>(
                 self.ctx
                     .data_directory
-                    .join(format!("prover_{}.bin", self.ctx.contract_name))
+                    .join(format!("autoprover_{}.bin", self.ctx.contract_name))
                     .as_path(),
                 &self.store,
             ),
