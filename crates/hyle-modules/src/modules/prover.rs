@@ -25,7 +25,7 @@ pub struct AutoProver<Contract: Send + Sync + Clone + 'static> {
     bus: AutoProverBusClient<Contract>,
     ctx: Arc<AutoProverCtx<Contract>>,
     store: AutoProverStore<Contract>,
-    proved_height: BlockHeight,
+    settled_height: BlockHeight,
     catching_up: Option<BlockHeight>,
     catching_blobs: Vec<(BlobIndex, BlobTransaction, TxContext)>,
 }
@@ -35,7 +35,6 @@ pub struct AutoProverStore<Contract> {
     unsettled_txs: Vec<(BlobTransaction, TxContext)>,
     state_history: Vec<(TxHash, Contract)>,
     contract: Contract,
-    start_proving_at: BlockHeight,
 }
 
 module_bus_client! {
@@ -48,7 +47,6 @@ pub struct AutoProverBusClient<Contract: Send + Sync + Clone + 'static> {
 
 pub struct AutoProverCtx<Contract> {
     pub data_directory: PathBuf,
-    pub start_height: BlockHeight,
     pub prover: Arc<dyn ClientSdkProver<Vec<Calldata>> + Send + Sync>,
     pub contract_name: ContractName,
     pub node: Arc<dyn NodeApiClient + Send + Sync>,
@@ -91,12 +89,22 @@ where
                 contract: ctx.default_state.clone(),
                 unsettled_txs: vec![],
                 state_history: vec![],
-                start_proving_at: ctx.start_height,
             },
         };
 
+        let settled_height = ctx
+            .node
+            .get_settled_height(ctx.contract_name.clone())
+            .await?;
+
+        info!(
+            cn =% ctx.contract_name,
+            "Settled height received is {}",
+            settled_height
+        );
+
         let current_block = ctx.node.get_block_height().await?;
-        let catching_up = if store.start_proving_at.0 < current_block.0 {
+        let catching_up = if settled_height.0 < current_block.0 {
             Some(current_block)
         } else {
             None
@@ -105,10 +113,10 @@ where
         Ok(AutoProver {
             bus,
             store,
-            proved_height: ctx.start_height,
             ctx,
             catching_up,
             catching_blobs: vec![],
+            settled_height,
         })
     }
 
@@ -119,8 +127,6 @@ where
                 _ = log_error!(self.handle_node_state_event(event).await, "handle note state event")
             }
         };
-
-        self.store.start_proving_at = self.proved_height;
 
         let _ = log_error!(
             Self::save_on_disk::<AutoProverStore<Contract>>(
@@ -188,38 +194,24 @@ where
                 blobs.extend(self.handle_blob(tx, tx_ctx));
             }
         }
-        if !blobs.is_empty() {
-            debug!(
-                cn =% self.ctx.contract_name,
-                "Found {} txs in block {} with provable blobs",
-                blobs.len(),
-                block.block_height
-            );
-        }
         if let Some(catching_up) = self.catching_up {
-            let empty = blobs.is_empty();
-            self.catching_blobs.extend(blobs);
-            if block.block_height.0 < catching_up.0 && !empty {
+            if block.block_height.0 >= catching_up.0 {
                 debug!(
-                    "Catching up block {}/{}. Proving delayed.",
-                    block.block_height, catching_up
-                );
-            } else {
-                debug!(
-                    "Catching up block {}/{}. Proving now.",
-                    block.block_height, catching_up
+                    cn =% self.ctx.contract_name,
+                    "Catching up finished at block {}",
+                    block.block_height
                 );
                 self.catching_up = None;
-                let blobs = self.catching_blobs.drain(..).collect();
-                self.prove_supported_blob(blobs)?;
+                self.catching_blobs.extend(blobs);
+                blobs = self.catching_blobs.drain(..).collect();
+                debug!(
+                    cn =% self.ctx.contract_name,
+                    "Catching up finished, {} blobs to process",
+                    blobs.len()
+                );
             }
-        } else {
-            self.prove_supported_blob(blobs)?;
         }
-
-        if block.block_height.0 > self.proved_height.0 {
-            self.proved_height = block.block_height;
-        }
+        self.prove_supported_blob(blobs)?;
 
         for tx in block.successful_txs {
             self.settle_tx_success(&tx)?;
@@ -270,20 +262,16 @@ where
 
     fn settle_tx(&mut self, hash: &TxHash) -> Option<usize> {
         if !self.catching_blobs.is_empty() {
-            let (_, blob_transaction, _) = self.catching_blobs.remove(0);
-            if blob_transaction.hashed() != *hash {
-                error!(
-                    "First catching blob {} does not match the settled tx {}",
-                    blob_transaction.hashed(),
-                    hash
-                );
-            } else {
-                debug!(
-                    cn =% self.ctx.contract_name,
-                    tx_hash =% blob_transaction.hashed(),
-                    "Catching blob {} removed from the queue",
-                    blob_transaction.hashed()
-                );
+            if let Some((_, blob_transaction, _)) = self.catching_blobs.first() {
+                if blob_transaction.hashed() == *hash {
+                    debug!(
+                        cn =% self.ctx.contract_name,
+                        tx_hash =% blob_transaction.hashed(),
+                        "Catching blob {} has settled. Removed from the queue.",
+                        blob_transaction.hashed()
+                    );
+                    self.catching_blobs.remove(0);
+                }
             }
         }
 
@@ -300,6 +288,12 @@ where
     }
 
     fn handle_all_next_blobs(&mut self, idx: usize, failed_tx: &TxHash) -> Result<()> {
+        let tx_history = self
+            .store
+            .state_history
+            .iter()
+            .map(|(h, _)| h)
+            .collect::<Vec<_>>();
         let prev_state = self
             .store
             .state_history
@@ -316,8 +310,12 @@ where
         if let Some((prev_tx_hash, contract)) = prev_state {
             debug!(cn =% self.ctx.contract_name, tx_hash =% failed_tx, "Reverting to previous state from tx {prev_tx_hash}");
             self.store.contract = contract.clone();
+        } else if !self.store.state_history.is_empty() {
+            let last_tx = self.store.state_history.last().unwrap();
+            debug!(cn =% self.ctx.contract_name, tx_hash =% failed_tx, "Reverting to last state from tx {}", last_tx.0);
+            self.store.contract = last_tx.1.clone();
         } else {
-            warn!(cn =% self.ctx.contract_name, tx_hash =% failed_tx, "Reverting to default state");
+            warn!(cn =% self.ctx.contract_name, tx_hash =% failed_tx, "Reverting to default state. History: {tx_history:?}");
             self.store.contract = self.ctx.default_state.clone();
         }
         if self.catching_up.is_some() {
@@ -361,7 +359,22 @@ where
         let mut initial_commitment_metadata = None;
         let len = blobs.len();
         for (blob_index, tx, tx_ctx) in blobs {
-            let old_tx = tx_ctx.block_height.0 < self.store.start_proving_at.0;
+            let already_settled_tx = tx_ctx.block_height.0 <= self.settled_height.0;
+
+            if !already_settled_tx {
+                if let Some(catching_up) = self.catching_up {
+                    debug!(
+                        cn =% self.ctx.contract_name,
+                        tx_hash =% tx.hashed(),
+                        tx_height =% tx_ctx.block_height,
+                        catching_up =% catching_up,
+                        "Catching up, buffering blobs",
+                    );
+
+                    self.catching_blobs.push((blob_index, tx, tx_ctx));
+                    continue;
+                }
+            }
 
             let blob = tx.blobs.get(blob_index.0).ok_or_else(|| {
                 anyhow!("Failed to get blob {} from tx {}", blob_index, tx.hashed())
@@ -386,7 +399,7 @@ where
                         .contract
                         .merge_commitment_metadata(
                             initial_commitment_metadata.unwrap(),
-                            commitment_metadata,
+                            commitment_metadata.clone(),
                         )
                         .map_err(|e| anyhow!(e))
                         .context("Merging commitment_metadata")?,
@@ -413,9 +426,10 @@ where
                     info!(
                         cn =% self.ctx.contract_name,
                         tx_hash =% tx.hashed(),
+                        tx_height =% tx_ctx.block_height,
                         "Error while executing contract: {e}"
                     );
-                    if !old_tx {
+                    if !already_settled_tx {
                         self.bus
                             .send(AutoProverEvent::FailedTx(tx_hash.clone(), e.to_string()))?;
                     }
@@ -424,10 +438,11 @@ where
                     info!(
                         cn =% self.ctx.contract_name,
                         tx_hash =% tx.hashed(),
-                        "Executed contract: {}",
+                        tx_height =% tx_ctx.block_height,
+                        "🔧 Executed contract: {}",
                         String::from_utf8_lossy(&msg.program_outputs)
                     );
-                    if !old_tx {
+                    if !already_settled_tx {
                         self.bus.send(AutoProverEvent::SuccessTx(
                             tx_hash.clone(),
                             self.store.contract.clone(),
@@ -440,13 +455,12 @@ where
                 .state_history
                 .push((tx_hash.clone(), self.store.contract.clone()));
 
-            if old_tx {
+            if already_settled_tx {
                 debug!(
                     cn =% self.ctx.contract_name,
                     tx_hash =% tx.hashed(),
                     tx_height =% tx_ctx.block_height,
-                    tx_height_proved =% self.store.start_proving_at,
-                    "Skipping old tx",
+                    "Skipping already settled tx",
                 );
                 continue;
             }
@@ -595,7 +609,6 @@ mod tests {
 
         let ctx = Arc::new(AutoProverCtx {
             data_directory: data_dir,
-            start_height: BlockHeight(0),
             prover: Arc::new(TxExecutorTestProver::<TestContract>::new()),
             contract_name: ContractName("test".into()),
             node: api_client.clone(),
